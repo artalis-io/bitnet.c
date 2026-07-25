@@ -5216,28 +5216,50 @@ static void test_block_planning(void) {
     assert(bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
         &prefill_dense_gpu, &prefill_dense_c, 1));
 
+    BnTransformerSSMShapePolicy prefill_ssm_shape = {0};
+    BnConfig prefill_ssm_c = {0};
+    prefill_ssm_c.ssm_time_step_rank = 16;
+    prefill_ssm_c.ssm_state_size = 64;
+    prefill_ssm_c.ssm_inner_size = 256;
+    prefill_ssm_c.ssm_group_count = 4;
+    prefill_ssm_c.ssm_conv_kernel = 4;
+    assert(bn_transformer_ssm_shape_policy(&prefill_ssm_shape,
+                                           &prefill_ssm_c));
+    BnTransformerSSMShapePolicy invalid_prefill_ssm_shape =
+        prefill_ssm_shape;
+    invalid_prefill_ssm_shape.head_v_dim = 0;
+
     BnTransformerPrefillSSMChainPolicy ssm_chain =
         bn_transformer_prefill_ssm_chain_policy(
-            1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+            1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0,
+            &prefill_ssm_shape);
     assert(ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
-        0, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+        0, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0,
+        &prefill_ssm_shape);
     assert(!ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
         1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
-        1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+        1, 1, 0, 0, 0, 0, 0, &prefill_ssm_shape);
     assert(!ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
-        1, prefill_layer_kind, 0, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+        1, prefill_layer_kind, 0, 1, 0, 0, 0, 0, 0,
+        &prefill_ssm_shape);
     assert(!ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
-        1, prefill_layer_kind, 1, 1, 1, 0, 0, 0, 0, 16, 64, 256, 4);
+        1, prefill_layer_kind, 1, 1, 1, 0, 0, 0, 0,
+        &prefill_ssm_shape);
     assert(!ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
-        1, prefill_layer_kind, 1, 1, 0, 0, 1, 1, 0, 16, 64, 256, 4);
+        1, prefill_layer_kind, 1, 1, 0, 0, 1, 1, 0,
+        &prefill_ssm_shape);
     assert(!ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
-        1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 64, 256, 4);
+        1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, NULL);
+    assert(!ssm_chain.enabled);
+    ssm_chain = bn_transformer_prefill_ssm_chain_policy(
+        1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0,
+        &invalid_prefill_ssm_shape);
     assert(!ssm_chain.enabled);
     assert(!bn_transformer_prefill_ssm_layer_backend_available(NULL));
     assert(!bn_transformer_prefill_ssm_layer_backend_available(
@@ -5266,22 +5288,26 @@ static void test_block_planning(void) {
     BnTransformerPrefillSSMMoEChainPolicy ssm_moe_chain =
         bn_transformer_prefill_ssm_moe_chain_policy(
             1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
-            0, 0, 0, 0, 0, 16, 64, 256, 4);
+            0, 0, 0, 0, 0, &prefill_ssm_shape);
     assert(ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
-        1, prefill_layer_kind, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+        1, prefill_layer_kind, 0, 0, 0, 0, 0, &prefill_ssm_shape);
     assert(!ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
         1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
-        0, 1, 0, 0, 0, 16, 64, 256, 4);
+        0, 1, 0, 0, 0, &prefill_ssm_shape);
     assert(!ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
         1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
-        0, 0, 1, 0, 1, 16, 64, 256, 4);
+        0, 0, 1, 0, 1, &prefill_ssm_shape);
     assert(!ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
         1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
-        0, 0, 0, 0, 0, 16, 0, 256, 4);
+        0, 0, 0, 0, 0, NULL);
+    assert(!ssm_moe_chain.enabled);
+    ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
+        1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
+        0, 0, 0, 0, 0, &invalid_prefill_ssm_shape);
     assert(!ssm_moe_chain.enabled);
 
     BnGPUBackend prefill_gpu = {0};

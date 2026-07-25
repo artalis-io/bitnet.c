@@ -745,6 +745,9 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         bn_transformer_attention_uses_post_norm_layer(c, lw);
     int use_ffn_post_norm =
         bn_transformer_ffn_uses_post_norm_layer(c, lw);
+    BnTransformerSSMShapePolicy ssm_shape;
+    if (!bn_transformer_ssm_shape_policy(&ssm_shape, c))
+        return 0;
     BnTransformerPrefillSSMMoEChainPolicy policy =
         bn_transformer_prefill_ssm_moe_chain_policy(
             bn_transformer_prefill_ssm_moe_chain_available(
@@ -756,10 +759,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
             use_attn_post_norm || use_ffn_post_norm,
             lw->norm.attn_post_norm != NULL,
             lw->norm.ffn_post_norm != NULL,
-            c->ssm_time_step_rank,
-            c->ssm_state_size,
-            c->ssm_inner_size,
-            c->ssm_group_count);
+            &ssm_shape);
     if (!policy.enabled ||
         !backend ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
@@ -1133,6 +1133,9 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         bn_transformer_attention_uses_post_norm_layer(c, lw);
     int use_ffn_post_norm =
         bn_transformer_ffn_uses_post_norm_layer(c, lw);
+    BnTransformerSSMShapePolicy ssm_shape;
+    if (!bn_transformer_ssm_shape_policy(&ssm_shape, c))
+        return 0;
     BnTransformerPrefillSSMChainPolicy policy =
         bn_transformer_prefill_ssm_chain_policy(
             bn_transformer_prefill_ssm_dense_chain_available(gpu, c,
@@ -1145,10 +1148,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
             use_attn_post_norm || use_ffn_post_norm,
             lw->norm.attn_post_norm != NULL,
             lw->norm.ffn_post_norm != NULL,
-            c->ssm_time_step_rank,
-            c->ssm_state_size,
-            c->ssm_inner_size,
-            c->ssm_group_count);
+            &ssm_shape);
     if (!policy.enabled ||
         !backend ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||

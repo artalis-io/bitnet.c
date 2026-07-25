@@ -6,6 +6,7 @@
 #include "moe_types.h"
 #include "quant.h"
 #include "threadpool.h"
+#include "transformer_plan_internal.h"
 #include <stdint.h>
 
 #ifndef BN_GPU_BACKEND_DECLARED
@@ -341,10 +342,7 @@ bn_transformer_prefill_ssm_chain_policy(
     int uses_post_norm,
     int has_attn_post_norm,
     int has_ffn_post_norm,
-    int ssm_time_step_rank,
-    int ssm_state_size,
-    int ssm_inner_size,
-    int ssm_group_count);
+    const BnTransformerSSMShapePolicy *ssm_shape);
 BnTransformerPrefillSSMMoEChainPolicy
 bn_transformer_prefill_ssm_moe_chain_policy(
     int chain_available,
@@ -354,10 +352,7 @@ bn_transformer_prefill_ssm_moe_chain_policy(
     int uses_post_norm,
     int has_attn_post_norm,
     int has_ffn_post_norm,
-    int ssm_time_step_rank,
-    int ssm_state_size,
-    int ssm_inner_size,
-    int ssm_group_count);
+    const BnTransformerSSMShapePolicy *ssm_shape);
 int bn_transformer_prefill_ssm_layer_backend_available(
     const BnGPUBackend *gpu);
 int bn_transformer_prefill_ssm_dense_chain_available(
