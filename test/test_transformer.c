@@ -1554,6 +1554,38 @@ static void test_gpu_policy_helpers(void) {
     assert(matmul_dispatch.valid);
     assert(matmul_dispatch.path ==
            BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_SINGLE);
+    BnQWeight q4k_weight = {0};
+    q4k_weight.type = BN_GGUF_TENSOR_Q4_K;
+    BnQWeight f32_weight = {0};
+    f32_weight.type = BN_GGUF_TENSOR_F32;
+    const BnQWeight *prefill_weights[2] = {
+        &q4k_weight,
+        &q4k_weight
+    };
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK;
+    matmul_dispatch =
+        bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+            &c, prefill_weights, 2, 4, 0, 0, 0);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           (bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c)
+                ? BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_FLOAT_KQUANT_FALLBACK
+                : BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI));
+    prefill_weights[1] = &f32_weight;
+    matmul_dispatch =
+        bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+            &c, prefill_weights, 2, 4, 0, 0, 0);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI);
+    prefill_weights[1] = &q4k_weight;
+    matmul_dispatch =
+        bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+            &c, prefill_weights, 2, 4, 1, 1, 1);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH);
+    c.policy_flags = 0;
 
     BnMoEExpertMap expert_map;
     memset(&expert_map, 0, sizeof(expert_map));

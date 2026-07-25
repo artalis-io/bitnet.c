@@ -254,6 +254,15 @@ bn_transformer_prefill_quant_matmul_dispatch_policy(
     int all_gpu_buffers_available,
     int float_kquant_fallback_enabled,
     int all_weights_float_kquant_fallback);
+BnTransformerPrefillQuantMatmulDispatchPolicy
+bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+    const BnConfig *c,
+    const BnQWeight *const *weights,
+    int n_tasks,
+    int max_cpu_batch_tasks,
+    int gpu_available,
+    int gpu_batch_available,
+    int all_gpu_buffers_available);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_buffer_shape_policy(

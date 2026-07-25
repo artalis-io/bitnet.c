@@ -91,6 +91,39 @@ bn_transformer_prefill_quant_matmul_dispatch_policy(
     return policy;
 }
 
+static int prefill_weight_uses_float_kquant_fallback(const BnQWeight *w) {
+    return w && bn_transformer_prefill_uses_float_kquant_fallback(w->type);
+}
+
+static int prefill_all_weights_use_float_kquant_fallback(
+    const BnQWeight *const *weights,
+    int n_tasks) {
+    if (!weights || n_tasks <= 0)
+        return 0;
+    for (int i = 0; i < n_tasks; i++) {
+        if (!prefill_weight_uses_float_kquant_fallback(weights[i]))
+            return 0;
+    }
+    return 1;
+}
+
+BnTransformerPrefillQuantMatmulDispatchPolicy
+bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+    const BnConfig *c,
+    const BnQWeight *const *weights,
+    int n_tasks,
+    int max_cpu_batch_tasks,
+    int gpu_available,
+    int gpu_batch_available,
+    int all_gpu_buffers_available) {
+    BnTransformerPrefillFloatKQuantFallbackPolicy fallback_policy =
+        bn_transformer_prefill_float_kquant_fallback_policy(c);
+    return bn_transformer_prefill_quant_matmul_dispatch_policy(
+        n_tasks, max_cpu_batch_tasks, gpu_available, gpu_batch_available,
+        all_gpu_buffers_available, fallback_policy.enabled,
+        prefill_all_weights_use_float_kquant_fallback(weights, n_tasks));
+}
+
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c) {
     BnTransformerPrefillSequencePolicy policy = {0};

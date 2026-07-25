@@ -139,27 +139,12 @@ static int prefill_uses_float_kquant_fallback(const BnModel *m) {
     return policy.enabled;
 }
 
-static int prefill_qweight_uses_float_kquant_fallback(const BnQWeight *w) {
-    return w && bn_transformer_prefill_uses_float_kquant_fallback(w->type);
-}
-
 static uint32_t prefill_float_kquant_fallback_task_flags(const BnModel *m) {
     if (!m)
         return 0u;
     BnTransformerPrefillFloatKQuantFallbackPolicy policy =
         bn_transformer_prefill_float_kquant_fallback_policy(&m->config);
     return policy.task_flags;
-}
-
-static int prefill_all_weights_use_float_kquant_fallback(
-        const BnQWeight *const *W, int n) {
-    if (n <= 0)
-        return 0;
-    for (int i = 0; i < n; i++) {
-        if (!prefill_qweight_uses_float_kquant_fallback(W[i]))
-            return 0;
-    }
-    return 1;
 }
 
 static void prefill_quant_matmul_float_kquant_fallback(
@@ -190,18 +175,16 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      const float *X,
                                      int n_tokens,
                                      int8_t *quantized_buf) {
+    const BnQWeight *weights[1] = { W };
     BnTransformerPrefillQuantMatmulDispatchPolicy dispatch =
-        bn_transformer_prefill_quant_matmul_dispatch_policy(
-            1, 4, bn_model_gpu(m) != NULL, 0, 0,
-            prefill_uses_float_kquant_fallback(m),
-            prefill_qweight_uses_float_kquant_fallback(W));
+        bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+            &m->config, weights, 1, 4, bn_model_gpu(m) != NULL, 0, 0);
     if (!dispatch.valid)
         return;
 
     switch (dispatch.path) {
     case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_FLOAT_KQUANT_FALLBACK: {
         float *outs[1] = { out };
-        const BnQWeight *weights[1] = { W };
         prefill_quant_matmul_float_kquant_fallback(
             m, outs, weights, 1, X, n_tokens, quantized_buf);
         return;
@@ -244,12 +227,11 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                                        int n,
                                        const float *X,
                                        int n_tokens,
-                                       int8_t *quantized_buf) {
+    int8_t *quantized_buf) {
     if (!bn_model_gpu(m)) {
         BnTransformerPrefillQuantMatmulDispatchPolicy dispatch =
-            bn_transformer_prefill_quant_matmul_dispatch_policy(
-                n, 4, 0, 0, 0, prefill_uses_float_kquant_fallback(m),
-                prefill_all_weights_use_float_kquant_fallback(W, n));
+            bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+                &m->config, W, n, 4, 0, 0, 0);
         if (!dispatch.valid)
             return;
         if (dispatch.path ==
@@ -292,8 +274,8 @@ static void prefill_quant_matmul_multi(const BnModel *m,
         all_bufs = 0;
     }
     BnTransformerPrefillQuantMatmulDispatchPolicy dispatch =
-        bn_transformer_prefill_quant_matmul_dispatch_policy(
-            n, 4, 1, gpu_batch_available, all_bufs, 0, 0);
+        bn_transformer_prefill_quant_matmul_dispatch_policy_for(
+            &m->config, W, n, 4, 1, gpu_batch_available, all_bufs);
     if (!dispatch.valid)
         return;
     if (dispatch.path == BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH) {
