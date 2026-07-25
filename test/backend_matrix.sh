@@ -1705,7 +1705,9 @@ fi
 if awk '/^static int prefill_qk_stacked_gpu/{flag=1} /^static int prefill_moe_ffn_gpu_batch/{flag=0} flag{print}' \
     src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.type' >/dev/null 2>&1 ||
    awk '/BnTransformerPrefillRawAttentionPolicy raw_attn_policy/{flag=1} /BnTransformerPrefillAttentionModePolicy attention_mode/{flag=0} flag{print}' \
-    src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.type' >/dev/null 2>&1; then
+    src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.type' >/dev/null 2>&1 ||
+   awk '/^static int prefill_dense_layer_gpu/{flag=1} /^static int prefill_qk_stacked_gpu/{flag=0} flag{print}' \
+    src/transformer/prefill.c | grep -n 'lw->\(attn\.w[oqkv]\|ssm\.wqkv\)\.type' >/dev/null 2>&1; then
     echo "Prefill attention execution must use resolved projection type metadata"
     fail=1
 fi

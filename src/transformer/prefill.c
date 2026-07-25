@@ -476,6 +476,9 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     if (!bn_transformer_prefill_resolve_attention_projection_types(
             &attn_types, lw))
         return -1;
+    BnTransformerPrefillSSMProjectionTypes ssm_types;
+    if (!bn_transformer_prefill_resolve_ssm_projection_types(&ssm_types, lw))
+        return -1;
     int q_dim = n_heads * head_size;
     int has_split_qkv =
         lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
@@ -498,7 +501,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     if (has_packed_qkv) {
         qk_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
         qk_rows = lw->ssm.wqkv.rows;
-        qk_type = lw->ssm.wqkv.type;
+        qk_type = ssm_types.qkv_type;
         wv_rows = 0;
         wv_type = qk_type;
     } else {
