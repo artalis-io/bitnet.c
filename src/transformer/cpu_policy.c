@@ -1,4 +1,5 @@
 #include "transformer_cpu_backend_internal.h"
+#include "backend_model.h"
 #include "backend_quant.h"
 #include "model_internal.h"
 
@@ -219,6 +220,24 @@ uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
     const BnConfig *c) {
     return bn_transformer_cpu_float_kquant_task_flags(
         bn_transformer_requires_float_kquant_fallback(c));
+}
+
+BnTransformerCPUMatvecResourcePolicy
+bn_transformer_cpu_matvec_resource_policy(
+    const BnConfig *c,
+    const BnBackendModel *backend,
+    const BnQWeight *weight) {
+    BnTransformerCPUMatvecResourcePolicy policy = {0};
+    if (!weight)
+        return policy;
+    policy.valid = 1;
+    policy.task_flags =
+        bn_transformer_cpu_float_kquant_fallback_task_flags(c);
+    if (bn_transformer_cpu_prepared_qweights_enabled())
+        policy.prepared =
+            bn_backend_model_prepared_qweight(backend, weight);
+    policy.gpu_buffer = bn_backend_model_qweight_buf(backend, weight);
+    return policy;
 }
 
 int bn_transformer_cpu_prefill_uses_float_kquant_fallback(

@@ -11,6 +11,7 @@
 #define BN_GPU_BACKEND_DECLARED
 typedef struct BnGPUBackend BnGPUBackend;
 #endif
+typedef struct BnBackendModel BnBackendModel;
 
 typedef struct {
     const char *name;
@@ -80,6 +81,13 @@ typedef struct {
     BnTransformerCPUPreparedKQuantInputPath path;
 } BnTransformerCPUPreparedKQuantInputDispatchPolicy;
 
+typedef struct {
+    int valid;
+    const BnPreparedWeight *prepared;
+    const void *gpu_buffer;
+    uint32_t task_flags;
+} BnTransformerCPUMatvecResourcePolicy;
+
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
 int bn_transformer_cpu_prepared_qweights_enabled(void);
 const char *bn_transformer_cpu_debug_dump_path(void);
@@ -144,6 +152,13 @@ int bn_transformer_cpu_activation_is_gelu(int activation);
 int bn_transformer_cpu_activation_uses_silu_path(int activation);
 float bn_transformer_cpu_norm_epsilon(const BnConfig *c);
 uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled);
+uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
+    const BnConfig *c);
+BnTransformerCPUMatvecResourcePolicy
+bn_transformer_cpu_matvec_resource_policy(
+    const BnConfig *c,
+    const BnBackendModel *backend,
+    const BnQWeight *weight);
 BnTransformerCPUPostNormPolicy
 bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
                                               int has_attn_post_norm);

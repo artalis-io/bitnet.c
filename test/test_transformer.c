@@ -4802,6 +4802,41 @@ static void test_block_planning(void) {
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(bn_transformer_cpu_float_kquant_fallback_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
+    BnTransformerCPUMatvecResourcePolicy cpu_matvec_resource =
+        bn_transformer_cpu_matvec_resource_policy(&c, NULL, NULL);
+    assert(!cpu_matvec_resource.valid);
+    BnQWeight cpu_matvec_weight = {0};
+    cpu_matvec_weight.type = BN_GGUF_TENSOR_Q4_K;
+    BnBackendModel *cpu_backend_model = bn_backend_model_create();
+    assert(cpu_backend_model);
+    BnPreparedWeight cpu_prepared = {0};
+    cpu_prepared.kind = BN_PREPARED_WEIGHT_Q4_K_SCALES;
+    int cpu_gpu_buf;
+    assert(bn_backend_model_register_qweight(
+               cpu_backend_model, &cpu_matvec_weight, &cpu_gpu_buf) == 0);
+    assert(bn_backend_model_register_prepared_qweight(
+               cpu_backend_model, &cpu_matvec_weight, &cpu_prepared) == 0);
+    unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
+    cpu_matvec_resource =
+        bn_transformer_cpu_matvec_resource_policy(
+            &c, cpu_backend_model, &cpu_matvec_weight);
+    assert(cpu_matvec_resource.valid);
+    assert(cpu_matvec_resource.prepared != NULL);
+    assert(cpu_matvec_resource.prepared->kind == cpu_prepared.kind);
+    assert(cpu_matvec_resource.gpu_buffer == &cpu_gpu_buf);
+    assert(cpu_matvec_resource.task_flags ==
+           BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
+    setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
+    cpu_matvec_resource =
+        bn_transformer_cpu_matvec_resource_policy(
+            &c, cpu_backend_model, &cpu_matvec_weight);
+    assert(cpu_matvec_resource.valid);
+    assert(cpu_matvec_resource.prepared == NULL);
+    assert(cpu_matvec_resource.gpu_buffer == &cpu_gpu_buf);
+    assert(cpu_matvec_resource.task_flags ==
+           BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
+    unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
+    bn_backend_model_free(cpu_backend_model);
     assert(fabsf(bn_transformer_attention_scale(&c, 128) -
                  (1.0f / sqrtf(128.0f))) < 1e-7f);
     assert(!bn_transformer_attention_value_shares_key(&c));

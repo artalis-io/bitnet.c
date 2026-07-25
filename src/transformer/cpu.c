@@ -16,14 +16,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline const BnPreparedWeight *cpu_qweight_prepared(
-    const BnBackendModel *backend,
-    const BnQWeight *w) {
-    if (!bn_transformer_cpu_prepared_qweights_enabled())
-        return NULL;
-    return bn_backend_model_prepared_qweight(backend, w);
-}
-
 static BnMatvecTask *cpu_prepare_matvec_tasks(const BnModel *m,
                                               const BnMatvecTask *tasks,
                                               int n_tasks,
@@ -36,9 +28,13 @@ static BnMatvecTask *cpu_prepare_matvec_tasks(const BnModel *m,
     }
     for (int i = 0; i < n_tasks; i++) {
         prepared[i] = tasks[i];
-        prepared[i].prepared = cpu_qweight_prepared(bn_model_backend(m), tasks[i].W);
-        prepared[i].flags |=
-            bn_transformer_cpu_float_kquant_fallback_task_flags(&m->config);
+        BnTransformerCPUMatvecResourcePolicy resource =
+            bn_transformer_cpu_matvec_resource_policy(
+                &m->config, bn_model_backend(m), tasks[i].W);
+        if (resource.valid) {
+            prepared[i].prepared = resource.prepared;
+            prepared[i].flags |= resource.task_flags;
+        }
     }
     return prepared;
 }
@@ -66,9 +62,12 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
         }
         if (bufs) {
             const BnBackendModel *backend = bn_model_backend(m);
-            for (int i = 0; i < n_tasks; i++)
-                bufs[i] = bn_backend_model_qweight_buf(backend,
-                                                       prepared_tasks[i].W);
+            for (int i = 0; i < n_tasks; i++) {
+                BnTransformerCPUMatvecResourcePolicy resource =
+                    bn_transformer_cpu_matvec_resource_policy(
+                        &m->config, backend, prepared_tasks[i].W);
+                bufs[i] = (void *)resource.gpu_buffer;
+            }
             bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
                 prepared_tasks, (const void **)bufs, n_tasks, x,
                 quantized_buf, bn_model_pool(m), bn_model_gpu(m));
@@ -1038,9 +1037,13 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 
         if (ffn_plan->has_gate) {
             const BnPreparedWeight *gate_prepared =
-                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_gate);
+                bn_transformer_cpu_matvec_resource_policy(
+                    &m->config, bn_model_backend(m),
+                    &lw->ffn.ffn_gate).prepared;
             const BnPreparedWeight *up_prepared =
-                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
+                bn_transformer_cpu_matvec_resource_policy(
+                    &m->config, bn_model_backend(m),
+                    &lw->ffn.ffn_up).prepared;
             if (bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
                     gpu, ffn_plan, dim,
                     ffn_types.gate_type, ffn_types.up_type) &&
