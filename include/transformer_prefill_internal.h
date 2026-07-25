@@ -116,6 +116,10 @@ typedef struct {
 } BnTransformerPrefillQuantMatmulDispatchPolicy;
 
 typedef struct {
+    int enabled;
+} BnTransformerPrefillPreparedKQuantDispatchPolicy;
+
+typedef struct {
     int uses_hybrid_layer_layout;
     int uses_hybrid_ssm;
     int uses_large_dense_hybrid_ssm;
@@ -553,6 +557,15 @@ int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     int uses_float_kquant_fallback,
     int dim,
     int tensor_type);
+BnTransformerPrefillPreparedKQuantDispatchPolicy
+bn_transformer_prefill_prepared_kquant_dispatch_policy(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int uses_float_kquant_fallback,
+    int dim,
+    const int *tensor_types,
+    int n_types,
+    int max_types);
 int bn_transformer_prefill_route_prepared_kquant_pair_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,

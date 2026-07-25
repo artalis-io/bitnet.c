@@ -5713,6 +5713,40 @@ static void test_block_planning(void) {
     assert(!bn_transformer_prefill_route_prepared_kquant_triple_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
+    int prepared_group[3] = {
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K
+    };
+    BnTransformerPrefillPreparedKQuantDispatchPolicy prepared_dispatch =
+        bn_transformer_prefill_prepared_kquant_dispatch_policy(
+            bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
+            prepared_group, 3, 4);
+    assert(prepared_dispatch.enabled == prefill_supports_prepared_kquant);
+    prepared_dispatch =
+        bn_transformer_prefill_prepared_kquant_dispatch_policy(
+            bn_transformer_prefill_cpu_ops(), &route_gpu, 0, BN_QK_K,
+            prepared_group, 3, 4);
+    assert(!prepared_dispatch.enabled);
+    prepared_dispatch =
+        bn_transformer_prefill_prepared_kquant_dispatch_policy(
+            bn_transformer_prefill_cpu_ops(), NULL, 1, BN_QK_K,
+            prepared_group, 3, 4);
+    assert(!prepared_dispatch.enabled);
+    prepared_dispatch =
+        bn_transformer_prefill_prepared_kquant_dispatch_policy(
+            bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K - 1,
+            prepared_group, 3, 4);
+    assert(!prepared_dispatch.enabled);
+    prepared_dispatch =
+        bn_transformer_prefill_prepared_kquant_dispatch_policy(
+            bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
+            prepared_group, 5, 4);
+    assert(!prepared_dispatch.enabled);
+    prepared_group[2] = BN_GGUF_TENSOR_Q8_0;
+    prepared_dispatch =
+        bn_transformer_prefill_prepared_kquant_dispatch_policy(
+            bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
+            prepared_group, 3, 4);
+    assert(!prepared_dispatch.enabled);
     assert(bn_transformer_prefill_same_quant_format_pair_stackable(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_prefill_same_quant_format_pair_stackable(

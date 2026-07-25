@@ -1338,12 +1338,17 @@ static int prefill_try_prepared_kquant_multi(const BnModel *m,
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
     if (!m || !b || !b->quantized || !out || !W || !X || n <= 0 || n > 4)
         return 0;
+    int tensor_types[4];
     for (int i = 0; i < n; i++) {
-        if (!bn_transformer_prefill_route_prepared_kquant_type_enabled(
-                ops, bn_model_gpu(m), prefill_uses_float_kquant_fallback(m), dim,
-                W[i]->type))
+        if (!W[i])
             return 0;
+        tensor_types[i] = W[i]->type;
     }
+    if (!bn_transformer_prefill_prepared_kquant_dispatch_policy(
+             ops, bn_model_gpu(m), prefill_uses_float_kquant_fallback(m), dim,
+             tensor_types, n, 4)
+             .enabled)
+        return 0;
     if (!prefill_prepare_prepared_kquant(b, X, dim, n_tokens))
         return 0;
     prefill_quant_matmul_prepared_kquant_multi(m, out, W, n, n_tokens,
@@ -1362,12 +1367,19 @@ static int prefill_try_prepared_kquant_matvec_batch(const BnModel *m,
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
     if (!m || !b || !b->quantized || !tasks || !x || n <= 0 || token_index < 0)
         return 0;
+    int tensor_types[4];
+    if (n > 4)
+        return 0;
     for (int i = 0; i < n; i++) {
-        if (!bn_transformer_prefill_route_prepared_kquant_type_enabled(
-                ops, bn_model_gpu(m), prefill_uses_float_kquant_fallback(m), dim,
-                tasks[i].W->type))
+        if (!tasks[i].W)
             return 0;
+        tensor_types[i] = tasks[i].W->type;
     }
+    if (!bn_transformer_prefill_prepared_kquant_dispatch_policy(
+             ops, bn_model_gpu(m), prefill_uses_float_kquant_fallback(m), dim,
+             tensor_types, n, 4)
+             .enabled)
+        return 0;
     bn_transformer_prefill_quant_matvec_batch_prepared_kquant_input(
         tasks, n, b->quantized + (size_t)token_index * dim,
         b->scales + (size_t)token_index * b->blocks_per_row,
@@ -2071,11 +2083,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     &lw->attn.wq, &lw->attn.wk, &lw->attn.wv
                 };
                 int used_prepared_kquant =
-                    bn_transformer_prefill_route_prepared_kquant_triple_enabled(
-                        prefill_cpu_ops(), bn_model_gpu(m),
-                        prefill_uses_float_kquant_fallback(m), dim,
-                        attn_types.q_type, attn_types.k_type,
-                        attn_types.v_type) &&
                     prefill_try_prepared_kquant_multi(
                         m, &prepared_kquant, qkv_out, qkv_w, 3, Xb, dim,
                         n_tokens);
@@ -2477,10 +2484,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 float *qz_out[2] = { QKV_all, Z_all };
                 const BnQWeight *qz_w[2] = { &lw->ssm.wqkv, &lw->ssm.wz };
                 ssm_prepared_kquant =
-                    bn_transformer_prefill_route_prepared_kquant_pair_enabled(
-                        prefill_cpu_ops(), bn_model_gpu(m),
-                        prefill_uses_float_kquant_fallback(m), dim,
-                        ssm_types.qkv_type, ssm_types.z_type) &&
                     prefill_try_prepared_kquant_multi(
                         m, &prepared_kquant, qz_out, qz_w, 2, Xb, dim,
                         n_tokens);
@@ -2528,10 +2531,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
                 };
                 if (!ssm_prepared_kquant ||
-                    !bn_transformer_prefill_route_prepared_kquant_pair_enabled(
-                        prefill_cpu_ops(), bn_model_gpu(m),
-                        prefill_uses_float_kquant_fallback(m), dim,
-                        ssm_types.alpha_type, ssm_types.beta_type) ||
                     !prefill_try_prepared_kquant_matvec_batch(
                         m, &prepared_kquant, ab, 2, xb_t, dim, t)) {
                     bn_transformer_prefill_quant_matvec_batch(
@@ -2646,12 +2645,9 @@ prefill_ssm_done:
                     const BnQWeight *gu_w[2] = {
                         &lw->ffn.ffn_gate, &lw->ffn.ffn_up
                     };
-                    if (!bn_transformer_prefill_route_prepared_kquant_pair_enabled(
-                            prefill_cpu_ops(), bn_model_gpu(m),
-                            prefill_uses_float_kquant_fallback(m), dim,
-                            ffn_types.gate_type, ffn_types.up_type) ||
-                        !prefill_try_prepared_kquant_multi(m, &prepared_kquant, gu_out, gu_w,
-                                                  2, Xb, dim, n_tokens))
+                    if (!prefill_try_prepared_kquant_multi(
+                            m, &prepared_kquant, gu_out, gu_w, 2, Xb, dim,
+                            n_tokens))
                         prefill_quant_matmul_multi(m, gu_out, gu_w, 2, Xb,
                                                    n_tokens, s->x_q);
                 prefill_profile_add(&prof.ffn_gateup_ms, t_ffn_step);

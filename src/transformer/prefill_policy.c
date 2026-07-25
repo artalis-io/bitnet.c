@@ -842,6 +842,31 @@ int bn_transformer_prefill_route_prepared_kquant_type_enabled(
            bn_transformer_prefill_can_prepared_kquant_type(ops, tensor_type);
 }
 
+BnTransformerPrefillPreparedKQuantDispatchPolicy
+bn_transformer_prefill_prepared_kquant_dispatch_policy(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int uses_float_kquant_fallback,
+    int dim,
+    const int *tensor_types,
+    int n_types,
+    int max_types) {
+    BnTransformerPrefillPreparedKQuantDispatchPolicy policy = {0};
+    if (!tensor_types || n_types <= 0 || max_types <= 0 ||
+        n_types > max_types)
+        return policy;
+    if (gpu || uses_float_kquant_fallback ||
+        bn_transformer_prefill_prepared_kquant_blocks_per_row(dim) <= 0)
+        return policy;
+    for (int i = 0; i < n_types; i++) {
+        if (!bn_transformer_prefill_can_prepared_kquant_type(
+                ops, tensor_types[i]))
+            return policy;
+    }
+    policy.enabled = 1;
+    return policy;
+}
+
 int bn_transformer_prefill_route_prepared_kquant_pair_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
@@ -849,9 +874,10 @@ int bn_transformer_prefill_route_prepared_kquant_pair_enabled(
     int dim,
     int left_type,
     int right_type) {
-    return bn_transformer_prefill_route_prepared_kquant_type_enabled(
-               ops, gpu, uses_float_kquant_fallback, dim, left_type) &&
-           bn_backend_quant_supports_prepared_kquant(right_type);
+    int tensor_types[2] = { left_type, right_type };
+    return bn_transformer_prefill_prepared_kquant_dispatch_policy(
+               ops, gpu, uses_float_kquant_fallback, dim, tensor_types, 2, 2)
+        .enabled;
 }
 
 int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
@@ -862,9 +888,10 @@ int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
     int first_type,
     int second_type,
     int third_type) {
-    return bn_transformer_prefill_route_prepared_kquant_pair_enabled(
-               ops, gpu, uses_float_kquant_fallback, dim, first_type, second_type) &&
-           bn_backend_quant_supports_prepared_kquant(third_type);
+    int tensor_types[3] = { first_type, second_type, third_type };
+    return bn_transformer_prefill_prepared_kquant_dispatch_policy(
+               ops, gpu, uses_float_kquant_fallback, dim, tensor_types, 3, 3)
+        .enabled;
 }
 
 int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
