@@ -4188,6 +4188,7 @@ static void test_block_planning(void) {
         &plan_ffn_types, &lw));
     assert(plan_ffn_types.gate_type == BN_GGUF_TENSOR_Q4_0);
     assert(plan_ffn_types.up_type == BN_GGUF_TENSOR_Q4_0);
+    assert(plan_ffn_types.up_rows == 8192);
     assert(!bn_transformer_plan_resolve_ffn_projection_types(
         NULL, &lw));
     assert(!bn_transformer_plan_resolve_ffn_projection_types(

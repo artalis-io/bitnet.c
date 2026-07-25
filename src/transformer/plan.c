@@ -261,6 +261,7 @@ int bn_transformer_plan_resolve_ffn_projection_types(
     memset(out, 0, sizeof(*out));
     out->gate_type = lw->ffn.ffn_gate.type;
     out->up_type = lw->ffn.ffn_up.type;
+    out->up_rows = lw->ffn.ffn_up.rows;
     return 1;
 }
 
@@ -411,8 +412,10 @@ BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
 
 int bn_transformer_ffn_hidden_dim(const BnConfig *c,
                                   const BnLayerWeights *lw) {
-    return lw && lw->ffn.ffn_up.rows > 0 ? lw->ffn.ffn_up.rows
-                                         : c->hidden_dim;
+    BnTransformerPlanFFNProjectionTypes ffn_types;
+    return lw &&
+           bn_transformer_plan_resolve_ffn_projection_types(&ffn_types, lw) &&
+           ffn_types.up_rows > 0 ? ffn_types.up_rows : c->hidden_dim;
 }
 
 int bn_transformer_ffn_has_gate(const BnConfig *c) {

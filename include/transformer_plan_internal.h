@@ -158,6 +158,7 @@ typedef struct {
 typedef struct {
     int gate_type;
     int up_type;
+    int up_rows;
 } BnTransformerPlanFFNProjectionTypes;
 
 typedef struct {

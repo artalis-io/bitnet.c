@@ -4603,7 +4603,7 @@ if grep -n 'm->config\.flash_attn' src/transformer/cpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
-if grep -n 'p->hidden_dim = .*ffn\.ffn_up\.rows' src/transformer/plan.c >/dev/null 2>&1; then
+if grep -n 'p->hidden_dim = .*ffn\.ffn_up\.rows\|ffn_hidden_dim.*ffn\.ffn_up\.rows\|return .*ffn\.ffn_up\.rows' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer FFN planning must use hidden-dim policy helpers"
     fail=1
 fi
