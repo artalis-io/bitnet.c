@@ -946,12 +946,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (!command_buffer)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
-    int gpu_logits_need_cpu =
-        bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res);
-    int use_matvec_argmax =
-        bn_transformer_gpu_matvec_argmax_enabled(
-            gpu, c, logit_res, argmax_token != NULL, need_logits,
-            gpu_logits_need_cpu);
+    BnTransformerGPULogitsDispatchPolicy logits_dispatch =
+        bn_transformer_gpu_logits_dispatch_policy(
+            gpu, c, logit_res, argmax_token != NULL, need_logits);
+    int gpu_logits_need_cpu = logits_dispatch.needs_cpu_fallback;
+    int use_matvec_argmax = logits_dispatch.use_matvec_argmax;
     BnTransformerGPUSmallDenseNativeQuantDecodePolicy small_dense_native_quant_decode =
         bn_transformer_gpu_small_dense_native_quant_decode_policy(gpu, c, &small_dense_native_quant);
     BnTransformerGPULogitsRefinePolicy logits_refine =
@@ -1972,7 +1971,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int kquant_logits_refine_has_xb_snapshot =
         logits_refine_snapshot.snapshot_satisfies_kquant_refine;
     if (emit_logits && !use_matvec_argmax) {
-        if (bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu)) {
+        if (logits_dispatch.cpu_logits_enabled) {
             if (argmax_token)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu argmax requires gpu logits");

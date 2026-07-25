@@ -174,6 +174,12 @@ typedef struct {
 } BnTransformerGPULogitResources;
 
 typedef struct {
+    int needs_cpu_fallback;
+    int cpu_logits_enabled;
+    int use_matvec_argmax;
+} BnTransformerGPULogitsDispatchPolicy;
+
+typedef struct {
     void *output_norm;
     BnTransformerGPULogitResources logits;
     int has_moe;
@@ -1154,6 +1160,13 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     int want_argmax,
     int need_logits,
     int gpu_logits_need_cpu);
+BnTransformerGPULogitsDispatchPolicy
+bn_transformer_gpu_logits_dispatch_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPULogitResources *logits,
+    int want_argmax,
+    int need_logits);
 int bn_transformer_gpu_matvec_argmax_backend_run(
     BnGPUBackend *gpu,
     void *W_buf,

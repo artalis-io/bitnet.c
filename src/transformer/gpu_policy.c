@@ -1972,6 +1972,25 @@ int bn_transformer_gpu_matvec_argmax_enabled(
            !bn_gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
 
+BnTransformerGPULogitsDispatchPolicy
+bn_transformer_gpu_logits_dispatch_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPULogitResources *logits,
+    int want_argmax,
+    int need_logits) {
+    BnTransformerGPULogitsDispatchPolicy policy = {0};
+    policy.needs_cpu_fallback =
+        bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logits);
+    policy.cpu_logits_enabled =
+        bn_transformer_gpu_cpu_logits_enabled(policy.needs_cpu_fallback);
+    policy.use_matvec_argmax =
+        bn_transformer_gpu_matvec_argmax_enabled(
+            gpu, c, logits, want_argmax, need_logits,
+            policy.needs_cpu_fallback);
+    return policy;
+}
+
 int bn_transformer_gpu_matvec_argmax_backend_run(
     BnGPUBackend *gpu,
     void *W_buf,

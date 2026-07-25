@@ -2926,6 +2926,7 @@ static void test_gpu_policy_helpers(void) {
     logits.cpu_weight = &W;
     gpu.matvec_argmax_activation = mock_matvec_argmax_activation;
     gpu.argmax_activation = mock_argmax_activation;
+    gpu.max_storage_binding_size = bn_qweight_data_size(&W);
     BnTransformerGPUGenerateArgmaxPolicy generate_argmax =
         bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.0f, 1.0f);
     assert(generate_argmax.enabled);
@@ -2982,6 +2983,17 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX");
     assert(bn_transformer_gpu_matvec_argmax_enabled(
         &gpu, &c, &logits, 1, 0, 0));
+    BnTransformerGPULogitsDispatchPolicy logits_dispatch =
+        bn_transformer_gpu_logits_dispatch_policy(
+            &gpu, &c, &logits, 1, 0);
+    assert(!logits_dispatch.needs_cpu_fallback);
+    assert(!logits_dispatch.cpu_logits_enabled);
+    assert(logits_dispatch.use_matvec_argmax);
+    logits_dispatch = bn_transformer_gpu_logits_dispatch_policy(
+        &gpu, &c, &logits, 1, 1);
+    assert(!logits_dispatch.needs_cpu_fallback);
+    assert(!logits_dispatch.cpu_logits_enabled);
+    assert(!logits_dispatch.use_matvec_argmax);
     W.rows = 1024;
     logits.rows = W.rows;
     assert(!bn_transformer_gpu_matvec_argmax_enabled(
@@ -3014,7 +3026,20 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_GPU_CPU_LOGITS", "1", 1);
     assert(!bn_transformer_gpu_matvec_argmax_enabled(
         &gpu, &c, &logits, 1, 0, 0));
+    logits_dispatch = bn_transformer_gpu_logits_dispatch_policy(
+        &gpu, &c, &logits, 1, 0);
+    assert(!logits_dispatch.needs_cpu_fallback);
+    assert(logits_dispatch.cpu_logits_enabled);
+    assert(!logits_dispatch.use_matvec_argmax);
     unsetenv("BN_GPU_CPU_LOGITS");
+    size_t saved_max_storage = gpu.max_storage_binding_size;
+    gpu.max_storage_binding_size = bn_qweight_data_size(&W) - 1;
+    logits_dispatch = bn_transformer_gpu_logits_dispatch_policy(
+        &gpu, &c, &logits, 1, 0);
+    assert(logits_dispatch.needs_cpu_fallback);
+    assert(logits_dispatch.cpu_logits_enabled);
+    assert(!logits_dispatch.use_matvec_argmax);
+    gpu.max_storage_binding_size = saved_max_storage;
     setenv("BN_CUDA_DISABLE_LOGITS_ARGMAX", "1", 1);
     assert(!bn_transformer_gpu_matvec_argmax_enabled(
         &gpu, &c, &logits, 1, 0, 0));
