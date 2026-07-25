@@ -3,6 +3,7 @@
 #include "transformer_gqa_internal.h"
 #include "transformer_batched_attn_internal.h"
 #include "transformer_kv_internal.h"
+#include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
 #include "backend_model.h"
@@ -818,19 +819,17 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
     int dim = c->dim;
-    int num_k_heads = c->ssm_group_count;
-    int head_k_dim = c->ssm_state_size;
-    int num_v_heads = c->ssm_time_step_rank;
-    int head_v_dim = c->ssm_inner_size / num_v_heads;
-    int key_dim = num_k_heads * head_k_dim;
-    int value_dim = c->ssm_inner_size;
-    int qkv_dim = key_dim * 2 + value_dim;
-    int kern = c->ssm_conv_kernel;
+    BnTransformerSSMShapePolicy ssm_shape;
+    if (!bn_transformer_ssm_shape_policy(&ssm_shape, c))
+        return;
     int ssm_idx = bn_transformer_ssm_index(c, layer);
     float norm_eps = bn_transformer_cpu_norm_epsilon(c);
-    size_t state_per_layer = (size_t)num_v_heads * head_k_dim * head_v_dim;
+    size_t state_per_layer = (size_t)ssm_shape.num_v_heads *
+                             ssm_shape.head_k_dim *
+                             ssm_shape.head_v_dim;
     float *state = s->ssm_state + (size_t)ssm_idx * state_per_layer;
-    size_t conv_per_layer = (size_t)(kern - 1) * qkv_dim;
+    size_t conv_per_layer =
+        (size_t)(ssm_shape.conv_kernel - 1) * ssm_shape.qkv_dim;
     float *conv_state = s->ssm_conv_state + (size_t)ssm_idx * conv_per_layer;
     const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
     BnTransformerCPUSSMProjectionTypes ssm_types;
@@ -870,29 +869,35 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     else
         cpu_quant_matvec_batch_prepared(m, qz_tasks, 2, s->xb, s->x_q);
 
-    BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm.ssm_conv1d, qkv_dim, kern };
+    BnSSMConvCtx conv_ctx = {
+        qkv, conv_state, lw->ssm.ssm_conv1d,
+        ssm_shape.qkv_dim, ssm_shape.conv_kernel
+    };
     BnTPTask conv_task = {
         bn_transformer_cpu_ssm_conv_silu_op(c, cpu_ops),
-        &conv_ctx, qkv_dim
+        &conv_ctx, ssm_shape.qkv_dim
     };
     bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
 
     float *q_raw = qkv;
-    float *k_raw = qkv + key_dim;
-    float *v_raw = qkv + 2 * key_dim;
+    float *k_raw = qkv + ssm_shape.key_dim;
+    float *v_raw = qkv + 2 * ssm_shape.key_dim;
 
-    BnSSML2NormCtx norm_ctx = { q_raw, k_raw, norm_eps, head_k_dim };
+    BnSSML2NormCtx norm_ctx = {
+        q_raw, k_raw, norm_eps, ssm_shape.head_k_dim
+    };
     BnTPTask norm_task = {
         bn_transformer_cpu_ssm_l2norm_op(c, cpu_ops),
-        &norm_ctx, num_k_heads
+        &norm_ctx, ssm_shape.num_k_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
 
-    if (num_v_heads > 8192 || head_v_dim > 8192) {
+    if (ssm_shape.num_v_heads > 8192 || ssm_shape.head_v_dim > 8192) {
         SH_LOG_ERROR("SSM dimensions too large for stack VLAs");
         return;
     }
-    float alpha_arr[num_v_heads], beta_arr[num_v_heads];
+    float alpha_arr[ssm_shape.num_v_heads];
+    float beta_arr[ssm_shape.num_v_heads];
     BnMatvecTask ab[2] = {
          { alpha_arr, &lw->ssm.ssm_alpha, NULL, 0 },
         { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
@@ -908,7 +913,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
         cpu_quant_matvec_batch_prepared(m, ab, 2, s->xb, s->x_q);
     }
 
-    for (int h = 0; h < num_v_heads; h++) {
+    for (int h = 0; h < ssm_shape.num_v_heads; h++) {
         float dt = alpha_arr[h] + lw->ssm.ssm_dt_bias[h];
         float dt_sp = (dt > 20.0f) ? dt : logf(1.0f + expf(dt));
         alpha_arr[h] = expf(dt_sp * lw->ssm.ssm_a[h]);
@@ -916,22 +921,25 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     }
 
     float *out = s->xb2;
-    float q_scale = 1.0f / sqrtf((float)head_k_dim);
+    float q_scale = 1.0f / sqrtf((float)ssm_shape.head_k_dim);
     BnSSMDeltaCtx delta_ctx = {
         state, out, q_raw, k_raw, v_raw,
         alpha_arr, beta_arr,
-        num_k_heads, head_k_dim, head_v_dim, q_scale
+        ssm_shape.num_k_heads, ssm_shape.head_k_dim,
+        ssm_shape.head_v_dim, q_scale
     };
     BnTPTask delta_task = {
         bn_transformer_cpu_ssm_delta_op(c, cpu_ops),
-        &delta_ctx, num_v_heads
+        &delta_ctx, ssm_shape.num_v_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
-    BnSSMGateCtx gate_ctx = { out, z, lw->ssm.ssm_norm, norm_eps, head_v_dim };
+    BnSSMGateCtx gate_ctx = {
+        out, z, lw->ssm.ssm_norm, norm_eps, ssm_shape.head_v_dim
+    };
     BnTPTask gate_task = {
         bn_transformer_cpu_ssm_gate_op(c, cpu_ops),
-        &gate_ctx, num_v_heads
+        &gate_ctx, ssm_shape.num_v_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
 
