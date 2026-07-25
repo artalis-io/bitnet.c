@@ -2490,8 +2490,13 @@ int bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
 BnTransformerGPUMoEAllActiveTwoResourcePolicy
 bn_transformer_gpu_moe_all_active_two_resource_policy(const BnConfig *c) {
     BnTransformerGPUMoEAllActiveTwoResourcePolicy policy = {0};
-    policy.enabled =
-        bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(c);
+    BnMoEAllActiveTwoRouteResourcePolicy moe_policy =
+        bn_moe_all_active_two_route_resource_policy(c);
+    policy.enabled = moe_policy.enabled;
+    policy.total_experts = moe_policy.total_experts;
+    policy.expert_hidden_dim = moe_policy.expert_hidden_dim;
+    policy.complement_route_from_expert =
+        moe_policy.complement_route_from_expert;
     return policy;
 }
 

@@ -3133,12 +3133,18 @@ static void test_gpu_policy_helpers(void) {
     BnTransformerGPUMoEAllActiveTwoResourcePolicy all_active_two_resources =
         bn_transformer_gpu_moe_all_active_two_resource_policy(&c);
     assert(all_active_two_resources.enabled);
+    assert(all_active_two_resources.total_experts == 2);
+    assert(all_active_two_resources.expert_hidden_dim == 4096);
+    assert(all_active_two_resources.complement_route_from_expert == 1);
     c.dim = 2049;
     assert(!bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
         &c));
     all_active_two_resources =
         bn_transformer_gpu_moe_all_active_two_resource_policy(&c);
     assert(!all_active_two_resources.enabled);
+    assert(all_active_two_resources.total_experts == 0);
+    assert(all_active_two_resources.expert_hidden_dim == 0);
+    assert(all_active_two_resources.complement_route_from_expert == 0);
     c.dim = 2048;
     c.n_experts_active = 1;
     all_active_two_resources =

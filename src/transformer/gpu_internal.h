@@ -295,6 +295,9 @@ typedef struct {
 
 typedef struct {
     int enabled;
+    int total_experts;
+    int expert_hidden_dim;
+    int complement_route_from_expert;
 } BnTransformerGPUMoEAllActiveTwoResourcePolicy;
 
 typedef struct {

@@ -53,6 +53,13 @@ typedef struct {
 } BnMoERoutePolicy;
 
 typedef struct {
+    int enabled;
+    int total_experts;
+    int expert_hidden_dim;
+    int complement_route_from_expert;
+} BnMoEAllActiveTwoRouteResourcePolicy;
+
+typedef struct {
     const BnQWeight *gate;
     const BnQWeight *up;
     const BnQWeight *down;
@@ -119,6 +126,8 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
 int bn_moe_policy_uses_reference_silu(const BnConfig *c);
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c);
 BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c);
+BnMoEAllActiveTwoRouteResourcePolicy
+bn_moe_all_active_two_route_resource_policy(const BnConfig *c);
 int bn_moe_policy_uses_expert_weights(const BnConfig *c);
 int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c);
 int bn_moe_policy_uses_all_active_two_expert_route(const BnConfig *c,

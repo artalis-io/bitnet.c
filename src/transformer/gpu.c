@@ -599,16 +599,17 @@ static int gpu_resolve_moe_all_active_two_resources(
     memset(temps, 0, sizeof(*temps));
     out->expert_map = &lw->moe.expert_map;
     out->experts = storage;
-    out->n_experts = 2;
-    out->moe_hidden = bn_moe_route_policy(c).expert_hidden_dim;
-    for (int e = 0; e < 2; e++) {
+    out->n_experts = policy.total_experts;
+    out->moe_hidden = policy.expert_hidden_dim;
+    for (int e = 0; e < policy.total_experts; e++) {
         memset(&storage[e], 0, sizeof(storage[e]));
         if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, e, temps,
                                          &storage[e].buffers) != 0)
             return -1;
         storage[e].weight = 1.0f;
         storage[e].route_gate = router_diff;
-        storage[e].route_complement = e == 1;
+        storage[e].route_complement =
+            e >= policy.complement_route_from_expert;
     }
     return 0;
 }

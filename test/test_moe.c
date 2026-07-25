@@ -376,11 +376,23 @@ static void test_moe_prefill_policy(void) {
     assert(!bn_moe_policy_uses_all_active_two_expert_route(&c, 0));
     c.moe_intermediate_size = 4096;
     assert(bn_moe_policy_uses_all_active_two_expert_route(&c, 0));
+    BnMoEAllActiveTwoRouteResourcePolicy all_active_two_resources =
+        bn_moe_all_active_two_route_resource_policy(&c);
+    assert(all_active_two_resources.enabled);
+    assert(all_active_two_resources.total_experts == 2);
+    assert(all_active_two_resources.expert_hidden_dim == 4096);
+    assert(all_active_two_resources.complement_route_from_expert == 1);
     assert(!bn_moe_policy_uses_grouped_expert_route(&c));
     BnConfig dense = {0};
     assert(!bn_moe_policy_uses_expert_weights(&dense));
     assert(!bn_moe_policy_uses_all_active_two_expert_set(&dense));
     assert(!bn_moe_policy_uses_all_active_two_expert_route(&dense, 0));
+    all_active_two_resources =
+        bn_moe_all_active_two_route_resource_policy(&dense);
+    assert(!all_active_two_resources.enabled);
+    assert(all_active_two_resources.total_experts == 0);
+    assert(all_active_two_resources.expert_hidden_dim == 0);
+    assert(all_active_two_resources.complement_route_from_expert == 0);
     assert(!bn_moe_policy_uses_grouped_expert_route(&dense));
     assert(!bn_moe_policy_uses_expert_weights(NULL));
     assert(!bn_moe_policy_uses_all_active_two_expert_set(NULL));

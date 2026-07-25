@@ -52,6 +52,20 @@ BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c) {
     return policy;
 }
 
+BnMoEAllActiveTwoRouteResourcePolicy
+bn_moe_all_active_two_route_resource_policy(const BnConfig *c) {
+    BnMoEAllActiveTwoRouteResourcePolicy policy = {0};
+    if (!bn_moe_policy_uses_all_active_two_expert_route(c, c ? c->dim : 0))
+        return policy;
+
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    policy.enabled = 1;
+    policy.total_experts = route_policy.total_experts;
+    policy.expert_hidden_dim = route_policy.expert_hidden_dim;
+    policy.complement_route_from_expert = 1;
+    return policy;
+}
+
 int bn_moe_policy_uses_expert_weights(const BnConfig *c) {
     return bn_model_moe_policy_uses_expert_weights(c);
 }
