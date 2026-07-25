@@ -59,22 +59,6 @@ static inline void *prefill_backend_role_or_qweight(
         backend, layer, role, w);
 }
 
-static int prefill_shared_expert_resources(
-        BnTransformerGPUMoESharedFFNResources *out,
-        const BnConfig *c,
-        const BnLayerWeights *lw,
-        const BnBackendModel *backend,
-        int layer) {
-    if (!out) return -1;
-    memset(out, 0, sizeof(*out));
-    if (!bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw))
-        return 0;
-    if (!bn_transformer_gpu_resolve_moe_shared_ffn_resources(
-            out, backend, c, lw, layer, 0))
-        return -1;
-    return 1;
-}
-
 static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
                                     const int *tokens, int n_tokens,
                                     int pos0, float *all_logits,
@@ -689,44 +673,14 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         !lw->ssm.ssm_a || !lw->ssm.ssm_norm)
         return 0;
 
-    void *wqkv_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
-    void *wz_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wz);
-    void *alpha_buf = prefill_qweight_backend_buf(backend,
-                                                  &lw->ssm.ssm_alpha);
-    void *beta_buf = prefill_qweight_backend_buf(backend,
-                                                 &lw->ssm.ssm_beta);
-    void *out_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_out);
-    void *attn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    void *conv1d_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_CONV1D);
-    void *dt_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_DT_BIAS);
-    void *a_log_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
-    void *ssm_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
-    void *router_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
-    void *gate_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-    void *up_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
-    void *down_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-    void *ffn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-
-    if (!(wqkv_buf && wz_buf && alpha_buf && beta_buf && out_buf &&
-          attn_norm_buf && conv1d_buf && dt_bias_buf && a_log_buf &&
-          ssm_norm_buf && router_buf && gate_all_buf && up_all_buf &&
-          down_all_buf && ffn_norm_buf))
-        return 0;
-
-    BnTransformerGPUMoESharedFFNResources shared;
-    if (prefill_shared_expert_resources(&shared, c, lw, backend, layer) < 0)
-        return 0;
-    return 1;
+    BnTransformerPrefillFFNProjectionTypes unused_ffn_types = {0};
+    BnTransformerPrefillSSMGPUResourcePolicy ssm_resources =
+        bn_transformer_prefill_ssm_gpu_resource_policy(
+            backend, layer, lw, 0, unused_ffn_types);
+    BnTransformerPrefillMoEFFNGPUResourcePolicy moe_resources =
+        bn_transformer_prefill_moe_ffn_gpu_resource_policy(
+            backend, c, layer, lw);
+    return ssm_resources.valid && moe_resources.valid;
 }
 
 static int prefill_dense_layer_chain_ready(const BnModel *m,

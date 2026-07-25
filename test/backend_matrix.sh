@@ -3243,8 +3243,8 @@ if grep -n 'c->has_shared_expert' src/transformer/prefill.c >/dev/null 2>&1; the
     fail=1
 fi
 
-if grep -n 'BN_BACKEND_HANDLE_SHARED_EXPERT_GATE\|BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED\|&lw->shared\.shared_gate\|&lw->shared\.shared_up\|&lw->shared\.shared_down' src/transformer/prefill.c >/dev/null 2>&1 ||
-   [ "$(grep -c 'bn_transformer_gpu_resolve_moe_shared_ffn_resources' src/transformer/prefill.c)" -ne 1 ]; then
+if grep -n 'BN_BACKEND_HANDLE_SHARED_EXPERT_GATE\|BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED\|&lw->shared\.shared_gate\|&lw->shared\.shared_up\|&lw->shared\.shared_down\|bn_transformer_gpu_resolve_moe_shared_ffn_resources' src/transformer/prefill.c >/dev/null 2>&1 ||
+   [ "$(grep -c 'bn_transformer_gpu_resolve_moe_shared_ffn_resources' src/transformer/prefill_policy.c)" -ne 2 ]; then
     echo "Transformer prefill shared expert resources must be composed through the GPU resource helper"
     fail=1
 fi
