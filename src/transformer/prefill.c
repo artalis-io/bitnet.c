@@ -946,29 +946,6 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         !lw->ssm.ssm_conv1d || !lw->ssm.ssm_dt_bias ||
         !lw->ssm.ssm_a || !lw->ssm.ssm_norm)
         return -1;
-    void *wqkv_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
-    void *wz_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wz);
-    void *alpha_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_alpha);
-    void *beta_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_beta);
-    void *qkvz_stacked_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED);
-    void *ab_stacked_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_AB_STACKED);
-    void *out_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_out);
-    void *attn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    void *conv1d_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_CONV1D);
-    void *dt_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_DT_BIAS);
-    void *a_log_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
-    void *ssm_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
-    void *gate_buf = NULL;
-    void *up_buf = NULL;
-    void *down_buf = NULL;
-    void *ffn_norm_buf = NULL;
     BnTransformerPrefillSSMFFNFusePolicy ffn_fuse =
         bn_transformer_prefill_ssm_ffn_fuse_policy(
             fuse_ffn,
@@ -981,33 +958,24 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
             lw->norm.layer_output_scale != NULL,
             bn_transformer_ffn_uses_post_norm_layer(&m->config, lw),
             lw->norm.ffn_post_norm != NULL);
-    if (ffn_fuse.enabled) {
-        BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
-            bn_transformer_prefill_dense_ffn_gpu_resource_policy(
-                backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
-                &lw->ffn.ffn_down, ffn_types);
-        ffn_norm_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-        if (ffn_resources.valid && ffn_norm_buf) {
-            gate_buf = (void *)ffn_resources.gate;
-            up_buf = (void *)ffn_resources.up;
-            down_buf = (void *)ffn_resources.down;
-        } else {
-            ffn_norm_buf = NULL;
-        }
-    }
-    if (!wqkv_buf || !wz_buf || !alpha_buf || !beta_buf || !out_buf ||
-        !attn_norm_buf || !conv1d_buf || !dt_bias_buf || !a_log_buf ||
-        !ssm_norm_buf)
+    BnTransformerPrefillSSMGPUResourcePolicy resources =
+        bn_transformer_prefill_ssm_gpu_resource_policy(
+            backend, layer, lw, ffn_fuse.enabled, ffn_types);
+    if (!resources.valid)
         return -1;
     if (did_ffn)
         *did_ffn = 0;
     int activation = bn_transformer_prefill_config_activation(&m->config);
     return bn_transformer_gpu_prefill_ssm_layer_backend_run(
-        gpu, out, wqkv_buf, wz_buf, alpha_buf, beta_buf,
-        qkvz_stacked_buf, ab_stacked_buf, out_buf, attn_norm_buf, conv1d_buf,
-        dt_bias_buf, a_log_buf, ssm_norm_buf, gate_buf, up_buf, down_buf,
-        ffn_norm_buf, X, n_tokens, dim, qkv_dim, inner_dim,
+        gpu, out, (void *)resources.wqkv, (void *)resources.wz,
+        (void *)resources.alpha, (void *)resources.beta,
+        (void *)resources.qkvz_stacked, (void *)resources.ab_stacked,
+        (void *)resources.out, (void *)resources.attn_norm,
+        (void *)resources.conv1d, (void *)resources.dt_bias,
+        (void *)resources.a_log, (void *)resources.ssm_norm,
+        (void *)resources.gate, (void *)resources.up,
+        (void *)resources.down, (void *)resources.ffn_norm,
+        X, n_tokens, dim, qkv_dim, inner_dim,
         num_k_heads, head_k_dim, num_v_heads, head_v_dim,
         conv_kernel, ssm_idx, ssm_types.qkv_type, ssm_types.z_type,
         ssm_types.alpha_type, ssm_types.beta_type, ssm_types.out_type,
@@ -1059,33 +1027,10 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         !lw->ffn.ffn_gate.data || !lw->ffn.ffn_down.data)
         return 0;
 
-    void *wqkv_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
-    void *wz_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wz);
-    void *alpha_buf = prefill_qweight_backend_buf(backend,
-                                                  &lw->ssm.ssm_alpha);
-    void *beta_buf = prefill_qweight_backend_buf(backend,
-                                                 &lw->ssm.ssm_beta);
-    void *out_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_out);
-    void *attn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    void *conv1d_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_CONV1D);
-    void *dt_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_DT_BIAS);
-    void *a_log_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
-    void *ssm_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
-    BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
-        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
-            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
-            &lw->ffn.ffn_down, ffn_types);
-    void *ffn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-
-    return wqkv_buf && wz_buf && alpha_buf && beta_buf && out_buf &&
-           attn_norm_buf && conv1d_buf && dt_bias_buf && a_log_buf &&
-           ssm_norm_buf && ffn_resources.valid && ffn_norm_buf;
+    BnTransformerPrefillSSMGPUResourcePolicy resources =
+        bn_transformer_prefill_ssm_gpu_resource_policy(
+            backend, layer, lw, 1, ffn_types);
+    return resources.valid && resources.fuses_ffn;
 }
 
 static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,

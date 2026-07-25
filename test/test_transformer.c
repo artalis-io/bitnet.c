@@ -1895,6 +1895,122 @@ static void test_gpu_policy_helpers(void) {
             prefill_backend, 0, NULL, &prefill_ffn_up,
             &prefill_ffn_down, prefill_resource_types);
     assert(!prefill_ffn_resources.valid);
+    prefill_resource_types.up_type = BN_GGUF_TENSOR_Q4_K;
+
+    BnLayerWeights prefill_ssm_lw = {0};
+    BnQWeight prefill_ssm_wqkv = {0};
+    BnQWeight prefill_ssm_wz = {0};
+    BnQWeight prefill_ssm_alpha = {0};
+    BnQWeight prefill_ssm_beta = {0};
+    BnQWeight prefill_ssm_out = {0};
+    prefill_ssm_wqkv.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_ssm_wz.type = BN_GGUF_TENSOR_Q5_K;
+    prefill_ssm_alpha.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_ssm_beta.type = BN_GGUF_TENSOR_Q8_0;
+    prefill_ssm_out.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_ssm_lw.ssm.wqkv = prefill_ssm_wqkv;
+    prefill_ssm_lw.ssm.wz = prefill_ssm_wz;
+    prefill_ssm_lw.ssm.ssm_alpha = prefill_ssm_alpha;
+    prefill_ssm_lw.ssm.ssm_beta = prefill_ssm_beta;
+    prefill_ssm_lw.ssm.ssm_out = prefill_ssm_out;
+    prefill_ssm_lw.ffn.ffn_gate = prefill_ffn_gate;
+    prefill_ssm_lw.ffn.ffn_up = prefill_ffn_up;
+    prefill_ssm_lw.ffn.ffn_down = prefill_ffn_down;
+    int prefill_ssm_wqkv_buf;
+    int prefill_ssm_wz_buf;
+    int prefill_ssm_alpha_buf;
+    int prefill_ssm_beta_buf;
+    int prefill_ssm_out_buf;
+    int prefill_ssm_ffn_down_buf;
+    int prefill_ssm_qkvz_handle;
+    int prefill_ssm_ab_handle;
+    int prefill_ssm_attn_norm_handle;
+    int prefill_ssm_conv_handle;
+    int prefill_ssm_dt_bias_handle;
+    int prefill_ssm_a_log_handle;
+    int prefill_ssm_norm_handle;
+    int prefill_ssm_ffn_norm_handle;
+    int prefill_ssm_gateup_handle;
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ssm_lw.ssm.wqkv,
+               &prefill_ssm_wqkv_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ssm_lw.ssm.wz,
+               &prefill_ssm_wz_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ssm_lw.ssm.ssm_alpha,
+               &prefill_ssm_alpha_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ssm_lw.ssm.ssm_beta,
+               &prefill_ssm_beta_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ssm_lw.ssm.ssm_out,
+               &prefill_ssm_out_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ssm_lw.ffn.ffn_down,
+               &prefill_ssm_ffn_down_buf) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED,
+               &prefill_ssm_qkvz_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_SSM_AB_STACKED,
+               &prefill_ssm_ab_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_ATTN_NORM,
+               &prefill_ssm_attn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_SSM_CONV1D,
+               &prefill_ssm_conv_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_SSM_DT_BIAS,
+               &prefill_ssm_dt_bias_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_SSM_A_LOG,
+               &prefill_ssm_a_log_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_SSM_NORM,
+               &prefill_ssm_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_FFN_NORM,
+               &prefill_ssm_ffn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 6, BN_BACKEND_HANDLE_GATEUP_STACKED,
+               &prefill_ssm_gateup_handle) == 0);
+    BnTransformerPrefillSSMGPUResourcePolicy ssm_resources =
+        bn_transformer_prefill_ssm_gpu_resource_policy(
+            prefill_backend, 6, &prefill_ssm_lw, 1,
+            prefill_resource_types);
+    assert(ssm_resources.valid);
+    assert(ssm_resources.fuses_ffn);
+    assert(ssm_resources.wqkv == &prefill_ssm_wqkv_buf);
+    assert(ssm_resources.wz == &prefill_ssm_wz_buf);
+    assert(ssm_resources.alpha == &prefill_ssm_alpha_buf);
+    assert(ssm_resources.beta == &prefill_ssm_beta_buf);
+    assert(ssm_resources.qkvz_stacked == &prefill_ssm_qkvz_handle);
+    assert(ssm_resources.ab_stacked == &prefill_ssm_ab_handle);
+    assert(ssm_resources.out == &prefill_ssm_out_buf);
+    assert(ssm_resources.attn_norm == &prefill_ssm_attn_norm_handle);
+    assert(ssm_resources.conv1d == &prefill_ssm_conv_handle);
+    assert(ssm_resources.dt_bias == &prefill_ssm_dt_bias_handle);
+    assert(ssm_resources.a_log == &prefill_ssm_a_log_handle);
+    assert(ssm_resources.ssm_norm == &prefill_ssm_norm_handle);
+    assert(ssm_resources.gate == &prefill_ssm_gateup_handle);
+    assert(ssm_resources.up == NULL);
+    assert(ssm_resources.down == &prefill_ssm_ffn_down_buf);
+    assert(ssm_resources.ffn_norm == &prefill_ssm_ffn_norm_handle);
+    ssm_resources = bn_transformer_prefill_ssm_gpu_resource_policy(
+        prefill_backend, 6, &prefill_ssm_lw, 0, prefill_resource_types);
+    assert(ssm_resources.valid);
+    assert(!ssm_resources.fuses_ffn);
+    assert(ssm_resources.gate == NULL);
+    assert(ssm_resources.ffn_norm == NULL);
+    ssm_resources = bn_transformer_prefill_ssm_gpu_resource_policy(
+        prefill_backend, 7, &prefill_ssm_lw, 1, prefill_resource_types);
+    assert(!ssm_resources.valid);
+    ssm_resources = bn_transformer_prefill_ssm_gpu_resource_policy(
+        prefill_backend, 6, NULL, 1, prefill_resource_types);
+    assert(!ssm_resources.valid);
+
     setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
     matmul_resources =
         bn_transformer_prefill_quant_matmul_resource_policy(

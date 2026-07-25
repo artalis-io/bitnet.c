@@ -370,6 +370,81 @@ bn_transformer_prefill_moe_layer_gpu_resource_policy(
     return policy;
 }
 
+BnTransformerPrefillSSMGPUResourcePolicy
+bn_transformer_prefill_ssm_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnLayerWeights *lw,
+    int fuse_ffn,
+    BnTransformerPrefillFFNProjectionTypes ffn_types) {
+    BnTransformerPrefillSSMGPUResourcePolicy policy = {0};
+    if (!backend || !lw)
+        return policy;
+
+    policy.wqkv =
+        bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
+                                                         &lw->ssm.wqkv);
+    policy.wz =
+        bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
+                                                         &lw->ssm.wz);
+    policy.alpha =
+        bn_transformer_prefill_qweight_gpu_buffer_policy(
+            backend, &lw->ssm.ssm_alpha);
+    policy.beta =
+        bn_transformer_prefill_qweight_gpu_buffer_policy(
+            backend, &lw->ssm.ssm_beta);
+    policy.qkvz_stacked =
+        bn_backend_model_handle(backend, layer,
+                                BN_BACKEND_HANDLE_SSM_QKVZ_STACKED);
+    policy.ab_stacked =
+        bn_backend_model_handle(backend, layer,
+                                BN_BACKEND_HANDLE_SSM_AB_STACKED);
+    policy.out =
+        bn_transformer_prefill_qweight_gpu_buffer_policy(
+            backend, &lw->ssm.ssm_out);
+    policy.attn_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
+    policy.conv1d =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_CONV1D);
+    policy.dt_bias =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_DT_BIAS);
+    policy.a_log =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
+    policy.ssm_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
+
+    if (fuse_ffn) {
+        BnTransformerPrefillDenseFFNGPUResourcePolicy ffn =
+            bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+                backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+                &lw->ffn.ffn_down, ffn_types);
+        policy.ffn_norm =
+            bn_backend_model_handle(backend, layer,
+                                    BN_BACKEND_HANDLE_FFN_NORM);
+        if (ffn.valid && policy.ffn_norm) {
+            policy.gate = ffn.gate;
+            policy.up = ffn.up;
+            policy.down = ffn.down;
+            policy.fuses_ffn = 1;
+        } else {
+            policy.ffn_norm = NULL;
+        }
+    }
+
+    policy.valid =
+        policy.wqkv &&
+        policy.wz &&
+        policy.alpha &&
+        policy.beta &&
+        policy.out &&
+        policy.attn_norm &&
+        policy.conv1d &&
+        policy.dt_bias &&
+        policy.a_log &&
+        policy.ssm_norm;
+    return policy;
+}
+
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c) {
     BnTransformerPrefillSequencePolicy policy = {0};

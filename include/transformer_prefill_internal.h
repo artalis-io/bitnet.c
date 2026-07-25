@@ -127,6 +127,27 @@ typedef struct {
 } BnTransformerPrefillSSMProjectionTypes;
 
 typedef struct {
+    int valid;
+    int fuses_ffn;
+    const void *wqkv;
+    const void *wz;
+    const void *alpha;
+    const void *beta;
+    const void *qkvz_stacked;
+    const void *ab_stacked;
+    const void *out;
+    const void *attn_norm;
+    const void *conv1d;
+    const void *dt_bias;
+    const void *a_log;
+    const void *ssm_norm;
+    const void *gate;
+    const void *up;
+    const void *down;
+    const void *ffn_norm;
+} BnTransformerPrefillSSMGPUResourcePolicy;
+
+typedef struct {
     const char *name;
     void (*rmsnorm)(float *out, const float *x, const float *w,
                     int size, float eps);
@@ -386,6 +407,13 @@ bn_transformer_prefill_moe_layer_gpu_resource_policy(
     int layer,
     const BnLayerWeights *lw,
     BnTransformerPrefillAttentionProjectionTypes attn_types);
+BnTransformerPrefillSSMGPUResourcePolicy
+bn_transformer_prefill_ssm_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnLayerWeights *lw,
+    int fuse_ffn,
+    BnTransformerPrefillFFNProjectionTypes ffn_types);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_buffer_shape_policy(
