@@ -724,24 +724,20 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
         return;
     }
 
-    void *qkv_stacked = bn_transformer_backend_handle_or(backend, layer,
-                                                         BN_BACKEND_HANDLE_QKV_STACKED);
-    void *q_bias = bn_transformer_backend_handle_or(backend, layer,
-                                                    BN_BACKEND_HANDLE_Q_BIAS);
-    void *k_bias = bn_transformer_backend_handle_or(backend, layer,
-                                                    BN_BACKEND_HANDLE_K_BIAS);
-    void *v_bias = bn_transformer_backend_handle_or(backend, layer,
-                                                    BN_BACKEND_HANDLE_V_BIAS);
+    BnTransformerGPUQKVResources qkv_res =
+        bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, layer);
 
     p->use_flash = bn_transformer_attention_uses_flash(c, gpu);
     p->use_packed_qkv = bn_transformer_attention_uses_packed_qkv(
-        gpu, &p->shape, lw, qkv_stacked, q_bias, k_bias, v_bias);
+        gpu, &p->shape, lw, qkv_res.qkv_stacked, qkv_res.q_bias,
+        qkv_res.k_bias, qkv_res.v_bias);
     p->use_qkv_split = bn_transformer_attention_uses_qkv_split(
-        gpu, &p->shape, lw, qkv_stacked);
+        gpu, &p->shape, lw, qkv_res.qkv_stacked);
     p->use_post_norm = bn_transformer_attention_uses_post_norm_layer(c, lw);
     if (p->use_qkv_split) p->fusion_flags |= BN_FUSION_QKV_SPLIT;
     if (p->use_flash) p->fusion_flags |= BN_FUSION_FLASH_ATTN;
-    if (bn_transformer_attention_uses_rope_qk_fusion(p->placement, k_bias))
+    if (bn_transformer_attention_uses_rope_qk_fusion(
+            p->placement, qkv_res.k_bias))
         p->fusion_flags |= BN_FUSION_ROPE_QK;
 }
 
@@ -767,13 +763,13 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->reference_activation =
         bn_transformer_ffn_uses_reference_activation(c);
 
-    void *gateup_stacked = bn_transformer_backend_handle_or(backend, layer,
-                                                            BN_BACKEND_HANDLE_GATEUP_STACKED);
+    BnTransformerGPUDenseFFNResources ffn_res =
+        bn_transformer_gpu_resolve_dense_ffn_resources(gpu, backend, lw, layer);
 
     p->use_fused_gateup_silu = bn_transformer_ffn_uses_fused_gateup_silu(
         gpu, c, lw, p->placement);
     p->use_gateup_split = bn_transformer_ffn_uses_gateup_split(
-        gpu, c, lw, p->placement, gateup_stacked);
+        gpu, c, lw, p->placement, ffn_res.gateup_stacked);
     if (p->use_fused_gateup_silu) p->fusion_flags |= BN_FUSION_GATEUP_SILU;
     if (p->use_gateup_split) p->fusion_flags |= BN_FUSION_GATEUP_SPLIT;
     if (bn_transformer_ffn_uses_residual_rmsnorm_fusion(p->placement))
@@ -804,14 +800,12 @@ void bn_transformer_plan_ssm(BnSSMPlan *p,
     p->inner_size = c->ssm_inner_size;
     p->time_step_rank = c->ssm_time_step_rank;
     p->group_count = c->ssm_group_count;
-    void *qkvz_stacked = bn_transformer_backend_handle_or(
-        backend, layer, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED);
-    void *alpha_beta_stacked = bn_transformer_backend_handle_or(
-        backend, layer, BN_BACKEND_HANDLE_SSM_AB_STACKED);
+    BnTransformerGPUSSMResources ssm_res =
+        bn_transformer_gpu_resolve_ssm_resources(gpu, backend, lw, layer);
     p->use_qkvz_stack = bn_transformer_ssm_uses_qkvz_stack(
-        p->placement, qkvz_stacked);
+        p->placement, ssm_res.ssm_qkvz_stacked);
     p->use_alpha_beta_stack = bn_transformer_ssm_uses_alpha_beta_stack(
-        p->placement, alpha_beta_stacked);
+        p->placement, ssm_res.ssm_ab_stacked);
 }
 
 void bn_transformer_plan_moe(BnMoEPlan *p,

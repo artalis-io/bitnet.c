@@ -5094,6 +5094,12 @@ static void test_block_planning(void) {
     assert(bn_backend_model_register_handle(backend, 0,
                                             BN_BACKEND_HANDLE_V_BIAS,
                                             (void *)4) == 0);
+    BnTransformerGPUQKVResources qkv_res =
+        bn_transformer_gpu_resolve_qkv_resources(&gpu, backend, &lw, 0);
+    assert(qkv_res.qkv_stacked == (void *)1);
+    assert(qkv_res.q_bias == (void *)2);
+    assert(qkv_res.k_bias == (void *)3);
+    assert(qkv_res.v_bias == (void *)4);
 
     BnLayerShapePlan attn_shape;
     bn_transformer_plan_layer_shape(&attn_shape, &c, &lw, 0, 0);
@@ -5256,6 +5262,9 @@ static void test_block_planning(void) {
     assert(bn_backend_model_register_handle(backend, 0,
                                             BN_BACKEND_HANDLE_GATEUP_STACKED,
                                             (void *)5) == 0);
+    BnTransformerGPUDenseFFNResources dense_ffn_res =
+        bn_transformer_gpu_resolve_dense_ffn_resources(&gpu, backend, &lw, 0);
+    assert(dense_ffn_res.gateup_stacked == (void *)5);
     lw.norm.ffn_sub_norm = (float *)1;
 
     bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
@@ -5333,6 +5342,10 @@ static void test_block_planning(void) {
     assert(bn_backend_model_register_handle(backend, 1,
                                             BN_BACKEND_HANDLE_SSM_AB_STACKED,
                                             (void *)7) == 0);
+    BnTransformerGPUSSMResources ssm_res =
+        bn_transformer_gpu_resolve_ssm_resources(&gpu, backend, &lw, 1);
+    assert(ssm_res.ssm_qkvz_stacked == (void *)6);
+    assert(ssm_res.ssm_ab_stacked == (void *)7);
     lw.ssm.wqkv.type = BN_GGUF_TENSOR_Q4_0;
     lw.ssm.wqkv.rows = 8192;
     lw.ssm.wqkv.cols = 2048;
