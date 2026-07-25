@@ -518,46 +518,30 @@ bn_transformer_prefill_ssm_gpu_resource_policy(
     if (!backend || !lw)
         return policy;
 
-    policy.wqkv =
-        bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
-                                                         &lw->ssm.wqkv);
-    policy.wz =
-        bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
-                                                         &lw->ssm.wz);
-    policy.alpha =
-        bn_transformer_prefill_qweight_gpu_buffer_policy(
-            backend, &lw->ssm.ssm_alpha);
-    policy.beta =
-        bn_transformer_prefill_qweight_gpu_buffer_policy(
-            backend, &lw->ssm.ssm_beta);
-    policy.qkvz_stacked =
-        bn_backend_model_handle(backend, layer,
-                                BN_BACKEND_HANDLE_SSM_QKVZ_STACKED);
-    policy.ab_stacked =
-        bn_backend_model_handle(backend, layer,
-                                BN_BACKEND_HANDLE_SSM_AB_STACKED);
-    policy.out =
-        bn_transformer_prefill_qweight_gpu_buffer_policy(
-            backend, &lw->ssm.ssm_out);
-    policy.attn_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    policy.conv1d =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_CONV1D);
-    policy.dt_bias =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_DT_BIAS);
-    policy.a_log =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
-    policy.ssm_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
+    BnTransformerGPUSSMResources ssm_res =
+        bn_transformer_gpu_resolve_ssm_resources(NULL, backend, lw, layer);
+    BnTransformerGPULayerValidationResources layer_res =
+        bn_transformer_gpu_resolve_layer_validation_resources(backend, layer);
+
+    policy.wqkv = ssm_res.wqkv;
+    policy.wz = ssm_res.wz;
+    policy.alpha = ssm_res.ssm_alpha;
+    policy.beta = ssm_res.ssm_beta;
+    policy.qkvz_stacked = ssm_res.ssm_qkvz_stacked;
+    policy.ab_stacked = ssm_res.ssm_ab_stacked;
+    policy.out = ssm_res.ssm_out;
+    policy.attn_norm = layer_res.attn_norm;
+    policy.conv1d = ssm_res.ssm_conv1d;
+    policy.dt_bias = ssm_res.ssm_dt_bias;
+    policy.a_log = ssm_res.ssm_a_log;
+    policy.ssm_norm = ssm_res.ssm_norm;
 
     if (fuse_ffn) {
         BnTransformerPrefillDenseFFNGPUResourcePolicy ffn =
             bn_transformer_prefill_dense_ffn_gpu_resource_policy(
                 backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
                 &lw->ffn.ffn_down, ffn_types);
-        policy.ffn_norm =
-            bn_backend_model_handle(backend, layer,
-                                    BN_BACKEND_HANDLE_FFN_NORM);
+        policy.ffn_norm = ssm_res.ffn_norm;
         if (ffn.valid && policy.ffn_norm) {
             policy.gate = ffn.gate;
             policy.up = ffn.up;

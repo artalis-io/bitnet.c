@@ -2222,6 +2222,25 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_backend_model_register_handle(
                prefill_backend, 6, BN_BACKEND_HANDLE_GATEUP_STACKED,
                &prefill_ssm_gateup_handle) == 0);
+    BnTransformerGPUSSMResources ssm_resolved =
+        bn_transformer_gpu_resolve_ssm_resources(NULL, prefill_backend,
+                                                 &prefill_ssm_lw, 6);
+    assert(ssm_resolved.ssm_qkvz_stacked == &prefill_ssm_qkvz_handle);
+    assert(ssm_resolved.ssm_ab_stacked == &prefill_ssm_ab_handle);
+    assert(ssm_resolved.ssm_conv1d == &prefill_ssm_conv_handle);
+    assert(ssm_resolved.ssm_dt_bias == &prefill_ssm_dt_bias_handle);
+    assert(ssm_resolved.ssm_a_log == &prefill_ssm_a_log_handle);
+    assert(ssm_resolved.ssm_norm == &prefill_ssm_norm_handle);
+    assert(ssm_resolved.ffn_norm == &prefill_ssm_ffn_norm_handle);
+    assert(ssm_resolved.wqkv == &prefill_ssm_wqkv_buf);
+    assert(ssm_resolved.wz == &prefill_ssm_wz_buf);
+    assert(ssm_resolved.ssm_alpha == &prefill_ssm_alpha_buf);
+    assert(ssm_resolved.ssm_beta == &prefill_ssm_beta_buf);
+    assert(ssm_resolved.ssm_out == &prefill_ssm_out_buf);
+    BnTransformerGPULayerValidationResources ssm_layer_res =
+        bn_transformer_gpu_resolve_layer_validation_resources(prefill_backend,
+                                                              6);
+    assert(ssm_layer_res.attn_norm == &prefill_ssm_attn_norm_handle);
     BnTransformerPrefillSSMGPUResourcePolicy ssm_resources =
         bn_transformer_prefill_ssm_gpu_resource_policy(
             prefill_backend, 6, &prefill_ssm_lw, 1,
