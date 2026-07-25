@@ -52,13 +52,6 @@ static inline void *prefill_qweight_backend_buf(const BnBackendModel *backend,
                                                                     w);
 }
 
-static inline void *prefill_backend_role_or_qweight(
-        const BnBackendModel *backend, int layer, BnBackendHandleRole role,
-        const BnQWeight *w) {
-    return (void *)bn_transformer_prefill_backend_role_or_qweight_policy(
-        backend, layer, role, w);
-}
-
 static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
                                     const int *tokens, int n_tokens,
                                     int pos0, float *all_logits,
@@ -1911,9 +1904,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 };
                 t_prof = prefill_profile_now(&prof);
                 int used_gpu_attn = used_raw_prefill_attn_wo;
-                void *attn_wo_buf = prefill_backend_role_or_qweight(
-                    backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
-                    &lw->attn.wo);
+                void *attn_wo_buf = (void *)raw_attn_resources.wo;
                 BnTransformerPrefillAttentionBatchPolicy attn_batch_policy =
                     bn_transformer_prefill_attention_batch_policy(
                         used_raw_prefill_attn_wo,
@@ -2056,9 +2047,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             Q_buf + (size_t)t * wo_cols,
                             lw->norm.attn_sub_norm, wo_cols, norm_eps);
                 if (!used_fused_attn_wo) {
-                    void *wo_buf = prefill_backend_role_or_qweight(
-                        backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
-                        &lw->attn.wo);
+                    void *wo_buf = (void *)raw_attn_resources.wo;
                     if (prefill_quant_matmul_gpu_buf(
                             m, Xb2, &lw->attn.wo, wo_buf, Q_buf,
                             n_tokens) != 0)
