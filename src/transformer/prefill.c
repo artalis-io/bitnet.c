@@ -584,45 +584,10 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         return -1;
     int activation = bn_transformer_prefill_config_activation(&m->config);
 
-    void *qk_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-    void *wv_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
-    if (!wv_buf)
-        wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
-    void *wo_buf = prefill_backend_role_or_qweight(
-        backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
-    void *router_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
-    void *gate_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-    void *up_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
-    void *down_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-    BnTransformerGPUMoESharedFFNResources shared;
-    if (prefill_shared_expert_resources(
-            &shared, &m->config, lw, backend, layer) < 0)
-        return -1;
-    void *attn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    void *ffn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-    void *q_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_Q_NORM);
-    void *k_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_K_NORM);
-    void *q_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
-    void *k_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_K_BIAS);
-    void *v_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_V_BIAS);
-    if (!qk_buf || !wv_buf || !wo_buf || !router_buf || !gate_all_buf ||
-        !up_all_buf || !down_all_buf || !attn_norm_buf || !ffn_norm_buf ||
-        (lw->attn.q_bias && !q_bias_buf) ||
-        (lw->attn.k_bias && !k_bias_buf) ||
-        (lw->attn.v_bias && !v_bias_buf))
+    BnTransformerPrefillMoELayerGPUResourcePolicy resources =
+        bn_transformer_prefill_moe_layer_gpu_resource_policy(
+            backend, &m->config, layer, lw, attn_types);
+    if (!resources.valid)
         return -1;
     BnMoERoutedExpertProjectionTypes routed_types;
     if (!bn_moe_routed_expert_projection_types(
@@ -630,20 +595,25 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         return -1;
 
     return bn_transformer_gpu_prefill_moe_layer_backend_run(
-        gpu, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
-        up_all_buf, down_all_buf, shared.gate, shared.up,
-        shared.down, shared.gate_weight, attn_norm_buf, ffn_norm_buf,
-        q_norm_buf, k_norm_buf, q_bias_buf, k_bias_buf, v_bias_buf,
+        gpu, out, (void *)resources.qk, (void *)resources.wv,
+        (void *)resources.wo, (void *)resources.router,
+        (void *)resources.gate_all, (void *)resources.up_all,
+        (void *)resources.down_all, (void *)resources.shared_gate,
+        (void *)resources.shared_up, (void *)resources.shared_down,
+        (void *)resources.shared_gate_weight, (void *)resources.attn_norm,
+        (void *)resources.ffn_norm, (void *)resources.q_norm,
+        (void *)resources.k_norm, (void *)resources.q_bias,
+        (void *)resources.k_bias, (void *)resources.v_bias,
         X, K_out, V_out, n_tokens, dim, route_policy.expert_hidden_dim,
         route_policy.total_experts, route_policy.active_experts, n_heads,
         n_kv_heads, head_size, kv_mul, kv_dim,
-        attn_types.q_rows + attn_types.k_rows, attn_types.q_type,
-        attn_types.v_rows, attn_types.v_type, attn_types.out_rows,
+        resources.qk_rows, resources.qk_type,
+        resources.wv_rows, resources.wv_type, attn_types.out_rows,
         attn_types.out_cols, attn_types.out_type,
         routed_types.gate_type, routed_types.up_type,
         routed_types.down_type, activation,
-        shared.hidden_dim, shared.gate_type, shared.up_type,
-        shared.down_type,
+        resources.shared_hidden_dim, resources.shared_gate_type,
+        resources.shared_up_type, resources.shared_down_type,
         qk_norm_per_head,
         bn_transformer_prefill_norm_epsilon(&m->config), pos0, rope_dims,
         kv_cache_off, kv_cache_stride,
@@ -918,47 +888,27 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     if (!lw->attn.wq.data || !lw->attn.wk.data || !lw->attn.wv.data ||
         !lw->attn.wo.data)
         return 0;
-    void *wv_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
-    if (!wv_buf)
-        wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
-    int ready =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_QK_STACKED) &&
-        wv_buf &&
-        prefill_backend_role_or_qweight(
-            backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo) &&
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER) &&
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL) &&
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL) &&
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL) &&
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM) &&
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM) &&
-        (!lw->attn.q_bias ||
-         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_BIAS)) &&
-        (!lw->attn.k_bias ||
-         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_BIAS)) &&
-        (!lw->attn.v_bias ||
-         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_V_BIAS));
-    if (ready) {
-        BnTransformerGPUMoESharedFFNResources shared;
-        ready = prefill_shared_expert_resources(
-                    &shared, c, lw, backend, layer) >= 0;
-    }
+    BnTransformerPrefillAttentionProjectionTypes attn_types;
+    if (!bn_transformer_prefill_resolve_attention_projection_types(
+            &attn_types, lw))
+        return 0;
+    BnTransformerPrefillMoELayerGPUResourcePolicy resources =
+        bn_transformer_prefill_moe_layer_gpu_resource_policy(
+            backend, c, layer, lw, attn_types);
+    int ready = resources.valid;
     if (!ready && bn_transformer_prefill_moe_chain_debug_enabled())
         fprintf(stderr,
                 "[bn:prefill:moe-chain] reject layer=%d handles qk=%d wv=%d wo=%d router=%d gate=%d up=%d down=%d anorm=%d fnorm=%d\n",
                 layer,
-                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_QK_STACKED) != NULL,
-                wv_buf != NULL,
-                prefill_backend_role_or_qweight(
-                    backend, layer, BN_BACKEND_HANDLE_WO_PREFILL,
-                    &lw->attn.wo) != NULL,
-                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER) != NULL,
-                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL) != NULL,
-                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL) != NULL,
-                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL) != NULL,
-                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM) != NULL,
-                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM) != NULL);
+                resources.qk != NULL,
+                resources.wv != NULL,
+                resources.wo != NULL,
+                resources.router != NULL,
+                resources.gate_all != NULL,
+                resources.up_all != NULL,
+                resources.down_all != NULL,
+                resources.attn_norm != NULL,
+                resources.ffn_norm != NULL);
     return ready;
 }
 

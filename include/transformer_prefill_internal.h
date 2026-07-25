@@ -79,6 +79,36 @@ typedef struct {
 } BnTransformerPrefillDenseFFNGPUResourcePolicy;
 
 typedef struct {
+    int valid;
+    const void *qk;
+    const void *wv;
+    const void *wo;
+    const void *router;
+    const void *gate_all;
+    const void *up_all;
+    const void *down_all;
+    const void *shared_gate;
+    const void *shared_up;
+    const void *shared_down;
+    const void *shared_gate_weight;
+    const void *attn_norm;
+    const void *ffn_norm;
+    const void *q_norm;
+    const void *k_norm;
+    const void *q_bias;
+    const void *k_bias;
+    const void *v_bias;
+    int qk_rows;
+    int qk_type;
+    int wv_rows;
+    int wv_type;
+    int shared_hidden_dim;
+    int shared_gate_type;
+    int shared_up_type;
+    int shared_down_type;
+} BnTransformerPrefillMoELayerGPUResourcePolicy;
+
+typedef struct {
     int qkv_type;
     int qkv_rows;
     int qkv_cols;
@@ -349,6 +379,13 @@ bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     const BnQWeight *up,
     const BnQWeight *down,
     BnTransformerPrefillFFNProjectionTypes types);
+BnTransformerPrefillMoELayerGPUResourcePolicy
+bn_transformer_prefill_moe_layer_gpu_resource_policy(
+    const BnBackendModel *backend,
+    const BnConfig *c,
+    int layer,
+    const BnLayerWeights *lw,
+    BnTransformerPrefillAttentionProjectionTypes attn_types);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_buffer_shape_policy(

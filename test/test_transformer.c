@@ -1709,6 +1709,132 @@ static void test_gpu_policy_helpers(void) {
             prefill_backend, 2, NULL, 0,
             prefill_attn_resource_types, prefill_ssm_resource_types);
     assert(!prefill_attn_resources.valid);
+
+    int prefill_moe_qk_handle;
+    int prefill_moe_wv_handle;
+    int prefill_moe_router_handle;
+    int prefill_moe_gate_all_handle;
+    int prefill_moe_up_all_handle;
+    int prefill_moe_down_all_handle;
+    int prefill_moe_attn_norm_handle;
+    int prefill_moe_ffn_norm_handle;
+    int prefill_moe_q_bias_handle;
+    int prefill_moe_k_bias_handle;
+    int prefill_moe_v_bias_handle;
+    float prefill_moe_q_bias_weight;
+    float prefill_moe_k_bias_weight;
+    float prefill_moe_v_bias_weight;
+    prefill_attn_lw.attn.q_bias = &prefill_moe_q_bias_weight;
+    prefill_attn_lw.attn.k_bias = &prefill_moe_k_bias_weight;
+    prefill_attn_lw.attn.v_bias = &prefill_moe_v_bias_weight;
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_QK_STACKED,
+               &prefill_moe_qk_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_WV_PREFILL,
+               &prefill_moe_wv_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_MOE_ROUTER,
+               &prefill_moe_router_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_MOE_GATE_ALL,
+               &prefill_moe_gate_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_MOE_UP_ALL,
+               &prefill_moe_up_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_MOE_DOWN_ALL,
+               &prefill_moe_down_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_ATTN_NORM,
+               &prefill_moe_attn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_FFN_NORM,
+               &prefill_moe_ffn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_Q_BIAS,
+               &prefill_moe_q_bias_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_K_BIAS,
+               &prefill_moe_k_bias_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 3, BN_BACKEND_HANDLE_V_BIAS,
+               &prefill_moe_v_bias_handle) == 0);
+    BnTransformerPrefillMoELayerGPUResourcePolicy prefill_moe_resources =
+        bn_transformer_prefill_moe_layer_gpu_resource_policy(
+            prefill_backend, &c, 3, &prefill_attn_lw,
+            prefill_attn_resource_types);
+    assert(prefill_moe_resources.valid);
+    assert(prefill_moe_resources.qk == &prefill_moe_qk_handle);
+    assert(prefill_moe_resources.wv == &prefill_moe_wv_handle);
+    assert(prefill_moe_resources.wo == &prefill_wo_buf);
+    assert(prefill_moe_resources.router == &prefill_moe_router_handle);
+    assert(prefill_moe_resources.gate_all == &prefill_moe_gate_all_handle);
+    assert(prefill_moe_resources.up_all == &prefill_moe_up_all_handle);
+    assert(prefill_moe_resources.down_all == &prefill_moe_down_all_handle);
+    assert(prefill_moe_resources.attn_norm == &prefill_moe_attn_norm_handle);
+    assert(prefill_moe_resources.ffn_norm == &prefill_moe_ffn_norm_handle);
+    assert(prefill_moe_resources.q_bias == &prefill_moe_q_bias_handle);
+    assert(prefill_moe_resources.k_bias == &prefill_moe_k_bias_handle);
+    assert(prefill_moe_resources.v_bias == &prefill_moe_v_bias_handle);
+    assert(prefill_moe_resources.qk_rows == 80);
+    assert(prefill_moe_resources.qk_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_moe_resources.wv_rows == 16);
+    assert(prefill_moe_resources.wv_type == BN_GGUF_TENSOR_Q6_K);
+
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_QK_STACKED,
+               &prefill_moe_qk_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_MOE_ROUTER,
+               &prefill_moe_router_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_MOE_GATE_ALL,
+               &prefill_moe_gate_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_MOE_UP_ALL,
+               &prefill_moe_up_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_MOE_DOWN_ALL,
+               &prefill_moe_down_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_ATTN_NORM,
+               &prefill_moe_attn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_FFN_NORM,
+               &prefill_moe_ffn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_Q_BIAS,
+               &prefill_moe_q_bias_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_K_BIAS,
+               &prefill_moe_k_bias_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 4, BN_BACKEND_HANDLE_V_BIAS,
+               &prefill_moe_v_bias_handle) == 0);
+    prefill_moe_resources =
+        bn_transformer_prefill_moe_layer_gpu_resource_policy(
+            prefill_backend, &c, 4, &prefill_attn_lw,
+            prefill_attn_resource_types);
+    assert(prefill_moe_resources.valid);
+    assert(prefill_moe_resources.wv == &prefill_wv_buf);
+
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 5, BN_BACKEND_HANDLE_QK_STACKED,
+               &prefill_moe_qk_handle) == 0);
+    prefill_moe_resources =
+        bn_transformer_prefill_moe_layer_gpu_resource_policy(
+            prefill_backend, &c, 5, &prefill_attn_lw,
+            prefill_attn_resource_types);
+    assert(!prefill_moe_resources.valid);
+    prefill_moe_resources =
+        bn_transformer_prefill_moe_layer_gpu_resource_policy(
+            prefill_backend, &c, 3, NULL, prefill_attn_resource_types);
+    assert(!prefill_moe_resources.valid);
+    prefill_attn_lw.attn.q_bias = NULL;
+    prefill_attn_lw.attn.k_bias = NULL;
+    prefill_attn_lw.attn.v_bias = NULL;
+
     BnQWeight prefill_ffn_gate = {0};
     BnQWeight prefill_ffn_up = {0};
     BnQWeight prefill_ffn_down = {0};

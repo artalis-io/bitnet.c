@@ -294,6 +294,82 @@ bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     return policy;
 }
 
+BnTransformerPrefillMoELayerGPUResourcePolicy
+bn_transformer_prefill_moe_layer_gpu_resource_policy(
+    const BnBackendModel *backend,
+    const BnConfig *c,
+    int layer,
+    const BnLayerWeights *lw,
+    BnTransformerPrefillAttentionProjectionTypes attn_types) {
+    BnTransformerPrefillMoELayerGPUResourcePolicy policy = {0};
+    if (!backend || !lw)
+        return policy;
+
+    BnTransformerPrefillSSMProjectionTypes unused_ssm_types = {0};
+    BnTransformerPrefillAttentionGPUResourcePolicy attn =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            backend, layer, lw, 0, attn_types, unused_ssm_types);
+    policy.qk = attn.qk;
+    policy.wv = attn.wv;
+    policy.wo = attn.wo;
+    policy.qk_rows = attn.qk_rows;
+    policy.qk_type = attn.qk_type;
+    policy.wv_rows = attn.wv_rows;
+    policy.wv_type = attn.wv_type;
+
+    policy.router =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    policy.gate_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    policy.up_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    policy.down_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    policy.attn_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
+    policy.ffn_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    policy.q_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_NORM);
+    policy.k_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_NORM);
+    policy.q_bias =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
+    policy.k_bias =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_BIAS);
+    policy.v_bias =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_V_BIAS);
+
+    if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
+        BnTransformerGPUMoESharedFFNResources shared;
+        memset(&shared, 0, sizeof(shared));
+        if (!bn_transformer_gpu_resolve_moe_shared_ffn_resources(
+                &shared, backend, c, lw, layer, 0))
+            return policy;
+        policy.shared_gate = shared.gate;
+        policy.shared_up = shared.up;
+        policy.shared_down = shared.down;
+        policy.shared_gate_weight = shared.gate_weight;
+        policy.shared_hidden_dim = shared.hidden_dim;
+        policy.shared_gate_type = shared.gate_type;
+        policy.shared_up_type = shared.up_type;
+        policy.shared_down_type = shared.down_type;
+    }
+
+    policy.valid =
+        attn.valid &&
+        policy.router &&
+        policy.gate_all &&
+        policy.up_all &&
+        policy.down_all &&
+        policy.attn_norm &&
+        policy.ffn_norm &&
+        (!lw->attn.q_bias || policy.q_bias) &&
+        (!lw->attn.k_bias || policy.k_bias) &&
+        (!lw->attn.v_bias || policy.v_bias);
+    return policy;
+}
+
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c) {
     BnTransformerPrefillSequencePolicy policy = {0};
