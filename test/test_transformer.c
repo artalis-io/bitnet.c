@@ -1683,6 +1683,18 @@ static void test_gpu_policy_helpers(void) {
     assert(prefill_attn_resources.qk_type == BN_GGUF_TENSOR_Q4_K);
     assert(prefill_attn_resources.wv_rows == 16);
     assert(prefill_attn_resources.wv_type == BN_GGUF_TENSOR_Q6_K);
+    BnTransformerPrefillStackedAttentionGPUResourcePolicy
+        stacked_attn_resources =
+            bn_transformer_prefill_stacked_attention_gpu_resource_policy(
+                prefill_backend, 1, prefill_attn_resource_types);
+    assert(stacked_attn_resources.qk_valid);
+    assert(stacked_attn_resources.qkv_valid);
+    assert(stacked_attn_resources.qk == &prefill_qk_handle);
+    assert(stacked_attn_resources.wv == &prefill_wv_handle);
+    assert(stacked_attn_resources.qk_rows == 80);
+    assert(stacked_attn_resources.qk_type == BN_GGUF_TENSOR_Q4_K);
+    assert(stacked_attn_resources.wv_rows == 16);
+    assert(stacked_attn_resources.wv_type == BN_GGUF_TENSOR_Q6_K);
     int prefill_raw_attn_norm_handle;
     int prefill_raw_q_norm_handle;
     int prefill_raw_k_norm_handle;
@@ -1719,6 +1731,13 @@ static void test_gpu_policy_helpers(void) {
             prefill_attn_resource_types, prefill_ssm_resource_types);
     assert(prefill_attn_resources.valid);
     assert(prefill_attn_resources.wv == &prefill_wv_buf);
+    stacked_attn_resources =
+        bn_transformer_prefill_stacked_attention_gpu_resource_policy(
+            prefill_backend, 2, prefill_attn_resource_types);
+    assert(stacked_attn_resources.qk_valid);
+    assert(!stacked_attn_resources.qkv_valid);
+    assert(stacked_attn_resources.qk == &prefill_qk_handle);
+    assert(stacked_attn_resources.wv == NULL);
     raw_attn_resources =
         bn_transformer_prefill_raw_attention_gpu_resource_policy(
             prefill_backend, 2, &prefill_attn_lw,

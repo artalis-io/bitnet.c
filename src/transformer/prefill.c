@@ -301,13 +301,15 @@ static int prefill_qk_stacked_gpu(const BnModel *m,
     if (!bn_transformer_prefill_resolve_attention_projection_types(
             &attn_types, lw))
         return -1;
-    void *qk_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-    if (!qk_buf) return -1;
-    int rows = attn_types.q_rows + attn_types.k_rows;
+    BnTransformerPrefillStackedAttentionGPUResourcePolicy resources =
+        bn_transformer_prefill_stacked_attention_gpu_resource_policy(
+            backend, layer, attn_types);
+    if (!resources.qk_valid)
+        return -1;
+    int rows = resources.qk_rows;
     if (bn_transformer_gpu_prefill_quant_matmul_backend_run(
-            gpu, q_tmp, qk_buf, X, rows, dim, n_tokens,
-            attn_types.q_type) != 0)
+            gpu, q_tmp, (void *)resources.qk, X, rows, dim, n_tokens,
+            resources.qk_type) != 0)
         return -1;
     for (int t = n_tokens - 1; t >= 0; t--) {
         float *src = q_tmp + (size_t)t * rows;
@@ -343,27 +345,27 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
     if (!bn_transformer_prefill_resolve_attention_projection_types(
             &attn_types, lw))
         return -1;
-    void *qk_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-    void *wv_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
-    if (!qk_buf || !wv_buf) return -1;
+    BnTransformerPrefillStackedAttentionGPUResourcePolicy resources =
+        bn_transformer_prefill_stacked_attention_gpu_resource_policy(
+            backend, layer, attn_types);
+    if (!resources.qkv_valid)
+        return -1;
 
-    int qk_rows = attn_types.q_rows + attn_types.k_rows;
+    int qk_rows = resources.qk_rows;
     BnGPUMatvecOp ops[2] = {
         {
             .out = q_tmp,
-            .W_buf = qk_buf,
+            .W_buf = (void *)resources.qk,
             .rows = qk_rows,
             .cols = dim,
-            .type = attn_types.q_type,
+            .type = resources.qk_type,
         },
         {
             .out = v_out,
-            .W_buf = wv_buf,
-            .rows = attn_types.v_rows,
+            .W_buf = (void *)resources.wv,
+            .rows = resources.wv_rows,
             .cols = dim,
-            .type = attn_types.v_type,
+            .type = resources.wv_type,
         },
     };
     if (bn_transformer_gpu_prefill_quant_matmul_batch_backend_run(

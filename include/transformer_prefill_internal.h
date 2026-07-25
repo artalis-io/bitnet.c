@@ -59,6 +59,17 @@ typedef struct {
 } BnTransformerPrefillAttentionGPUResourcePolicy;
 
 typedef struct {
+    int qk_valid;
+    int qkv_valid;
+    const void *qk;
+    const void *wv;
+    int qk_rows;
+    int qk_type;
+    int wv_rows;
+    int wv_type;
+} BnTransformerPrefillStackedAttentionGPUResourcePolicy;
+
+typedef struct {
     int valid;
     const void *qk;
     const void *wv;
@@ -444,6 +455,11 @@ bn_transformer_prefill_attention_gpu_resource_policy(
     int has_packed_qkv,
     BnTransformerPrefillAttentionProjectionTypes attn_types,
     BnTransformerPrefillSSMProjectionTypes ssm_types);
+BnTransformerPrefillStackedAttentionGPUResourcePolicy
+bn_transformer_prefill_stacked_attention_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    BnTransformerPrefillAttentionProjectionTypes attn_types);
 BnTransformerPrefillRawAttentionGPUResourcePolicy
 bn_transformer_prefill_raw_attention_gpu_resource_policy(
     const BnBackendModel *backend,

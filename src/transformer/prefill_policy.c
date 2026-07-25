@@ -253,6 +253,28 @@ bn_transformer_prefill_attention_gpu_resource_policy(
     return policy;
 }
 
+BnTransformerPrefillStackedAttentionGPUResourcePolicy
+bn_transformer_prefill_stacked_attention_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    BnTransformerPrefillAttentionProjectionTypes attn_types) {
+    BnTransformerPrefillStackedAttentionGPUResourcePolicy policy = {0};
+    if (!backend)
+        return policy;
+
+    policy.qk =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
+    policy.wv =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
+    policy.qk_rows = attn_types.q_rows + attn_types.k_rows;
+    policy.qk_type = attn_types.q_type;
+    policy.wv_rows = attn_types.v_rows;
+    policy.wv_type = attn_types.v_type;
+    policy.qk_valid = policy.qk != NULL;
+    policy.qkv_valid = policy.qk_valid && policy.wv != NULL;
+    return policy;
+}
+
 BnTransformerPrefillRawAttentionGPUResourcePolicy
 bn_transformer_prefill_raw_attention_gpu_resource_policy(
     const BnBackendModel *backend,
