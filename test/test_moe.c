@@ -431,6 +431,20 @@ static void test_moe_prefill_policy(void) {
     assert(bn_backend_model_register_handle(
                backend, 0, BN_BACKEND_HANDLE_MOE_DOWN_ALL,
                &down_all_handle) == 0);
+    BnBackendModelMoEPrefillRoutedResources backend_routed_resources =
+        bn_backend_model_moe_prefill_routed_resources(backend, 0);
+    assert(backend_routed_resources.router == &router_handle);
+    assert(backend_routed_resources.gate_all == &gate_all_handle);
+    assert(backend_routed_resources.up_all == &up_all_handle);
+    assert(backend_routed_resources.down_all == &down_all_handle);
+    assert(backend_routed_resources.routed_valid);
+    assert(!backend_routed_resources.norm_resid_valid);
+    BnBackendModelMoEPrefillResidentResources backend_resident_resources =
+        bn_backend_model_moe_prefill_resident_resources(backend, 0);
+    assert(backend_resident_resources.gate_all == &gate_all_handle);
+    assert(backend_resident_resources.up_all == &up_all_handle);
+    assert(backend_resident_resources.down_all == &down_all_handle);
+    assert(backend_resident_resources.valid);
     routed_resources =
         bn_moe_prefill_routed_gpu_resource_policy(backend, 0);
     assert(routed_resources.router == &router_handle);
@@ -448,6 +462,10 @@ static void test_moe_prefill_policy(void) {
     assert(bn_backend_model_register_handle(
                backend, 0, BN_BACKEND_HANDLE_FFN_NORM,
                &norm_handle) == 0);
+    backend_routed_resources =
+        bn_backend_model_moe_prefill_routed_resources(backend, 0);
+    assert(backend_routed_resources.norm == &norm_handle);
+    assert(backend_routed_resources.norm_resid_valid);
     routed_resources =
         bn_moe_prefill_routed_gpu_resource_policy(backend, 0);
     assert(routed_resources.norm == &norm_handle);

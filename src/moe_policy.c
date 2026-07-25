@@ -266,19 +266,15 @@ bn_moe_prefill_routed_gpu_resource_policy(
     if (!backend)
         return policy;
 
-    policy.router =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
-    policy.gate_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-    policy.up_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
-    policy.down_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-    policy.norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-    policy.routed_valid = policy.router && policy.gate_all &&
-                          policy.up_all && policy.down_all;
-    policy.norm_resid_valid = policy.routed_valid && policy.norm;
+    BnBackendModelMoEPrefillRoutedResources resources =
+        bn_backend_model_moe_prefill_routed_resources(backend, layer);
+    policy.router = resources.router;
+    policy.gate_all = resources.gate_all;
+    policy.up_all = resources.up_all;
+    policy.down_all = resources.down_all;
+    policy.norm = resources.norm;
+    policy.routed_valid = resources.routed_valid;
+    policy.norm_resid_valid = resources.norm_resid_valid;
     return policy;
 }
 
@@ -290,13 +286,12 @@ bn_moe_prefill_resident_gpu_resource_policy(
     if (!backend)
         return policy;
 
-    policy.gate_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-    policy.up_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
-    policy.down_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-    policy.valid = policy.gate_all && policy.up_all && policy.down_all;
+    BnBackendModelMoEPrefillResidentResources resources =
+        bn_backend_model_moe_prefill_resident_resources(backend, layer);
+    policy.gate_all = resources.gate_all;
+    policy.up_all = resources.up_all;
+    policy.down_all = resources.down_all;
+    policy.valid = resources.valid;
     return policy;
 }
 

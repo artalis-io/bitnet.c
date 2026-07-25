@@ -149,6 +149,49 @@ void *bn_backend_model_handle(const BnBackendModel *backend,
     return NULL;
 }
 
+BnBackendModelMoEPrefillRoutedResources
+bn_backend_model_moe_prefill_routed_resources(
+    const BnBackendModel *backend,
+    int layer) {
+    BnBackendModelMoEPrefillRoutedResources resources = {0};
+    if (!backend)
+        return resources;
+
+    resources.router =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    resources.gate_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    resources.up_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    resources.down_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    resources.norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    resources.routed_valid = resources.router && resources.gate_all &&
+                             resources.up_all && resources.down_all;
+    resources.norm_resid_valid = resources.routed_valid && resources.norm;
+    return resources;
+}
+
+BnBackendModelMoEPrefillResidentResources
+bn_backend_model_moe_prefill_resident_resources(
+    const BnBackendModel *backend,
+    int layer) {
+    BnBackendModelMoEPrefillResidentResources resources = {0};
+    if (!backend)
+        return resources;
+
+    resources.gate_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    resources.up_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    resources.down_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    resources.valid = resources.gate_all && resources.up_all &&
+                      resources.down_all;
+    return resources;
+}
+
 int bn_backend_model_register_qweight(BnBackendModel *backend,
                                       const BnQWeight *weight,
                                       void *gpu_buf) {

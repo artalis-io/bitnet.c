@@ -43,6 +43,23 @@ typedef enum {
     BN_BACKEND_HANDLE_MOE_DOWN_ALL = 30,
 } BnBackendHandleRole;
 
+typedef struct {
+    void *router;
+    void *gate_all;
+    void *up_all;
+    void *down_all;
+    void *norm;
+    int routed_valid;
+    int norm_resid_valid;
+} BnBackendModelMoEPrefillRoutedResources;
+
+typedef struct {
+    void *gate_all;
+    void *up_all;
+    void *down_all;
+    int valid;
+} BnBackendModelMoEPrefillResidentResources;
+
 BnBackendModel *bn_backend_model_create(void);
 void bn_backend_model_free(BnBackendModel *backend);
 BnGPUBackend *bn_backend_model_gpu(const BnBackendModel *backend);
@@ -58,6 +75,14 @@ int bn_backend_model_register_handle(BnBackendModel *backend,
 void *bn_backend_model_handle(const BnBackendModel *backend,
                               int layer,
                               BnBackendHandleRole role);
+BnBackendModelMoEPrefillRoutedResources
+bn_backend_model_moe_prefill_routed_resources(
+    const BnBackendModel *backend,
+    int layer);
+BnBackendModelMoEPrefillResidentResources
+bn_backend_model_moe_prefill_resident_resources(
+    const BnBackendModel *backend,
+    int layer);
 int bn_backend_model_register_qweight(BnBackendModel *backend,
                                       const BnQWeight *weight,
                                       void *gpu_buf);
