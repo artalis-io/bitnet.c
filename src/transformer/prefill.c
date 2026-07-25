@@ -1674,15 +1674,17 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int used_attn_residual = 0;
             BnGPUBackend *gpu = bn_model_gpu(m);
             const BnBackendModel *backend = bn_model_backend(m);
-            void *attn_norm_buf = backend ? bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_ATTN_NORM) : NULL;
+            BnTransformerPrefillRawAttentionGPUResourcePolicy
+                raw_attn_resources =
+                    bn_transformer_prefill_raw_attention_gpu_resource_policy(
+                        backend, l, lw, attn_types);
             BnTransformerPrefillRawAttentionPolicy raw_attn_policy =
                 bn_transformer_prefill_raw_attention_policy(
                     gpu != NULL,
                     bn_transformer_prefill_raw_attention_gpu_available(gpu),
                     bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
                         gpu),
-                    attn_norm_buf != NULL,
+                    raw_attn_resources.attn_norm != NULL,
                     bn_model_tq_state(m) != NULL,
                     q_gated,
                     pos0,
@@ -1708,10 +1710,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 attn_norm_ready = 1;
             }
             if (raw_attn_policy.eligible) {
-                BnTransformerPrefillRawAttentionGPUResourcePolicy
-                    raw_attn_resources =
-                        bn_transformer_prefill_raw_attention_gpu_resource_policy(
-                            backend, l, lw, attn_types);
                 t_prof = prefill_profile_now(&prof);
                 int qkv_fused_rc = -1;
                 BnTransformerPrefillRawAttentionCallPolicy raw_attn_call =
@@ -1809,10 +1807,13 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                   n_tokens, q_buf_stride, dim,
                                                   l) == 0) {
                     q_read_stride = q_buf_stride;
-                    void *wv_buf = backend ? bn_backend_model_handle(
-                        backend, l, BN_BACKEND_HANDLE_WV_PREFILL) : NULL;
+                    BnTransformerPrefillStackedAttentionGPUResourcePolicy
+                        stacked_attn_resources =
+                            bn_transformer_prefill_stacked_attention_gpu_resource_policy(
+                                backend, l, attn_types);
                     if (prefill_quant_matmul_gpu_buf(
-                            m, V_new, &lw->attn.wv, wv_buf, Xb,
+                            m, V_new, &lw->attn.wv,
+                            (void *)stacked_attn_resources.wv, Xb,
                             n_tokens) != 0)
                         prefill_quant_matmul_gpu(m, V_new, &lw->attn.wv,
                                                  Xb, n_tokens, s->x_q);
@@ -2311,9 +2312,11 @@ prefill_ssm_done:
             int can_use_dense_ffn_batch =
                 bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
                     gpu_ffn, c, n_tokens);
-            void *ffn_norm_buf =
-                backend_ffn ? bn_backend_model_handle(
-                    backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;
+            BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
+                bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+                    backend_ffn, l, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+                    &lw->ffn.ffn_down, ffn_types);
+            void *ffn_norm_buf = (void *)ffn_resources.ffn_norm;
             BnTransformerPrefillFFNBatchPolicy ffn_batch_policy =
                 bn_transformer_prefill_ffn_batch_policy(
                     ffn_plan.has_gate,

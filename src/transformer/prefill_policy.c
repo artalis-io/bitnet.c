@@ -343,6 +343,10 @@ bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     if (!policy.down && backend)
         policy.down = bn_backend_model_handle(
             backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
+    policy.ffn_norm =
+        backend ? bn_backend_model_handle(
+                      backend, layer, BN_BACKEND_HANDLE_FFN_NORM)
+                : NULL;
 
     policy.valid =
         policy.gate && policy.down &&

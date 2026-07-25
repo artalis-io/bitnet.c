@@ -100,6 +100,7 @@ typedef struct {
     const void *gate;
     const void *up;
     const void *down;
+    const void *ffn_norm;
     int uses_stacked_gateup;
 } BnTransformerPrefillDenseFFNGPUResourcePolicy;
 
