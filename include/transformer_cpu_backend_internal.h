@@ -71,6 +71,15 @@ typedef struct {
     int enabled;
 } BnTransformerCPUPreparedKQuantRoutePolicy;
 
+typedef enum {
+    BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_REUSE = 0,
+    BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_FLOAT_FALLBACK
+} BnTransformerCPUPreparedKQuantInputPath;
+
+typedef struct {
+    BnTransformerCPUPreparedKQuantInputPath path;
+} BnTransformerCPUPreparedKQuantInputDispatchPolicy;
+
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
 int bn_transformer_cpu_prepared_qweights_enabled(void);
 const char *bn_transformer_cpu_debug_dump_path(void);
@@ -93,6 +102,10 @@ bn_transformer_cpu_prepared_kquant_route_policy(
     const int *tensor_types,
     int n_types,
     int max_types);
+BnTransformerCPUPreparedKQuantInputDispatchPolicy
+bn_transformer_cpu_prepared_kquant_input_dispatch_policy(
+    const BnGPUBackend *gpu,
+    int uses_float_kquant_fallback);
 int bn_transformer_cpu_prepared_kquant_blocks_per_row(int dim);
 int bn_transformer_cpu_prepared_kquant_block_sums_per_row(int blocks_per_row);
 int bn_transformer_cpu_route_prepared_kquant_pair_enabled(

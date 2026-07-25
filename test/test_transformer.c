@@ -4675,6 +4675,19 @@ static void test_block_planning(void) {
            bn_transformer_cpu_backend_ops()->supports_float_kquant_prefill);
     assert(uses_float_kquant_fallback ==
            backend_supports_float_kquant_prefill);
+    BnTransformerCPUPreparedKQuantInputDispatchPolicy
+        prepared_kquant_input =
+            bn_transformer_cpu_prepared_kquant_input_dispatch_policy(NULL, 0);
+    assert(prepared_kquant_input.path ==
+           BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_REUSE);
+    prepared_kquant_input =
+        bn_transformer_cpu_prepared_kquant_input_dispatch_policy(&gpu, 0);
+    assert(prepared_kquant_input.path ==
+           BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_FLOAT_FALLBACK);
+    prepared_kquant_input =
+        bn_transformer_cpu_prepared_kquant_input_dispatch_policy(NULL, 1);
+    assert(prepared_kquant_input.path ==
+           BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_FLOAT_FALLBACK);
     c.policy_flags = 0;
     assert(bn_transformer_cpu_float_kquant_fallback_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c));

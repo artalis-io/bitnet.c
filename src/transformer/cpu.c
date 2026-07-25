@@ -89,12 +89,13 @@ static void cpu_quant_matvec_batch_prepared_kquant(const BnModel *m,
                                                    const float *scales,
                                                    const int16_t *block_sums,
                                                    const float *x_float) {
-    if (bn_model_gpu(m)) {
-        cpu_quant_matvec_batch_prepared(m, tasks, n_tasks, x_float,
-                                        (int8_t *)quantized);
-        return;
-    }
-    if (bn_transformer_cpu_float_kquant_fallback_task_flags(&m->config)) {
+    BnTransformerCPUPreparedKQuantInputDispatchPolicy dispatch =
+        bn_transformer_cpu_prepared_kquant_input_dispatch_policy(
+            bn_model_gpu(m),
+            bn_transformer_cpu_float_kquant_fallback_task_flags(&m->config) !=
+                0);
+    if (dispatch.path ==
+        BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_FLOAT_FALLBACK) {
         cpu_quant_matvec_batch_prepared(m, tasks, n_tasks, x_float,
                                         (int8_t *)quantized);
         return;

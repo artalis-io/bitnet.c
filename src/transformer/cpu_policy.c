@@ -94,6 +94,18 @@ bn_transformer_cpu_prepared_kquant_route_policy(
     return policy;
 }
 
+BnTransformerCPUPreparedKQuantInputDispatchPolicy
+bn_transformer_cpu_prepared_kquant_input_dispatch_policy(
+    const BnGPUBackend *gpu,
+    int uses_float_kquant_fallback) {
+    BnTransformerCPUPreparedKQuantInputDispatchPolicy policy = {0};
+    policy.path =
+        (gpu || uses_float_kquant_fallback)
+            ? BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_FLOAT_FALLBACK
+            : BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_REUSE;
+    return policy;
+}
+
 int bn_transformer_cpu_prepared_kquant_blocks_per_row(int dim) {
     return bn_backend_quant_prepared_kquant_blocks_per_row(dim);
 }
