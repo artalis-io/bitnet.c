@@ -300,6 +300,13 @@ typedef struct {
 } BnTransformerGPUMoEDirectRoutePolicy;
 
 typedef struct {
+    BnTransformerGPUMoEDirectRoutePolicy direct_route;
+    BnTransformerGPUMoEDecodeRoutePolicy decode_route;
+    int requires_session_state;
+    int route_profile_enabled;
+} BnTransformerGPUMoEDecodeDispatchPolicy;
+
+typedef struct {
     int enabled;
     int total_experts;
     int expert_hidden_dim;
@@ -1320,6 +1327,19 @@ bn_transformer_gpu_moe_direct_route_policy(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all);
+BnTransformerGPUMoEDecodeDispatchPolicy
+bn_transformer_gpu_moe_decode_dispatch_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoERouteLayerPolicy *layer_policy,
+    int layer,
+    int dim,
+    void *moe_router,
+    void *router_diff,
+    void *moe_gate_all,
+    void *moe_up_all,
+    void *moe_down_all);
 int bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
     const BnConfig *c);
 BnTransformerGPUMoEAllActiveTwoResourcePolicy

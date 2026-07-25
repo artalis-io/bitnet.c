@@ -1203,13 +1203,21 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER_DIFF);
             void *moe_gate_all = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-            BnTransformerGPUMoEDirectRoutePolicy direct_route =
-                bn_transformer_gpu_moe_direct_route_policy(
-                    gpu, c, router_diff, moe_gate_all);
-            if (direct_route.enabled) {
+            void *moe_router = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
+            void *moe_up_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
+            void *moe_down_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+            BnTransformerGPUMoEDecodeDispatchPolicy moe_dispatch =
+                bn_transformer_gpu_moe_decode_dispatch_policy(
+                    gpu, c, lw, &moe_route_layer, l, dim, moe_router,
+                    router_diff, moe_gate_all, moe_up_all, moe_down_all);
+            if (moe_dispatch.direct_route.enabled) {
                 if (gpu_resolve_moe_all_active_two_resources(
                         &moe_res, expert_emit, m, sess, lw, l,
-                        direct_route.router_diff, &moe_temporaries) != 0)
+                        moe_dispatch.direct_route.router_diff,
+                        &moe_temporaries) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe all-active-two resource resolution failed");
                 BnTransformerGPUMoESharedResources moe_shared =
@@ -1226,23 +1234,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 }
                 continue;
             }
-            int moe_route_profile =
-                bn_transformer_gpu_moe_route_profile_enabled();
+            int moe_route_profile = moe_dispatch.route_profile_enabled;
             double moe_prof_t0 = moe_route_profile
                 ? bn_platform_time_ms() : 0.0;
-            if (!sess->moe_state)
+            if (moe_dispatch.requires_session_state && !sess->moe_state)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu moe session state missing");
-            void *moe_router = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
-            void *moe_up_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
-            void *moe_down_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
             BnTransformerGPUMoEDecodeRoutePolicy moe_route =
-                bn_transformer_gpu_moe_decode_route_policy(
-                    gpu, c, lw, &moe_route_layer, l, dim, moe_router,
-                    router_diff, moe_gate_all, moe_up_all, moe_down_all);
+                moe_dispatch.decode_route;
             moe_router = moe_route.router;
             if (moe_route.gpu_routed_ffn) {
                 BnTransformerGPUMoEDebugPolicy moe_debug =

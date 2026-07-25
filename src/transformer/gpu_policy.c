@@ -2517,6 +2517,34 @@ bn_transformer_gpu_moe_direct_route_policy(
     return policy;
 }
 
+BnTransformerGPUMoEDecodeDispatchPolicy
+bn_transformer_gpu_moe_decode_dispatch_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoERouteLayerPolicy *layer_policy,
+    int layer,
+    int dim,
+    void *moe_router,
+    void *router_diff,
+    void *moe_gate_all,
+    void *moe_up_all,
+    void *moe_down_all) {
+    BnTransformerGPUMoEDecodeDispatchPolicy policy = {0};
+    policy.direct_route = bn_transformer_gpu_moe_direct_route_policy(
+        gpu, c, router_diff, moe_gate_all);
+    policy.requires_session_state = !policy.direct_route.enabled;
+    policy.route_profile_enabled =
+        policy.requires_session_state &&
+        bn_transformer_gpu_moe_route_profile_enabled();
+    if (policy.requires_session_state) {
+        policy.decode_route = bn_transformer_gpu_moe_decode_route_policy(
+            gpu, c, lw, layer_policy, layer, dim, moe_router, router_diff,
+            moe_gate_all, moe_up_all, moe_down_all);
+    }
+    return policy;
+}
+
 int bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
     const BnConfig *c) {
     return bn_transformer_moe_uses_configured_all_active_two_route(c);

@@ -2430,6 +2430,23 @@ static void test_gpu_policy_helpers(void) {
         0, 1, (void *)4, (void *)5, (void *)6, &map, &c, 2048));
     assert(route_policy.route_flags == 0);
     assert(bn_transformer_gpu_moe_route_normalization_flags(&c) == 0);
+    BnTransformerGPUMoEDecodeDispatchPolicy dispatch_policy =
+        bn_transformer_gpu_moe_decode_dispatch_policy(
+            &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
+            (void *)2, (void *)3, (void *)4, (void *)5, (void *)6);
+    assert(!dispatch_policy.direct_route.enabled);
+    assert(dispatch_policy.requires_session_state);
+    assert(!dispatch_policy.route_profile_enabled);
+    assert(dispatch_policy.decode_route.gpu_routed_ffn);
+    assert(dispatch_policy.decode_route.router == (void *)2);
+    setenv("BN_GPU_MOE_ROUTE_PROFILE", "1", 1);
+    dispatch_policy = bn_transformer_gpu_moe_decode_dispatch_policy(
+        &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
+        (void *)2, (void *)3, (void *)4, (void *)5, (void *)6);
+    assert(!dispatch_policy.direct_route.enabled);
+    assert(dispatch_policy.requires_session_state);
+    assert(dispatch_policy.route_profile_enabled);
+    unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
     c.moe_norm_topk_prob = 0;
     route_policy = bn_transformer_gpu_moe_decode_route_policy(
         &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
@@ -3187,6 +3204,15 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_moe_direct_route_policy(&gpu, &c, (void *)1, NULL);
     assert(direct_route.enabled);
     assert(direct_route.router_diff == (void *)1);
+    BnTransformerGPUMoEDecodeDispatchPolicy direct_dispatch_policy =
+        bn_transformer_gpu_moe_decode_dispatch_policy(
+            &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
+            (void *)2, (void *)1, NULL, (void *)5, (void *)6);
+    assert(direct_dispatch_policy.direct_route.enabled);
+    assert(direct_dispatch_policy.direct_route.router_diff == (void *)1);
+    assert(!direct_dispatch_policy.requires_session_state);
+    assert(!direct_dispatch_policy.route_profile_enabled);
+    assert(!direct_dispatch_policy.decode_route.gpu_routed_ffn);
     gpu.kind = BN_GPU_BACKEND_METAL;
     direct_route =
         bn_transformer_gpu_moe_direct_route_policy(&gpu, &c, (void *)1, NULL);
