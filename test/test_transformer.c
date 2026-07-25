@@ -1707,6 +1707,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_backend_model_register_handle(
                prefill_backend, 1, BN_BACKEND_HANDLE_K_NORM,
                &prefill_raw_k_norm_handle) == 0);
+    BnTransformerGPULayerValidationResources raw_layer_res =
+        bn_transformer_gpu_resolve_layer_validation_resources(prefill_backend,
+                                                              1);
+    assert(raw_layer_res.attn_norm == &prefill_raw_attn_norm_handle);
+    assert(raw_layer_res.q_norm == &prefill_raw_q_norm_handle);
+    assert(raw_layer_res.k_norm == &prefill_raw_k_norm_handle);
     BnTransformerPrefillRawAttentionGPUResourcePolicy raw_attn_resources =
         bn_transformer_prefill_raw_attention_gpu_resource_policy(
             prefill_backend, 1, &prefill_attn_lw,
@@ -1812,6 +1818,14 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_backend_model_register_handle(
                prefill_backend, 7, BN_BACKEND_HANDLE_K_NORM,
                &prefill_dense_k_norm_handle) == 0);
+    BnTransformerGPULayerValidationResources dense_layer_validation =
+        bn_transformer_gpu_resolve_layer_validation_resources(prefill_backend,
+                                                              7);
+    assert(dense_layer_validation.attn_norm ==
+           &prefill_dense_attn_norm_handle);
+    assert(dense_layer_validation.ffn_norm == &prefill_dense_ffn_norm_handle);
+    assert(dense_layer_validation.q_norm == &prefill_dense_q_norm_handle);
+    assert(dense_layer_validation.k_norm == &prefill_dense_k_norm_handle);
     BnTransformerPrefillFFNProjectionTypes prefill_dense_ffn_types = {0};
     prefill_dense_ffn_types.gate_type = BN_GGUF_TENSOR_Q4_K;
     prefill_dense_ffn_types.up_type = BN_GGUF_TENSOR_Q4_K;
@@ -1865,6 +1879,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_backend_model_register_handle(
                prefill_backend, 7, BN_BACKEND_HANDLE_V_BIAS,
                &prefill_dense_v_bias_handle) == 0);
+    BnTransformerGPUQKVResources dense_qkv_resources =
+        bn_transformer_gpu_resolve_qkv_resources(NULL, prefill_backend,
+                                                 &prefill_attn_lw, 7);
+    assert(dense_qkv_resources.q_bias == &prefill_dense_q_bias_handle);
+    assert(dense_qkv_resources.k_bias == &prefill_dense_k_bias_handle);
+    assert(dense_qkv_resources.v_bias == &prefill_dense_v_bias_handle);
     dense_layer_resources =
         bn_transformer_prefill_dense_layer_gpu_resource_policy(
             prefill_backend, 7, &prefill_attn_lw, 0,

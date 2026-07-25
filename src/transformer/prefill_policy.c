@@ -293,18 +293,11 @@ bn_transformer_prefill_raw_attention_gpu_resource_policy(
     policy.qk_type = attn.qk_type;
     policy.wv_rows = attn.wv_rows;
     policy.wv_type = attn.wv_type;
-    policy.attn_norm =
-        backend ? bn_backend_model_handle(
-                      backend, layer, BN_BACKEND_HANDLE_ATTN_NORM)
-                : NULL;
-    policy.q_norm =
-        backend ? bn_backend_model_handle(
-                      backend, layer, BN_BACKEND_HANDLE_Q_NORM)
-                : NULL;
-    policy.k_norm =
-        backend ? bn_backend_model_handle(
-                      backend, layer, BN_BACKEND_HANDLE_K_NORM)
-                : NULL;
+    BnTransformerGPULayerValidationResources layer_res =
+        bn_transformer_gpu_resolve_layer_validation_resources(backend, layer);
+    policy.attn_norm = layer_res.attn_norm;
+    policy.q_norm = layer_res.q_norm;
+    policy.k_norm = layer_res.k_norm;
     policy.valid = attn.valid;
     return policy;
 }
@@ -386,20 +379,17 @@ bn_transformer_prefill_dense_layer_gpu_resource_policy(
     policy.up = ffn.up;
     policy.down = ffn.down;
 
-    policy.attn_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    policy.ffn_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-    policy.q_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_NORM);
-    policy.k_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_NORM);
-    policy.q_bias =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
-    policy.k_bias =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_BIAS);
-    policy.v_bias =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_V_BIAS);
+    BnTransformerGPULayerValidationResources layer_res =
+        bn_transformer_gpu_resolve_layer_validation_resources(backend, layer);
+    BnTransformerGPUQKVResources qkv_res =
+        bn_transformer_gpu_resolve_qkv_resources(NULL, backend, lw, layer);
+    policy.attn_norm = layer_res.attn_norm;
+    policy.ffn_norm = layer_res.ffn_norm;
+    policy.q_norm = layer_res.q_norm;
+    policy.k_norm = layer_res.k_norm;
+    policy.q_bias = qkv_res.q_bias;
+    policy.k_bias = qkv_res.k_bias;
+    policy.v_bias = qkv_res.v_bias;
 
     policy.valid =
         attn.valid &&
@@ -442,18 +432,16 @@ bn_transformer_prefill_moe_layer_gpu_resource_policy(
     policy.up_all = moe_resources.up_all;
     policy.down_all = moe_resources.down_all;
     policy.ffn_norm = moe_resources.ffn_norm;
-    policy.attn_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    policy.q_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_NORM);
-    policy.k_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_NORM);
-    policy.q_bias =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
-    policy.k_bias =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_BIAS);
-    policy.v_bias =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_V_BIAS);
+    BnTransformerGPULayerValidationResources layer_res =
+        bn_transformer_gpu_resolve_layer_validation_resources(backend, layer);
+    BnTransformerGPUQKVResources qkv_res =
+        bn_transformer_gpu_resolve_qkv_resources(NULL, backend, lw, layer);
+    policy.attn_norm = layer_res.attn_norm;
+    policy.q_norm = layer_res.q_norm;
+    policy.k_norm = layer_res.k_norm;
+    policy.q_bias = qkv_res.q_bias;
+    policy.k_bias = qkv_res.k_bias;
+    policy.v_bias = qkv_res.v_bias;
 
     if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
         BnTransformerGPUMoESharedFFNResources shared;
