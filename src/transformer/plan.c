@@ -243,6 +243,27 @@ int bn_transformer_attention_uses_flash(const BnConfig *c,
            bn_transformer_gpu_can_flash_attn(gpu);
 }
 
+int bn_transformer_plan_resolve_attention_projection_types(
+    BnTransformerPlanAttentionProjectionTypes *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw) return 0;
+    memset(out, 0, sizeof(*out));
+    out->q_type = lw->attn.wq.type;
+    out->k_type = lw->attn.wk.type;
+    out->v_type = lw->attn.wv.type;
+    return 1;
+}
+
+int bn_transformer_plan_resolve_ffn_projection_types(
+    BnTransformerPlanFFNProjectionTypes *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw) return 0;
+    memset(out, 0, sizeof(*out));
+    out->gate_type = lw->ffn.ffn_gate.type;
+    out->up_type = lw->ffn.ffn_up.type;
+    return 1;
+}
+
 int bn_transformer_attention_uses_packed_qkv(
     const BnGPUBackend *gpu,
     const BnLayerShapePlan *shape,
@@ -252,11 +273,14 @@ int bn_transformer_attention_uses_packed_qkv(
     const void *k_bias,
     const void *v_bias) {
     (void)gpu;
+    BnTransformerPlanAttentionProjectionTypes attn_types;
     return qkv_stacked &&
            shape && !shape->q_gated &&
            lw &&
+           bn_transformer_plan_resolve_attention_projection_types(
+               &attn_types, lw) &&
            bn_transformer_gpu_can_native_quant_qkv(
-               lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type) &&
+               attn_types.q_type, attn_types.k_type, attn_types.v_type) &&
            q_bias && k_bias && v_bias;
 }
 
@@ -265,10 +289,13 @@ int bn_transformer_attention_uses_qkv_split(
     const BnLayerShapePlan *shape,
     const BnLayerWeights *lw,
     const void *qkv_stacked) {
+    BnTransformerPlanAttentionProjectionTypes attn_types;
     return qkv_stacked &&
            shape && !shape->q_gated &&
            lw &&
-           bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
+           bn_transformer_plan_resolve_attention_projection_types(
+               &attn_types, lw) &&
+           bn_transformer_gpu_can_matvec_split(gpu, attn_types.q_type);
 }
 
 int bn_transformer_attention_uses_rope_qk_fusion(
@@ -410,11 +437,14 @@ int bn_transformer_ffn_uses_fused_gateup_silu(
     const BnConfig *c,
     const BnLayerWeights *lw,
     BnExecPlacement placement) {
+    BnTransformerPlanFFNProjectionTypes ffn_types;
     return placement == BN_EXEC_GPU &&
            bn_transformer_ffn_has_gate(c) &&
            lw &&
+           bn_transformer_plan_resolve_ffn_projection_types(
+               &ffn_types, lw) &&
            bn_transformer_gpu_can_fused_gateup_silu_pair(
-               gpu, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
+               gpu, ffn_types.gate_type, ffn_types.up_type,
                bn_transformer_config_activation(c));
 }
 
@@ -424,14 +454,17 @@ int bn_transformer_ffn_uses_gateup_split(
     const BnLayerWeights *lw,
     BnExecPlacement placement,
     const void *gateup_stacked) {
+    BnTransformerPlanFFNProjectionTypes ffn_types;
     return placement == BN_EXEC_GPU &&
            bn_transformer_ffn_has_gate(c) &&
            gateup_stacked &&
            lw &&
+           bn_transformer_plan_resolve_ffn_projection_types(
+               &ffn_types, lw) &&
            bn_transformer_gpu_can_stack_same_quant_format_gateup(&lw->ffn.ffn_gate,
                                                      &lw->ffn.ffn_up) &&
            bn_transformer_gpu_can_gateup_split_activation(
-               gpu, lw->ffn.ffn_gate.type,
+               gpu, ffn_types.gate_type,
                bn_transformer_config_activation(c));
 }
 

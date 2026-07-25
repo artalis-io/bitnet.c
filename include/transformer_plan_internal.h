@@ -150,6 +150,17 @@ typedef struct {
 } BnTransformerMoESharedExpertGatePolicy;
 
 typedef struct {
+    int q_type;
+    int k_type;
+    int v_type;
+} BnTransformerPlanAttentionProjectionTypes;
+
+typedef struct {
+    int gate_type;
+    int up_type;
+} BnTransformerPlanFFNProjectionTypes;
+
+typedef struct {
     BnLogitsKind kind;
     BnExecPlacement placement;
     BnBackendPlacement backend;
@@ -216,6 +227,12 @@ int bn_transformer_gpu_shared_expert_gate_enabled(int eligible);
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu);
 BnBackendPlacement bn_transformer_gpu_backend_placement(
     const BnGPUBackend *gpu);
+int bn_transformer_plan_resolve_attention_projection_types(
+    BnTransformerPlanAttentionProjectionTypes *out,
+    const BnLayerWeights *lw);
+int bn_transformer_plan_resolve_ffn_projection_types(
+    BnTransformerPlanFFNProjectionTypes *out,
+    const BnLayerWeights *lw);
 int bn_transformer_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan);

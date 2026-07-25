@@ -4570,6 +4570,16 @@ if grep -n 'p->needs_cpu_fallback = p->placement == BN_EXEC_GPU\|p->use_flash = 
     fail=1
 fi
 
+if awk '/^int bn_transformer_attention_uses_packed_qkv/,/^int bn_transformer_attention_uses_qkv_split/' src/transformer/plan.c | grep -n 'lw->attn\.wq\.type\|lw->attn\.wk\.type\|lw->attn\.wv\.type' >/dev/null 2>&1; then
+    echo "Transformer execution planning must use resolved projection type metadata"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_attention_uses_qkv_split/,/^int bn_transformer_attention_uses_rope_qk_fusion/' src/transformer/plan.c | grep -n 'lw->attn\.wq\.type\|lw->attn\.wk\.type\|lw->attn\.wv\.type' >/dev/null 2>&1; then
+    echo "Transformer execution planning must use resolved projection type metadata"
+    fail=1
+fi
+
 if grep -n 'c->flash_attn' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer attention planning must use behavior-named flash policy helpers"
     fail=1
@@ -4597,6 +4607,16 @@ fi
 
 if grep -n 'p->has_gate = .*has_ffn_gate\|p->has_sub_norm = .*ffn_sub_norm\|p->use_fused_gateup_silu = .*p->placement\|p->use_gateup_split = .*p->placement\|p->placement == BN_EXEC_GPU.*BN_FUSION_RESIDUAL_RMSNORM\|p->kind == BN_FFN_MOE && p->placement == BN_EXEC_GPU' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer FFN execution planning must use FFN policy helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_ffn_uses_fused_gateup_silu/,/^int bn_transformer_ffn_uses_gateup_split/' src/transformer/plan.c | grep -n 'lw->ffn\.ffn_gate\.type\|lw->ffn\.ffn_up\.type' >/dev/null 2>&1; then
+    echo "Transformer execution planning must use resolved projection type metadata"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_ffn_uses_gateup_split/,/^int bn_transformer_ffn_uses_residual_rmsnorm_fusion/' src/transformer/plan.c | grep -n 'lw->ffn\.ffn_gate\.type\|lw->ffn\.ffn_up\.type' >/dev/null 2>&1; then
+    echo "Transformer execution planning must use resolved projection type metadata"
     fail=1
 fi
 

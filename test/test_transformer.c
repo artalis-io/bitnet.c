@@ -4049,6 +4049,16 @@ static void test_block_planning(void) {
         &gpu, &attn_shape, &lw, (void *)1, (void *)2, (void *)3, (void *)4));
     assert(bn_transformer_attention_uses_qkv_split(
         &gpu, &attn_shape, &lw, (void *)1));
+    BnTransformerPlanAttentionProjectionTypes plan_attn_types = {0};
+    assert(bn_transformer_plan_resolve_attention_projection_types(
+        &plan_attn_types, &lw));
+    assert(plan_attn_types.q_type == BN_GGUF_TENSOR_Q4_0);
+    assert(plan_attn_types.k_type == BN_GGUF_TENSOR_Q4_0);
+    assert(plan_attn_types.v_type == BN_GGUF_TENSOR_Q4_0);
+    assert(!bn_transformer_plan_resolve_attention_projection_types(
+        NULL, &lw));
+    assert(!bn_transformer_plan_resolve_attention_projection_types(
+        &plan_attn_types, NULL));
     assert(!bn_transformer_attention_uses_rope_qk_fusion(
         BN_EXEC_GPU, (void *)3));
 
@@ -4173,6 +4183,15 @@ static void test_block_planning(void) {
         NULL, &lw));
     assert(!bn_transformer_gpu_resolve_dense_ffn_projection_layout(
         &dense_ffn_layout, NULL));
+    BnTransformerPlanFFNProjectionTypes plan_ffn_types = {0};
+    assert(bn_transformer_plan_resolve_ffn_projection_types(
+        &plan_ffn_types, &lw));
+    assert(plan_ffn_types.gate_type == BN_GGUF_TENSOR_Q4_0);
+    assert(plan_ffn_types.up_type == BN_GGUF_TENSOR_Q4_0);
+    assert(!bn_transformer_plan_resolve_ffn_projection_types(
+        NULL, &lw));
+    assert(!bn_transformer_plan_resolve_ffn_projection_types(
+        &plan_ffn_types, NULL));
     assert(bn_backend_model_register_handle(backend, 0,
                                             BN_BACKEND_HANDLE_GATEUP_STACKED,
                                             (void *)5) == 0);
