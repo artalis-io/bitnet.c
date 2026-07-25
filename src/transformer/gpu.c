@@ -1199,20 +1199,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 backend, l, c->n_layers, output_norm);
             BnGPUMoEResolvedExpert expert_emit[BN_MAX_MOE_K];
             BnGPUMoEResources moe_res;
-            void *router_diff = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER_DIFF);
-            void *moe_gate_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-            void *moe_router = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
-            void *moe_up_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
-            void *moe_down_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+            BnTransformerGPUMoEDecodeResources moe_decode_res =
+                bn_transformer_gpu_resolve_moe_decode_resources(backend, l);
             BnTransformerGPUMoEDecodeDispatchPolicy moe_dispatch =
                 bn_transformer_gpu_moe_decode_dispatch_policy(
-                    gpu, c, lw, &moe_route_layer, l, dim, moe_router,
-                    router_diff, moe_gate_all, moe_up_all, moe_down_all);
+                    gpu, c, lw, &moe_route_layer, l, dim,
+                    moe_decode_res.router, moe_decode_res.router_diff,
+                    moe_decode_res.gate_all, moe_decode_res.up_all,
+                    moe_decode_res.down_all);
             if (moe_dispatch.direct_route.enabled) {
                 if (gpu_resolve_moe_all_active_two_resources(
                         &moe_res, expert_emit, m, sess, lw, l,
@@ -1242,7 +1236,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu moe session state missing");
             BnTransformerGPUMoEDecodeRoutePolicy moe_route =
                 moe_dispatch.decode_route;
-            moe_router = moe_route.router;
+            void *moe_router = moe_route.router;
             if (moe_route.gpu_routed_ffn) {
                 BnTransformerGPUMoEDebugPolicy moe_debug =
                     bn_transformer_gpu_moe_decode_debug_policy(
@@ -1393,7 +1387,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed projection types failed");
                 if (moe_debug.compare_raw &&
-                    moe_gate_all && moe_up_all &&
+                    moe_decode_res.gate_all && moe_decode_res.up_all &&
                     moe_route.all_active_two_kquant_moe) {
                     int K = route_policy.active_experts;
                     int n_experts = route_policy.total_experts;
@@ -1422,13 +1416,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                             m, sess, lw, s->xb, cpu_gate, cpu_up) != 0 ||
                         bn_transformer_gpu_emit_context_matvec_flags(
                             &emit, routed_types.gate_type,
-                            moe_gate_all, BN_GPU_VALUE_XB,
+                            moe_decode_res.gate_all, BN_GPU_VALUE_XB,
                             BN_GPU_VALUE_MOE_HB,
                             n_experts * moe_hidden, dim, 0,
                             gate_raw_compare_flags) != 0 ||
                         bn_transformer_gpu_emit_context_matvec_flags(
                             &emit, routed_types.up_type,
-                            moe_up_all, BN_GPU_VALUE_XB,
+                            moe_decode_res.up_all, BN_GPU_VALUE_XB,
                             BN_GPU_VALUE_MOE_HB2,
                             n_experts * moe_hidden, dim, 0,
                             up_raw_compare_flags) != 0 ||
@@ -1472,7 +1466,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     free(gpu_up);
                 }
                 if (bn_transformer_gpu_emit_context_moe_routed_ffn(
-                        &emit, moe_gate_all, moe_up_all, moe_down_all,
+                        &emit, moe_decode_res.gate_all,
+                        moe_decode_res.up_all, moe_decode_res.down_all,
                         BN_GPU_VALUE_XB, BN_GPU_VALUE_MOE_HB2,
                         BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_OUT,
                         routed_types.gate_type,

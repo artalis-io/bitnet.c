@@ -156,6 +156,16 @@ typedef struct {
 } BnTransformerGPUMoESharedFFNResources;
 
 typedef struct {
+    void *router;
+    void *router_diff;
+    void *gate_all;
+    void *up_all;
+    void *down_all;
+    int has_router;
+    int resident_valid;
+} BnTransformerGPUMoEDecodeResources;
+
+typedef struct {
     void *attn_norm;
     void *ffn_norm;
     void *q_norm;
@@ -1500,6 +1510,10 @@ int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
     const BnLayerWeights *lw,
     int layer,
     int allow_stacked_gateup);
+BnTransformerGPUMoEDecodeResources
+bn_transformer_gpu_resolve_moe_decode_resources(
+    const BnBackendModel *backend,
+    int layer);
 
 void bn_transformer_gpu_finalize_op_kinds(void *ops, int n);
 void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,

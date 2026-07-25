@@ -3050,6 +3050,14 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE");
     BnBackendModel *resident_backend = bn_backend_model_create();
     assert(resident_backend);
+    BnTransformerGPUMoEDecodeResources decode_resources =
+        bn_transformer_gpu_resolve_moe_decode_resources(NULL, 0);
+    assert(!decode_resources.has_router);
+    assert(!decode_resources.resident_valid);
+    decode_resources =
+        bn_transformer_gpu_resolve_moe_decode_resources(resident_backend, 0);
+    assert(!decode_resources.has_router);
+    assert(!decode_resources.resident_valid);
     assert(bn_backend_model_register_handle(
                resident_backend, 0, BN_BACKEND_HANDLE_MOE_ROUTER,
                (void *)2) == 0);
@@ -3062,12 +3070,44 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_backend_model_register_handle(
                resident_backend, 0, BN_BACKEND_HANDLE_MOE_DOWN_ALL,
                (void *)5) == 0);
+    decode_resources =
+        bn_transformer_gpu_resolve_moe_decode_resources(resident_backend, 0);
+    assert(decode_resources.router == (void *)2);
+    assert(decode_resources.gate_all == (void *)3);
+    assert(decode_resources.up_all == (void *)4);
+    assert(decode_resources.down_all == (void *)5);
+    assert(decode_resources.has_router);
+    assert(decode_resources.resident_valid);
     assert(bn_transformer_gpu_moe_decode_cacheable(
         &c, &moe_w, resident_backend));
     moe_layers[0].moe.expert_map.down_cols = 4095;
     assert(!bn_transformer_gpu_moe_decode_cacheable(
         &c, &moe_w, resident_backend));
     moe_layers[0].moe.expert_map.down_cols = 4096;
+    BnBackendModel *router_diff_backend = bn_backend_model_create();
+    assert(router_diff_backend);
+    assert(bn_backend_model_register_handle(
+               router_diff_backend, 0, BN_BACKEND_HANDLE_MOE_ROUTER_DIFF,
+               (void *)6) == 0);
+    assert(bn_backend_model_register_handle(
+               router_diff_backend, 0, BN_BACKEND_HANDLE_MOE_GATE_ALL,
+               (void *)7) == 0);
+    assert(bn_backend_model_register_handle(
+               router_diff_backend, 0, BN_BACKEND_HANDLE_MOE_UP_ALL,
+               (void *)8) == 0);
+    assert(bn_backend_model_register_handle(
+               router_diff_backend, 0, BN_BACKEND_HANDLE_MOE_DOWN_ALL,
+               (void *)9) == 0);
+    decode_resources =
+        bn_transformer_gpu_resolve_moe_decode_resources(
+            router_diff_backend, 0);
+    assert(!decode_resources.router);
+    assert(decode_resources.router_diff == (void *)6);
+    assert(decode_resources.has_router);
+    assert(decode_resources.resident_valid);
+    assert(bn_transformer_gpu_moe_decode_cacheable(
+        &c, &moe_w, router_diff_backend));
+    bn_backend_model_free(router_diff_backend);
     bn_backend_model_free(resident_backend);
     assert(bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_safe_default(
         &c, &moe_w));

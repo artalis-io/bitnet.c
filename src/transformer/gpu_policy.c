@@ -2023,17 +2023,9 @@ int bn_transformer_gpu_moe_decode_cacheable(
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         int routed_kquant_down = bn_transformer_gpu_moe_routed_kquant_down(em);
         int routed_native_quant = bn_transformer_gpu_moe_routed_native_quant(em);
-        int has_router =
-            bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_ROUTER) ||
-            bn_backend_model_handle(backend, l,
-                                    BN_BACKEND_HANDLE_MOE_ROUTER_DIFF);
-        if (!has_router ||
-            !bn_backend_model_handle(backend, l,
-                                     BN_BACKEND_HANDLE_MOE_GATE_ALL) ||
-            !bn_backend_model_handle(backend, l,
-                                     BN_BACKEND_HANDLE_MOE_UP_ALL) ||
-            !bn_backend_model_handle(backend, l,
-                                     BN_BACKEND_HANDLE_MOE_DOWN_ALL) ||
+        BnTransformerGPUMoEDecodeResources moe_resources =
+            bn_transformer_gpu_resolve_moe_decode_resources(backend, l);
+        if (!moe_resources.resident_valid ||
             (!routed_kquant_down && !routed_native_quant) ||
             !bn_transformer_moe_supports_resident_routed_ffn_layout(c, em))
             return 0;
