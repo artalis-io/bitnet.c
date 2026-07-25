@@ -258,6 +258,48 @@ BnMoESharedGateupBatchPolicy bn_moe_shared_gateup_batch_policy(
     return policy;
 }
 
+BnMoEPrefillRoutedGPUResourcePolicy
+bn_moe_prefill_routed_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer) {
+    BnMoEPrefillRoutedGPUResourcePolicy policy = {0};
+    if (!backend)
+        return policy;
+
+    policy.router =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    policy.gate_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    policy.up_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    policy.down_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    policy.norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    policy.routed_valid = policy.router && policy.gate_all &&
+                          policy.up_all && policy.down_all;
+    policy.norm_resid_valid = policy.routed_valid && policy.norm;
+    return policy;
+}
+
+BnMoEPrefillResidentGPUResourcePolicy
+bn_moe_prefill_resident_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer) {
+    BnMoEPrefillResidentGPUResourcePolicy policy = {0};
+    if (!backend)
+        return policy;
+
+    policy.gate_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    policy.up_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    policy.down_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    policy.valid = policy.gate_all && policy.up_all && policy.down_all;
+    return policy;
+}
+
 int bn_moe_policy_can_batch_loaded_shared_gateup(
     const BnMatvecTask *tasks,
     int n_tasks,

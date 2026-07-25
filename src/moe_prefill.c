@@ -121,25 +121,20 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         if (bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
                 gpu, c) &&
             backend) {
-            void *router = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
-            void *gate_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-            void *up_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
-            void *down_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-            void *norm = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_FFN_NORM);
+            BnMoEPrefillRoutedGPUResourcePolicy routed_resources =
+                bn_moe_prefill_routed_gpu_resource_policy(backend, l);
             BnTransformerGPUMoESharedFFNResources shared_gpu;
             bn_transformer_gpu_resolve_moe_shared_ffn_resources(
                 &shared_gpu, backend, c, lw, l, 0);
-            if (router && gate_all && up_all && down_all && norm) {
+            if (routed_resources.norm_resid_valid) {
                 t0 = bn_moe_time_ms();
                 if (bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
-                        gpu, act, router, gate_all, up_all, down_all,
+                        gpu, act, routed_resources.router,
+                        routed_resources.gate_all, routed_resources.up_all,
+                        routed_resources.down_all,
                         shared_gpu.gate, shared_gpu.up, shared_gpu.down,
-                        shared_gpu.gate_weight, norm, act, n_tokens, dim,
+                        shared_gpu.gate_weight, routed_resources.norm, act,
+                        n_tokens, dim,
                         moe_hidden, n_experts, K,
                         routed_types.gate_type, routed_types.up_type,
                         routed_types.down_type,
@@ -167,20 +162,16 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         if (bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
                 gpu, c, map, dim, 0) &&
             backend) {
-            void *router = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
-            void *gate_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-            void *up_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
-            void *down_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+            BnMoEPrefillRoutedGPUResourcePolicy routed_resources =
+                bn_moe_prefill_routed_gpu_resource_policy(backend, l);
             size_t sz_mout = (size_t)n_tokens * dim * sizeof(float);
             float *moe_out = (float *)bn_malloc(&a, sz_mout);
-            if (moe_out && router && gate_all && up_all && down_all) {
+            if (moe_out && routed_resources.routed_valid) {
                 t0 = bn_moe_time_ms();
                 if (bn_transformer_gpu_moe_prefill_routed_ffn_batch_backend_run(
-                        gpu, moe_out, router, gate_all, up_all, down_all,
+                        gpu, moe_out, routed_resources.router,
+                        routed_resources.gate_all, routed_resources.up_all,
+                        routed_resources.down_all,
                         Xb, n_tokens, dim, moe_hidden, n_experts, K,
                         routed_types.gate_type, routed_types.up_type,
                         routed_types.down_type,
@@ -272,11 +263,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     BnBackendModel *route_backend = bn_model_backend(m);
     if (bn_transformer_gpu_moe_prefill_route_batch_available(
             route_gpu, c, route_backend != NULL)) {
-        void *router_gpu = bn_backend_model_handle(
-            route_backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
-        int route_rc = router_gpu
+        BnMoEPrefillRoutedGPUResourcePolicy route_resources =
+            bn_moe_prefill_routed_gpu_resource_policy(route_backend, l);
+        int route_rc = route_resources.router
             ? bn_transformer_gpu_moe_prefill_route_batch_backend_run(
-                  route_gpu, all_indices, all_weights, router_gpu, Xb,
+                  route_gpu, all_indices, all_weights, route_resources.router,
+                  Xb,
                   n_tokens, dim, n_experts, K, route_policy.norm_topk_prob,
                   route_policy.expert_weights_scale)
             : -1;
@@ -285,8 +277,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         else if (bn_transformer_gpu_moe_route_batch_debug_enabled())
             fprintf(stderr,
                     "[bn:gpu:moe-route-batch] fallback layer=%d handle=%d rc=%d tokens=%d experts=%d k=%d dim=%d\n",
-                    l, router_gpu != NULL, route_rc, n_tokens, n_experts, K,
-                    dim);
+                    l, route_resources.router != NULL, route_rc, n_tokens,
+                    n_experts, K, dim);
     }
     if (!used_gpu_route) {
         moe_batch_route(batch_logits, all_indices, all_weights, Xb,
@@ -398,16 +390,13 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     if (bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
             gpu_batch, c, map, dim, 0, prefer_cached_expert_batch)) {
         const BnBackendModel *backend = bn_model_backend(m);
-        void *gate_all = bn_backend_model_handle(
-            backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-        void *up_all = bn_backend_model_handle(
-            backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
-        void *down_all = bn_backend_model_handle(
-            backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-        if (gate_all && up_all && down_all) {
+        BnMoEPrefillResidentGPUResourcePolicy resident_resources =
+            bn_moe_prefill_resident_gpu_resource_policy(backend, l);
+        if (resident_resources.valid) {
             t0 = bn_moe_time_ms();
             if (bn_transformer_gpu_moe_prefill_resident_expert_batch_backend_run(
-                    gpu_batch, moe_out, gate_all, up_all, down_all,
+                    gpu_batch, moe_out, resident_resources.gate_all,
+                    resident_resources.up_all, resident_resources.down_all,
                     all_indices, all_weights, Xb, n_tokens, dim, moe_hidden,
                     n_experts, K, routed_types.gate_type,
                     routed_types.up_type, routed_types.down_type,

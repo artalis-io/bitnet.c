@@ -6,6 +6,7 @@
 #include "session.h"
 #include "platform.h"
 #include "quant.h"
+#include "backend_model.h"
 #include "sh_log.h"
 #include "bn_alloc.h"
 #include <stdio.h>
@@ -92,6 +93,23 @@ typedef struct {
     int can_batch;
 } BnMoESharedGateupBatchPolicy;
 
+typedef struct {
+    void *router;
+    void *gate_all;
+    void *up_all;
+    void *down_all;
+    void *norm;
+    int routed_valid;
+    int norm_resid_valid;
+} BnMoEPrefillRoutedGPUResourcePolicy;
+
+typedef struct {
+    void *gate_all;
+    void *up_all;
+    void *down_all;
+    int valid;
+} BnMoEPrefillResidentGPUResourcePolicy;
+
 int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
 int bn_moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                      size_t *offset, size_t *proj_bytes);
@@ -171,6 +189,14 @@ BnMoESharedGateupBatchPolicy bn_moe_shared_gateup_batch_policy(
     int shared_up_type,
     int batch_type,
     int mixed_shared_gateup_supported);
+BnMoEPrefillRoutedGPUResourcePolicy
+bn_moe_prefill_routed_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer);
+BnMoEPrefillResidentGPUResourcePolicy
+bn_moe_prefill_resident_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer);
 int bn_moe_policy_can_batch_loaded_shared_gateup(
     const BnMatvecTask *tasks,
     int n_tasks,

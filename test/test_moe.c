@@ -404,6 +404,56 @@ static void test_moe_prefill_policy(void) {
     routed_lw.moe.router_weight = (float *)1;
     assert(bn_moe_policy_layer_has_router(&routed_lw));
 
+    BnBackendModel *backend = bn_backend_model_create();
+    assert(backend);
+    BnMoEPrefillRoutedGPUResourcePolicy routed_resources =
+        bn_moe_prefill_routed_gpu_resource_policy(NULL, 0);
+    assert(!routed_resources.router);
+    assert(!routed_resources.routed_valid);
+    assert(!routed_resources.norm_resid_valid);
+    BnMoEPrefillResidentGPUResourcePolicy resident_resources =
+        bn_moe_prefill_resident_gpu_resource_policy(NULL, 0);
+    assert(!resident_resources.valid);
+    int router_handle;
+    int gate_all_handle;
+    int up_all_handle;
+    int down_all_handle;
+    int norm_handle;
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_MOE_ROUTER,
+               &router_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_MOE_GATE_ALL,
+               &gate_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_MOE_UP_ALL,
+               &up_all_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_MOE_DOWN_ALL,
+               &down_all_handle) == 0);
+    routed_resources =
+        bn_moe_prefill_routed_gpu_resource_policy(backend, 0);
+    assert(routed_resources.router == &router_handle);
+    assert(routed_resources.gate_all == &gate_all_handle);
+    assert(routed_resources.up_all == &up_all_handle);
+    assert(routed_resources.down_all == &down_all_handle);
+    assert(routed_resources.routed_valid);
+    assert(!routed_resources.norm_resid_valid);
+    resident_resources =
+        bn_moe_prefill_resident_gpu_resource_policy(backend, 0);
+    assert(resident_resources.gate_all == &gate_all_handle);
+    assert(resident_resources.up_all == &up_all_handle);
+    assert(resident_resources.down_all == &down_all_handle);
+    assert(resident_resources.valid);
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_FFN_NORM,
+               &norm_handle) == 0);
+    routed_resources =
+        bn_moe_prefill_routed_gpu_resource_policy(backend, 0);
+    assert(routed_resources.norm == &norm_handle);
+    assert(routed_resources.norm_resid_valid);
+    bn_backend_model_free(backend);
+
     c.n_experts = 4;
     c.n_experts_active = 2;
     assert(!bn_moe_policy_uses_all_active_two_expert_set(&c));
