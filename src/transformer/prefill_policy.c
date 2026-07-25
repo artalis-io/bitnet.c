@@ -794,8 +794,14 @@ int bn_transformer_prefill_resolve_ffn_projection_types(
         return 0;
     memset(out, 0, sizeof(*out));
     out->gate_type = lw->ffn.ffn_gate.type;
+    out->gate_rows = lw->ffn.ffn_gate.rows;
+    out->gate_cols = lw->ffn.ffn_gate.cols;
     out->up_type = lw->ffn.ffn_up.type;
+    out->up_rows = lw->ffn.ffn_up.rows;
+    out->up_cols = lw->ffn.ffn_up.cols;
     out->down_type = lw->ffn.ffn_down.type;
+    out->down_rows = lw->ffn.ffn_down.rows;
+    out->down_cols = lw->ffn.ffn_down.cols;
     return 1;
 }
 
@@ -806,10 +812,20 @@ int bn_transformer_prefill_resolve_ssm_projection_types(
         return 0;
     memset(out, 0, sizeof(*out));
     out->qkv_type = lw->ssm.wqkv.type;
+    out->qkv_rows = lw->ssm.wqkv.rows;
+    out->qkv_cols = lw->ssm.wqkv.cols;
     out->z_type = lw->ssm.wz.type;
+    out->z_rows = lw->ssm.wz.rows;
+    out->z_cols = lw->ssm.wz.cols;
     out->alpha_type = lw->ssm.ssm_alpha.type;
+    out->alpha_rows = lw->ssm.ssm_alpha.rows;
+    out->alpha_cols = lw->ssm.ssm_alpha.cols;
     out->beta_type = lw->ssm.ssm_beta.type;
+    out->beta_rows = lw->ssm.ssm_beta.rows;
+    out->beta_cols = lw->ssm.ssm_beta.cols;
     out->out_type = lw->ssm.ssm_out.type;
+    out->out_rows = lw->ssm.ssm_out.rows;
+    out->out_cols = lw->ssm.ssm_out.cols;
     return 1;
 }
 

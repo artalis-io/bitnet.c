@@ -43,16 +43,32 @@ typedef struct {
 
 typedef struct {
     int gate_type;
+    int gate_rows;
+    int gate_cols;
     int up_type;
+    int up_rows;
+    int up_cols;
     int down_type;
+    int down_rows;
+    int down_cols;
 } BnTransformerPrefillFFNProjectionTypes;
 
 typedef struct {
     int qkv_type;
+    int qkv_rows;
+    int qkv_cols;
     int z_type;
+    int z_rows;
+    int z_cols;
     int alpha_type;
+    int alpha_rows;
+    int alpha_cols;
     int beta_type;
+    int beta_rows;
+    int beta_cols;
     int out_type;
+    int out_rows;
+    int out_cols;
 } BnTransformerPrefillSSMProjectionTypes;
 
 typedef struct {

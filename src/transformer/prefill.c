@@ -500,7 +500,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     int wv_type = 0;
     if (has_packed_qkv) {
         qk_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
-        qk_rows = lw->ssm.wqkv.rows;
+        qk_rows = ssm_types.qkv_rows;
         qk_type = ssm_types.qkv_type;
         wv_rows = 0;
         wv_type = qk_type;
@@ -1111,7 +1111,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         num_k_heads, head_k_dim, num_v_heads, head_v_dim,
         conv_kernel, ssm_idx, ssm_types.qkv_type, ssm_types.z_type,
         ssm_types.alpha_type, ssm_types.beta_type, ssm_types.out_type,
-        lw->ffn.ffn_down.cols, ffn_types.gate_type, ffn_types.up_type,
+        ffn_types.down_cols, ffn_types.gate_type, ffn_types.up_type,
         ffn_types.down_type, activation, norm_eps, did_ffn);
 }
 
@@ -2472,8 +2472,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
 
             for (int t = 0; t < n_tokens; t++) {
-                float *qkv_t = QKV_all + (size_t)t * lw->ssm.wqkv.rows;
-                float *z_t = Z_all + (size_t)t * lw->ssm.wz.rows;
+                float *qkv_t = QKV_all + (size_t)t * ssm_types.qkv_rows;
+                float *z_t = Z_all + (size_t)t * ssm_types.z_rows;
                 float *out_t = Out_all + (size_t)t * value_dim;
                 float *xb_t = Xb + (size_t)t * dim;
 

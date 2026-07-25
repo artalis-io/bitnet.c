@@ -1707,7 +1707,7 @@ if awk '/^static int prefill_qk_stacked_gpu/{flag=1} /^static int prefill_moe_ff
    awk '/BnTransformerPrefillRawAttentionPolicy raw_attn_policy/{flag=1} /BnTransformerPrefillAttentionModePolicy attention_mode/{flag=0} flag{print}' \
     src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.\(type\|rows\|cols\)' >/dev/null 2>&1 ||
    awk '/^static int prefill_dense_layer_gpu/{flag=1} /^static int prefill_qk_stacked_gpu/{flag=0} flag{print}' \
-    src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.\(type\|rows\|cols\)\|lw->ssm\.wqkv\.type' >/dev/null 2>&1; then
+    src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.\(type\|rows\|cols\)\|lw->ssm\.wqkv\.\(type\|rows\|cols\)' >/dev/null 2>&1; then
     echo "Prefill attention execution must use resolved projection metadata"
     fail=1
 fi
@@ -1718,16 +1718,16 @@ if awk '/^void bn_transformer_cpu_forward_ssm_block/{flag=1} /^void bn_transform
     fail=1
 fi
 
-if grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.type' src/transformer/prefill.c >/dev/null 2>&1; then
-    echo "Prefill execution must use resolved FFN projection type metadata"
+if grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.\(type\|rows\|cols\)' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill execution must use resolved FFN projection metadata"
     fail=1
 fi
 
 if awk '/^static int prefill_ssm_layer_gpu/{flag=1} /^static int prefill_ssm_layer_chain_ready/{flag=0} flag{print}' \
-    src/transformer/prefill.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\|ssm_out\)\.type' >/dev/null 2>&1 ||
+    src/transformer/prefill.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\|ssm_out\)\.\(type\|rows\|cols\)' >/dev/null 2>&1 ||
    awk '/float \*QKV_all = Q_buf/{flag=1} /prefill_ssm_done:/{flag=0} flag{print}' \
-    src/transformer/prefill.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\)\.type' >/dev/null 2>&1; then
-    echo "Prefill SSM execution must use resolved projection type metadata"
+    src/transformer/prefill.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\)\.\(type\|rows\|cols\)' >/dev/null 2>&1; then
+    echo "Prefill SSM execution must use resolved projection metadata"
     fail=1
 fi
 
