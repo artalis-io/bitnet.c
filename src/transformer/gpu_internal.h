@@ -31,6 +31,7 @@ typedef struct {
     void *ffn_gate;
     void *ffn_up;
     void *ffn_down;
+    void *ffn_down_prefill;
 } BnTransformerGPUDenseFFNResources;
 
 typedef struct {

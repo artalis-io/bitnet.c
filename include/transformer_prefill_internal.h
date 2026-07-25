@@ -471,9 +471,7 @@ BnTransformerPrefillDenseFFNGPUResourcePolicy
 bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     const BnBackendModel *backend,
     int layer,
-    const BnQWeight *gate,
-    const BnQWeight *up,
-    const BnQWeight *down,
+    const BnLayerWeights *lw,
     BnTransformerPrefillFFNProjectionTypes types);
 BnTransformerPrefillDenseLayerGPUResourcePolicy
 bn_transformer_prefill_dense_layer_gpu_resource_policy(

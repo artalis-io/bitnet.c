@@ -306,40 +306,32 @@ BnTransformerPrefillDenseFFNGPUResourcePolicy
 bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     const BnBackendModel *backend,
     int layer,
-    const BnQWeight *gate,
-    const BnQWeight *up,
-    const BnQWeight *down,
+    const BnLayerWeights *lw,
     BnTransformerPrefillFFNProjectionTypes types) {
     BnTransformerPrefillDenseFFNGPUResourcePolicy policy = {0};
-    if (!gate || !up || !down)
+    if (!lw)
         return policy;
 
-    void *gateup_buf = backend
-                           ? bn_backend_model_handle(
-                                 backend, layer,
-                                 BN_BACKEND_HANDLE_GATEUP_STACKED)
-                           : NULL;
-    if (gateup_buf &&
+    BnTransformerGPUDenseFFNResources ffn_res =
+        bn_transformer_gpu_resolve_dense_ffn_resources(NULL, backend, lw,
+                                                       layer);
+    BnTransformerGPULayerValidationResources layer_res =
+        bn_transformer_gpu_resolve_layer_validation_resources(backend, layer);
+
+    if (ffn_res.gateup_stacked &&
         bn_transformer_prefill_same_quant_format_pair_stackable(
             types.gate_type, types.up_type)) {
-        policy.gate = gateup_buf;
+        policy.gate = ffn_res.gateup_stacked;
         policy.uses_stacked_gateup = 1;
     } else {
-        policy.gate =
-            bn_transformer_prefill_qweight_gpu_buffer_policy(backend, gate);
-        policy.up =
-            bn_transformer_prefill_qweight_gpu_buffer_policy(backend, up);
+        policy.gate = ffn_res.ffn_gate;
+        policy.up = ffn_res.ffn_up;
     }
 
-    policy.down =
-        bn_transformer_prefill_qweight_gpu_buffer_policy(backend, down);
-    if (!policy.down && backend)
-        policy.down = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
-    policy.ffn_norm =
-        backend ? bn_backend_model_handle(
-                      backend, layer, BN_BACKEND_HANDLE_FFN_NORM)
-                : NULL;
+    policy.down = ffn_res.ffn_down;
+    if (!policy.down)
+        policy.down = ffn_res.ffn_down_prefill;
+    policy.ffn_norm = layer_res.ffn_norm;
 
     policy.valid =
         policy.gate && policy.down &&
@@ -365,8 +357,7 @@ bn_transformer_prefill_dense_layer_gpu_resource_policy(
             backend, layer, lw, has_packed_qkv, attn_types, ssm_types);
     BnTransformerPrefillDenseFFNGPUResourcePolicy ffn =
         bn_transformer_prefill_dense_ffn_gpu_resource_policy(
-            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
-            &lw->ffn.ffn_down, ffn_types);
+            backend, layer, lw, ffn_types);
 
     policy.qk = attn.qk;
     policy.wv = attn.wv;
@@ -539,8 +530,7 @@ bn_transformer_prefill_ssm_gpu_resource_policy(
     if (fuse_ffn) {
         BnTransformerPrefillDenseFFNGPUResourcePolicy ffn =
             bn_transformer_prefill_dense_ffn_gpu_resource_policy(
-                backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
-                &lw->ffn.ffn_down, ffn_types);
+                backend, layer, lw, ffn_types);
         policy.ffn_norm = ssm_res.ffn_norm;
         if (ffn.valid && policy.ffn_norm) {
             policy.gate = ffn.gate;

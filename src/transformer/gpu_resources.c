@@ -100,6 +100,8 @@ bn_transformer_gpu_resolve_dense_ffn_resources(
         .ffn_gate = qweight_backend_buf(backend, &lw->ffn.ffn_gate),
         .ffn_up = qweight_backend_buf(backend, &lw->ffn.ffn_up),
         .ffn_down = qweight_backend_buf(backend, &lw->ffn.ffn_down),
+        .ffn_down_prefill = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL),
     };
 }
 

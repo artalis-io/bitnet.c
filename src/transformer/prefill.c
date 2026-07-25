@@ -400,8 +400,7 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
 
     BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
         bn_transformer_prefill_dense_ffn_gpu_resource_policy(
-            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
-            &lw->ffn.ffn_down, ffn_types);
+            backend, layer, lw, ffn_types);
     if (!ffn_resources.valid)
         return -1;
 
@@ -2303,8 +2302,7 @@ prefill_ssm_done:
                     gpu_ffn, c, n_tokens);
             BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
                 bn_transformer_prefill_dense_ffn_gpu_resource_policy(
-                    backend_ffn, l, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
-                    &lw->ffn.ffn_down, ffn_types);
+                    backend_ffn, l, lw, ffn_types);
             void *ffn_norm_buf = (void *)ffn_resources.ffn_norm;
             BnTransformerPrefillFFNBatchPolicy ffn_batch_policy =
                 bn_transformer_prefill_ffn_batch_policy(
