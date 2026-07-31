@@ -1,7 +1,6 @@
 #ifndef BN_TRANSFORMER_PREFILL_INTERNAL_H
 #define BN_TRANSFORMER_PREFILL_INTERNAL_H
 
-#include "backend_model.h"
 #include "model_config.h"
 #include "model_weights.h"
 #include "moe_types.h"
@@ -15,6 +14,7 @@
 #define BN_GPU_BACKEND_DECLARED
 typedef struct BnGPUBackend BnGPUBackend;
 #endif
+typedef struct BnBackendModel BnBackendModel;
 
 #define BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES 16
 

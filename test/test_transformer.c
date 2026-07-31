@@ -10,6 +10,7 @@
 #include "../src/transformer/gpu_internal.h"
 #include "../src/gpu_shader.h"
 #include "transformer_plan_internal.h"
+#include "backend_model.h"
 #include "backend_session.h"
 #include "gpu_policy.h"
 #include "model_arch.h"

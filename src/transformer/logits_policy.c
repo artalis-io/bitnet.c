@@ -1,5 +1,6 @@
 #include "transformer_logits_internal.h"
 #include "transformer_plan_internal.h"
+#include "backend_model.h"
 #include "backend_quant.h"
 #include "gpu_internal.h"
 #include "model_internal.h"

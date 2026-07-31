@@ -1,7 +1,6 @@
 #ifndef BN_TRANSFORMER_GPU_INTERNAL_H
 #define BN_TRANSFORMER_GPU_INTERNAL_H
 
-#include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_graph_ir.h"
 #include "gpu_moe_bridge.h"

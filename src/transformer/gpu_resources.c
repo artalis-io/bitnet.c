@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
 #include "../moe_internal.h"
+#include "backend_model.h"
 #include "backend_session.h"
 
 #include <string.h>
