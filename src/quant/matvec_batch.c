@@ -709,12 +709,41 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                     ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W,
                                               x_q_buf, x_scales,
                                               tasks[t].prepared };
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+                    bn_tp_fn fn = tasks[t].prepared &&
+                                      tasks[t].prepared->kind ==
+                                          BN_PREPARED_WEIGHT_Q4_0_REPACK
+                        ? bn_quant_q4_repacked_neon_sdot_range
+                        : bn_quant_q4_neon_sdot_range;
+                    int n_items = tasks[t].W->rows;
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
+      defined(__AVX512VNNI__)
+                    bn_tp_fn fn = bn_quant_q4_avx512_vnni_4row_range;
+                    int n_items = (tasks[t].W->rows + 3) / 4;
+#elif defined(__AVX2__)
+                    bn_tp_fn fn = bn_quant_q4_avx2_4row_range;
+                    int n_items = (tasks[t].W->rows + 3) / 4;
+#elif defined(__wasm_relaxed_simd__)
+                    bn_tp_fn fn = bn_quant_policy_wasm_q4_canonical4_enabled()
+                        ? bn_quant_q4_wasm_sdot_4row_range
+                        : (tasks[t].prepared && tasks[t].prepared->qs
+                           ? bn_quant_q4_repacked_wasm_sdot_8row_range
+                           : bn_quant_q4_wasm_sdot_range);
+                    int n_items = tasks[t].W->rows;
+                    if (bn_quant_policy_wasm_q4_canonical4_enabled())
+                        n_items = (tasks[t].W->rows + 3) / 4;
+                    else if (tasks[t].prepared && tasks[t].prepared->qs)
+                        n_items = (tasks[t].W->rows + 7) / 8;
+#else
+                    bn_tp_fn fn = tasks[t].prepared &&
+                                      tasks[t].prepared->kind ==
+                                          BN_PREPARED_WEIGHT_Q4_0_REPACK
+                        ? bn_quant_q4_repacked_scalar_sdot_range
+                        : bn_quant_q4_scalar_sdot_range;
+                    int n_items = tasks[t].W->rows;
+#endif
                     tp_tasks[t] = (BnTPTask){
-                        tasks[t].prepared &&
-                                tasks[t].prepared->kind == BN_PREPARED_WEIGHT_Q4_0_REPACK
-                            ? bn_quant_q4_repacked_scalar_sdot_range
-                            : bn_quant_q4_scalar_sdot_range,
-                        &ctxs[t], tasks[t].W->rows };
+                        fn, &ctxs[t], n_items };
                 }
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);
                 return;

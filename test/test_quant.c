@@ -567,6 +567,53 @@ static void test_matvec_batch(void) {
     printf("PASSED\n");
 }
 
+static void test_q4_large_matvec_batch(void) {
+    printf("test_q4_large_matvec_batch... ");
+
+    enum { N_TASKS = 6, ROWS = 7, COLS = 64 };
+    const int n_bpr = COLS / 32;
+    BnBlockQ4_0 *blocks = (BnBlockQ4_0 *)calloc(
+        (size_t)N_TASKS * ROWS * n_bpr, sizeof(BnBlockQ4_0));
+    assert(blocks != NULL);
+
+    BnQWeight weights[N_TASKS];
+    float refs[N_TASKS][ROWS];
+    float outs[N_TASKS][ROWS];
+    BnMatvecTask tasks[N_TASKS];
+    float x[COLS];
+    int8_t x_q[COLS];
+
+    for (int i = 0; i < COLS; i++)
+        x[i] = 0.04f * (float)((i * 7) % 23) - 0.44f;
+    for (int t = 0; t < N_TASKS; t++) {
+        BnBlockQ4_0 *task_blocks =
+            blocks + (size_t)t * ROWS * n_bpr;
+        for (int r = 0; r < ROWS; r++) {
+            for (int b = 0; b < n_bpr; b++) {
+                BnBlockQ4_0 *blk = &task_blocks[r * n_bpr + b];
+                blk->d = bn_fp32_to_fp16(0.25f + 0.125f * (float)t);
+                for (int i = 0; i < 16; i++)
+                    blk->qs[i] = (uint8_t)(t * 29 + r * 17 + b * 7 + i * 5);
+            }
+        }
+        weights[t] = (BnQWeight){
+            task_blocks, BN_GGUF_TENSOR_Q4_0, ROWS, COLS, 1.0f };
+        bn_quant_matvec(refs[t], &weights[t], x, x_q, NULL);
+        tasks[t] = (BnMatvecTask){ outs[t], &weights[t], NULL, 0 };
+    }
+
+    bn_quant_matvec_batch(tasks, N_TASKS, x, x_q, NULL);
+    for (int t = 0; t < N_TASKS; t++) {
+        for (int r = 0; r < ROWS; r++) {
+            float scale = fabsf(refs[t][r]) + 1e-6f;
+            assert(fabsf(outs[t][r] - refs[t][r]) / scale < 0.02f);
+        }
+    }
+
+    free(blocks);
+    printf("PASSED\n");
+}
+
 // --- Integration test: threaded matvec ---
 
 static void test_matvec_threaded(void) {
@@ -1752,6 +1799,7 @@ int main(void) {
     test_dispatch_routing();
     test_logits_refine_rows();
     test_matvec_batch();
+    test_q4_large_matvec_batch();
     test_matvec_threaded();
     test_matmul_correctness();
     test_q4_matmul_correctness();
