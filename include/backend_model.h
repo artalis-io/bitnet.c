@@ -64,7 +64,6 @@ BnBackendModel *bn_backend_model_create(void);
 void bn_backend_model_free(BnBackendModel *backend);
 BnGPUBackend *bn_backend_model_gpu(const BnBackendModel *backend);
 void bn_backend_model_bind_gpu(BnBackendModel *backend, BnGPUBackend *gpu);
-void bn_backend_model_clear_gpu(BnBackendModel *backend);
 void bn_backend_model_release_gpu(BnBackendModel *backend);
 void bn_backend_model_set_gpu_disabled(BnBackendModel *backend, int disabled);
 int bn_backend_model_register_handle(BnBackendModel *backend,

@@ -48,6 +48,13 @@ static int backend_destroy_once(BnGPUBackend *gpu, void **seen, int *n_seen,
     return 0;
 }
 
+static void backend_model_clear_gpu(BnBackendModel *backend) {
+    backend->gpu = NULL;
+    backend->gpu_disabled = 0;
+    backend->n_handles = 0;
+    backend->n_qweights = 0;
+}
+
 void bn_backend_model_release_gpu(BnBackendModel *backend) {
     if (!backend) return;
     BnGPUBackend *gpu = backend->gpu;
@@ -73,7 +80,7 @@ void bn_backend_model_release_gpu(BnBackendModel *backend) {
         }
         free(seen);
     }
-    bn_backend_model_clear_gpu(backend);
+    backend_model_clear_gpu(backend);
 }
 
 void bn_backend_model_free(BnBackendModel *backend) {
@@ -93,14 +100,6 @@ void bn_backend_model_bind_gpu(BnBackendModel *backend, BnGPUBackend *gpu) {
     if (!backend) return;
     backend->gpu = gpu;
     backend->gpu_disabled = 0;
-}
-
-void bn_backend_model_clear_gpu(BnBackendModel *backend) {
-    if (!backend) return;
-    backend->gpu = NULL;
-    backend->gpu_disabled = 0;
-    backend->n_handles = 0;
-    backend->n_qweights = 0;
 }
 
 void bn_backend_model_set_gpu_disabled(BnBackendModel *backend, int disabled) {

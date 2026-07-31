@@ -5299,7 +5299,7 @@ if grep -n '#include "backend_model.h"' \
     fail=1
 fi
 
-if grep -n 'bn_backend_model_raw_gpu\|bn_backend_session_set_gpu_graph' \
+if grep -n 'bn_backend_model_raw_gpu\|bn_backend_model_clear_gpu\|bn_backend_session_set_gpu_graph' \
     include/backend_model.h \
     include/backend_session.h \
     src/backend_model.c \
