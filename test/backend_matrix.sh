@@ -5186,8 +5186,8 @@ if rg -n 'if \([^)]*shared_expert_gate|gate_dot|shared_expert_gate\[d\]' src/moe
     fail=1
 fi
 
-if grep -n '&lw->shared\.shared_gate\|&lw->shared\.shared_up\|&lw->shared\.shared_down' src/transformer/gpu.c >/dev/null 2>&1 ||
-   [ "$(grep -c 'bn_moe_shared_expert_gate_weight(lw' src/transformer/gpu.c)" -ne 1 ]; then
+if grep -n '&lw->shared\.shared_gate\|&lw->shared\.shared_up\|&lw->shared\.shared_down\|bn_moe_shared_expert_\(gateup_tasks\|down_weight\|gate_weight\)' src/transformer/gpu.c >/dev/null 2>&1 ||
+   [ "$(grep -c 'bn_moe_shared_expert_gate_weight(layer' src/transformer/gpu_fallback.c)" -ne 1 ]; then
     echo "Transformer GPU CPU fallback shared expert work must be centralized through shared helpers"
     fail=1
 fi

@@ -26,14 +26,6 @@ static void gpu_cpu_quant_matvec(BnModel *m,
         m, out, W, x, quantized_buf);
 }
 
-static int gpu_compute_shared_expert_cpu_from_xb(
-    BnModel *m,
-    BnSession *sess,
-    BnLayerWeights *lw,
-    int dim,
-    const float *xb_in,
-    float *shared_out);
-
 static void gpu_debug_compare_vec_local(const char *label,
                                         int layer,
                                         int pos,
@@ -190,7 +182,7 @@ static int gpu_debug_compute_moe_cpu_from_xb(
     if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
         float *shared_out = (float *)malloc((size_t)dim * sizeof(float));
         if (!shared_out ||
-            gpu_compute_shared_expert_cpu_from_xb(
+            bn_transformer_gpu_fallback_shared_expert_output(
                 m, sess, lw, dim, xb_in, shared_out) != 0) {
             free(shared_out);
             free(expert_out);
@@ -282,7 +274,7 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
     }
 
     if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
-        if (gpu_compute_shared_expert_cpu_from_xb(
+        if (bn_transformer_gpu_fallback_shared_expert_output(
                 m, sess, lw, dim, xb_in, shared_out) != 0) {
             free(hb);
             free(hb2);
@@ -293,89 +285,6 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
 
     free(hb);
     free(hb2);
-    free(down);
-    return 0;
-}
-
-static int gpu_compute_shared_expert_mid_cpu_from_xb(
-    BnModel *m,
-    BnSession *sess,
-    BnLayerWeights *lw,
-    const float *xb_in,
-    float *mid_out) {
-    if (!m || !sess || !lw || !xb_in || !mid_out ||
-        !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
-        return -1;
-    BnConfig *c = &m->config;
-    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
-        bn_transformer_gpu_moe_shared_expert_shape_policy(c);
-    int shared_hidden = shared_shape.hidden_dim;
-    BnTransformerGPUMoEActivationPolicy activation_policy =
-        bn_transformer_gpu_moe_activation_policy(c);
-    int uses_reference_silu = activation_policy.uses_reference_silu;
-    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
-    if (shared_hidden <= 0)
-        return -1;
-    float *hb2 = (float *)malloc((size_t)shared_hidden * sizeof(float));
-    if (!hb2)
-        return -1;
-
-    BnMatvecTask gu_tasks[2];
-    int n_gu_tasks = bn_moe_shared_expert_gateup_tasks(
-        gu_tasks, mid_out, hb2, lw, gateup_flags);
-    if (n_gu_tasks <= 0) {
-        free(hb2);
-        return -1;
-    }
-    gpu_cpu_quant_matvec_batch(m, gu_tasks, n_gu_tasks, xb_in,
-                               sess->state.x_q);
-    bn_moe_swiglu(mid_out, mid_out, hb2, shared_hidden, uses_reference_silu);
-    free(hb2);
-    return 0;
-}
-
-static int gpu_compute_shared_expert_cpu_from_xb(
-    BnModel *m,
-    BnSession *sess,
-    BnLayerWeights *lw,
-    int dim,
-    const float *xb_in,
-    float *shared_out) {
-    if (!m || !sess || !lw || !xb_in || !shared_out || dim <= 0 ||
-        !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
-        return -1;
-    BnConfig *c = &m->config;
-    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
-        bn_transformer_gpu_moe_shared_expert_shape_policy(c);
-    int shared_hidden = shared_shape.hidden_dim;
-    if (shared_hidden <= 0)
-        return -1;
-    float *mid = (float *)malloc((size_t)shared_hidden * sizeof(float));
-    float *down = (float *)malloc((size_t)dim * sizeof(float));
-    if (!mid || !down) {
-        free(mid);
-        free(down);
-        return -1;
-    }
-
-    if (gpu_compute_shared_expert_mid_cpu_from_xb(
-            m, sess, lw, xb_in, mid) != 0) {
-        free(mid);
-        free(down);
-        return -1;
-    }
-    const BnQWeight *shared_down = bn_moe_shared_expert_down_weight(lw);
-    if (!shared_down) {
-        free(mid);
-        free(down);
-        return -1;
-    }
-    gpu_cpu_quant_matvec(m, down, shared_down, mid, sess->state.x_q);
-    memset(shared_out, 0, (size_t)dim * sizeof(float));
-    float shared_weight = bn_moe_shared_expert_gate_weight(lw, xb_in, dim);
-    bn_moe_weighted_add(shared_out, down, shared_weight, dim);
-
-    free(mid);
     free(down);
     return 0;
 }
@@ -491,50 +400,6 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
         };
         gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
     }
-    return 0;
-}
-
-static int gpu_debug_compute_shared_mid_cpu_from_xb(
-    BnModel *m,
-    BnSession *sess,
-    BnLayerWeights *lw,
-    const float *xb_in,
-    float *mid_out) {
-    return gpu_compute_shared_expert_mid_cpu_from_xb(
-        m, sess, lw, xb_in, mid_out);
-}
-
-static int gpu_debug_compute_shared_down_cpu_from_xb(
-    BnModel *m,
-    BnSession *sess,
-    BnLayerWeights *lw,
-    int dim,
-    const float *xb_in,
-    float *down_out) {
-    if (!m || !sess || !lw || !xb_in || !down_out || dim <= 0 ||
-        !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
-        return -1;
-    BnConfig *c = &m->config;
-    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
-        bn_transformer_gpu_moe_shared_expert_shape_policy(c);
-    int hidden = shared_shape.hidden_dim;
-    if (hidden <= 0)
-        return -1;
-    float *mid = (float *)malloc((size_t)hidden * sizeof(float));
-    if (!mid)
-        return -1;
-    if (gpu_compute_shared_expert_mid_cpu_from_xb(
-            m, sess, lw, xb_in, mid) != 0) {
-        free(mid);
-        return -1;
-    }
-    const BnQWeight *shared_down = bn_moe_shared_expert_down_weight(lw);
-    if (!shared_down) {
-        free(mid);
-        return -1;
-    }
-    gpu_cpu_quant_matvec(m, down_out, shared_down, mid, sess->state.x_q);
-    free(mid);
     return 0;
 }
 
@@ -1441,7 +1306,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         bn_transformer_gpu_read_activation_buf(
                             gpu, BN_GPU_VALUE_MOE_OUT, shared_gpu_out,
                             dim_bytes) != 0 ||
-                        gpu_compute_shared_expert_cpu_from_xb(
+                        bn_transformer_gpu_fallback_shared_expert_output(
                             m, sess, lw, dim, shared_cpu_xb,
                             shared_cpu_out) != 0) {
                         free(shared_cpu_xb);
@@ -1521,7 +1386,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         float *moe_gpu_shared_mid =
                             (float *)malloc(shared_mid_bytes);
                         if (moe_cpu_shared_mid && moe_gpu_shared_mid &&
-                            gpu_debug_compute_shared_mid_cpu_from_xb(
+                            bn_transformer_gpu_fallback_shared_expert_mid(
                                 m, sess, lw, s->xb,
                                 moe_cpu_shared_mid) == 0 &&
                             bn_transformer_gpu_read_activation_buf(
@@ -1544,7 +1409,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         float *moe_gpu_shared_down =
                             (float *)malloc(shared_down_bytes);
                         if (moe_cpu_shared_down && moe_gpu_shared_down &&
-                            gpu_debug_compute_shared_down_cpu_from_xb(
+                            bn_transformer_gpu_fallback_shared_expert_down(
                                 m, sess, lw, dim, s->xb,
                                 moe_cpu_shared_down) == 0 &&
                             bn_transformer_gpu_read_activation_buf(

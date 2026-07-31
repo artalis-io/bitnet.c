@@ -7,6 +7,7 @@
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "model_internal.h"
+#include "../moe_internal.h"
 #include "moe.h"
 #include "platform.h"
 
@@ -230,6 +231,124 @@ void bn_transformer_gpu_run_model_moe_cpu(
     bn_model_set_gpu_disabled(model, 1);
     bn_moe_forward(model, session, layer, layer_index);
     bn_model_set_gpu_disabled(model, 0);
+}
+
+int bn_transformer_gpu_fallback_shared_expert_mid(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const float *input,
+    float *mid_out) {
+    if (!model || !session || !layer || !input || !mid_out ||
+        !bn_transformer_gpu_moe_has_loaded_shared_expert(
+            &model->config, layer))
+        return -1;
+    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+        bn_transformer_gpu_moe_shared_expert_shape_policy(&model->config);
+    BnTransformerGPUMoEActivationPolicy activation_policy =
+        bn_transformer_gpu_moe_activation_policy(&model->config);
+    int hidden = shared_shape.hidden_dim;
+    if (hidden <= 0)
+        return -1;
+    float *up = (float *)malloc((size_t)hidden * sizeof(float));
+    if (!up)
+        return -1;
+
+    BnMatvecTask tasks[2];
+    int n_tasks = bn_moe_shared_expert_gateup_tasks(
+        tasks, mid_out, up, layer,
+        bn_transformer_gpu_moe_gateup_task_flags(&model->config));
+    if (n_tasks <= 0) {
+        free(up);
+        return -1;
+    }
+    bn_transformer_gpu_cpu_quant_matvec_batch_model(
+        model, tasks, n_tasks, input, session->state.x_q);
+    bn_moe_swiglu(mid_out, mid_out, up, hidden,
+                  activation_policy.uses_reference_silu);
+    free(up);
+    return 0;
+}
+
+int bn_transformer_gpu_fallback_shared_expert_output(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *input,
+    float *output) {
+    if (!model || !session || !layer || !input || !output || dim <= 0 ||
+        !bn_transformer_gpu_moe_has_loaded_shared_expert(
+            &model->config, layer))
+        return -1;
+    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+        bn_transformer_gpu_moe_shared_expert_shape_policy(&model->config);
+    int hidden = shared_shape.hidden_dim;
+    if (hidden <= 0)
+        return -1;
+    float *mid = (float *)malloc((size_t)hidden * sizeof(float));
+    float *down = (float *)malloc((size_t)dim * sizeof(float));
+    if (!mid || !down) {
+        free(mid);
+        free(down);
+        return -1;
+    }
+    if (bn_transformer_gpu_fallback_shared_expert_mid(
+            model, session, layer, input, mid) != 0) {
+        free(mid);
+        free(down);
+        return -1;
+    }
+    const BnQWeight *weight = bn_moe_shared_expert_down_weight(layer);
+    if (!weight) {
+        free(mid);
+        free(down);
+        return -1;
+    }
+    bn_transformer_gpu_cpu_quant_matvec_model(
+        model, down, weight, mid, session->state.x_q);
+    memset(output, 0, (size_t)dim * sizeof(float));
+    bn_moe_weighted_add(
+        output, down,
+        bn_moe_shared_expert_gate_weight(layer, input, dim), dim);
+    free(mid);
+    free(down);
+    return 0;
+}
+
+int bn_transformer_gpu_fallback_shared_expert_down(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *input,
+    float *down_out) {
+    if (!model || !session || !layer || !input || !down_out || dim <= 0 ||
+        !bn_transformer_gpu_moe_has_loaded_shared_expert(
+            &model->config, layer))
+        return -1;
+    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+        bn_transformer_gpu_moe_shared_expert_shape_policy(&model->config);
+    int hidden = shared_shape.hidden_dim;
+    if (hidden <= 0)
+        return -1;
+    float *mid = (float *)malloc((size_t)hidden * sizeof(float));
+    if (!mid)
+        return -1;
+    if (bn_transformer_gpu_fallback_shared_expert_mid(
+            model, session, layer, input, mid) != 0) {
+        free(mid);
+        return -1;
+    }
+    const BnQWeight *weight = bn_moe_shared_expert_down_weight(layer);
+    if (!weight) {
+        free(mid);
+        return -1;
+    }
+    bn_transformer_gpu_cpu_quant_matvec_model(
+        model, down_out, weight, mid, session->state.x_q);
+    free(mid);
+    return 0;
 }
 
 int bn_transformer_gpu_fallback_ssm_layer(

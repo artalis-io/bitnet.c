@@ -1806,6 +1806,26 @@ void bn_transformer_gpu_run_model_moe_cpu(
     BnSession *session,
     BnLayerWeights *layer,
     int layer_index);
+int bn_transformer_gpu_fallback_shared_expert_mid(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const float *input,
+    float *mid_out);
+int bn_transformer_gpu_fallback_shared_expert_output(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *input,
+    float *output);
+int bn_transformer_gpu_fallback_shared_expert_down(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *input,
+    float *down_out);
 int bn_transformer_gpu_fallback_moe_layer(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

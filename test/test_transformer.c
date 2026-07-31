@@ -1056,6 +1056,12 @@ static void test_gpu_policy_helpers(void) {
                NULL, 0, NULL, NULL, NULL, 0) == 0);
     assert(bn_transformer_gpu_refine_native_quant_logits_top(
                NULL, 0, NULL, NULL, NULL, 0) == 0);
+    assert(bn_transformer_gpu_fallback_shared_expert_mid(
+               NULL, NULL, NULL, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_shared_expert_output(
+               NULL, NULL, NULL, 0, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_shared_expert_down(
+               NULL, NULL, NULL, 0, NULL, NULL) == -1);
     assert(bn_transformer_gpu_backend_placement(&gpu) ==
            BN_BACKEND_GPU_UNKNOWN);
     gpu.kind = BN_GPU_BACKEND_CUDA;
