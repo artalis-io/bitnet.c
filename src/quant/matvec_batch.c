@@ -189,14 +189,18 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     }
 
     if (all_q8 && n_tasks <= 4) {
-        (void)x_q_buf;
-        BnQ8Ctx ctxs[4];
+        int n_blocks = cols / 32;
+        if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
+        float x_scales[n_blocks];
+        bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, cols);
+        BnQ8SdotCtx ctxs[4];
         BnTPTask tp_tasks[4];
 
         for (int t = 0; t < n_tasks; t++) {
-            (void)tasks[t].prepared;
-            ctxs[t] = (BnQ8Ctx){ tasks[t].out, tasks[t].W, x };
-            tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_range, &ctxs[t], tasks[t].W->rows };
+            ctxs[t] = (BnQ8SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf,
+                                      x_scales, tasks[t].prepared };
+            tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_range,
+                                      &ctxs[t], tasks[t].W->rows };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);

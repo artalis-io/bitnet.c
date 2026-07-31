@@ -1654,7 +1654,9 @@ static void test_activation_quant_rounding(void) {
 
     float x[BN_QK_K] = {0};
     int8_t x_i8[BN_QK_K];
+    int8_t x_q8[32];
     int8_t x_q8k[BN_QK_K];
+    float x_q8_scales[1];
     float x_d[1];
     int16_t x_bsums[16];
 
@@ -1675,6 +1677,16 @@ static void test_activation_quant_rounding(void) {
     assert(x_i8[4] == -2);
     assert(x_i8[5] == 3);
     assert(x_i8[6] == -3);
+
+    bn_quant_x_to_q8_blocks(x, x_q8, x_q8_scales, 32);
+    assert(fabsf(x_q8_scales[0] - 1.0f) < 1e-6f);
+    assert(x_q8[0] == 127);
+    assert(x_q8[1] == 0);
+    assert(x_q8[2] == 0);
+    assert(x_q8[3] == 2);
+    assert(x_q8[4] == -2);
+    assert(x_q8[5] == 2);
+    assert(x_q8[6] == -2);
 
     bn_quant_x_to_q8k(x, x_q8k, x_d, x_bsums, BN_QK_K);
     assert(fabsf(x_d[0] + 1.0f) < 1e-6f);

@@ -143,10 +143,12 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
 
     if (W->type == BN_GGUF_TENSOR_Q8_0) {
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-        (void)x_q_buf;
-        (void)prepared;
-        BnQ8Ctx ctx = { out, W, x };
-        BnTPTask task = { bn_quant_q8_neon_range, &ctx, W->rows };
+        int n_blocks = W->cols / 32;
+        if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
+        float x_scales[n_blocks];
+        bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
+        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
+        BnTPTask task = { bn_quant_q8_neon_sdot_range, &ctx, W->rows };
 #elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
         int n_blocks = W->cols / 32;
         if (n_blocks > BN_MAX_SCALE_BLOCKS) return;

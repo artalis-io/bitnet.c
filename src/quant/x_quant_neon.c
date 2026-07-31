@@ -209,14 +209,14 @@ void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n
         x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(amax / 127.0f));
 
         float32x4_t vinv = vdupq_n_f32(inv_scale);
-        int32x4_t i0 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb),      vinv));
-        int32x4_t i1 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 4),  vinv));
-        int32x4_t i2 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 8),  vinv));
-        int32x4_t i3 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 12), vinv));
-        int32x4_t i4 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 16), vinv));
-        int32x4_t i5 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 20), vinv));
-        int32x4_t i6 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 24), vinv));
-        int32x4_t i7 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 28), vinv));
+        int32x4_t i0 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb),      vinv));
+        int32x4_t i1 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 4),  vinv));
+        int32x4_t i2 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 8),  vinv));
+        int32x4_t i3 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 12), vinv));
+        int32x4_t i4 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 16), vinv));
+        int32x4_t i5 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 20), vinv));
+        int32x4_t i6 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 24), vinv));
+        int32x4_t i7 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 28), vinv));
 
         int8x8_t r0 = vqmovn_s16(vcombine_s16(vqmovn_s32(i0), vqmovn_s32(i1)));
         int8x8_t r1 = vqmovn_s16(vcombine_s16(vqmovn_s32(i2), vqmovn_s32(i3)));
