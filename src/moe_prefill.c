@@ -1,4 +1,5 @@
 #include "moe_internal.h"
+#include "model_internal.h"
 #include "gpu_backend.h"
 #include "gpu_moe_bridge.h"
 #include "transformer/gpu_internal.h"

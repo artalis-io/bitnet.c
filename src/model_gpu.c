@@ -1,4 +1,4 @@
-#include "model.h"
+#include "model_internal.h"
 #include "backend_layout.h"
 #include "backend_model.h"
 #include "gpu_backend.h"

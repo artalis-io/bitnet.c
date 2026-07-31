@@ -15,6 +15,8 @@
 #include <stdint.h>
 #include <limits.h>
 
+typedef struct BnBackendModel BnBackendModel;
+
 #ifndef __EMSCRIPTEN__
 #include <unistd.h>
 #include <pthread.h>

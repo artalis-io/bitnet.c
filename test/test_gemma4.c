@@ -1,5 +1,6 @@
 #include "gguf.h"
 #include "model.h"
+#include "model_internal.h"
 #include "model_arch.h"
 #include "session.h"
 #include "transformer.h"

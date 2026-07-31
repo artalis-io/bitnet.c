@@ -1,5 +1,6 @@
 #include "session.h"
 #include "model.h"
+#include "model_internal.h"
 #include "backend_session.h"
 #include "gpu_backend.h"
 #include "../src/gpu_shader_ir_internal.h"

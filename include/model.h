@@ -9,7 +9,6 @@
 #include "sh_arena.h"
 #include "moe_types.h"
 
-typedef struct BnBackendModel BnBackendModel;
 typedef struct BnGPUBackend BnGPUBackend;
 typedef struct BnThreadPool BnThreadPool;
 typedef struct BnTQState BnTQState;
@@ -36,8 +35,6 @@ void bn_model_set_file(BnModel *model, BnMappedFile file);
 BnThreadPool *bn_model_pool(const BnModel *model);
 void bn_model_set_thread_pool(BnModel *model, BnThreadPool *pool, int owned);
 SHArena *bn_model_weight_arena(const BnModel *model);
-BnBackendModel *bn_model_backend(const BnModel *model);
-int bn_model_ensure_backend(BnModel *model);
 BnTQState *bn_model_tq_state(const BnModel *model);
 void bn_model_set_tq_state(BnModel *model, BnTQState *state, int owned);
 int bn_model_has_tq(const BnModel *model);

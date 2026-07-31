@@ -6,6 +6,7 @@
 #include "quant.h"
 #include "transformer_cpu_backend_internal.h"
 #include "model.h"
+#include "model_internal.h"
 #include "model_arch.h"
 #include "gguf.h"
 #include "sh_arena.h"

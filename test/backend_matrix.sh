@@ -5308,6 +5308,12 @@ if grep -n 'bn_backend_model_raw_gpu\|bn_backend_model_clear_gpu\|bn_backend_ses
     fail=1
 fi
 
+if grep -n 'BnBackendModel\|bn_model_backend\|bn_model_ensure_backend' \
+    include/model.h >/dev/null 2>&1; then
+    echo "Public model API must keep backend lifecycle state internal"
+    fail=1
+fi
+
 if grep -n '__AVX\|__ARM_NEON\|__wasm_simd128__\|__wasm_relaxed_simd__\|arm_neon.h\|immintrin.h\|float32x\|__m[0-9]\|_mm[0-9]*_\|vld1q\|vst1q\|vdupq\|vcgtq\|vbslq' src/sampler.c >/dev/null 2>&1; then
     echo "src/sampler.c must use sampler backend helpers for ISA-specific argmax"
     fail=1

@@ -5,6 +5,8 @@
 #include "platform.h"
 #include <stddef.h>
 
+typedef struct BnBackendModel BnBackendModel;
+
 struct BnModelRuntime {
     BnThreadPool *pool;
     int owns_pool;
@@ -21,6 +23,9 @@ struct BnModelIO {
 struct BnModelBackendState {
     BnBackendModel *backend;
 };
+
+BnBackendModel *bn_model_backend(const BnModel *model);
+int bn_model_ensure_backend(BnModel *model);
 
 int bn_model_activation_is_relu2(int activation);
 int bn_model_activation_is_gelu(int activation);

@@ -2,7 +2,7 @@
 #include "transformer_plan_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_rmsnorm_internal.h"
-#include "model.h"
+#include "model_internal.h"
 #include "session.h"
 #include "sh_log.h"
 #include "gpu_internal.h"
