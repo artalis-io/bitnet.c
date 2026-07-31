@@ -23,7 +23,6 @@ int bn_backend_session_ensure_gpu_lowering_values(BnBackendSession *backend,
                                                   int cap_values,
                                                   void **out_values,
                                                   int *out_cap);
-void bn_backend_session_set_gpu_graph(BnBackendSession *backend, void *graph);
 void bn_backend_session_release_gpu_graph(BnBackendSession *backend);
 
 #endif // BN_BACKEND_SESSION_H

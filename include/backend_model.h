@@ -63,7 +63,6 @@ typedef struct {
 BnBackendModel *bn_backend_model_create(void);
 void bn_backend_model_free(BnBackendModel *backend);
 BnGPUBackend *bn_backend_model_gpu(const BnBackendModel *backend);
-BnGPUBackend *bn_backend_model_raw_gpu(const BnBackendModel *backend);
 void bn_backend_model_bind_gpu(BnBackendModel *backend, BnGPUBackend *gpu);
 void bn_backend_model_clear_gpu(BnBackendModel *backend);
 void bn_backend_model_release_gpu(BnBackendModel *backend);

@@ -124,8 +124,3 @@ int bn_backend_session_ensure_gpu_lowering_values(BnBackendSession *backend,
         *out_cap = backend->cap_gpu_lowering_values;
     return 0;
 }
-
-void bn_backend_session_set_gpu_graph(BnBackendSession *backend, void *graph) {
-    if (!backend) return;
-    backend->gpu_graph = graph;
-}

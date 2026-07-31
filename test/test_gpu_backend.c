@@ -396,7 +396,7 @@ static void test_backend_model_release_owns_buffers(void) {
 
     bn_backend_model_release_gpu(backend);
     assert(counter.destroys == 2);
-    assert(bn_backend_model_raw_gpu(backend) == NULL);
+    assert(bn_backend_model_gpu(backend) == NULL);
     assert(bn_backend_model_qweight_buf(backend, &weight) == NULL);
     assert(bn_backend_model_handle(backend, 0,
                                    BN_BACKEND_HANDLE_ATTN_NORM) == NULL);

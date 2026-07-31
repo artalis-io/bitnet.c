@@ -89,10 +89,6 @@ BnGPUBackend *bn_backend_model_gpu(const BnBackendModel *backend) {
     return backend->gpu;
 }
 
-BnGPUBackend *bn_backend_model_raw_gpu(const BnBackendModel *backend) {
-    return backend ? backend->gpu : NULL;
-}
-
 void bn_backend_model_bind_gpu(BnBackendModel *backend, BnGPUBackend *gpu) {
     if (!backend) return;
     backend->gpu = gpu;
