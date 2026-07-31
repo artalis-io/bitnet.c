@@ -1052,6 +1052,10 @@ static void test_gpu_policy_helpers(void) {
     memset(&gpu, 0, sizeof(gpu));
     memset(&logits, 0, sizeof(logits));
     memset(&W, 0, sizeof(W));
+    assert(bn_transformer_gpu_refine_kquant_logits_top(
+               NULL, 0, NULL, NULL, NULL, 0) == 0);
+    assert(bn_transformer_gpu_refine_native_quant_logits_top(
+               NULL, 0, NULL, NULL, NULL, 0) == 0);
     assert(bn_transformer_gpu_backend_placement(&gpu) ==
            BN_BACKEND_GPU_UNKNOWN);
     gpu.kind = BN_GPU_BACKEND_CUDA;

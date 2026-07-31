@@ -1772,6 +1772,20 @@ void bn_transformer_gpu_cpu_quant_matvec_model(
     const BnQWeight *weight,
     const float *x,
     int8_t *quantized_buf);
+int bn_transformer_gpu_refine_kquant_logits_top(
+    float *logits,
+    int n_logits,
+    const BnQWeight *weight,
+    const float *x,
+    int8_t *quantized,
+    int top_n);
+int bn_transformer_gpu_refine_native_quant_logits_top(
+    float *logits,
+    int n_logits,
+    const BnQWeight *weight,
+    const float *x,
+    int8_t *quantized,
+    int top_n);
 const void *bn_transformer_gpu_model_expert_projection(
     BnModel *model,
     BnMoEState *state,

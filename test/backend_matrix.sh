@@ -5267,6 +5267,12 @@ if grep -n '#include "model_internal.h"\|bn_model_\(gpu\|pool\|tq_state\|moe_io\
     fail=1
 fi
 
+if grep -n '#include "transformer_cpu_backend_internal.h"\|bn_transformer_cpu_' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "Transformer GPU orchestration must consume composed CPU fallback behavior"
+    fail=1
+fi
+
 if grep -n 'bn_backend_session_\(ensure_gpu_command_buffer\|gpu_cached_op_count\|gpu_cached_has_logits\|set_gpu_cached_op_count\|clear_gpu_cached_ops\)' \
     src/transformer/gpu.c >/dev/null 2>&1; then
     echo "Transformer GPU orchestration must compose backend decode-session resources"

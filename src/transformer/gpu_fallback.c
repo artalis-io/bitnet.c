@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS 8192
+
 static void fallback_rmsnorm(float *out,
                              const float *x,
                              const float *w,
@@ -80,6 +82,116 @@ void bn_transformer_gpu_cpu_quant_matvec_model(
     int8_t *quantized_buf) {
     bn_transformer_cpu_quant_matvec(
         out, weight, x, quantized_buf, bn_model_pool(model));
+}
+
+int bn_transformer_gpu_refine_kquant_logits_top(
+    float *logits,
+    int n_logits,
+    const BnQWeight *weight,
+    const float *x,
+    int8_t *quantized,
+    int top_n) {
+    if (!logits || !weight || !weight->data || !x || !quantized ||
+        top_n <= 0)
+        return 0;
+    if (top_n > 4096) top_n = 4096;
+    if (top_n > n_logits) top_n = n_logits;
+    int n_blocks =
+        bn_transformer_gpu_kquant_logits_refine_blocks_per_row(weight->cols);
+    int n_block_sums =
+        bn_transformer_gpu_kquant_logits_refine_block_sums_per_row(n_blocks);
+    if (n_blocks < 1 ||
+        n_block_sums > BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS)
+        return 0;
+    float scales[n_blocks];
+    int16_t block_sums[n_block_sums];
+    bn_transformer_cpu_prepare_kquant_activation(
+        x, quantized, scales, block_sums, weight->cols);
+
+    int ids[4096];
+    float vals[4096];
+    int n_top = 0;
+    for (int i = 0; i < n_logits; i++) {
+        float v = logits[i];
+        int j = n_top;
+        if (j == top_n && v <= vals[j - 1]) continue;
+        if (j < top_n) {
+            ids[j] = i;
+            vals[j] = v;
+            n_top++;
+        } else {
+            j--;
+        }
+        while (j > 0 && v > vals[j - 1]) {
+            ids[j] = ids[j - 1];
+            vals[j] = vals[j - 1];
+            j--;
+        }
+        ids[j] = i;
+        vals[j] = v;
+    }
+
+    for (int i = 0; i < n_top; i++) {
+        float row_sum;
+        if (bn_transformer_cpu_refine_kquant_logits_prepared_activation_row(
+                weight, quantized, scales, block_sums, ids[i],
+                &row_sum) == 0)
+            logits[ids[i]] = row_sum;
+    }
+    return n_top;
+}
+
+int bn_transformer_gpu_refine_native_quant_logits_top(
+    float *logits,
+    int n_logits,
+    const BnQWeight *weight,
+    const float *x,
+    int8_t *quantized,
+    int top_n) {
+    if (!logits || !weight || !weight->data || !x || !quantized ||
+        !bn_transformer_cpu_has_native_quant_activation() || top_n <= 0)
+        return 0;
+    if (top_n > 128) top_n = 128;
+    if (top_n > n_logits) top_n = n_logits;
+    int n_blocks = weight->cols / 32;
+    if (n_blocks <= 0 ||
+        n_blocks > BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS)
+        return 0;
+
+    int ids[128];
+    float vals[128];
+    int n_top = 0;
+    for (int i = 0; i < n_logits; i++) {
+        float v = logits[i];
+        int j = n_top;
+        if (j == top_n && v <= vals[j - 1]) continue;
+        if (j < top_n) {
+            ids[j] = i;
+            vals[j] = v;
+            n_top++;
+        } else {
+            j--;
+        }
+        while (j > 0 && v > vals[j - 1]) {
+            ids[j] = ids[j - 1];
+            vals[j] = vals[j - 1];
+            j--;
+        }
+        ids[j] = i;
+        vals[j] = v;
+    }
+
+    float scales[BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS];
+    if (bn_transformer_cpu_quantize_native_logits_refine_activation(
+            x, quantized, scales, weight->cols) != 0)
+        return 0;
+    for (int i = 0; i < n_top; i++) {
+        float row_sum;
+        if (bn_transformer_cpu_refine_native_logits_row(
+                weight, quantized, scales, ids[i], &row_sum) == 0)
+            logits[ids[i]] = row_sum;
+    }
+    return n_top;
 }
 
 const void *bn_transformer_gpu_model_expert_projection(
