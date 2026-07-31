@@ -1,4 +1,5 @@
 #include "moe.h"
+#include "backend_model.h"
 #include "model.h"
 #include "model_internal.h"
 #include "model_arch.h"

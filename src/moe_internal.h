@@ -6,7 +6,6 @@
 #include "session.h"
 #include "platform.h"
 #include "quant.h"
-#include "backend_model.h"
 #include "sh_log.h"
 #include "bn_alloc.h"
 #include <stdio.h>

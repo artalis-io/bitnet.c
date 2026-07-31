@@ -1,4 +1,5 @@
 #include "moe_internal.h"
+#include "backend_model.h"
 #include "backend_quant.h"
 #include "model_internal.h"
 
