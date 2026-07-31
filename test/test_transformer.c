@@ -3443,6 +3443,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));
     gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.caps |= BN_GPU_CAP_MOE_ROUTED_FFN;
     assert(bn_transformer_gpu_all_active_two_kquant_moe_model(&c, &moe_w));
     assert(bn_transformer_gpu_all_active_two_kquant_moe_layer(
         &c, &moe_layers[0], c.dim));

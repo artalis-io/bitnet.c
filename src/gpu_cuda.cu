@@ -21657,7 +21657,8 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
                 BN_GPU_CAP_DEINTERLEAVED_KQUANT_FUSED_GATEUP_SILU |
                 BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU |
                 BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT |
-                BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT;
+                BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT |
+                BN_GPU_CAP_MOE_ROUTED_FFN;
     return gpu;
 }
 

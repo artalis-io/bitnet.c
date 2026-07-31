@@ -4087,7 +4087,8 @@ int bn_gpu_policy_backend_flash_default_enabled(const BnGPUBackend *gpu) {
 
 int bn_gpu_policy_backend_large_graph_native_enabled(
     const BnGPUBackend *gpu) {
-    return gpu_policy_backend_caps(gpu)->large_graph_native;
+    return gpu_policy_backend_caps(gpu)->large_graph_native ||
+           bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_MOE_ROUTED_FFN);
 }
 
 int bn_gpu_policy_backend_small_dense_native_enabled(
@@ -4172,7 +4173,8 @@ int bn_gpu_policy_backend_all_active_two_moe_direct_route_supported(
 
 int bn_gpu_policy_backend_resident_moe_ffn_supported(
     const BnGPUBackend *gpu) {
-    return gpu_policy_backend_caps(gpu)->resident_moe_ffn;
+    return gpu_policy_backend_caps(gpu)->resident_moe_ffn ||
+           bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_MOE_ROUTED_FFN);
 }
 
 int bn_gpu_policy_backend_moe_gateup_split_supported(

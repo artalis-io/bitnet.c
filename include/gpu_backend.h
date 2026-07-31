@@ -1491,5 +1491,6 @@ static inline void bn_gpu_backend_destroy_buffer(BnGPUBackend *gpu,
 #define BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU (1u << 8) // native-quant fused gate/up SiLU shader available
 #define BN_GPU_CAP_DEINTERLEAVED_KQUANT_FUSED_GATEUP_SILU (1u << 9) // deinterleaved K-quant fused gate/up SiLU shader available
 #define BN_GPU_CAP_LAYERWISE_ROPE (1u << 10) // backend can vary RoPE frequency policy per layer
+#define BN_GPU_CAP_MOE_ROUTED_FFN (1u << 11) // resident decode route + routed FFN graph ops
 
 #endif // BN_GPU_BACKEND_H

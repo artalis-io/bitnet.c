@@ -266,9 +266,11 @@ model_gpu_moe_layer_policy(const BnConfig *c, const BnLayerWeights *lw) {
     return policy;
 }
 
-static int can_use_resident_moe_routed_ffn_model(const BnConfig *c,
+static int can_use_resident_moe_routed_ffn_model(const BnGPUBackend *gpu,
+                                                 const BnConfig *c,
                                                  const BnWeights *w) {
-    if (!c || !w)
+    if (!gpu || !bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_MOE_ROUTED_FFN) ||
+        !c || !w)
         return 0;
     int moe_layers = 0;
     for (int l = 0; l < c->n_layers; l++) {
@@ -774,7 +776,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int n_layers = c->n_layers;
     int upload_moe_all_model = bn_gpu_policy_moe_resident_routed_ffn_enabled(
-        can_use_resident_moe_routed_ffn_model(c, w));
+        can_use_resident_moe_routed_ffn_model(gpu, c, w));
     int upload_moe_all_native_quant_f16_cache = 0;
     int upload_moe_all_gateup_f16_cache = 0;
     int upload_moe_all_f16_cache_layers = 0;

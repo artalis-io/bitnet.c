@@ -2515,7 +2515,8 @@ bn_transformer_gpu_moe_decode_route_policy(
             c, policy.all_active_two_kquant_moe, policy.gpu_route_topk,
             routed_native_quant);
     policy.gpu_routed_ffn =
-        lw && bn_transformer_gpu_moe_routed_ffn_enabled(
+        lw && bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_MOE_ROUTED_FFN) &&
+        bn_transformer_gpu_moe_routed_ffn_enabled(
             policy.gpu_route_topk, policy.cpu_route_resident_ffn,
             moe_gate_all, moe_up_all, moe_down_all, &lw->moe.expert_map,
             c, dim);
