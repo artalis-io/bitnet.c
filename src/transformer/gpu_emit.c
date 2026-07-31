@@ -1,6 +1,7 @@
 #include "gpu_internal.h"
 #include "../gpu_graph_lowering_internal.h"
 #include "../gpu_shader_ir_internal.h"
+#include "backend_session.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
 #include "../moe_internal.h"

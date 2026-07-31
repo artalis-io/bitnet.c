@@ -1,5 +1,4 @@
 #include "gpu_internal.h"
-#include "backend_session.h"
 #include "model_internal.h"
 #include "platform.h"
 #include "session.h"
