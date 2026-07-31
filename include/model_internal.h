@@ -2,10 +2,15 @@
 #define BN_MODEL_INTERNAL_H
 
 #include "model.h"
+#include "model_run_state.h"
+#include "moe_types.h"
 #include "platform.h"
+#include "sh_arena.h"
 #include <stddef.h>
 
 typedef struct BnBackendModel BnBackendModel;
+typedef struct BnThreadPool BnThreadPool;
+typedef struct BnTQState BnTQState;
 
 struct BnModelRuntime {
     BnThreadPool *pool;
@@ -26,6 +31,35 @@ struct BnModelBackendState {
 
 BnBackendModel *bn_model_backend(const BnModel *model);
 int bn_model_ensure_backend(BnModel *model);
+int bn_model_dequant_qweight_row(const BnQWeight *weight,
+                                 int row,
+                                 int n,
+                                 float *out);
+void bn_model_set_file(BnModel *model, BnMappedFile file);
+BnThreadPool *bn_model_pool(const BnModel *model);
+void bn_model_set_thread_pool(BnModel *model, BnThreadPool *pool, int owned);
+SHArena *bn_model_weight_arena(const BnModel *model);
+BnTQState *bn_model_tq_state(const BnModel *model);
+void bn_model_set_tq_state(BnModel *model, BnTQState *state, int owned);
+int bn_model_has_tq(const BnModel *model);
+BnMoEIO *bn_model_moe_io(BnModel *model);
+const BnMoEIO *bn_model_moe_io_const(const BnModel *model);
+void bn_model_set_moe_mmap_base(BnModel *model, const uint8_t *base);
+void bn_model_set_moe_mmap_shards(BnModel *model, const uint8_t **bases,
+                                  size_t n_bases);
+void bn_model_set_moe_fd(BnModel *model, int fd);
+void bn_model_set_moe_madvise(BnModel *model, int enabled);
+void bn_model_set_moe_cache(BnModel *model, void *cache);
+void *bn_model_moe_cache(const BnModel *model);
+void bn_model_set_gpu_moe_cache(BnModel *model, void *cache);
+void *bn_model_gpu_moe_cache(const BnModel *model);
+size_t bn_model_session_arena_size(const BnConfig *config,
+                                   const BnWeights *weights);
+int bn_model_alloc_session_buffers(const BnConfig *config,
+                                   const BnWeights *weights,
+                                   SHArena *arena,
+                                   BnRunState *state,
+                                   BnMoEState **moe_out);
 
 int bn_model_activation_is_relu2(int activation);
 int bn_model_activation_is_gelu(int activation);

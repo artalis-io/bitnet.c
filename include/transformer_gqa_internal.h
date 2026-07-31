@@ -2,6 +2,7 @@
 #define BN_TRANSFORMER_GQA_INTERNAL_H
 
 #include "model.h"
+#include "model_run_state.h"
 #include "transformer_math_internal.h"
 #include <stddef.h>
 #include <stdint.h>

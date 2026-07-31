@@ -2,6 +2,7 @@
 #define BN_TRANSFORMER_CPU_INTERNAL_H
 
 #include "model.h"
+#include "model_run_state.h"
 #include "session.h"
 #include "transformer_plan_internal.h"
 

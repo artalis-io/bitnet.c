@@ -5314,6 +5314,12 @@ if grep -n 'BnBackendModel\|bn_model_backend\|bn_model_ensure_backend' \
     fail=1
 fi
 
+if grep -n 'bn_model_\(set_file\|pool\|set_thread_pool\|weight_arena\|tq_state\|set_tq_state\|has_tq\|moe_io\|moe_io_const\|set_moe_mmap_base\|set_moe_mmap_shards\|set_moe_fd\|set_moe_madvise\|set_moe_cache\|moe_cache\|set_gpu_moe_cache\|gpu_moe_cache\|session_arena_size\|alloc_session_buffers\|dequant_qweight_row\)' \
+    include/model.h >/dev/null 2>&1; then
+    echo "Public model API must keep runtime and I/O ownership state internal"
+    fail=1
+fi
+
 if grep -n 'BnBackendSession\|->backend\b' include/session.h >/dev/null 2>&1; then
     echo "Public session API must keep backend session state opaque"
     fail=1

@@ -1,4 +1,5 @@
 #include "gpu_moe_bridge.h"
+#include "model_internal.h"
 #include "gpu_backend.h"
 #include "gpu_moe_cache.h"
 #include "gpu_policy.h"

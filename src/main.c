@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "model_internal.h"
 #include "moe.h"
 #include "moe_internal.h"
 #include "gpu_backend.h"

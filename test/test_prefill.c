@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "model_internal.h"
 #include "model_arch.h"
 #include "transformer.h"
 #include "tokenizer.h"

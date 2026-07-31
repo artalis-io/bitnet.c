@@ -15,6 +15,7 @@
 #include "quant.h"
 #include "gguf.h"
 #include "model.h"
+#include "model_internal.h"
 #include "platform.h"
 #include "session.h"
 #include "threadpool.h"

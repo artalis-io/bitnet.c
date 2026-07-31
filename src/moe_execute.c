@@ -1,4 +1,5 @@
 #include "moe_internal.h"
+#include "model_internal.h"
 #include "gpu_moe_bridge.h"
 
 static const void *moe_mmap_expert_proj(const BnMoEIO *io,

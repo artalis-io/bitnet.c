@@ -2,6 +2,7 @@
 #define BN_TRANSFORMER_BATCHED_ATTN_INTERNAL_H
 
 #include "model.h"
+#include "model_run_state.h"
 #include <stddef.h>
 
 typedef struct {

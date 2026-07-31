@@ -1,4 +1,5 @@
 #include "moe_internal.h"
+#include "model_internal.h"
 
 // --- Expert LRU Cache (pread pipeline) ---
 #if !defined(__EMSCRIPTEN__)

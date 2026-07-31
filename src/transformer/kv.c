@@ -1,6 +1,7 @@
 #include "transformer_kv_internal.h"
 #include "transformer_gqa_internal.h"
 #include "model.h"
+#include "model_internal.h"
 #include "turboquant.h"
 
 static const BnKVCPUOps *kv_cpu_ops(void) {

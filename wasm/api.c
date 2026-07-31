@@ -7,6 +7,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "model_internal.h"
 #include "transformer.h"
 #include "tokenizer.h"
 #include "sampler.h"
