@@ -1053,6 +1053,7 @@ static void test_gpu_policy_helpers(void) {
     assert(memcmp(debug_norm_out, debug_norm_expected,
                   sizeof(debug_norm_out)) == 0);
     bn_transformer_gpu_debug_compare_vec(NULL, 0, 0, NULL, NULL, 0);
+    bn_transformer_gpu_moe_route_profile_add(2, 2, 1.0, 2.0, 3.0, 4.0);
     c.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
     assert(bn_transformer_gpu_uses_per_layer_embedding(&c));
     c.policy_flags = 0;

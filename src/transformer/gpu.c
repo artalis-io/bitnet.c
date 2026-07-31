@@ -5,48 +5,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-static void gpu_cpu_quant_matvec(BnModel *m,
-                                 float *out,
-                                 const BnQWeight *W,
-                                 const float *x,
-                                 int8_t *quantized_buf) {
-    bn_transformer_gpu_cpu_quant_matvec_model(
-        m, out, W, x, quantized_buf);
-}
-
-static void gpu_moe_route_profile_add(int dim,
-                                      int n_experts,
-                                      double flush_ms,
-                                      double read_ms,
-                                      double route_ms,
-                                      double resolve_ms) {
-    static unsigned long long calls = 0;
-    static double total_flush = 0.0;
-    static double total_read = 0.0;
-    static double total_route = 0.0;
-    static double total_resolve = 0.0;
-    if (!bn_transformer_gpu_moe_route_profile_enabled())
-        return;
-    calls++;
-    total_flush += flush_ms;
-    total_read += read_ms;
-    total_route += route_ms;
-    total_resolve += resolve_ms;
-    int every = bn_transformer_gpu_moe_route_profile_every();
-    if ((calls % (unsigned long long)every) == 0) {
-        fprintf(stderr,
-                "[bn:gpu:moe_route_profile] calls=%llu dim=%d experts=%d "
-                "flush=%.3f read=%.3f route=%.3f resolve=%.3f total=%.3f\n",
-                calls, dim, n_experts, total_flush, total_read,
-                total_route, total_resolve,
-                total_flush + total_read + total_route + total_resolve);
-        total_flush = 0.0;
-        total_read = 0.0;
-        total_route = 0.0;
-        total_resolve = 0.0;
-    }
-}
-
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
 // no Q/K norms, no sub-norms, no FP16 KV cache).
@@ -1046,7 +1004,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu moe resource resolution failed");
             double moe_prof_t4 = moe_route_profile
                 ? bn_platform_time_ms() : 0.0;
-            gpu_moe_route_profile_add(
+            bn_transformer_gpu_moe_route_profile_add(
                 dim, route_policy.total_experts, moe_prof_t1 - moe_prof_t0,
                 moe_prof_t2 - moe_prof_t1, moe_prof_t3 - moe_prof_t2,
                 moe_prof_t4 - moe_prof_t3);
@@ -1342,7 +1300,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         if (cpu_logits &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0) {
-            gpu_cpu_quant_matvec(m, cpu_logits, logit_res->cpu_weight, s->xb, s->x_q);
+            bn_transformer_gpu_cpu_quant_matvec_model(
+                m, cpu_logits, logit_res->cpu_weight, s->xb, s->x_q);
             double sum_abs = 0.0;
             double sum_sq = 0.0;
             float max_abs = 0.0f;

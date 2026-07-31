@@ -1983,6 +1983,13 @@ void bn_transformer_gpu_debug_rmsnorm(
     const float *w,
     int n,
     float eps);
+void bn_transformer_gpu_moe_route_profile_add(
+    int dim,
+    int n_experts,
+    double flush_ms,
+    double read_ms,
+    double route_ms,
+    double resolve_ms);
 int bn_transformer_gpu_debug_compare_ffn_state(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

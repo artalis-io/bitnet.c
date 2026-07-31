@@ -1031,6 +1031,39 @@ void bn_transformer_gpu_debug_rmsnorm(float *out,
     bn_transformer_rmsnorm_scalar(out, x, w, n, eps);
 }
 
+void bn_transformer_gpu_moe_route_profile_add(int dim,
+                                              int n_experts,
+                                              double flush_ms,
+                                              double read_ms,
+                                              double route_ms,
+                                              double resolve_ms) {
+    static unsigned long long calls = 0;
+    static double total_flush = 0.0;
+    static double total_read = 0.0;
+    static double total_route = 0.0;
+    static double total_resolve = 0.0;
+    if (!bn_transformer_gpu_moe_route_profile_enabled())
+        return;
+    calls++;
+    total_flush += flush_ms;
+    total_read += read_ms;
+    total_route += route_ms;
+    total_resolve += resolve_ms;
+    int every = bn_transformer_gpu_moe_route_profile_every();
+    if ((calls % (unsigned long long)every) != 0)
+        return;
+    fprintf(stderr,
+            "[bn:gpu:moe_route_profile] calls=%llu dim=%d experts=%d "
+            "flush=%.3f read=%.3f route=%.3f resolve=%.3f total=%.3f\n",
+            calls, dim, n_experts, total_flush, total_read,
+            total_route, total_resolve,
+            total_flush + total_read + total_route + total_resolve);
+    total_flush = 0.0;
+    total_read = 0.0;
+    total_route = 0.0;
+    total_resolve = 0.0;
+}
+
 static const BnPreparedWeight *debug_prepared_qweight(BnModel *m,
                                                       const BnQWeight *w) {
     if (!m || !w)
