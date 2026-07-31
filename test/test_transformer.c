@@ -1152,12 +1152,19 @@ static void test_gpu_policy_helpers(void) {
                NULL, 0, 0, 0) == 0);
     assert(bn_transformer_gpu_debug_compare_routed_moe_mid(
                NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0) == 0);
+    assert(bn_transformer_gpu_prepare_routed_moe_debug_state(
+               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+               0, 0, 0, 0.0f) == -1);
     assert(bn_transformer_gpu_prepare_routed_moe_parts_comparison(
                NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0) == -1);
     bn_transformer_gpu_compare_routed_moe_shared_part(
         NULL, NULL, NULL, 0, 0, 0);
     bn_transformer_gpu_debug_compare_routed_moe_post_layer(
         NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0.0f);
+    assert(bn_transformer_gpu_complete_routed_moe_debug_state(
+               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+               0, 0, 0, 0, 0.0f) == -1);
+    bn_transformer_gpu_discard_routed_moe_debug_state(NULL);
     bn_transformer_gpu_discard_routed_moe_parts_comparison(NULL);
     assert(bn_transformer_gpu_prepare_moe_layer_comparison(
                NULL, NULL, NULL, NULL, NULL, NULL, 0) == -1);

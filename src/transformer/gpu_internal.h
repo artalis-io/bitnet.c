@@ -419,6 +419,14 @@ typedef struct {
 } BnTransformerGPUMoEPartsComparison;
 
 typedef struct {
+    float *cpu_state;
+    float *gpu_state;
+    float *override_state;
+    int compare_enabled;
+    int override_enabled;
+} BnTransformerGPURoutedMoEDebugState;
+
+typedef struct {
     int valid;
     int gate_type;
     int up_type;
@@ -1940,6 +1948,19 @@ int bn_transformer_gpu_debug_compare_routed_moe_mid(
     const BnTransformerGPUMoEDebugPolicy *debug,
     int layer_index,
     int pos);
+int bn_transformer_gpu_prepare_routed_moe_debug_state(
+    BnTransformerGPURoutedMoEDebugState *state,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim,
+    float norm_eps);
 int bn_transformer_gpu_prepare_routed_moe_parts_comparison(
     BnTransformerGPUMoEPartsComparison *comparison,
     BnTransformerGPUEmitContext *emit,
@@ -1969,6 +1990,23 @@ void bn_transformer_gpu_debug_compare_routed_moe_post_layer(
     int pos,
     int dim,
     float norm_eps);
+int bn_transformer_gpu_complete_routed_moe_debug_state(
+    BnTransformerGPURoutedMoEDebugState *state,
+    BnTransformerGPUMoEPartsComparison *parts,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    void *next_norm,
+    int layer_index,
+    int pos,
+    int dim,
+    uint32_t u_eps,
+    float norm_eps);
+void bn_transformer_gpu_discard_routed_moe_debug_state(
+    BnTransformerGPURoutedMoEDebugState *state);
 void bn_transformer_gpu_discard_routed_moe_parts_comparison(
     BnTransformerGPUMoEPartsComparison *comparison);
 int bn_transformer_gpu_prepare_moe_layer_comparison(

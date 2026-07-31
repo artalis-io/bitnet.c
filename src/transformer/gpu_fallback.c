@@ -653,6 +653,97 @@ cleanup:
     return rc;
 }
 
+void bn_transformer_gpu_discard_routed_moe_debug_state(
+    BnTransformerGPURoutedMoEDebugState *state) {
+    if (!state)
+        return;
+    free(state->cpu_state);
+    free(state->gpu_state);
+    free(state->override_state);
+    memset(state, 0, sizeof(*state));
+}
+
+int bn_transformer_gpu_prepare_routed_moe_debug_state(
+    BnTransformerGPURoutedMoEDebugState *debug_state,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim,
+    float norm_eps) {
+    if (!debug_state)
+        return -1;
+    memset(debug_state, 0, sizeof(*debug_state));
+    if (!debug || (!debug->override_cpu_actual && !debug->compare_layer))
+        return 0;
+    if (!emit || !gpu || !model || !session || !layer || !route_policy ||
+        dim <= 0)
+        return -1;
+    size_t bytes = (size_t)dim * sizeof(float);
+    BnRunState *state = &session->state;
+    if (debug->override_cpu_actual) {
+        debug_state->override_enabled = 1;
+        debug_state->override_state = (float *)malloc(bytes);
+        if (!debug_state->override_state ||
+            bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+            bn_transformer_gpu_read_x(gpu, state->x, bytes) != 0 ||
+            bn_transformer_gpu_read_xb(gpu, state->xb, bytes) != 0 ||
+            bn_transformer_gpu_fallback_moe_output_from_state(
+                model, session, layer, layer_index, dim,
+                debug_state->override_state) != 0) {
+            bn_transformer_gpu_discard_routed_moe_debug_state(debug_state);
+            return -1;
+        }
+    }
+    if (!debug->compare_layer)
+        return 0;
+    debug_state->compare_enabled = 1;
+    debug_state->cpu_state = (float *)malloc(bytes);
+    debug_state->gpu_state = (float *)malloc(bytes);
+    if (!debug_state->cpu_state || !debug_state->gpu_state ||
+        bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_x(gpu, state->x, bytes) != 0 ||
+        bn_transformer_gpu_read_xb(gpu, state->xb, bytes) != 0)
+        goto compare_error;
+    if (debug->compare_input_norm && layer->norm.ffn_norm) {
+        float *cpu_norm = (float *)malloc(bytes);
+        if (!cpu_norm)
+            goto compare_error;
+        bn_transformer_gpu_debug_rmsnorm(
+            cpu_norm, state->x, layer->norm.ffn_norm, dim, norm_eps);
+        bn_transformer_gpu_debug_compare_vec(
+            "moe_input_norm_compare", layer_index, pos,
+            cpu_norm, state->xb, dim);
+        free(cpu_norm);
+    }
+    if (debug->compare_actual) {
+        if (bn_transformer_gpu_fallback_moe_output_from_state(
+                model, session, layer, layer_index, dim,
+                debug_state->cpu_state) != 0)
+            goto compare_error;
+    } else {
+        bn_transformer_gpu_route_model_moe(
+            model, session->moe_state, state->xb, layer,
+            route_policy->total_experts, route_policy->active_experts,
+            route_policy->normalize_topk,
+            route_policy->expert_weights_scale);
+        if (bn_transformer_gpu_fallback_moe_output(
+                model, session, layer, dim, state->x, state->xb,
+                debug_state->cpu_state) != 0)
+            goto compare_error;
+    }
+    return 0;
+
+compare_error:
+    bn_transformer_gpu_discard_routed_moe_debug_state(debug_state);
+    return -2;
+}
+
 void bn_transformer_gpu_discard_routed_moe_parts_comparison(
     BnTransformerGPUMoEPartsComparison *comparison) {
     if (!comparison)
@@ -799,6 +890,62 @@ void bn_transformer_gpu_debug_compare_routed_moe_post_layer(
         free(cpu_norm);
         free(gpu_norm);
     }
+}
+
+int bn_transformer_gpu_complete_routed_moe_debug_state(
+    BnTransformerGPURoutedMoEDebugState *debug_state,
+    BnTransformerGPUMoEPartsComparison *parts,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    void *next_norm,
+    int layer_index,
+    int pos,
+    int dim,
+    uint32_t u_eps,
+    float norm_eps) {
+    if (!debug_state || !parts)
+        return -1;
+    if (!emit || !gpu || !model || !session || !layer || !debug ||
+        dim <= 0) {
+        bn_transformer_gpu_discard_routed_moe_parts_comparison(parts);
+        bn_transformer_gpu_discard_routed_moe_debug_state(debug_state);
+        return -1;
+    }
+    size_t bytes = (size_t)dim * sizeof(float);
+    if (debug_state->compare_enabled) {
+        if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+            bn_transformer_gpu_read_x(
+                gpu, debug_state->gpu_state, bytes) != 0) {
+            bn_transformer_gpu_discard_routed_moe_parts_comparison(parts);
+            bn_transformer_gpu_discard_routed_moe_debug_state(debug_state);
+            return -1;
+        }
+        bn_transformer_gpu_debug_compare_vec(
+            "moe_routed_state_compare", layer_index, pos,
+            debug_state->cpu_state, debug_state->gpu_state, dim);
+        bn_transformer_gpu_compare_routed_moe_shared_part(
+            parts, debug_state->gpu_state, session->state.x,
+            layer_index, pos, dim);
+        bn_transformer_gpu_debug_compare_routed_moe_post_layer(
+            gpu, model, session, layer, debug, debug_state->cpu_state,
+            layer_index, pos, dim, norm_eps);
+    }
+    bn_transformer_gpu_discard_routed_moe_parts_comparison(parts);
+    if (debug_state->override_enabled &&
+        (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+         bn_transformer_gpu_write_x(
+             gpu, debug_state->override_state, bytes) != 0 ||
+         bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
+             emit, next_norm, dim, u_eps) != 0)) {
+        bn_transformer_gpu_discard_routed_moe_debug_state(debug_state);
+        return -2;
+    }
+    bn_transformer_gpu_discard_routed_moe_debug_state(debug_state);
+    return 0;
 }
 
 void bn_transformer_gpu_discard_moe_layer_comparison(

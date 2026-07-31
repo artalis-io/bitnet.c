@@ -412,103 +412,44 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 BnTransformerGPUMoEDebugPolicy moe_debug =
                     bn_transformer_gpu_moe_decode_debug_policy(
                         c, w, l, pos);
-                float *moe_cpu_x = NULL;
-                float *moe_gpu_x = NULL;
-                float *moe_override_x = NULL;
-                if (moe_debug.override_cpu_actual) {
-                    moe_override_x =
-                        (float *)malloc((size_t)dim * sizeof(float));
-                    if (!moe_override_x ||
-                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_x(
-                            gpu, s->x, (size_t)dim * sizeof(float)) != 0 ||
-                        bn_transformer_gpu_read_xb(
-                            gpu, s->xb, (size_t)dim * sizeof(float)) != 0 ||
-                        bn_transformer_gpu_fallback_moe_output_from_state(
-                            m, sess, lw, l, dim, moe_override_x) != 0) {
-                        free(moe_override_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe cpu override setup failed");
-                    }
-                }
-                if (moe_debug.compare_layer) {
-                    moe_cpu_x = (float *)malloc((size_t)dim * sizeof(float));
-                    moe_gpu_x = (float *)malloc((size_t)dim * sizeof(float));
-                    if (!moe_cpu_x || !moe_gpu_x ||
-                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_x(gpu, s->x,
-                                                  (size_t)dim * sizeof(float)) != 0 ||
-                        bn_transformer_gpu_read_xb(gpu, s->xb,
-                                                   (size_t)dim * sizeof(float)) != 0) {
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe compare setup failed");
-                    }
-                    if (moe_debug.compare_input_norm && lw->norm.ffn_norm) {
-                        float *moe_cpu_xb =
-                            (float *)malloc((size_t)dim * sizeof(float));
-                        if (!moe_cpu_xb) {
-                            free(moe_cpu_x);
-                            free(moe_gpu_x);
-                            free(moe_override_x);
-                            return bn_transformer_gpu_reject_forward(
-                                &emit, "gpu routed moe compare setup failed");
-                        }
-                        bn_transformer_gpu_debug_rmsnorm(
-                            moe_cpu_xb, s->x, lw->norm.ffn_norm, dim,
-                            norm_eps);
-                        bn_transformer_gpu_debug_compare_vec(
-                            "moe_input_norm_compare", l, pos,
-                            moe_cpu_xb, s->xb, dim);
-                        free(moe_cpu_xb);
-                    }
-                    if (moe_debug.compare_actual) {
-                        if (bn_transformer_gpu_fallback_moe_output_from_state(
-                                m, sess, lw, l, dim, moe_cpu_x) != 0) {
-                            free(moe_cpu_x);
-                            free(moe_gpu_x);
-                            free(moe_override_x);
-                            return bn_transformer_gpu_reject_forward(
-                                &emit, "gpu routed moe compare setup failed");
-                        }
-                    } else {
-                        bn_transformer_gpu_route_model_moe(
-                            m, sess->moe_state, s->xb, lw,
-                            route_policy.total_experts,
-                            route_policy.active_experts,
-                            route_policy.normalize_topk,
-                            route_policy.expert_weights_scale);
-                        if (bn_transformer_gpu_fallback_moe_output(
-                                m, sess, lw, dim, s->x, s->xb,
-                                moe_cpu_x) != 0) {
-                            free(moe_cpu_x);
-                            free(moe_gpu_x);
-                            free(moe_override_x);
-                            return bn_transformer_gpu_reject_forward(
-                                &emit, "gpu routed moe compare setup failed");
-                        }
-                    }
-                }
+                BnTransformerGPURoutedMoEDebugState moe_debug_state;
+                int moe_debug_setup_rc =
+                    bn_transformer_gpu_prepare_routed_moe_debug_state(
+                        &moe_debug_state, &emit, gpu, m, sess, lw,
+                        &route_policy, &moe_debug, l, pos, dim, norm_eps);
+                if (moe_debug_setup_rc != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, moe_debug_setup_rc == -1
+                            ? "gpu routed moe cpu override setup failed"
+                            : "gpu routed moe compare setup failed");
                 const char *routed_route_reason = NULL;
                 if (bn_transformer_gpu_prepare_routed_moe_route(
                         &emit, gpu, m, sess, lw, &route_policy,
                         &moe_route, &moe_debug, l, pos, dim,
-                        &routed_route_reason) != 0)
+                        &routed_route_reason) != 0) {
+                    bn_transformer_gpu_discard_routed_moe_debug_state(
+                        &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
                         &emit, routed_route_reason);
+                }
                 BnTransformerGPUMoEProjectionPolicy routed_types =
                     bn_transformer_gpu_moe_projection_policy(
                         &lw->moe.expert_map);
-                if (!routed_types.valid)
+                if (!routed_types.valid) {
+                    bn_transformer_gpu_discard_routed_moe_debug_state(
+                        &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed projection types failed");
+                }
                 if (bn_transformer_gpu_debug_compare_routed_moe_raw(
                         &emit, gpu, m, sess, lw, &moe_decode_res,
                         &route_policy, &moe_route, &routed_types,
-                        &moe_debug, l, pos, dim) != 0)
+                        &moe_debug, l, pos, dim) != 0) {
+                    bn_transformer_gpu_discard_routed_moe_debug_state(
+                        &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu routed moe raw compare failed");
+                }
                 if (bn_transformer_gpu_emit_context_moe_routed_ffn(
                         &emit, moe_decode_res.gate_all,
                         moe_decode_res.up_all, moe_decode_res.down_all,
@@ -519,15 +460,17 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         route_policy.expert_hidden_dim,
                         route_policy.total_experts,
                         route_policy.active_experts,
-                        moe_activation.uses_reference_silu, l) != 0)
+                        moe_activation.uses_reference_silu, l) != 0) {
+                    bn_transformer_gpu_discard_routed_moe_debug_state(
+                        &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed ffn emit failed");
+                }
                 if (bn_transformer_gpu_debug_compare_routed_moe_mid(
                         &emit, gpu, m, sess, lw, &route_policy,
                         &moe_debug, l, pos) != 0) {
-                    free(moe_cpu_x);
-                    free(moe_gpu_x);
-                    free(moe_override_x);
+                    bn_transformer_gpu_discard_routed_moe_debug_state(
+                        &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu routed moe mid compare failed");
                 }
@@ -535,9 +478,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 if (bn_transformer_gpu_prepare_routed_moe_parts_comparison(
                         &moe_parts_comparison, &emit, gpu, m, sess, lw,
                         &moe_debug, l, pos, dim) != 0) {
-                    free(moe_cpu_x);
-                    free(moe_gpu_x);
-                    free(moe_override_x);
+                    bn_transformer_gpu_discard_routed_moe_debug_state(
+                        &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu routed moe parts compare failed");
                 }
@@ -552,9 +494,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     if (shared_fallback_rc != 0) {
                         bn_transformer_gpu_discard_routed_moe_parts_comparison(
                             &moe_parts_comparison);
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        free(moe_override_x);
+                        bn_transformer_gpu_discard_routed_moe_debug_state(
+                            &moe_debug_state);
                         return bn_transformer_gpu_reject_forward(
                             &emit, shared_fallback_rc == -2
                                 ? "gpu shared moe cpu fallback upload failed"
@@ -578,48 +519,16 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
                         BN_GPU_VALUE_XB, dim, u_eps, next_norm);
                 }
-                if (moe_debug.compare_layer) {
-                    if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_x(gpu, moe_gpu_x,
-                                                  (size_t)dim * sizeof(float)) != 0) {
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        bn_transformer_gpu_discard_routed_moe_parts_comparison(
-                            &moe_parts_comparison);
-                        free(moe_override_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe compare readback failed");
-                    }
-                    bn_transformer_gpu_debug_compare_vec(
-                        "moe_routed_state_compare", l, pos, moe_cpu_x,
-                        moe_gpu_x, dim);
-                    bn_transformer_gpu_compare_routed_moe_shared_part(
-                        &moe_parts_comparison, moe_gpu_x, s->x,
-                        l, pos, dim);
-                    bn_transformer_gpu_debug_compare_routed_moe_post_layer(
-                        gpu, m, sess, lw, &moe_debug, moe_cpu_x,
-                        l, pos, dim, norm_eps);
-                    bn_transformer_gpu_discard_routed_moe_parts_comparison(
-                        &moe_parts_comparison);
-                    free(moe_cpu_x);
-                    free(moe_gpu_x);
-                }
-                if (!moe_debug.compare_layer)
-                    bn_transformer_gpu_discard_routed_moe_parts_comparison(
-                        &moe_parts_comparison);
-                if (moe_debug.override_cpu_actual) {
-                    if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_write_x(
-                            gpu, moe_override_x,
-                            (size_t)dim * sizeof(float)) != 0 ||
-                        bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
-                            &emit, next_norm, dim, u_eps) != 0) {
-                        free(moe_override_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe cpu override apply failed");
-                    }
-                }
-                free(moe_override_x);
+                int moe_debug_complete_rc =
+                    bn_transformer_gpu_complete_routed_moe_debug_state(
+                        &moe_debug_state, &moe_parts_comparison,
+                        &emit, gpu, m, sess, lw, &moe_debug, next_norm,
+                        l, pos, dim, u_eps, norm_eps);
+                if (moe_debug_complete_rc != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, moe_debug_complete_rc == -1
+                            ? "gpu routed moe compare readback failed"
+                            : "gpu routed moe cpu override apply failed");
                 continue;
             }
             BnTransformerGPUMoEDebugPolicy moe_debug =
