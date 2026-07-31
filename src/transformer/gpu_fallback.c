@@ -307,6 +307,119 @@ void bn_transformer_gpu_route_model_moe(
                  normalize_topk, expert_weights_scale, bn_model_pool(model));
 }
 
+int bn_transformer_gpu_resolve_moe_route(
+    BnTransformerGPUMoERouteResolution *resolution,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDecodeRoutePolicy *route,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim,
+    int profile_enabled,
+    const char **reason) {
+    if (reason)
+        *reason = "gpu moe route resolution failed";
+    if (!resolution || !emit || !gpu || !model || !session ||
+        !session->moe_state || !layer || !route_policy || !route ||
+        !debug || dim <= 0)
+        return -1;
+    memset(resolution, 0, sizeof(*resolution));
+    double t0 = profile_enabled ? bn_platform_time_ms() : 0.0;
+    int used_gpu_topk = 0;
+    if (route->gpu_route_topk) {
+        if (bn_transformer_gpu_emit_context_moe_route_topk(
+                emit, route->router, BN_GPU_VALUE_XB,
+                BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
+                dim, route_policy->total_experts,
+                route_policy->active_experts,
+                route_policy->expert_weights_scale,
+                route->route_flags) != 0) {
+            if (reason) *reason = "gpu moe route emit failed";
+            return -1;
+        }
+        if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0) {
+            if (reason) *reason = "gpu moe route topk failed";
+            return -1;
+        }
+        float route_tmp[BN_MAX_MOE_K * 2];
+        int K = route_policy->active_experts;
+        if (K > BN_MAX_MOE_K) {
+            if (reason) *reason = "gpu moe route K too large";
+            return -1;
+        }
+        if (bn_transformer_gpu_read_activation_buf(
+                gpu, BN_GPU_VALUE_MOE_HB2, route_tmp,
+                (size_t)(2 * K) * sizeof(float)) != 0) {
+            if (reason) *reason = "gpu moe route readback failed";
+            return -1;
+        }
+        for (int k = 0; k < K; k++) {
+            session->moe_state->expert_weights[k] = route_tmp[k];
+            session->moe_state->expert_indices[k] =
+                (int)(route_tmp[K + k] + 0.5f);
+        }
+        if (debug->compare_route) {
+            BnRunState *state = &session->state;
+            if (bn_transformer_gpu_read_xb(
+                    gpu, state->xb, (size_t)dim * sizeof(float)) != 0) {
+                if (reason) *reason = "gpu moe route compare input failed";
+                return -1;
+            }
+            float cpu_weights[BN_MAX_MOE_K];
+            int cpu_indices[BN_MAX_MOE_K];
+            bn_transformer_gpu_route_model_moe(
+                model, session->moe_state, state->xb, layer,
+                route_policy->total_experts,
+                route_policy->active_experts,
+                route_policy->normalize_topk,
+                route_policy->expert_weights_scale);
+            for (int k = 0; k < K; k++) {
+                cpu_weights[k] = session->moe_state->expert_weights[k];
+                cpu_indices[k] = session->moe_state->expert_indices[k];
+                session->moe_state->expert_weights[k] = route_tmp[k];
+                session->moe_state->expert_indices[k] =
+                    (int)(route_tmp[K + k] + 0.5f);
+            }
+            for (int k = 0; k < K; k++) {
+                fprintf(stderr,
+                        "[bn:gpu:debug] moe_route_compare layer=%d pos=%d "
+                        "slot=%d cpu_w=%.9g gpu_w=%.9g cpu_e=%d gpu_e=%d\n",
+                        layer_index, pos, k, cpu_weights[k], route_tmp[k],
+                        cpu_indices[k],
+                        (int)(route_tmp[K + k] + 0.5f));
+            }
+        }
+        used_gpu_topk = 1;
+    } else if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0) {
+        if (reason) *reason = "gpu moe route input readback failed";
+        return -1;
+    }
+    double t1 = profile_enabled ? bn_platform_time_ms() : 0.0;
+    if (!used_gpu_topk &&
+        bn_transformer_gpu_read_xb(
+            gpu, session->state.xb, (size_t)dim * sizeof(float)) != 0) {
+        if (reason) *reason = "gpu moe route input readback failed";
+        return -1;
+    }
+    double t2 = profile_enabled ? bn_platform_time_ms() : 0.0;
+    if (!used_gpu_topk)
+        bn_transformer_gpu_route_model_moe(
+            model, session->moe_state, session->state.xb, layer,
+            route_policy->total_experts, route_policy->active_experts,
+            route_policy->normalize_topk,
+            route_policy->expert_weights_scale);
+    double t3 = profile_enabled ? bn_platform_time_ms() : 0.0;
+    resolution->flush_ms = t1 - t0;
+    resolution->read_ms = t2 - t1;
+    resolution->route_ms = t3 - t2;
+    return 0;
+}
+
 void bn_transformer_gpu_run_model_moe_cpu(
     BnModel *model,
     BnSession *session,

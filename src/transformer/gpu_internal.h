@@ -399,6 +399,12 @@ typedef struct {
 } BnTransformerGPUMoEExecutionPolicy;
 
 typedef struct {
+    double flush_ms;
+    double read_ms;
+    double route_ms;
+} BnTransformerGPUMoERouteResolution;
+
+typedef struct {
     int valid;
     int gate_type;
     int up_type;
@@ -1868,6 +1874,21 @@ void bn_transformer_gpu_route_model_moe(
     int active_experts,
     int normalize_topk,
     float expert_weights_scale);
+int bn_transformer_gpu_resolve_moe_route(
+    BnTransformerGPUMoERouteResolution *resolution,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDecodeRoutePolicy *route,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim,
+    int profile_enabled,
+    const char **reason);
 void bn_transformer_gpu_run_model_moe_cpu(
     BnModel *model,
     BnSession *session,
