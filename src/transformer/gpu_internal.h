@@ -2032,6 +2032,13 @@ int bn_transformer_gpu_fallback_shared_expert_output(
     int dim,
     const float *input,
     float *output);
+int bn_transformer_gpu_fallback_shared_expert_residual(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim);
 int bn_transformer_gpu_fallback_shared_expert_down(
     BnModel *model,
     BnSession *session,

@@ -546,51 +546,20 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         bn_transformer_gpu_moe_shared_cpu_fallback_policy(
                             c, lw);
                 if (shared_cpu_fallback.enabled) {
-                    size_t dim_bytes = (size_t)dim * sizeof(float);
-                    float *shared_cpu_xb = (float *)malloc(dim_bytes);
-                    float *shared_cpu_out = (float *)malloc(dim_bytes);
-                    float *shared_gpu_out = (float *)malloc(dim_bytes);
-                    if (!shared_cpu_xb || !shared_cpu_out ||
-                        !shared_gpu_out ||
-                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_xb(
-                            gpu, shared_cpu_xb, dim_bytes) != 0 ||
-                        bn_transformer_gpu_read_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_OUT, shared_gpu_out,
-                            dim_bytes) != 0 ||
-                        bn_transformer_gpu_fallback_shared_expert_output(
-                            m, sess, lw, dim, shared_cpu_xb,
-                            shared_cpu_out) != 0) {
-                        free(shared_cpu_xb);
-                        free(shared_cpu_out);
-                        free(shared_gpu_out);
+                    int shared_fallback_rc =
+                        bn_transformer_gpu_fallback_shared_expert_residual(
+                            &emit, gpu, m, sess, lw, dim);
+                    if (shared_fallback_rc != 0) {
                         bn_transformer_gpu_discard_routed_moe_parts_comparison(
                             &moe_parts_comparison);
                         free(moe_cpu_x);
                         free(moe_gpu_x);
                         free(moe_override_x);
                         return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu shared moe cpu fallback failed");
+                            &emit, shared_fallback_rc == -2
+                                ? "gpu shared moe cpu fallback upload failed"
+                                : "gpu shared moe cpu fallback failed");
                     }
-                    for (int si = 0; si < dim; si++)
-                        shared_gpu_out[si] += shared_cpu_out[si];
-                    if (bn_transformer_gpu_write_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_OUT,
-                            shared_gpu_out, dim_bytes) != 0) {
-                        free(shared_cpu_xb);
-                        free(shared_cpu_out);
-                        free(shared_gpu_out);
-                        bn_transformer_gpu_discard_routed_moe_parts_comparison(
-                            &moe_parts_comparison);
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        free(moe_override_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu shared moe cpu fallback upload failed");
-                    }
-                    free(shared_cpu_xb);
-                    free(shared_cpu_out);
-                    free(shared_gpu_out);
                     bn_transformer_gpu_emit_context_residual_rmsnorm(
                         &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
                         BN_GPU_VALUE_XB, dim, u_eps, next_norm);

@@ -1214,6 +1214,41 @@ int bn_transformer_gpu_fallback_shared_expert_output(
     return 0;
 }
 
+int bn_transformer_gpu_fallback_shared_expert_residual(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim) {
+    if (!emit || !gpu || !model || !session || !layer || dim <= 0)
+        return -1;
+    size_t dim_bytes = (size_t)dim * sizeof(float);
+    float *input = (float *)malloc(dim_bytes);
+    float *shared = (float *)malloc(dim_bytes);
+    float *routed = (float *)malloc(dim_bytes);
+    if (!input || !shared || !routed ||
+        bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_xb(gpu, input, dim_bytes) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_OUT, routed, dim_bytes) != 0 ||
+        bn_transformer_gpu_fallback_shared_expert_output(
+            model, session, layer, dim, input, shared) != 0) {
+        free(input);
+        free(shared);
+        free(routed);
+        return -1;
+    }
+    for (int i = 0; i < dim; i++)
+        routed[i] += shared[i];
+    int rc = bn_transformer_gpu_write_activation_buf(
+        gpu, BN_GPU_VALUE_MOE_OUT, routed, dim_bytes);
+    free(input);
+    free(shared);
+    free(routed);
+    return rc == 0 ? 0 : -2;
+}
+
 int bn_transformer_gpu_fallback_shared_expert_down(
     BnModel *model,
     BnSession *session,

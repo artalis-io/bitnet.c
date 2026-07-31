@@ -1194,6 +1194,8 @@ static void test_gpu_policy_helpers(void) {
                NULL, NULL, NULL, NULL, NULL) == -1);
     assert(bn_transformer_gpu_fallback_shared_expert_output(
                NULL, NULL, NULL, 0, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_shared_expert_residual(
+               NULL, NULL, NULL, NULL, NULL, 0) == -1);
     assert(bn_transformer_gpu_fallback_shared_expert_down(
                NULL, NULL, NULL, 0, NULL, NULL) == -1);
     assert(bn_transformer_gpu_fallback_moe_output_from_state(
