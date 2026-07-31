@@ -70,6 +70,23 @@ static int mock_gpu_write_activation(void *ctx, int buf_idx,
     return 0;
 }
 
+typedef struct {
+    const float *logits;
+    const float *xb;
+} MockGPURefineReadback;
+
+static int mock_gpu_refine_read_activation(
+    void *ctx, int buf_idx, void *out, size_t size, size_t offset) {
+    MockGPURefineReadback *readback = (MockGPURefineReadback *)ctx;
+    const float *src = buf_idx == BN_GPU_VALUE_LOGITS
+        ? readback->logits
+        : buf_idx == BN_GPU_VALUE_XB ? readback->xb : NULL;
+    if (!src)
+        return -1;
+    memcpy(out, (const unsigned char *)src + offset, size);
+    return 0;
+}
+
 static int mock_argmax_activation(void *ctx, int buf_idx, int n,
                                   const int *penalty_tokens,
                                   int n_penalty_tokens,
@@ -1119,6 +1136,39 @@ static void test_gpu_policy_helpers(void) {
                NULL, 0, NULL, NULL, NULL, 0) == 0);
     assert(bn_transformer_gpu_refine_native_quant_logits_top(
                NULL, 0, NULL, NULL, NULL, 0) == 0);
+    assert(bn_transformer_gpu_try_refined_argmax(
+               NULL, NULL, NULL, NULL, NULL, 0,
+               NULL, 0, 1.0f, NULL) == 0);
+    bn_transformer_gpu_refine_output_logits(
+        NULL, NULL, NULL, NULL, NULL, 0, 0);
+    float gpu_logits[] = {4.0f, 3.0f, 2.0f};
+    float gpu_xb[] = {1.0f, -1.0f};
+    float host_logits[3] = {0};
+    float host_xb[2] = {0};
+    int8_t host_xq[2] = {0};
+    int penalty_token = 0;
+    int refined_argmax = -1;
+    MockGPURefineReadback refine_readback = {gpu_logits, gpu_xb};
+    BnModel refine_model;
+    BnSession refine_session;
+    BnTransformerGPULogitsRefinePolicy mock_refine_policy;
+    memset(&refine_model, 0, sizeof(refine_model));
+    memset(&refine_session, 0, sizeof(refine_session));
+    memset(&mock_refine_policy, 0, sizeof(mock_refine_policy));
+    refine_model.config.vocab_size = 3;
+    refine_session.state.logits = host_logits;
+    refine_session.state.xb = host_xb;
+    refine_session.state.x_q = host_xq;
+    logits.cpu_weight = &W;
+    mock_refine_policy.native_quant_captures_xb = 1;
+    mock_refine_policy.native_quant_refine_top = 1;
+    gpu.ctx = &refine_readback;
+    gpu.read_activation = mock_gpu_refine_read_activation;
+    assert(bn_transformer_gpu_try_refined_argmax(
+               &gpu, &refine_model, &refine_session, &logits,
+               &mock_refine_policy, 2, &penalty_token, 1, 2.0f,
+               &refined_argmax) == 1);
+    assert(refined_argmax == 1);
     assert(bn_transformer_gpu_fallback_shared_expert_mid(
                NULL, NULL, NULL, NULL, NULL) == -1);
     assert(bn_transformer_gpu_fallback_shared_expert_output(

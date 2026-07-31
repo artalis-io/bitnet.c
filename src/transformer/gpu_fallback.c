@@ -195,6 +195,92 @@ int bn_transformer_gpu_refine_native_quant_logits_top(
     return n_top;
 }
 
+int bn_transformer_gpu_try_refined_argmax(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    const BnTransformerGPULogitResources *logits,
+    const BnTransformerGPULogitsRefinePolicy *refine,
+    int dim,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token) {
+    if (!gpu || !model || !session || !logits || !refine ||
+        !out_token || dim <= 0 || !refine->native_quant_captures_xb ||
+        refine->native_quant_refine_top <= 0 ||
+        model->config.vocab_size <= 0)
+        return 0;
+    BnRunState *state = &session->state;
+    int vocab_size = model->config.vocab_size;
+    if (bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_LOGITS, state->logits,
+            (size_t)vocab_size * sizeof(float)) != 0 ||
+        bn_transformer_gpu_read_xb(
+            gpu, state->xb, (size_t)dim * sizeof(float)) != 0)
+        return 0;
+    bn_transformer_gpu_refine_native_quant_logits_top(
+        state->logits, vocab_size, logits->cpu_weight,
+        state->xb, state->x_q, refine->native_quant_refine_top);
+    int best = 0;
+    float best_v = -INFINITY;
+    for (int i = 0; i < vocab_size; i++) {
+        float v = state->logits[i];
+        if (repeat_penalty != 1.0f && penalty_tokens &&
+            n_penalty_tokens > 0) {
+            for (int j = 0; j < n_penalty_tokens; j++) {
+                if (penalty_tokens[j] == i) {
+                    v = v > 0.0f ? v / repeat_penalty
+                                 : v * repeat_penalty;
+                    break;
+                }
+            }
+        }
+        if (v > best_v) {
+            best_v = v;
+            best = i;
+        }
+    }
+    *out_token = best;
+    return 1;
+}
+
+void bn_transformer_gpu_refine_output_logits(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    const BnTransformerGPULogitResources *logits,
+    const BnTransformerGPULogitsRefinePolicy *refine,
+    int dim,
+    int kquant_has_xb_snapshot) {
+    if (!gpu || !model || !session || !logits || !refine ||
+        dim <= 0 || model->config.vocab_size <= 0)
+        return;
+    BnRunState *state = &session->state;
+    int vocab_size = model->config.vocab_size;
+    if (refine->kquant_captures_xb) {
+        int refine_top = refine->kquant_refine_top;
+        int has_xb = kquant_has_xb_snapshot;
+        if (!has_xb && refine_top > 0 &&
+            bn_transformer_gpu_read_xb(
+                gpu, state->xb, (size_t)dim * sizeof(float)) == 0)
+            has_xb = 1;
+        if (refine_top > 0 && has_xb)
+            bn_transformer_gpu_refine_kquant_logits_top(
+                state->logits, vocab_size, logits->cpu_weight,
+                state->xb, state->x_q, refine_top);
+    }
+    if (refine->native_quant_captures_xb) {
+        int refine_top = refine->native_quant_refine_top;
+        if (refine_top > 0 &&
+            bn_transformer_gpu_read_xb(
+                gpu, state->xb, (size_t)dim * sizeof(float)) == 0)
+            bn_transformer_gpu_refine_native_quant_logits_top(
+                state->logits, vocab_size, logits->cpu_weight,
+                state->xb, state->x_q, refine_top);
+    }
+}
+
 const void *bn_transformer_gpu_model_expert_projection(
     BnModel *model,
     BnMoEState *state,

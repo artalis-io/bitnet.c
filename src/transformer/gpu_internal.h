@@ -1834,6 +1834,25 @@ int bn_transformer_gpu_refine_native_quant_logits_top(
     const float *x,
     int8_t *quantized,
     int top_n);
+int bn_transformer_gpu_try_refined_argmax(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    const BnTransformerGPULogitResources *logits,
+    const BnTransformerGPULogitsRefinePolicy *refine,
+    int dim,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token);
+void bn_transformer_gpu_refine_output_logits(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    const BnTransformerGPULogitResources *logits,
+    const BnTransformerGPULogitsRefinePolicy *refine,
+    int dim,
+    int kquant_has_xb_snapshot);
 const void *bn_transformer_gpu_model_expert_projection(
     BnModel *model,
     BnMoEState *state,

@@ -3854,6 +3854,12 @@ if grep -n 'float \*dbg_logits\|float \*cpu_logits\|bn_transformer_gpu_debug_arg
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_refine_kquant_logits_top\|bn_transformer_gpu_refine_native_quant_logits_top\|float best_v' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate logits refinement mechanics to GPU fallback"
+    fail=1
+fi
+
 if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy/{flag=0} flag{print}' \
     src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1 ||
    awk '/ffn_block:;/{flag=1} /BnGPUMoETemporaryBuffers moe_temporaries;/{flag=0} flag{print}' \

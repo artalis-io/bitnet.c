@@ -1185,40 +1185,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             emit_logits && !use_matvec_argmax);
     if (argmax_token) {
         if (!use_matvec_argmax &&
-            logits_refine.native_quant_captures_xb) {
-            int refine_top = logits_refine.native_quant_refine_top;
-            if (refine_top > 0 &&
-                bn_transformer_gpu_read_activation_buf(
-                    gpu, BN_GPU_VALUE_LOGITS, s->logits,
-                    (size_t)c->vocab_size * sizeof(float)) == 0 &&
-                bn_transformer_gpu_read_xb(gpu, s->xb,
-                                           (size_t)dim * sizeof(float)) == 0) {
-                bn_transformer_gpu_refine_native_quant_logits_top(
-                    s->logits, c->vocab_size, logit_res->cpu_weight,
-                    s->xb, s->x_q, refine_top);
-                int best = 0;
-                float best_v = -INFINITY;
-                for (int i = 0; i < c->vocab_size; i++) {
-                    float v = s->logits[i];
-                    if (repeat_penalty != 1.0f && penalty_tokens &&
-                        n_penalty_tokens > 0) {
-                        for (int j = 0; j < n_penalty_tokens; j++) {
-                            if (penalty_tokens[j] == i) {
-                                v = v > 0.0f ? v / repeat_penalty
-                                             : v * repeat_penalty;
-                                break;
-                            }
-                        }
-                    }
-                    if (v > best_v) {
-                        best_v = v;
-                        best = i;
-                    }
-                }
-                *argmax_token = best;
-                bn_transformer_gpu_emit_context_free(&emit);
-                return s->x;
-            }
+            bn_transformer_gpu_try_refined_argmax(
+                gpu, m, sess, logit_res, &logits_refine, dim,
+                penalty_tokens, n_penalty_tokens, repeat_penalty,
+                argmax_token)) {
+            bn_transformer_gpu_emit_context_free(&emit);
+            return s->x;
         }
         int argmax_rc = use_matvec_argmax
             ? bn_transformer_gpu_matvec_argmax_backend_run(
@@ -1243,29 +1215,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_emit_context_free(&emit);
         return s->x;
     }
-    if (logits_refine.kquant_captures_xb) {
-        int refine_top = logits_refine.kquant_refine_top;
-        int has_xb = kquant_logits_refine_has_xb_snapshot;
-        if (!has_xb && refine_top > 0 &&
-            bn_transformer_gpu_read_xb(gpu, s->xb,
-                                       (size_t)dim * sizeof(float)) == 0)
-            has_xb = 1;
-        if (refine_top > 0 && has_xb) {
-            bn_transformer_gpu_refine_kquant_logits_top(
-                s->logits, c->vocab_size, logit_res->cpu_weight,
-                s->xb, s->x_q, refine_top);
-        }
-    }
-    if (logits_refine.native_quant_captures_xb) {
-        int refine_top = logits_refine.native_quant_refine_top;
-        if (refine_top > 0 &&
-            bn_transformer_gpu_read_xb(gpu, s->xb,
-                                       (size_t)dim * sizeof(float)) == 0) {
-            bn_transformer_gpu_refine_native_quant_logits_top(
-                s->logits, c->vocab_size, logit_res->cpu_weight,
-                s->xb, s->x_q, refine_top);
-        }
-    }
+    bn_transformer_gpu_refine_output_logits(
+        gpu, m, sess, logit_res, &logits_refine, dim,
+        kquant_logits_refine_has_xb_snapshot);
     bn_transformer_gpu_debug_compare_logits(
         gpu, m, sess, logit_res, pos, dim);
     bn_transformer_gpu_emit_context_free(&emit);
