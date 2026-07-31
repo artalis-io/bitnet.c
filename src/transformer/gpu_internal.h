@@ -1958,6 +1958,17 @@ void bn_transformer_gpu_compare_routed_moe_shared_part(
     int layer_index,
     int pos,
     int dim);
+void bn_transformer_gpu_debug_compare_routed_moe_post_layer(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    const float *cpu_state,
+    int layer_index,
+    int pos,
+    int dim,
+    float norm_eps);
 void bn_transformer_gpu_discard_routed_moe_parts_comparison(
     BnTransformerGPUMoEPartsComparison *comparison);
 int bn_transformer_gpu_prepare_moe_layer_comparison(

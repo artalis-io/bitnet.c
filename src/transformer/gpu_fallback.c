@@ -727,6 +727,80 @@ void bn_transformer_gpu_compare_routed_moe_shared_part(
     free(gpu_shared);
 }
 
+void bn_transformer_gpu_debug_compare_routed_moe_post_layer(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    const float *cpu_state,
+    int layer_index,
+    int pos,
+    int dim,
+    float norm_eps) {
+    if (!gpu || !model || !session || !layer || !debug || !cpu_state ||
+        dim <= 0)
+        return;
+    BnRunState *state = &session->state;
+    int has_shared = bn_transformer_gpu_moe_has_loaded_shared_expert(
+        &model->config, layer);
+    if (debug->compare_shared_mid && has_shared) {
+        BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+            bn_transformer_gpu_moe_shared_expert_shape_policy(
+                &model->config);
+        int hidden = shared_shape.hidden_dim;
+        size_t bytes = (size_t)hidden * sizeof(float);
+        float *cpu_mid = hidden > 0 ? (float *)malloc(bytes) : NULL;
+        float *gpu_mid = hidden > 0 ? (float *)malloc(bytes) : NULL;
+        if (cpu_mid && gpu_mid &&
+            bn_transformer_gpu_fallback_shared_expert_mid(
+                model, session, layer, state->xb, cpu_mid) == 0 &&
+            bn_transformer_gpu_read_activation_buf(
+                gpu, BN_GPU_VALUE_HB, gpu_mid, bytes) == 0)
+            bn_transformer_gpu_debug_compare_vec(
+                "moe_shared_mid_compare", layer_index, pos,
+                cpu_mid, gpu_mid, hidden);
+        free(cpu_mid);
+        free(gpu_mid);
+    }
+    if (debug->compare_shared_down && has_shared) {
+        size_t bytes = (size_t)dim * sizeof(float);
+        float *cpu_down = (float *)malloc(bytes);
+        float *gpu_down = (float *)malloc(bytes);
+        if (cpu_down && gpu_down &&
+            bn_transformer_gpu_fallback_shared_expert_down(
+                model, session, layer, dim, state->xb, cpu_down) == 0 &&
+            bn_transformer_gpu_read_activation_buf(
+                gpu, BN_GPU_VALUE_XB2, gpu_down, bytes) == 0)
+            bn_transformer_gpu_debug_compare_vec(
+                "moe_shared_down_compare", layer_index, pos,
+                cpu_down, gpu_down, dim);
+        free(cpu_down);
+        free(gpu_down);
+    }
+    if (debug->compare_norm) {
+        size_t bytes = (size_t)dim * sizeof(float);
+        float *cpu_norm = (float *)malloc(bytes);
+        float *gpu_norm = (float *)malloc(bytes);
+        const float *norm_weight =
+            layer_index + 1 < model->config.n_layers
+                ? model->weights.layers[layer_index + 1].norm.attn_norm
+                : model->weights.output_norm;
+        if (cpu_norm && gpu_norm &&
+            bn_transformer_gpu_read_xb(gpu, gpu_norm, bytes) == 0) {
+            if (norm_weight) {
+                bn_transformer_gpu_debug_rmsnorm(
+                    cpu_norm, cpu_state, norm_weight, dim, norm_eps);
+                bn_transformer_gpu_debug_compare_vec(
+                    "moe_routed_norm_compare", layer_index, pos,
+                    cpu_norm, gpu_norm, dim);
+            }
+        }
+        free(cpu_norm);
+        free(gpu_norm);
+    }
+}
+
 void bn_transformer_gpu_discard_moe_layer_comparison(
     BnTransformerGPUMoELayerComparison *comparison) {
     if (!comparison)

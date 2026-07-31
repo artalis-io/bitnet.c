@@ -3896,6 +3896,12 @@ if grep -n 'shared_cpu_xb\|shared_cpu_out\|shared_gpu_out' \
     fail=1
 fi
 
+if grep -n 'moe_cpu_shared_mid\|moe_gpu_shared_mid\|moe_cpu_shared_down\|moe_gpu_shared_down\|moe_cpu_norm\|moe_gpu_norm' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate routed MoE post-layer diagnostics to GPU fallback"
+    fail=1
+fi
+
 if awk '/BnTransformerGPUMoERouteResolution route_resolution;/{flag=1} /skip dense FFN below/{flag=0} flag{print}' \
     src/transformer/gpu.c |
     grep -n 'malloc\|moe_state_compare\|moe_norm_compare\|bn_transformer_gpu_fallback_moe_output' \

@@ -596,84 +596,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     bn_transformer_gpu_compare_routed_moe_shared_part(
                         &moe_parts_comparison, moe_gpu_x, s->x,
                         l, pos, dim);
-                    if (moe_debug.compare_shared_mid &&
-                        bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
-                        BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
-                            bn_transformer_gpu_moe_shared_expert_shape_policy(c);
-                        int shared_hidden = shared_shape.hidden_dim;
-                        size_t shared_mid_bytes =
-                            (size_t)shared_hidden * sizeof(float);
-                        float *moe_cpu_shared_mid =
-                            (float *)malloc(shared_mid_bytes);
-                        float *moe_gpu_shared_mid =
-                            (float *)malloc(shared_mid_bytes);
-                        if (moe_cpu_shared_mid && moe_gpu_shared_mid &&
-                            bn_transformer_gpu_fallback_shared_expert_mid(
-                                m, sess, lw, s->xb,
-                                moe_cpu_shared_mid) == 0 &&
-                            bn_transformer_gpu_read_activation_buf(
-                                gpu, BN_GPU_VALUE_HB, moe_gpu_shared_mid,
-                                shared_mid_bytes) == 0) {
-                            bn_transformer_gpu_debug_compare_vec(
-                                "moe_shared_mid_compare", l, pos,
-                                moe_cpu_shared_mid, moe_gpu_shared_mid,
-                                shared_hidden);
-                        }
-                        free(moe_cpu_shared_mid);
-                        free(moe_gpu_shared_mid);
-                    }
-                    if (moe_debug.compare_shared_down &&
-                        bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
-                        size_t shared_down_bytes =
-                            (size_t)dim * sizeof(float);
-                        float *moe_cpu_shared_down =
-                            (float *)malloc(shared_down_bytes);
-                        float *moe_gpu_shared_down =
-                            (float *)malloc(shared_down_bytes);
-                        if (moe_cpu_shared_down && moe_gpu_shared_down &&
-                            bn_transformer_gpu_fallback_shared_expert_down(
-                                m, sess, lw, dim, s->xb,
-                                moe_cpu_shared_down) == 0 &&
-                            bn_transformer_gpu_read_activation_buf(
-                                gpu, BN_GPU_VALUE_XB2, moe_gpu_shared_down,
-                                shared_down_bytes) == 0) {
-                            bn_transformer_gpu_debug_compare_vec(
-                                "moe_shared_down_compare", l, pos,
-                                moe_cpu_shared_down, moe_gpu_shared_down,
-                                dim);
-                        }
-                        free(moe_cpu_shared_down);
-                        free(moe_gpu_shared_down);
-                    }
-                    if (moe_debug.compare_norm) {
-                        float *moe_cpu_norm =
-                            (float *)malloc((size_t)dim * sizeof(float));
-                        float *moe_gpu_norm =
-                            (float *)malloc((size_t)dim * sizeof(float));
-                        if (moe_cpu_norm && moe_gpu_norm &&
-                            bn_transformer_gpu_read_xb(
-                                gpu, moe_gpu_norm,
-                                (size_t)dim * sizeof(float)) == 0) {
-                            const float *nw = (l + 1 < c->n_layers)
-                                ? w->layers[l + 1].norm.attn_norm
-                                : w->output_norm;
-                            if (nw) {
-                                float ss = 0.0f;
-                                for (int i = 0; i < dim; i++)
-                                    ss += moe_cpu_x[i] * moe_cpu_x[i];
-                                float scale = 1.0f /
-                                    sqrtf(ss / (float)dim + norm_eps);
-                                for (int i = 0; i < dim; i++)
-                                    moe_cpu_norm[i] =
-                                        moe_cpu_x[i] * scale * nw[i];
-                                bn_transformer_gpu_debug_compare_vec(
-                                    "moe_routed_norm_compare", l, pos,
-                                    moe_cpu_norm, moe_gpu_norm, dim);
-                            }
-                        }
-                        free(moe_cpu_norm);
-                        free(moe_gpu_norm);
-                    }
+                    bn_transformer_gpu_debug_compare_routed_moe_post_layer(
+                        gpu, m, sess, lw, &moe_debug, moe_cpu_x,
+                        l, pos, dim, norm_eps);
                     bn_transformer_gpu_discard_routed_moe_parts_comparison(
                         &moe_parts_comparison);
                     free(moe_cpu_x);
