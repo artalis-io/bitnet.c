@@ -301,9 +301,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             int compare_gqa = compare_gqa_layer == l &&
                 (compare_gqa_pos < 0 || compare_gqa_pos == pos);
             if (compare_attention || compare_gqa) {
-                if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                    bn_transformer_gpu_read_x(gpu, sess->state.x,
-                                              (size_t)dim * sizeof(float)) != 0)
+                if (bn_transformer_gpu_debug_snapshot_attention_state(
+                        &emit, gpu, sess, dim) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu attention pre-compare snapshot failed");
             }
@@ -618,11 +617,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int compare_ffn_state = compare_ffn_state_layer == l &&
             (compare_ffn_state_pos < 0 || compare_ffn_state_pos == pos);
         if (compare_ffn_state) {
-            if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                bn_transformer_gpu_read_x(gpu, sess->state.x,
-                                          (size_t)dim * sizeof(float)) != 0 ||
-                bn_transformer_gpu_read_xb(gpu, sess->state.xb,
-                                           (size_t)dim * sizeof(float)) != 0)
+            if (bn_transformer_gpu_debug_snapshot_ffn_state(
+                    &emit, gpu, sess, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu ffn-state pre-compare snapshot failed");
         }
@@ -643,8 +639,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             const float *next_norm_cpu = (l + 1 < c->n_layers)
                 ? w->layers[l + 1].norm.attn_norm
                 : w->output_norm;
-            if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                bn_transformer_gpu_debug_compare_ffn_state(
+            if (bn_transformer_gpu_debug_compare_ffn_state(
                     &emit, gpu, m, sess, lw, &ffn_plan, next_norm_cpu,
                     l, pos, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
@@ -677,9 +672,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             return s->logits;
         }
         if (logits_refine_snapshot.snapshot_before_logits) {
-            if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                bn_transformer_gpu_read_xb(gpu, s->xb,
-                                           (size_t)dim * sizeof(float)) != 0)
+            if (bn_transformer_gpu_capture_logits_refine_state(
+                    &emit, gpu, sess, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu logits pre-refine snapshot failed");
         }

@@ -2104,6 +2104,50 @@ static void debug_compare_native_quant_activation(const BnGPUBackend *gpu,
     free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
 }
 
+int bn_transformer_gpu_debug_snapshot_attention_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnSession *session,
+    int dim) {
+    if (!emit || !gpu || !session || dim <= 0)
+        return -1;
+    return bn_transformer_gpu_emit_context_flush(emit, gpu) == 0 &&
+           bn_transformer_gpu_read_x(
+               gpu, session->state.x,
+               (size_t)dim * sizeof(float)) == 0
+        ? 0 : -1;
+}
+
+int bn_transformer_gpu_debug_snapshot_ffn_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnSession *session,
+    int dim) {
+    if (!emit || !gpu || !session || dim <= 0)
+        return -1;
+    size_t bytes = (size_t)dim * sizeof(float);
+    return bn_transformer_gpu_emit_context_flush(emit, gpu) == 0 &&
+           bn_transformer_gpu_read_x(
+               gpu, session->state.x, bytes) == 0 &&
+           bn_transformer_gpu_read_xb(
+               gpu, session->state.xb, bytes) == 0
+        ? 0 : -1;
+}
+
+int bn_transformer_gpu_capture_logits_refine_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnSession *session,
+    int dim) {
+    if (!emit || !gpu || !session || dim <= 0)
+        return -1;
+    return bn_transformer_gpu_emit_context_flush(emit, gpu) == 0 &&
+           bn_transformer_gpu_read_xb(
+               gpu, session->state.xb,
+               (size_t)dim * sizeof(float)) == 0
+        ? 0 : -1;
+}
+
 int bn_transformer_gpu_debug_compare_ffn_state(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

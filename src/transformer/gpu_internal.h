@@ -2200,6 +2200,21 @@ void bn_transformer_gpu_debug_compare_logits(
     const BnTransformerGPULogitResources *logits,
     int pos,
     int dim);
+int bn_transformer_gpu_debug_snapshot_attention_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnSession *session,
+    int dim);
+int bn_transformer_gpu_debug_snapshot_ffn_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnSession *session,
+    int dim);
+int bn_transformer_gpu_capture_logits_refine_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnSession *session,
+    int dim);
 int bn_transformer_gpu_debug_compare_ffn_state(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

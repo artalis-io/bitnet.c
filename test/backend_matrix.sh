@@ -3908,6 +3908,12 @@ if grep -n 'moe_cpu_x\|moe_gpu_x\|moe_override_x\|bn_transformer_gpu_fallback_mo
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_read_x(gpu\|bn_transformer_gpu_read_xb(gpu' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate host state snapshots to GPU fallback"
+    fail=1
+fi
+
 if awk '/BnTransformerGPUMoERouteResolution route_resolution;/{flag=1} /skip dense FFN below/{flag=0} flag{print}' \
     src/transformer/gpu.c |
     grep -n 'malloc\|moe_state_compare\|moe_norm_compare\|bn_transformer_gpu_fallback_moe_output' \
