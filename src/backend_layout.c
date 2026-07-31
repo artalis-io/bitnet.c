@@ -1,4 +1,5 @@
 #include "backend_layout.h"
+#include "backend_model.h"
 #include "backend_quant.h"
 #include "gguf.h"
 #include <stdlib.h>

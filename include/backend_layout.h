@@ -2,11 +2,12 @@
 #define BN_BACKEND_LAYOUT_H
 
 #include "gpu_backend.h"
-#include "backend_model.h"
 #include "model_config.h"
 #include "model_weights.h"
 #include "quant.h"
 #include "sh_arena.h"
+
+typedef struct BnBackendModel BnBackendModel;
 
 typedef enum {
     BN_BACKEND_LAYOUT_OK = 0,
