@@ -605,6 +605,54 @@ cleanup:
     return rc;
 }
 
+int bn_transformer_gpu_debug_compare_routed_moe_mid(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos) {
+    if (!debug || !debug->compare_mid)
+        return 0;
+    if (!emit || !gpu || !model || !session || !layer || !route_policy)
+        return -1;
+    int active_experts = route_policy->active_experts;
+    int hidden_dim = route_policy->expert_hidden_dim;
+    if (active_experts < 0 || active_experts > BN_MAX_MOE_K ||
+        hidden_dim <= 0)
+        return -1;
+    size_t mid_bytes =
+        (size_t)active_experts * (size_t)hidden_dim * sizeof(float);
+    float *cpu_mid = (float *)malloc(mid_bytes);
+    float *gpu_mid = (float *)malloc(mid_bytes);
+    int rc = -1;
+    if (!cpu_mid || !gpu_mid ||
+        bn_transformer_gpu_fallback_moe_mid(
+            model, session, layer, session->state.xb, cpu_mid) != 0 ||
+        bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_HB, gpu_mid, mid_bytes) != 0)
+        goto cleanup;
+    for (int k = 0; k < active_experts; k++) {
+        char label[64];
+        snprintf(label, sizeof(label), "moe_mid_compare[%d]", k);
+        bn_transformer_gpu_debug_compare_vec(
+            label, layer_index, pos,
+            cpu_mid + (size_t)k * (size_t)hidden_dim,
+            gpu_mid + (size_t)k * (size_t)hidden_dim,
+            hidden_dim);
+    }
+    rc = 0;
+
+cleanup:
+    free(cpu_mid);
+    free(gpu_mid);
+    return rc;
+}
+
 void bn_transformer_gpu_discard_moe_layer_comparison(
     BnTransformerGPUMoELayerComparison *comparison) {
     if (!comparison)

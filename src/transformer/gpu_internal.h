@@ -1923,6 +1923,16 @@ int bn_transformer_gpu_debug_compare_routed_moe_raw(
     int layer_index,
     int pos,
     int dim);
+int bn_transformer_gpu_debug_compare_routed_moe_mid(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos);
 int bn_transformer_gpu_prepare_moe_layer_comparison(
     BnTransformerGPUMoELayerComparison *comparison,
     const BnGPUBackend *gpu,

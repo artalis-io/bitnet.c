@@ -525,39 +525,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         moe_activation.uses_reference_silu, l) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed ffn emit failed");
-                if (moe_debug.compare_mid) {
-                    int K = route_policy.active_experts;
-                    int moe_hidden = route_policy.expert_hidden_dim;
-                    size_t mid_bytes =
-                        (size_t)K * (size_t)moe_hidden * sizeof(float);
-                    float *moe_cpu_mid = (float *)malloc(mid_bytes);
-                    float *moe_gpu_mid = (float *)malloc(mid_bytes);
-                    if (!moe_cpu_mid || !moe_gpu_mid ||
-                        bn_transformer_gpu_fallback_moe_mid(
-                            m, sess, lw, s->xb, moe_cpu_mid) != 0 ||
-                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_HB, moe_gpu_mid,
-                            mid_bytes) != 0) {
-                        free(moe_cpu_mid);
-                        free(moe_gpu_mid);
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe mid compare failed");
-                    }
-                    for (int mk = 0; mk < K; mk++) {
-                        char label[64];
-                        snprintf(label, sizeof(label), "moe_mid_compare[%d]",
-                                 mk);
-                        bn_transformer_gpu_debug_compare_vec(
-                            label, l, pos,
-                            moe_cpu_mid + (size_t)mk * (size_t)moe_hidden,
-                            moe_gpu_mid + (size_t)mk * (size_t)moe_hidden,
-                            moe_hidden);
-                    }
-                    free(moe_cpu_mid);
-                    free(moe_gpu_mid);
+                if (bn_transformer_gpu_debug_compare_routed_moe_mid(
+                        &emit, gpu, m, sess, lw, &route_policy,
+                        &moe_debug, l, pos) != 0) {
+                    free(moe_cpu_x);
+                    free(moe_gpu_x);
+                    free(moe_override_x);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu routed moe mid compare failed");
                 }
                 if (moe_debug.compare_parts) {
                     moe_cpu_routed_part =
