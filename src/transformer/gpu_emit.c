@@ -6,7 +6,6 @@
 #include "../moe_internal.h"
 #include "moe.h"
 #include "quant.h"
-#include "transformer_backend_internal.h"
 #include "transformer_kv_internal.h"
 #include "transformer_plan_internal.h"
 #include "session.h"

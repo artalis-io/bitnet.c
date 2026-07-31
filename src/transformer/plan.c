@@ -2,17 +2,10 @@
 #include "gpu_internal.h"
 #include "model_internal.h"
 #include "../moe_internal.h"
-#include "transformer_backend_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_logits_internal.h"
 #include <stdlib.h>
 #include <string.h>
-
-void *bn_transformer_backend_handle_or(const BnBackendModel *backend,
-                                       int layer,
-                                       BnBackendHandleRole role) {
-    return bn_backend_model_handle(backend, layer, role);
-}
 
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer) {
     return bn_model_transformer_policy_is_attention_layer(c, layer);

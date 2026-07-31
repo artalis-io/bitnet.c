@@ -6,7 +6,6 @@
 #include "model.h"
 #include "session.h"
 #include "sh_log.h"
-#include "transformer_backend_internal.h"
 #include "gpu_internal.h"
 #include <math.h>
 
