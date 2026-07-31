@@ -1000,6 +1000,35 @@ static void test_gpu_policy_helpers(void) {
     assert(!gpu_layer_kind.uses_moe);
     gpu_layer_kind = bn_transformer_gpu_layer_kind_policy(&gpu_moe_lw);
     assert(gpu_layer_kind.uses_moe);
+    BnTransformerGPULayerResources projection_resources = {0};
+    assert(!bn_transformer_gpu_layer_projection_resources_available(
+        NULL, &projection_resources));
+    assert(!bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_dense_lw, NULL));
+    assert(bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_dense_lw, &projection_resources));
+    gpu_dense_lw.attn.wq.data = (void *)1;
+    assert(!bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_dense_lw, &projection_resources));
+    projection_resources.qkv.wq = (void *)1;
+    projection_resources.qkv.wk = (void *)2;
+    projection_resources.qkv.wv = (void *)3;
+    assert(bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_dense_lw, &projection_resources));
+    gpu_dense_lw.attn.wo.data = (void *)1;
+    assert(!bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_dense_lw, &projection_resources));
+    projection_resources.attention.wo = (void *)4;
+    gpu_dense_lw.ffn.ffn_up.data = (void *)1;
+    gpu_dense_lw.ffn.ffn_down.data = (void *)1;
+    assert(!bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_dense_lw, &projection_resources));
+    projection_resources.dense_ffn.ffn_up = (void *)5;
+    projection_resources.dense_ffn.ffn_down = (void *)6;
+    assert(bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_dense_lw, &projection_resources));
+    assert(bn_transformer_gpu_layer_projection_resources_available(
+        &gpu_moe_lw, &projection_resources));
     c.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
     assert(bn_transformer_gpu_uses_per_layer_embedding(&c));
     c.policy_flags = 0;

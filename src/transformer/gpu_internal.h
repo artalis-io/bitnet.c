@@ -196,6 +196,10 @@ typedef struct {
     BnTransformerGPUMoEDecodeResources moe_decode;
 } BnTransformerGPULayerResources;
 
+int bn_transformer_gpu_layer_projection_resources_available(
+    const BnLayerWeights *lw,
+    const BnTransformerGPULayerResources *resources);
+
 typedef struct {
     void *router;
     void *gate_all;

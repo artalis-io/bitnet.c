@@ -3824,9 +3824,9 @@ if awk '/^int bn_transformer_gpu_upload_ssm_state/{flag=1} /^void bn_transformer
     fail=1
 fi
 
-if awk '/^static int gpu_dense_ffn_resources_missing/{flag=1} /^static float \*bn_transformer_gpu_forward_impl/{flag=0} flag{print}' \
-    src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1; then
-    echo "GPU dense FFN resource checks must use GPU layer-kind policy"
+if grep -n 'gpu_\(qkv\|attention\|dense_ffn\)_resources_missing\|bn_transformer_gpu_can_stack_same_quant_format_\(qk_weights\|gateup\)' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate projection resource availability to GPU policy"
     fail=1
 fi
 

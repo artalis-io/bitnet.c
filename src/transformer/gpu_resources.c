@@ -18,6 +18,31 @@ static inline void *backend_handle_or(const BnBackendModel *backend,
     return bn_backend_model_handle(backend, layer, role);
 }
 
+int bn_transformer_gpu_layer_projection_resources_available(
+    const BnLayerWeights *lw,
+    const BnTransformerGPULayerResources *resources) {
+    if (!lw || !resources)
+        return 0;
+
+    const BnTransformerGPUQKVResources *qkv = &resources->qkv;
+    if (lw->ssm.wqkv.data) {
+        if (!qkv->packed_qkv)
+            return 0;
+    } else if (lw->attn.wq.data && !(qkv->wq && qkv->wk && qkv->wv)) {
+        return 0;
+    }
+    if (lw->attn.wo.data && !resources->attention.wo)
+        return 0;
+
+    if (bn_transformer_gpu_layer_kind_policy(lw).uses_moe)
+        return 1;
+
+    const BnTransformerGPUDenseFFNResources *ffn = &resources->dense_ffn;
+    return (!lw->ffn.ffn_gate.data || ffn->ffn_gate) &&
+           (!lw->ffn.ffn_up.data || ffn->ffn_up) &&
+           (!lw->ffn.ffn_down.data || ffn->ffn_down);
+}
+
 int bn_transformer_gpu_resolve_decode_session_resources(
     BnTransformerGPUDecodeSessionResources *out,
     BnBackendSession *backend,

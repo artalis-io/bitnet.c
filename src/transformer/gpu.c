@@ -122,59 +122,6 @@ static int gpu_resolve_moe_all_active_two_resources(
     return 0;
 }
 
-static int gpu_qkv_resources_missing(
-    const BnLayerWeights *lw,
-    const BnLayerShapePlan *plan,
-    const BnTransformerGPUQKVResources *res) {
-    if (lw->ssm.wqkv.data)
-        return !(res && res->packed_qkv);
-    if (!lw->attn.wq.data)
-        return 0;
-    if (!(res && res->wq && res->wk && res->wv))
-        return 1;
-
-    int has_qkv = res && res->qkv_stacked && !plan->q_gated &&
-                  !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias;
-    int has_qk = res && res->qk_stacked && !plan->q_gated &&
-                 bn_transformer_gpu_can_stack_same_quant_format_qk_weights(
-                     &lw->attn.wq, &lw->attn.wk, plan->q_dim, plan->kv_dim);
-    if (has_qkv)
-        return 0;
-    if (has_qk)
-        return !(res && res->wv);
-    return !(res && res->wq && res->wk && res->wv);
-}
-
-static int gpu_attention_resources_missing(
-    const BnLayerWeights *lw,
-    const BnTransformerGPUAttentionResources *res) {
-    return lw->attn.wo.data && !(res && res->wo);
-}
-
-static int gpu_dense_ffn_resources_missing(
-    const BnLayerWeights *lw,
-    const BnFFNPlan *plan,
-    const BnTransformerGPUDenseFFNResources *res) {
-    BnTransformerGPULayerKindPolicy layer_kind =
-        bn_transformer_gpu_layer_kind_policy(lw);
-    if (layer_kind.uses_moe)
-        return 0;
-    if ((lw->ffn.ffn_gate.data && !(res && res->ffn_gate)) ||
-        (lw->ffn.ffn_up.data && !(res && res->ffn_up)) ||
-        (lw->ffn.ffn_down.data && !(res && res->ffn_down)))
-        return 1;
-    if (plan->has_gate && lw->ffn.ffn_gate.data) {
-        int has_gateup = res && res->gateup_stacked &&
-                         bn_transformer_gpu_can_stack_same_quant_format_gateup(
-                             &lw->ffn.ffn_gate, &lw->ffn.ffn_up);
-        if (!has_gateup && !(res && res->ffn_gate && res->ffn_up))
-            return 1;
-    } else if (lw->ffn.ffn_up.data && !(res && res->ffn_up)) {
-        return 1;
-    }
-    return lw->ffn.ffn_down.data && !(res && res->ffn_down);
-}
-
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
 // no Q/K norms, no sub-norms, no FP16 KV cache).
@@ -446,11 +393,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         BnTransformerGPUQKVResources qkv_res = gpu_layer_res.qkv;
         BnTransformerGPUAttentionResources attn_res =
             gpu_layer_res.attention;
-        if (gpu_qkv_resources_missing(lw, &plan, &qkv_res) ||
-            gpu_attention_resources_missing(lw, &attn_res) ||
-            (layer_ffn_plan_valid &&
-             gpu_dense_ffn_resources_missing(
-                 lw, &layer_ffn_plan, &layer_ffn_res))) {
+        if (!bn_transformer_gpu_layer_projection_resources_available(
+                lw, &gpu_layer_res)) {
             void *next_norm = gpu_layer_res.next_norm;
             if (bn_transformer_gpu_fallback_cpu_layer(
                     &emit, gpu, m, sess, l, pos, cache_pos, layer_rope_dims,
