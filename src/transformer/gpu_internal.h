@@ -1970,6 +1970,19 @@ int bn_transformer_gpu_debug_compare_ffn_down(
     int down_input_buf,
     int hidden_dim,
     int dim);
+void bn_transformer_gpu_debug_compare_vec(
+    const char *label,
+    int layer,
+    int pos,
+    const float *cpu,
+    const float *gpu,
+    int n);
+void bn_transformer_gpu_debug_rmsnorm(
+    float *out,
+    const float *x,
+    const float *w,
+    int n,
+    float eps);
 int bn_transformer_gpu_debug_compare_ffn_state(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

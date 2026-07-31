@@ -3836,6 +3836,12 @@ if grep -n 'gpu_resolve_moe_all_active_two_resources\|bn_gpu_moe_bridge_get_expe
     fail=1
 fi
 
+if grep -n 'gpu_debug_compare_vec_local\|gpu_debug_rmsnorm_scalar_local' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate reusable debug math to GPU fallback"
+    fail=1
+fi
+
 if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy/{flag=0} flag{print}' \
     src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1 ||
    awk '/ffn_block:;/{flag=1} /BnGPUMoETemporaryBuffers moe_temporaries;/{flag=0} flag{print}' \

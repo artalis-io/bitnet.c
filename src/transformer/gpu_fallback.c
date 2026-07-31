@@ -992,12 +992,14 @@ int bn_transformer_gpu_debug_compare_ffn_down(
     return 0;
 }
 
-static void debug_compare_vec(const char *label,
-                              int layer,
-                              int pos,
-                              const float *cpu,
-                              const float *gpu,
-                              int n) {
+void bn_transformer_gpu_debug_compare_vec(const char *label,
+                                          int layer,
+                                          int pos,
+                                          const float *cpu,
+                                          const float *gpu,
+                                          int n) {
+    if (!label || !cpu || !gpu || n <= 0)
+        return;
     double sum_abs = 0.0;
     double sum_sq = 0.0;
     float max_abs = 0.0f;
@@ -1016,7 +1018,17 @@ static void debug_compare_vec(const char *label,
             "max_abs=%.9g max_i=%d cpu=%.9g gpu=%.9g "
             "mean_abs=%.9g rms=%.9g\n",
             label, layer, pos, max_abs, max_i, cpu[max_i], gpu[max_i],
-           sum_abs / (double)n, sqrt(sum_sq / (double)n));
+            sum_abs / (double)n, sqrt(sum_sq / (double)n));
+}
+
+void bn_transformer_gpu_debug_rmsnorm(float *out,
+                                      const float *x,
+                                      const float *w,
+                                      int n,
+                                      float eps) {
+    if (!out || !x || !w || n <= 0)
+        return;
+    bn_transformer_rmsnorm_scalar(out, x, w, n, eps);
 }
 
 static const BnPreparedWeight *debug_prepared_qweight(BnModel *m,
@@ -1233,12 +1245,13 @@ int bn_transformer_gpu_debug_compare_ffn_state(
         return -1;
     }
     if (hidden_dim > 0)
-        debug_compare_vec("ffn_hidden_compare", layer, pos, cpu_hb, gpu_hb,
-                          hidden_dim);
-    debug_compare_vec("ffn_state_compare", layer, pos, cpu_x, gpu_x, dim);
+        bn_transformer_gpu_debug_compare_vec(
+            "ffn_hidden_compare", layer, pos, cpu_hb, gpu_hb, hidden_dim);
+    bn_transformer_gpu_debug_compare_vec(
+        "ffn_state_compare", layer, pos, cpu_x, gpu_x, dim);
     if (next_norm)
-        debug_compare_vec("ffn_next_norm_compare", layer, pos, cpu_xb, gpu_xb,
-                          dim);
+        bn_transformer_gpu_debug_compare_vec(
+            "ffn_next_norm_compare", layer, pos, cpu_xb, gpu_xb, dim);
 
     memcpy(s->x, gpu_x, (size_t)dim * sizeof(float));
     free(cpu_x_in);
@@ -1493,7 +1506,8 @@ int bn_transformer_gpu_debug_compare_gqa(
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
 
-    debug_compare_vec("gqa_compare", layer, pos, s->xb, gpu_xb, dim);
+    bn_transformer_gpu_debug_compare_vec(
+        "gqa_compare", layer, pos, s->xb, gpu_xb, dim);
 
     free(cpu_in);
     free(gpu_xb);
@@ -1558,7 +1572,8 @@ int bn_transformer_gpu_debug_compare_qkv(
 
     fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
                      bn_transformer_gpu_norm_epsilon(&m->config));
-    debug_compare_vec("attn_norm_compare", layer, pos, s->xb, gpu_xb, dim);
+    bn_transformer_gpu_debug_compare_vec(
+        "attn_norm_compare", layer, pos, s->xb, gpu_xb, dim);
     debug_compare_native_quant_activation(gpu, layer, pos, s->xb, dim);
     debug_quant_matvec_prepared(m, cpu_q, &lw->attn.wq, s->xb, s->x_q);
     debug_quant_matvec_prepared(m, cpu_k, &lw->attn.wk, s->xb, s->x_q);
@@ -1606,9 +1621,12 @@ int bn_transformer_gpu_debug_compare_qkv(
         }
     }
 
-    debug_compare_vec("qkv_q_compare", layer, pos, cpu_q, gpu_q, q_dim);
-    debug_compare_vec("qkv_k_compare", layer, pos, cpu_k, gpu_k, kv_dim);
-    debug_compare_vec("qkv_v_compare", layer, pos, cpu_v, gpu_v, kv_dim);
+    bn_transformer_gpu_debug_compare_vec(
+        "qkv_q_compare", layer, pos, cpu_q, gpu_q, q_dim);
+    bn_transformer_gpu_debug_compare_vec(
+        "qkv_k_compare", layer, pos, cpu_k, gpu_k, kv_dim);
+    bn_transformer_gpu_debug_compare_vec(
+        "qkv_v_compare", layer, pos, cpu_v, gpu_v, kv_dim);
 
     free(cpu_q); free(cpu_k); free(cpu_v);
     free(gpu_xb); free(gpu_q); free(gpu_k); free(gpu_v);

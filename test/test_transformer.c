@@ -1042,6 +1042,17 @@ static void test_gpu_policy_helpers(void) {
                &resolved_all_active_two, all_active_two_storage,
                &all_active_two_model, &all_active_two_session, &gpu_moe_lw,
                0, (void *)1, &all_active_two_temporaries) == -1);
+    float debug_norm_in[2] = {3.0f, 4.0f};
+    float debug_norm_weight[2] = {1.0f, 1.0f};
+    float debug_norm_out[2] = {0.0f, 0.0f};
+    float debug_norm_expected[2] = {0.0f, 0.0f};
+    bn_transformer_gpu_debug_rmsnorm(
+        debug_norm_out, debug_norm_in, debug_norm_weight, 2, 1e-6f);
+    bn_transformer_rmsnorm_scalar(
+        debug_norm_expected, debug_norm_in, debug_norm_weight, 2, 1e-6f);
+    assert(memcmp(debug_norm_out, debug_norm_expected,
+                  sizeof(debug_norm_out)) == 0);
+    bn_transformer_gpu_debug_compare_vec(NULL, 0, 0, NULL, NULL, 0);
     c.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
     assert(bn_transformer_gpu_uses_per_layer_embedding(&c));
     c.policy_flags = 0;
