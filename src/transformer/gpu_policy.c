@@ -2583,6 +2583,31 @@ bn_transformer_gpu_moe_all_active_two_resource_policy(const BnConfig *c) {
     return policy;
 }
 
+BnTransformerGPUMoEExecutionPolicy
+bn_transformer_gpu_moe_execution_policy(const BnConfig *c) {
+    BnTransformerGPUMoEExecutionPolicy policy = {0};
+    BnMoERoutePolicy route = bn_moe_route_policy(c);
+    policy.total_experts = route.total_experts;
+    policy.active_experts = route.active_experts;
+    policy.expert_hidden_dim = route.expert_hidden_dim;
+    policy.normalize_topk = route.norm_topk_prob;
+    policy.expert_weights_scale = route.expert_weights_scale;
+    return policy;
+}
+
+BnTransformerGPUMoEProjectionPolicy
+bn_transformer_gpu_moe_projection_policy(const BnMoEExpertMap *map) {
+    BnTransformerGPUMoEProjectionPolicy policy = {0};
+    BnMoERoutedExpertProjectionTypes types;
+    if (!bn_moe_routed_expert_projection_types(&types, map))
+        return policy;
+    policy.valid = 1;
+    policy.gate_type = types.gate_type;
+    policy.up_type = types.up_type;
+    policy.down_type = types.down_type;
+    return policy;
+}
+
 int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,

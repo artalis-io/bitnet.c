@@ -367,6 +367,21 @@ typedef struct {
 } BnTransformerGPUMoEAllActiveTwoResourcePolicy;
 
 typedef struct {
+    int total_experts;
+    int active_experts;
+    int expert_hidden_dim;
+    int normalize_topk;
+    float expert_weights_scale;
+} BnTransformerGPUMoEExecutionPolicy;
+
+typedef struct {
+    int valid;
+    int gate_type;
+    int up_type;
+    int down_type;
+} BnTransformerGPUMoEProjectionPolicy;
+
+typedef struct {
     int kquant_default;
     int kquant_enabled;
     int kquant_captures_xb;
@@ -1417,6 +1432,10 @@ int bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
     const BnConfig *c);
 BnTransformerGPUMoEAllActiveTwoResourcePolicy
 bn_transformer_gpu_moe_all_active_two_resource_policy(const BnConfig *c);
+BnTransformerGPUMoEExecutionPolicy
+bn_transformer_gpu_moe_execution_policy(const BnConfig *c);
+BnTransformerGPUMoEProjectionPolicy
+bn_transformer_gpu_moe_projection_policy(const BnMoEExpertMap *map);
 int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
@@ -1806,6 +1825,42 @@ void bn_transformer_gpu_run_model_moe_cpu(
     BnSession *session,
     BnLayerWeights *layer,
     int layer_index);
+int bn_transformer_gpu_fallback_moe_output_from_state(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int layer_index,
+    int dim,
+    float *output);
+int bn_transformer_gpu_fallback_moe_mid(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const float *input,
+    float *mid_out);
+int bn_transformer_gpu_fallback_moe_raw_gate_up(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const float *input,
+    float *gate_out,
+    float *up_out);
+int bn_transformer_gpu_fallback_moe_output(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *residual,
+    const float *input,
+    float *output);
+int bn_transformer_gpu_fallback_moe_parts(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *input,
+    float *routed_out,
+    float *shared_out);
 int bn_transformer_gpu_fallback_shared_expert_mid(
     BnModel *model,
     BnSession *session,

@@ -233,6 +233,304 @@ void bn_transformer_gpu_run_model_moe_cpu(
     bn_model_set_gpu_disabled(model, 0);
 }
 
+int bn_transformer_gpu_fallback_moe_output_from_state(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int layer_index,
+    int dim,
+    float *output) {
+    if (!model || !session || !layer || !output || dim <= 0 ||
+        !session->moe_state)
+        return -1;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&model->config);
+    int active_experts = route_policy.active_experts;
+    if (active_experts < 0)
+        return -1;
+    if (active_experts > BN_MAX_MOE_K)
+        active_experts = BN_MAX_MOE_K;
+
+    BnRunState *state = &session->state;
+    float *saved_x = (float *)malloc((size_t)dim * sizeof(float));
+    float *saved_xb = (float *)malloc((size_t)dim * sizeof(float));
+    int saved_indices[BN_MAX_MOE_K];
+    float saved_weights[BN_MAX_MOE_K];
+    if (!saved_x || !saved_xb) {
+        free(saved_x);
+        free(saved_xb);
+        return -1;
+    }
+    memcpy(saved_x, state->x, (size_t)dim * sizeof(float));
+    memcpy(saved_xb, state->xb, (size_t)dim * sizeof(float));
+    for (int k = 0; k < active_experts; k++) {
+        saved_indices[k] = session->moe_state->expert_indices[k];
+        saved_weights[k] = session->moe_state->expert_weights[k];
+    }
+
+    bn_transformer_gpu_run_model_moe_cpu(
+        model, session, layer, layer_index);
+    memcpy(output, state->x, (size_t)dim * sizeof(float));
+
+    memcpy(state->x, saved_x, (size_t)dim * sizeof(float));
+    memcpy(state->xb, saved_xb, (size_t)dim * sizeof(float));
+    for (int k = 0; k < active_experts; k++) {
+        session->moe_state->expert_indices[k] = saved_indices[k];
+        session->moe_state->expert_weights[k] = saved_weights[k];
+    }
+    free(saved_x);
+    free(saved_xb);
+    return 0;
+}
+
+static int fallback_moe_expert_projection_weight(
+    BnQWeight *weight,
+    BnModel *model,
+    BnMoEState *state,
+    const BnMoEExpertMap *map,
+    int expert,
+    int projection) {
+    const void *data = bn_transformer_gpu_model_expert_projection(
+        model, state, map, expert, projection);
+    return data &&
+           bn_moe_expert_projection_weight(weight, data, map, projection);
+}
+
+int bn_transformer_gpu_fallback_moe_mid(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const float *input,
+    float *mid_out) {
+    if (!model || !session || !layer || !input || !mid_out ||
+        !session->moe_state)
+        return -1;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&model->config);
+    BnTransformerGPUMoEActivationPolicy activation_policy =
+        bn_transformer_gpu_moe_activation_policy(&model->config);
+    int active_experts = route_policy.active_experts;
+    int hidden = route_policy.expert_hidden_dim;
+    if (active_experts < 0 || hidden <= 0)
+        return -1;
+    float *gate = (float *)malloc((size_t)hidden * sizeof(float));
+    float *up = (float *)malloc((size_t)hidden * sizeof(float));
+    if (!gate || !up) {
+        free(gate);
+        free(up);
+        return -1;
+    }
+
+    BnMoEState *moe_state = session->moe_state;
+    const BnMoEExpertMap *map = &layer->moe.expert_map;
+    uint32_t task_flags =
+        bn_transformer_gpu_moe_gateup_task_flags(&model->config);
+    for (int k = 0; k < active_experts; k++) {
+        float *expert_mid = mid_out + (size_t)k * (size_t)hidden;
+        int expert = moe_state->expert_indices[k];
+        if (expert < 0) {
+            memset(expert_mid, 0, (size_t)hidden * sizeof(float));
+            continue;
+        }
+        BnQWeight gate_weight;
+        BnQWeight up_weight;
+        if (!fallback_moe_expert_projection_weight(
+                &gate_weight, model, moe_state, map, expert, 0) ||
+            !fallback_moe_expert_projection_weight(
+                &up_weight, model, moe_state, map, expert, 1)) {
+            free(gate);
+            free(up);
+            return -1;
+        }
+        BnMatvecTask tasks[2] = {
+            { gate, &gate_weight, NULL, task_flags },
+            { up, &up_weight, NULL, task_flags },
+        };
+        bn_transformer_gpu_cpu_quant_matvec_batch_model(
+            model, tasks, 2, input, session->state.x_q);
+        bn_moe_swiglu(gate, gate, up, hidden,
+                      activation_policy.uses_reference_silu);
+        memcpy(expert_mid, gate, (size_t)hidden * sizeof(float));
+    }
+
+    free(gate);
+    free(up);
+    return 0;
+}
+
+int bn_transformer_gpu_fallback_moe_raw_gate_up(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const float *input,
+    float *gate_out,
+    float *up_out) {
+    if (!model || !session || !layer || !input || !gate_out || !up_out ||
+        !session->moe_state)
+        return -1;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&model->config);
+    int total_experts = route_policy.total_experts;
+    int hidden = route_policy.expert_hidden_dim;
+    if (total_experts <= 0 || hidden <= 0)
+        return -1;
+    BnMoEState *moe_state = session->moe_state;
+    const BnMoEExpertMap *map = &layer->moe.expert_map;
+    uint32_t task_flags =
+        bn_transformer_gpu_moe_gateup_task_flags(&model->config);
+    for (int expert = 0; expert < total_experts; expert++) {
+        BnQWeight gate_weight;
+        BnQWeight up_weight;
+        if (!fallback_moe_expert_projection_weight(
+                &gate_weight, model, moe_state, map, expert, 0) ||
+            !fallback_moe_expert_projection_weight(
+                &up_weight, model, moe_state, map, expert, 1))
+            return -1;
+        BnMatvecTask tasks[2] = {
+            {
+                gate_out + (size_t)expert * (size_t)hidden,
+                &gate_weight,
+                NULL,
+                task_flags
+            },
+            {
+                up_out + (size_t)expert * (size_t)hidden,
+                &up_weight,
+                NULL,
+                task_flags
+            },
+        };
+        bn_transformer_gpu_cpu_quant_matvec_batch_model(
+            model, tasks, 2, input, session->state.x_q);
+    }
+    return 0;
+}
+
+static int fallback_moe_routed_output(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *input,
+    float *output) {
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&model->config);
+    BnTransformerGPUMoEActivationPolicy activation_policy =
+        bn_transformer_gpu_moe_activation_policy(&model->config);
+    int active_experts = route_policy.active_experts;
+    int hidden = route_policy.expert_hidden_dim;
+    if (active_experts < 0 || hidden <= 0)
+        return -1;
+    float *gate = (float *)malloc((size_t)hidden * sizeof(float));
+    float *up = (float *)malloc((size_t)hidden * sizeof(float));
+    float *down = (float *)malloc((size_t)dim * sizeof(float));
+    if (!gate || !up || !down) {
+        free(gate);
+        free(up);
+        free(down);
+        return -1;
+    }
+    memset(output, 0, (size_t)dim * sizeof(float));
+
+    BnMoEState *moe_state = session->moe_state;
+    const BnMoEExpertMap *map = &layer->moe.expert_map;
+    uint32_t task_flags =
+        bn_transformer_gpu_moe_gateup_task_flags(&model->config);
+    for (int k = 0; k < active_experts; k++) {
+        int expert = moe_state->expert_indices[k];
+        if (expert < 0)
+            continue;
+        BnQWeight gate_weight;
+        BnQWeight up_weight;
+        BnQWeight down_weight;
+        if (!fallback_moe_expert_projection_weight(
+                &gate_weight, model, moe_state, map, expert, 0) ||
+            !fallback_moe_expert_projection_weight(
+                &up_weight, model, moe_state, map, expert, 1) ||
+            !fallback_moe_expert_projection_weight(
+                &down_weight, model, moe_state, map, expert, 2)) {
+            free(gate);
+            free(up);
+            free(down);
+            return -1;
+        }
+        BnMatvecTask tasks[2] = {
+            { gate, &gate_weight, NULL, task_flags },
+            { up, &up_weight, NULL, task_flags },
+        };
+        bn_transformer_gpu_cpu_quant_matvec_batch_model(
+            model, tasks, 2, input, session->state.x_q);
+        bn_moe_swiglu(gate, gate, up, hidden,
+                      activation_policy.uses_reference_silu);
+        bn_transformer_gpu_cpu_quant_matvec_model(
+            model, down, &down_weight, gate, session->state.x_q);
+        bn_moe_weighted_add(
+            output, down, moe_state->expert_weights[k], dim);
+    }
+
+    free(gate);
+    free(up);
+    free(down);
+    return 0;
+}
+
+int bn_transformer_gpu_fallback_moe_output(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *residual,
+    const float *input,
+    float *output) {
+    if (!model || !session || !layer || !residual || !input || !output ||
+        dim <= 0 || !session->moe_state)
+        return -1;
+    float *routed = (float *)malloc((size_t)dim * sizeof(float));
+    if (!routed)
+        return -1;
+    if (fallback_moe_routed_output(
+            model, session, layer, dim, input, routed) != 0) {
+        free(routed);
+        return -1;
+    }
+    if (bn_transformer_gpu_moe_has_loaded_shared_expert(
+            &model->config, layer)) {
+        float *shared = (float *)malloc((size_t)dim * sizeof(float));
+        if (!shared ||
+            bn_transformer_gpu_fallback_shared_expert_output(
+                model, session, layer, dim, input, shared) != 0) {
+            free(shared);
+            free(routed);
+            return -1;
+        }
+        bn_moe_residual_add(routed, shared, dim);
+        free(shared);
+    }
+    for (int i = 0; i < dim; i++)
+        output[i] = residual[i] + routed[i];
+    free(routed);
+    return 0;
+}
+
+int bn_transformer_gpu_fallback_moe_parts(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int dim,
+    const float *input,
+    float *routed_out,
+    float *shared_out) {
+    if (!model || !session || !layer || !input || !routed_out ||
+        !shared_out || dim <= 0 || !session->moe_state)
+        return -1;
+    if (fallback_moe_routed_output(
+            model, session, layer, dim, input, routed_out) != 0)
+        return -1;
+    memset(shared_out, 0, (size_t)dim * sizeof(float));
+    if (bn_transformer_gpu_moe_has_loaded_shared_expert(
+            &model->config, layer) &&
+        bn_transformer_gpu_fallback_shared_expert_output(
+            model, session, layer, dim, input, shared_out) != 0)
+        return -1;
+    return 0;
+}
+
 int bn_transformer_gpu_fallback_shared_expert_mid(
     BnModel *model,
     BnSession *session,

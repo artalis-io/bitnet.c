@@ -5273,6 +5273,18 @@ if grep -n '#include "transformer_cpu_backend_internal.h"\|bn_transformer_cpu_' 
     fail=1
 fi
 
+if grep -n '#include "../moe_internal.h"\|#include "moe.h"\|bn_moe_\|BnMoERoutePolicy\|BnMoERoutedExpertProjectionTypes' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "Transformer GPU orchestration must consume composed MoE policies and fallback behavior"
+    fail=1
+fi
+
+if grep -n 'gpu_debug_compute_moe_\(actual_cpu_from_state\|cpu_from_xb\|parts_cpu_from_xb\|mid_cpu_from_xb\|raw_all_cpu_from_xb\)\|saved_indices\|saved_weights' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "Transformer GPU orchestration must delegate CPU MoE reference execution"
+    fail=1
+fi
+
 if grep -n 'bn_backend_session_\(ensure_gpu_command_buffer\|gpu_cached_op_count\|gpu_cached_has_logits\|set_gpu_cached_op_count\|clear_gpu_cached_ops\)' \
     src/transformer/gpu.c >/dev/null 2>&1; then
     echo "Transformer GPU orchestration must compose backend decode-session resources"

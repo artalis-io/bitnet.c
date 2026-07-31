@@ -1062,6 +1062,48 @@ static void test_gpu_policy_helpers(void) {
                NULL, NULL, NULL, 0, NULL, NULL) == -1);
     assert(bn_transformer_gpu_fallback_shared_expert_down(
                NULL, NULL, NULL, 0, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_moe_output_from_state(
+               NULL, NULL, NULL, 0, 0, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_moe_mid(
+               NULL, NULL, NULL, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_moe_raw_gate_up(
+               NULL, NULL, NULL, NULL, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_moe_output(
+               NULL, NULL, NULL, 0, NULL, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_fallback_moe_parts(
+               NULL, NULL, NULL, 0, NULL, NULL, NULL) == -1);
+    BnTransformerGPUMoEExecutionPolicy moe_execution =
+        bn_transformer_gpu_moe_execution_policy(NULL);
+    assert(moe_execution.total_experts == 0);
+    assert(moe_execution.active_experts == 0);
+    assert(moe_execution.expert_hidden_dim == 0);
+    assert(!bn_transformer_gpu_moe_projection_policy(NULL).valid);
+    c.n_experts = 4;
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 64;
+    c.moe_norm_topk_prob = 1;
+    c.moe_expert_weights_scale = 0.5f;
+    moe_execution = bn_transformer_gpu_moe_execution_policy(&c);
+    assert(moe_execution.total_experts == 4);
+    assert(moe_execution.active_experts == 2);
+    assert(moe_execution.expert_hidden_dim == 64);
+    assert(moe_execution.normalize_topk);
+    assert(moe_execution.expert_weights_scale == 0.5f);
+    c.n_experts = 0;
+    c.n_experts_active = 0;
+    c.moe_intermediate_size = 0;
+    c.moe_norm_topk_prob = 0;
+    c.moe_expert_weights_scale = 0.0f;
+    BnMoEExpertMap projection_map = {0};
+    projection_map.gate_type = BN_GGUF_TENSOR_Q4_K;
+    projection_map.up_type = BN_GGUF_TENSOR_Q6_K;
+    projection_map.down_type = BN_GGUF_TENSOR_F16;
+    BnTransformerGPUMoEProjectionPolicy projection_policy =
+        bn_transformer_gpu_moe_projection_policy(&projection_map);
+    assert(projection_policy.valid);
+    assert(projection_policy.gate_type == BN_GGUF_TENSOR_Q4_K);
+    assert(projection_policy.up_type == BN_GGUF_TENSOR_Q6_K);
+    assert(projection_policy.down_type == BN_GGUF_TENSOR_F16);
     assert(bn_transformer_gpu_backend_placement(&gpu) ==
            BN_BACKEND_GPU_UNKNOWN);
     gpu.kind = BN_GPU_BACKEND_CUDA;
