@@ -5308,9 +5308,9 @@ if grep -n 'bn_backend_model_raw_gpu\|bn_backend_model_clear_gpu\|bn_backend_ses
     fail=1
 fi
 
-if grep -n 'BnBackendModel\|bn_model_backend\|bn_model_ensure_backend' \
+if grep -n 'BnBackendModel\|bn_model_backend\|bn_model_ensure_backend\|bn_model_gpu\|bn_model_set_gpu_disabled\|bn_model_gpu_moe_prefill_resident' \
     include/model.h >/dev/null 2>&1; then
-    echo "Public model API must keep backend lifecycle state internal"
+    echo "Public model API must keep backend lifecycle and execution state internal"
     fail=1
 fi
 

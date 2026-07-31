@@ -1,4 +1,5 @@
 #include "gpu_internal.h"
+#include "model_internal.h"
 #include "../gpu_graph_lowering_internal.h"
 #include "../gpu_shader_ir_internal.h"
 #include "backend_session.h"

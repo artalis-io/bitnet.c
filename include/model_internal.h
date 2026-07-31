@@ -31,6 +31,9 @@ struct BnModelBackendState {
 
 BnBackendModel *bn_model_backend(const BnModel *model);
 int bn_model_ensure_backend(BnModel *model);
+BnGPUBackend *bn_model_gpu(const BnModel *model);
+void bn_model_set_gpu_disabled(BnModel *model, int disabled);
+int bn_model_gpu_moe_prefill_resident(const BnModel *model, int layer);
 int bn_model_dequant_qweight_row(const BnQWeight *weight,
                                  int row,
                                  int n,

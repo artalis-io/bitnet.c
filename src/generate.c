@@ -1,5 +1,6 @@
 #include "generate.h"
 #include "model.h"
+#include "model_internal.h"
 #include "session.h"
 #include "transformer.h"
 #include "transformer_internal.h"

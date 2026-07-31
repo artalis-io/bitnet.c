@@ -22,9 +22,6 @@ int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int k
 void bn_model_free(BnModel *m);
 void bn_model_embed_token(const BnModel *m, float *out, int token);
 int bn_model_uses_moe(const BnModel *model);
-BnGPUBackend *bn_model_gpu(const BnModel *model);
-void bn_model_set_gpu_disabled(BnModel *model, int disabled);
-int bn_model_gpu_moe_prefill_resident(const BnModel *model, int layer);
 
 // Upload all model weights to backend-owned GPU buffers.
 // Returns 0 on success. On failure, releases partially uploaded buffers.
