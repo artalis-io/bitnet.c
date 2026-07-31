@@ -5267,10 +5267,10 @@ if grep -n 'bn_backend_session_\(ensure_gpu_command_buffer\|gpu_cached_op_count\
     fail=1
 fi
 
-if grep -n '#include "backend_session.h"' \
+if grep -n '#include "backend_session.h"\|#include "session_internal.h"\|bn_session_backend' \
     src/transformer/gpu.c \
     src/transformer/gpu_internal.h >/dev/null 2>&1; then
-    echo "Transformer GPU orchestration interfaces must keep backend sessions opaque"
+    echo "Transformer GPU orchestration must consume session-owned decode behavior"
     fail=1
 fi
 

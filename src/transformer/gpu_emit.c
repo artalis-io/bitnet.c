@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
 #include "model_internal.h"
+#include "session_internal.h"
 #include "../gpu_graph_lowering_internal.h"
 #include "../gpu_shader_ir_internal.h"
 #include "backend_session.h"
@@ -90,6 +91,18 @@ int bn_transformer_gpu_emit_context_init_session(
     memset(ctx->lowering_values, 0,
            (size_t)ctx->cap_lowering_values * sizeof(BnGPUIRLoweringValue));
     return 0;
+}
+
+int bn_transformer_gpu_emit_context_init_decode_session(
+    BnTransformerGPUEmitContext *ctx,
+    BnSession *session,
+    void *lowered_ops,
+    int cap,
+    int cap_values,
+    int cap_ops) {
+    return bn_transformer_gpu_emit_context_init_session(
+        ctx, bn_session_backend(session), lowered_ops, cap,
+        cap_values, cap_ops);
 }
 
 int bn_transformer_gpu_emit_context_reserve(

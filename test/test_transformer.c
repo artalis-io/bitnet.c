@@ -15,6 +15,7 @@
 #include "gpu_policy.h"
 #include "model_arch.h"
 #include "model_internal.h"
+#include "session_internal.h"
 #include "quant.h"
 #include "simd_helpers.h"
 #include <stdio.h>
@@ -3107,15 +3108,39 @@ static void test_gpu_policy_helpers(void) {
     assert(decode_session_resources.command_cap >= 4);
     assert(decode_session_resources.cached_op_count == 0);
     assert(!decode_session_resources.cached_has_logits);
+    BnSessionBackendState decode_backend_state = {
+        .backend = decode_backend,
+    };
+    BnSession decode_session = {
+        .backend_state = &decode_backend_state,
+    };
+    assert(bn_transformer_gpu_resolve_session_decode_resources(
+               &decode_session_resources, &decode_session, 4, 0) == 0);
+    assert(bn_transformer_gpu_resolve_session_decode_resources(
+               &decode_session_resources, NULL, 4, 0) == -1);
+    BnGPUOp decode_ops[4];
+    BnTransformerGPUEmitContext decode_emit;
+    assert(bn_transformer_gpu_emit_context_init_decode_session(
+               &decode_emit, NULL, decode_ops, 4, 8, 4) == -1);
+    assert(bn_transformer_gpu_emit_context_init_decode_session(
+               &decode_emit, &decode_session, decode_ops, 4, 8, 4) == 0);
+    assert(decode_emit.graph != NULL);
+    assert(decode_emit.lowering_values != NULL);
+    bn_transformer_gpu_emit_context_free(&decode_emit);
     bn_transformer_gpu_store_decode_session_cache(decode_backend, 3, 1);
     assert(bn_transformer_gpu_resolve_decode_session_resources(
                &decode_session_resources, decode_backend, 4, 1) == 0);
     assert(decode_session_resources.cached_op_count == 3);
     assert(decode_session_resources.cached_has_logits);
-    bn_transformer_gpu_clear_decode_session_cache(decode_backend);
+    bn_transformer_gpu_clear_session_decode_cache(&decode_session);
     assert(bn_transformer_gpu_resolve_decode_session_resources(
                &decode_session_resources, decode_backend, 4, 1) == 0);
     assert(decode_session_resources.cached_op_count == 0);
+    assert(!decode_session_resources.cached_has_logits);
+    bn_transformer_gpu_store_session_decode_cache(&decode_session, 2, 0);
+    assert(bn_transformer_gpu_resolve_session_decode_resources(
+               &decode_session_resources, &decode_session, 4, 1) == 0);
+    assert(decode_session_resources.cached_op_count == 2);
     assert(!decode_session_resources.cached_has_logits);
     bn_backend_session_free(decode_backend);
 

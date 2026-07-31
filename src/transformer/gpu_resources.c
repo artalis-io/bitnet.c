@@ -3,6 +3,7 @@
 #include "backend_model.h"
 #include "backend_session.h"
 #include "model_internal.h"
+#include "session_internal.h"
 
 #include <string.h>
 
@@ -48,6 +49,29 @@ void bn_transformer_gpu_store_decode_session_cache(
     int n_ops,
     int has_logits) {
     bn_backend_session_set_gpu_cached_op_count(backend, n_ops, has_logits);
+}
+
+int bn_transformer_gpu_resolve_session_decode_resources(
+    BnTransformerGPUDecodeSessionResources *out,
+    const BnSession *session,
+    int max_ops,
+    int include_cached) {
+    return bn_transformer_gpu_resolve_decode_session_resources(
+        out, bn_session_backend(session), max_ops, include_cached);
+}
+
+void bn_transformer_gpu_clear_session_decode_cache(
+    BnSession *session) {
+    bn_transformer_gpu_clear_decode_session_cache(
+        bn_session_backend(session));
+}
+
+void bn_transformer_gpu_store_session_decode_cache(
+    BnSession *session,
+    int n_ops,
+    int has_logits) {
+    bn_transformer_gpu_store_decode_session_cache(
+        bn_session_backend(session), n_ops, has_logits);
 }
 
 void *bn_transformer_gpu_resolve_output_norm(

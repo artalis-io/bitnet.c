@@ -1511,6 +1511,17 @@ void bn_transformer_gpu_store_decode_session_cache(
     BnBackendSession *backend,
     int n_ops,
     int has_logits);
+int bn_transformer_gpu_resolve_session_decode_resources(
+    BnTransformerGPUDecodeSessionResources *out,
+    const BnSession *session,
+    int max_ops,
+    int include_cached);
+void bn_transformer_gpu_clear_session_decode_cache(
+    BnSession *session);
+void bn_transformer_gpu_store_session_decode_cache(
+    BnSession *session,
+    int n_ops,
+    int has_logits);
 void *bn_transformer_gpu_resolve_output_norm(
     const BnBackendModel *backend);
 void *bn_transformer_gpu_resolve_initial_norm(
@@ -1603,6 +1614,13 @@ void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,
 int bn_transformer_gpu_emit_context_init_session(
     BnTransformerGPUEmitContext *ctx,
     BnBackendSession *backend,
+    void *lowered_ops,
+    int cap,
+    int cap_values,
+    int cap_ops);
+int bn_transformer_gpu_emit_context_init_decode_session(
+    BnTransformerGPUEmitContext *ctx,
+    BnSession *session,
     void *lowered_ops,
     int cap,
     int cap_values,
