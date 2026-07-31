@@ -1233,39 +1233,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         if (argmax_rc != 0)
             return bn_transformer_gpu_reject_forward(
                 &emit, "gpu argmax failed");
-        if (bn_transformer_gpu_debug_argmax_compare_enabled() &&
-            c->vocab_size > 0) {
-            float *dbg_logits =
-                (float *)malloc((size_t)c->vocab_size * sizeof(float));
-            if (dbg_logits &&
-                bn_transformer_gpu_read_activation_buf(
-                    gpu, BN_GPU_VALUE_LOGITS, dbg_logits,
-                    (size_t)c->vocab_size * sizeof(float)) == 0) {
-                int cpu_argmax = 0;
-                float cpu_best = -INFINITY;
-                for (int i = 0; i < c->vocab_size; i++) {
-                    float v = dbg_logits[i];
-                    if (repeat_penalty != 1.0f && penalty_tokens &&
-                        n_penalty_tokens > 0) {
-                        for (int j = 0; j < n_penalty_tokens; j++) {
-                            if (penalty_tokens[j] == i) {
-                                v = v > 0.0f ? v / repeat_penalty
-                                             : v * repeat_penalty;
-                                break;
-                            }
-                        }
-                    }
-                    if (v > cpu_best) {
-                        cpu_best = v;
-                        cpu_argmax = i;
-                    }
-                }
-                fprintf(stderr,
-                        "[bn:gpu:argmax:cmp] gpu=%d cpu=%d cpu_logit=%.6g\n",
-                        *argmax_token, cpu_argmax, cpu_best);
-            }
-            free(dbg_logits);
-        }
+        bn_transformer_gpu_debug_compare_argmax(
+            gpu, c->vocab_size, penalty_tokens, n_penalty_tokens,
+            repeat_penalty, *argmax_token);
         bn_transformer_gpu_emit_context_free(&emit);
         return s->x;
     }
@@ -1296,36 +1266,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 s->xb, s->x_q, refine_top);
         }
     }
-    if (bn_transformer_gpu_compare_logits_enabled()) {
-        float *cpu_logits = (float *)malloc((size_t)c->vocab_size *
-                                            sizeof(float));
-        if (cpu_logits &&
-            bn_transformer_gpu_read_xb(gpu, s->xb,
-                                       (size_t)dim * sizeof(float)) == 0) {
-            bn_transformer_gpu_cpu_quant_matvec_model(
-                m, cpu_logits, logit_res->cpu_weight, s->xb, s->x_q);
-            double sum_abs = 0.0;
-            double sum_sq = 0.0;
-            float max_abs = 0.0f;
-            int max_i = 0;
-            for (int i = 0; i < c->vocab_size; i++) {
-                float diff = fabsf(s->logits[i] - cpu_logits[i]);
-                sum_abs += (double)diff;
-                sum_sq += (double)diff * (double)diff;
-                if (diff > max_abs) {
-                    max_abs = diff;
-                    max_i = i;
-                }
-            }
-            fprintf(stderr,
-                    "[bn:gpu:debug] logits_compare pos=%d max_abs=%.9g "
-                    "max_i=%d cpu=%.9g gpu=%.9g mean_abs=%.9g rms=%.9g\n",
-                    pos, max_abs, max_i, cpu_logits[max_i],
-                    s->logits[max_i], sum_abs / (double)c->vocab_size,
-                    sqrt(sum_sq / (double)c->vocab_size));
-        }
-        free(cpu_logits);
-    }
+    bn_transformer_gpu_debug_compare_logits(
+        gpu, m, sess, logit_res, pos, dim);
     bn_transformer_gpu_emit_context_free(&emit);
     #undef GPU_LEGACY_OPS
     return s->logits;

@@ -3848,6 +3848,12 @@ if grep -n '^static void gpu_cpu_quant_matvec\|^static void gpu_moe_route_profil
     fail=1
 fi
 
+if grep -n 'float \*dbg_logits\|float \*cpu_logits\|bn_transformer_gpu_debug_argmax_compare_enabled\|bn_transformer_gpu_compare_logits_enabled' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate output diagnostics to GPU fallback"
+    fail=1
+fi
+
 if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy/{flag=0} flag{print}' \
     src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1 ||
    awk '/ffn_block:;/{flag=1} /BnGPUMoETemporaryBuffers moe_temporaries;/{flag=0} flag{print}' \

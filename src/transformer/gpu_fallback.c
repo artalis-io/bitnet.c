@@ -1064,6 +1064,92 @@ void bn_transformer_gpu_moe_route_profile_add(int dim,
     total_resolve = 0.0;
 }
 
+void bn_transformer_gpu_debug_compare_argmax(
+    const BnGPUBackend *gpu,
+    int vocab_size,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int gpu_argmax) {
+    if (!bn_transformer_gpu_debug_argmax_compare_enabled() ||
+        !gpu || vocab_size <= 0)
+        return;
+    float *logits = (float *)malloc((size_t)vocab_size * sizeof(float));
+    if (!logits)
+        return;
+    if (bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_LOGITS, logits,
+            (size_t)vocab_size * sizeof(float)) == 0) {
+        int cpu_argmax = 0;
+        float cpu_best = -INFINITY;
+        for (int i = 0; i < vocab_size; i++) {
+            float v = logits[i];
+            if (repeat_penalty != 1.0f && penalty_tokens &&
+                n_penalty_tokens > 0) {
+                for (int j = 0; j < n_penalty_tokens; j++) {
+                    if (penalty_tokens[j] == i) {
+                        v = v > 0.0f ? v / repeat_penalty
+                                     : v * repeat_penalty;
+                        break;
+                    }
+                }
+            }
+            if (v > cpu_best) {
+                cpu_best = v;
+                cpu_argmax = i;
+            }
+        }
+        fprintf(stderr,
+                "[bn:gpu:argmax:cmp] gpu=%d cpu=%d cpu_logit=%.6g\n",
+                gpu_argmax, cpu_argmax, cpu_best);
+    }
+    free(logits);
+}
+
+void bn_transformer_gpu_debug_compare_logits(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    const BnTransformerGPULogitResources *logits,
+    int pos,
+    int dim) {
+    if (!bn_transformer_gpu_compare_logits_enabled() ||
+        !gpu || !model || !session || !logits ||
+        model->config.vocab_size <= 0 || dim <= 0)
+        return;
+    BnRunState *state = &session->state;
+    int vocab_size = model->config.vocab_size;
+    float *cpu_logits =
+        (float *)malloc((size_t)vocab_size * sizeof(float));
+    if (!cpu_logits)
+        return;
+    if (bn_transformer_gpu_read_xb(
+            gpu, state->xb, (size_t)dim * sizeof(float)) == 0) {
+        bn_transformer_gpu_cpu_quant_matvec_model(
+            model, cpu_logits, logits->cpu_weight, state->xb, state->x_q);
+        double sum_abs = 0.0;
+        double sum_sq = 0.0;
+        float max_abs = 0.0f;
+        int max_i = 0;
+        for (int i = 0; i < vocab_size; i++) {
+            float diff = fabsf(state->logits[i] - cpu_logits[i]);
+            sum_abs += (double)diff;
+            sum_sq += (double)diff * (double)diff;
+            if (diff > max_abs) {
+                max_abs = diff;
+                max_i = i;
+            }
+        }
+        fprintf(stderr,
+                "[bn:gpu:debug] logits_compare pos=%d max_abs=%.9g "
+                "max_i=%d cpu=%.9g gpu=%.9g mean_abs=%.9g rms=%.9g\n",
+                pos, max_abs, max_i, cpu_logits[max_i],
+                state->logits[max_i], sum_abs / (double)vocab_size,
+                sqrt(sum_sq / (double)vocab_size));
+    }
+    free(cpu_logits);
+}
+
 static const BnPreparedWeight *debug_prepared_qweight(BnModel *m,
                                                       const BnQWeight *w) {
     if (!m || !w)

@@ -2001,6 +2001,20 @@ void bn_transformer_gpu_moe_route_profile_add(
     double read_ms,
     double route_ms,
     double resolve_ms);
+void bn_transformer_gpu_debug_compare_argmax(
+    const BnGPUBackend *gpu,
+    int vocab_size,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int gpu_argmax);
+void bn_transformer_gpu_debug_compare_logits(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    const BnTransformerGPULogitResources *logits,
+    int pos,
+    int dim);
 int bn_transformer_gpu_debug_compare_ffn_state(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
