@@ -986,9 +986,18 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     if (bn_transformer_cpu_gpu_dense_ffn_fast_path_available(gpu, ffn_plan)) {
         const BnBackendModel *backend = bn_model_backend(m);
-        void *gate_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_gate);
-        void *up_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_up);
-        void *down_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_down);
+        BnTransformerCPUMatvecResourcePolicy gate_resource =
+            bn_transformer_cpu_matvec_resource_policy(
+                c, backend, &lw->ffn.ffn_gate);
+        BnTransformerCPUMatvecResourcePolicy up_resource =
+            bn_transformer_cpu_matvec_resource_policy(
+                c, backend, &lw->ffn.ffn_up);
+        BnTransformerCPUMatvecResourcePolicy down_resource =
+            bn_transformer_cpu_matvec_resource_policy(
+                c, backend, &lw->ffn.ffn_down);
+        void *gate_buf = (void *)gate_resource.gpu_buffer;
+        void *up_buf = (void *)up_resource.gpu_buffer;
+        void *down_buf = (void *)down_resource.gpu_buffer;
         if (gate_buf && up_buf && down_buf) {
             cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.ffn_norm, dim, norm_eps);
             if (bn_transformer_gpu_dense_ffn_fast_path_run(
