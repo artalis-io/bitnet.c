@@ -1111,6 +1111,19 @@ if grep -n 'BN_GPU_CODE_' src/transformer/gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n '#include "../gpu_shader_ir_internal.h"\|bn_gpu_op_code_is_\|static int gpu_patch_cached_decode_ops' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must delegate cached decode op patching to GPU emission"
+    fail=1
+fi
+
+if grep -n '#define BN_GPU_VALUE_\|BN_GPU_VALUE_X[[:space:]]*=' \
+    src/gpu_shader_ir_internal.h >/dev/null 2>&1 ||
+   ! grep -n 'BnGPUValueSlot' include/gpu_graph_ir.h >/dev/null 2>&1; then
+    echo "Public GPU graph value slots must be owned by gpu_graph_ir.h"
+    fail=1
+fi
+
 if ! grep -n '#include "backend_quant.h"' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose quant-format policy through backend_quant helpers"
     fail=1

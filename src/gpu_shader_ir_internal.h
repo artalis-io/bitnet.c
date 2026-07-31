@@ -1,34 +1,8 @@
 #ifndef BN_GPU_SHADER_IR_INTERNAL_H
 #define BN_GPU_SHADER_IR_INTERNAL_H
 
+#include "gpu_graph_ir.h"
 #include <stdint.h>
-
-// Backend-private shader value slots used by lowered GPU commands.
-// Higher-level code should build BnGPUValueGraph values and lower them here.
-#define BN_GPU_VALUE_X           0
-#define BN_GPU_VALUE_XB          1
-#define BN_GPU_VALUE_XB2         2
-#define BN_GPU_VALUE_Q           3
-#define BN_GPU_VALUE_HB          4
-#define BN_GPU_VALUE_HB2         5
-#define BN_GPU_VALUE_KEY_CACHE   6
-#define BN_GPU_VALUE_VALUE_CACHE 7
-#define BN_GPU_VALUE_ATT         8
-#define BN_GPU_VALUE_LOGITS      9
-#define BN_GPU_VALUE_ROPE_FREQ   10
-#define BN_GPU_VALUE_SCRATCH     11
-#define BN_GPU_VALUE_QKV         12
-#define BN_GPU_VALUE_MOE_HB      13
-#define BN_GPU_VALUE_MOE_HB2     14
-#define BN_GPU_VALUE_MOE_OUT     15
-#define BN_GPU_VALUE_SSM_STATE      16
-#define BN_GPU_VALUE_SSM_CONV_STATE 17
-#define BN_GPU_VALUE_SSM_QKV        18
-#define BN_GPU_VALUE_SSM_Z          19
-#define BN_GPU_VALUE_SSM_ALPHA      20
-#define BN_GPU_VALUE_SSM_BETA       21
-#define BN_GPU_VALUE_SSM_V          22
-#define BN_GPU_VALUE_COUNT          23
 
 // Shader uniform parameter count (32 bytes = 8 x u32, matches WGSL Uniforms structs)
 #define BN_GPU_OP_PARAMS 8

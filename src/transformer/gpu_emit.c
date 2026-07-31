@@ -21,6 +21,68 @@
 #define GPU_OP(code_) \
     .op_code = (code_)
 
+int bn_transformer_gpu_patch_cached_decode_ops(
+    void *command_buffer,
+    int n_ops,
+    const BnConfig *c,
+    int pos) {
+    if (!command_buffer || !c || n_ops <= 0 ||
+        c->seq_len <= 0 || c->kv_dim <= 0)
+        return -1;
+    BnGPUOp *ops = (BnGPUOp *)command_buffer;
+    int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+    int cache_pos = pos % c->seq_len;
+    uint32_t kv_dim = (uint32_t)c->kv_dim;
+    uint32_t layer_span = (uint32_t)(c->seq_len * c->kv_dim);
+    uint32_t cache_off = (uint32_t)(cache_pos * c->kv_dim);
+    for (int i = 0; i < n_ops; i++) {
+        BnGPUOp *op = &ops[i];
+        if (bn_gpu_op_code_is_matvec(op->op_code)) {
+            if ((op->buf_out == BN_GPU_VALUE_KEY_CACHE ||
+                 op->buf_out == BN_GPU_VALUE_VALUE_CACHE) &&
+                op->rows == (int)kv_dim && layer_span > 0) {
+                uint32_t base = (op->p[5] / layer_span) * layer_span;
+                op->p[5] = base + cache_off;
+            }
+        } else if (bn_gpu_op_code_is_split_matvec(op->op_code)) {
+            if (op->buf_aux == BN_GPU_VALUE_KEY_CACHE &&
+                op->p[0] - op->p[2] >= kv_dim && layer_span > 0) {
+                uint32_t base = (op->p[6] / layer_span) * layer_span;
+                op->p[6] = base + cache_off;
+            }
+            if (op->rows == BN_GPU_VALUE_VALUE_CACHE &&
+                op->p[3] > op->p[2] && layer_span > 0) {
+                uint32_t base = (op->p[7] / layer_span) * layer_span;
+                op->p[7] = base + cache_off;
+            }
+        } else if (bn_gpu_op_code_is_rope(op->op_code)) {
+            op->p[2] = (uint32_t)pos;
+            if (bn_gpu_op_code_is_rope_qk(op->op_code) &&
+                op->buf_aux == BN_GPU_VALUE_KEY_CACHE &&
+                layer_span > 0) {
+                uint32_t base = (op->p[5] / layer_span) * layer_span;
+                op->p[5] = base + cache_off;
+            }
+        } else if (bn_gpu_op_code_is_flash_attention(op->op_code)) {
+            op->p[2] = (uint32_t)n_kv;
+        } else if (bn_gpu_op_code_is_per_head_rmsnorm(op->op_code)) {
+            if (op->buf_in == BN_GPU_VALUE_KEY_CACHE &&
+                op->p[0] > 0 && layer_span > 0) {
+                uint32_t base = (op->p[3] / layer_span) * layer_span;
+                op->p[3] = base + cache_off;
+            }
+        } else if (bn_gpu_op_code_is_copy(op->op_code)) {
+            if ((op->buf_out == BN_GPU_VALUE_KEY_CACHE ||
+                 op->buf_out == BN_GPU_VALUE_VALUE_CACHE) &&
+                op->p[2] == kv_dim && layer_span > 0) {
+                uint32_t base = (op->p[1] / layer_span) * layer_span;
+                op->p[1] = base + cache_off;
+            }
+        }
+    }
+    return 0;
+}
+
 _Static_assert(BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT ==
                    BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT,
                "quant K-quant dot matvec flag must match GPU IR flag");

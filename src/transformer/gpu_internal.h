@@ -1363,6 +1363,11 @@ bn_transformer_gpu_cached_decode_policy(
     int argmax_requested,
     int cached_has_logits,
     int matvec_argmax_available);
+int bn_transformer_gpu_patch_cached_decode_ops(
+    void *ops,
+    int n_ops,
+    const BnConfig *c,
+    int pos);
 BnTransformerGPUMoERouteLayerPolicy
 bn_transformer_gpu_moe_route_layer_policy(void);
 BnTransformerGPUComparePolicy

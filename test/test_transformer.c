@@ -3145,6 +3145,46 @@ static void test_gpu_policy_helpers(void) {
     cached_decode = bn_transformer_gpu_cached_decode_policy(4, 1, 0, 0);
     assert(!cached_decode.use_cache);
     assert(cached_decode.clear_cache);
+    assert(bn_transformer_gpu_patch_cached_decode_ops(
+               NULL, 0, NULL, 0) == -1);
+    BnConfig cached_config = {0};
+    cached_config.seq_len = 8;
+    cached_config.kv_dim = 4;
+    BnGPUOp cached_ops[6] = {0};
+    cached_ops[0].op_code = BN_GPU_CODE_MATVEC;
+    cached_ops[0].buf_out = BN_GPU_VALUE_KEY_CACHE;
+    cached_ops[0].rows = 4;
+    cached_ops[0].p[5] = 37;
+    cached_ops[1].op_code = BN_GPU_CODE_MATVEC_SPLIT;
+    cached_ops[1].buf_aux = BN_GPU_VALUE_KEY_CACHE;
+    cached_ops[1].rows = BN_GPU_VALUE_VALUE_CACHE;
+    cached_ops[1].p[0] = 8;
+    cached_ops[1].p[2] = 4;
+    cached_ops[1].p[3] = 8;
+    cached_ops[1].p[6] = 36;
+    cached_ops[1].p[7] = 70;
+    cached_ops[2].op_code = BN_GPU_CODE_ROPE_QK;
+    cached_ops[2].buf_aux = BN_GPU_VALUE_KEY_CACHE;
+    cached_ops[2].p[5] = 35;
+    cached_ops[3].op_code = BN_GPU_CODE_FLASH_ATTN;
+    cached_ops[4].op_code = BN_GPU_CODE_PER_HEAD_RMSNORM;
+    cached_ops[4].buf_in = BN_GPU_VALUE_KEY_CACHE;
+    cached_ops[4].p[0] = 1;
+    cached_ops[4].p[3] = 34;
+    cached_ops[5].op_code = BN_GPU_CODE_COPY;
+    cached_ops[5].buf_out = BN_GPU_VALUE_VALUE_CACHE;
+    cached_ops[5].p[1] = 65;
+    cached_ops[5].p[2] = 4;
+    assert(bn_transformer_gpu_patch_cached_decode_ops(
+               cached_ops, 6, &cached_config, 11) == 0);
+    assert(cached_ops[0].p[5] == 44);
+    assert(cached_ops[1].p[6] == 44);
+    assert(cached_ops[1].p[7] == 76);
+    assert(cached_ops[2].p[2] == 11);
+    assert(cached_ops[2].p[5] == 44);
+    assert(cached_ops[3].p[2] == 8);
+    assert(cached_ops[4].p[3] == 44);
+    assert(cached_ops[5].p[1] == 76);
 
     BnBackendSession *decode_backend = bn_backend_session_create();
     assert(decode_backend);
