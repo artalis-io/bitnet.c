@@ -219,6 +219,15 @@ int bn_transformer_gpu_resolve_routed_moe_resources(
 void bn_transformer_gpu_release_moe_temporaries(
     BnModel *model,
     BnGPUMoETemporaryBuffers *temporaries);
+int bn_transformer_gpu_flush_and_release_moe_temporaries(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnGPUMoETemporaryBuffers *temporaries);
+int bn_transformer_gpu_stage_token_input(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    int token);
 
 typedef struct {
     void *router;

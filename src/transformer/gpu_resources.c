@@ -99,6 +99,31 @@ void bn_transformer_gpu_release_moe_temporaries(
     bn_gpu_moe_bridge_release_temporaries(model, temporaries);
 }
 
+int bn_transformer_gpu_flush_and_release_moe_temporaries(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnGPUMoETemporaryBuffers *temporaries) {
+    if (!emit || !gpu || !model || !temporaries)
+        return -1;
+    int rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
+    bn_transformer_gpu_release_moe_temporaries(model, temporaries);
+    return rc;
+}
+
+int bn_transformer_gpu_stage_token_input(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    int token) {
+    if (!gpu || !model || model->config.dim <= 0)
+        return -1;
+    int dim = model->config.dim;
+    float embedding[dim];
+    bn_model_embed_token(model, embedding, token);
+    return bn_transformer_gpu_write_x(
+        gpu, embedding, (size_t)dim * sizeof(float));
+}
+
 int bn_transformer_gpu_resolve_decode_session_resources(
     BnTransformerGPUDecodeSessionResources *out,
     BnBackendSession *backend,

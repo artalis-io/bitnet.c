@@ -3914,6 +3914,12 @@ if grep -n 'bn_transformer_gpu_read_x(gpu\|bn_transformer_gpu_read_xb(gpu' \
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_write_x\|bn_model_embed_token\|bn_transformer_gpu_emit_context_flush' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate input staging and temporary resource barriers"
+    fail=1
+fi
+
 if awk '/BnTransformerGPUMoERouteResolution route_resolution;/{flag=1} /skip dense FFN below/{flag=0} flag{print}' \
     src/transformer/gpu.c |
     grep -n 'malloc\|moe_state_compare\|moe_norm_compare\|bn_transformer_gpu_fallback_moe_output' \

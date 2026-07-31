@@ -98,11 +98,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (decode_entry.block_argmax)
         return NULL;
 
-    // Embed token on CPU, upload to GPU x buffer.
-    float emb[dim];
-    bn_model_embed_token(m, emb, token);
-    if (bn_transformer_gpu_write_x(gpu, emb,
-                                   (size_t)dim * sizeof(float)) != 0)
+    if (bn_transformer_gpu_stage_token_input(gpu, m, token) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "write token embedding failed");
 
@@ -393,11 +389,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
                     moe_activation.uses_reference_silu);
                 if (moe_temporaries.n_buffers > 0) {
-                    if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
+                    if (bn_transformer_gpu_flush_and_release_moe_temporaries(
+                            &emit, gpu, m, &moe_temporaries) != 0)
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu execute flush failed");
-                    bn_transformer_gpu_release_moe_temporaries(
-                        m, &moe_temporaries);
                 }
                 continue;
             }
@@ -572,11 +567,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
                 moe_activation.uses_reference_silu);
             if (moe_temporaries.n_buffers > 0 || moe_comparison.enabled) {
-                if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0) {
+                if (bn_transformer_gpu_flush_and_release_moe_temporaries(
+                        &emit, gpu, m, &moe_temporaries) != 0) {
                     bn_transformer_gpu_discard_moe_layer_comparison(
                         &moe_comparison);
-                    bn_transformer_gpu_release_moe_temporaries(
-                        m, &moe_temporaries);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu execute flush failed");
                 }
@@ -584,13 +578,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     bn_transformer_gpu_complete_moe_layer_comparison(
                         &moe_comparison, gpu, m, l, pos,
                         dim, norm_eps) != 0) {
-                    bn_transformer_gpu_release_moe_temporaries(
-                        m, &moe_temporaries);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe compare readback failed");
                 }
-                bn_transformer_gpu_release_moe_temporaries(
-                    m, &moe_temporaries);
             }
             continue;  // skip dense FFN below
         }

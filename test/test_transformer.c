@@ -1177,6 +1177,10 @@ static void test_gpu_policy_helpers(void) {
                NULL, NULL, NULL, 0) == -1);
     assert(bn_transformer_gpu_capture_logits_refine_state(
                NULL, NULL, NULL, 0) == -1);
+    assert(bn_transformer_gpu_flush_and_release_moe_temporaries(
+               NULL, NULL, NULL, NULL) == -1);
+    assert(bn_transformer_gpu_stage_token_input(
+               NULL, NULL, 0) == -1);
     float gpu_logits[] = {4.0f, 3.0f, 2.0f};
     float gpu_xb[] = {1.0f, -1.0f};
     float host_logits[3] = {0};
