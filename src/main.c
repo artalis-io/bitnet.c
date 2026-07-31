@@ -446,9 +446,9 @@ static int model_count_gpu_routed_moe_resident(const BnModel *model,
         if (!main_loaded_moe_layer_policy(lw).uses_moe)
             continue;
         moe_layers++;
-        if (bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL) &&
-            bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL) &&
-            bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL))
+        BnBackendModelMoEPrefillResidentResources resources =
+            bn_backend_model_moe_prefill_resident_resources(backend, l);
+        if (resources.valid)
             resident_layers++;
     }
     if (moe_layers_out)
