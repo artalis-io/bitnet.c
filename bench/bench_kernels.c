@@ -5,6 +5,8 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "model_arch.h"
+#include "model_internal.h"
 #include "backend_model.h"
 #include "session.h"
 #include "quant.h"
@@ -568,7 +570,7 @@ static int bench_cuda_prefill_needs_decode_fallback(const BnModel *m,
     const BnConfig *c = m ? &m->config : NULL;
     if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
         return 0;
-    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
+    if (bn_model_arch_allows_small_dense_prefill_decode_fallback(c) &&
         c->n_experts <= 0 &&
         c->full_attn_interval <= 0 &&
         c->dim <= 2560 &&

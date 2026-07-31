@@ -36,7 +36,11 @@ void bn_backend_quant_prepare_kquant_activation(const float *x,
                                                 float *scales,
                                                 int16_t *block_sums,
                                                 int n) {
+#ifdef BN_FORCE_SCALAR
+    bn_quant_x_to_q8k_scalar(x, quantized, scales, block_sums, n);
+#else
     bn_quant_x_to_q8k(x, quantized, scales, block_sums, n);
+#endif
 }
 
 void bn_backend_quant_prepare_kquant_activation_scalar(const float *x,

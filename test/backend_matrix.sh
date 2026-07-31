@@ -1810,6 +1810,13 @@ if grep -n 'bn_quant_x_to_q8k\|bn_quant_q6_logits_refine_q8k_row\|bn_quant_rmsno
     fail=1
 fi
 
+if ! grep -n '#ifdef BN_FORCE_SCALAR' src/backend_quant.c >/dev/null 2>&1 ||
+   ! awk '/bn_backend_quant_prepare_kquant_activation\(/,/^}/' src/backend_quant.c |
+       grep -n 'bn_quant_x_to_q8k_scalar' >/dev/null 2>&1; then
+    echo "Backend prepared K-quant activation must support scalar-only builds"
+    fail=1
+fi
+
 if grep -n 'int8_t \*x_q,\|float \*x_scales\|float x_scales\|bn_quant_q8_logits_refine_row(W, x_q' \
     include/transformer_cpu_backend_internal.h \
     src/transformer/cpu_backend.c \
