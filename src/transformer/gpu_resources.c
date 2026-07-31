@@ -81,6 +81,24 @@ int bn_transformer_gpu_resolve_all_active_two_moe_resources(
     return 0;
 }
 
+int bn_transformer_gpu_resolve_routed_moe_resources(
+    BnGPUMoEResources *out,
+    BnGPUMoEResolvedExpert *storage,
+    BnModel *model,
+    BnSession *session,
+    const BnLayerWeights *lw,
+    int layer,
+    BnGPUMoETemporaryBuffers *temporaries) {
+    return bn_gpu_moe_bridge_resolve_resources(
+        out, storage, BN_MAX_MOE_K, model, session, lw, layer, temporaries);
+}
+
+void bn_transformer_gpu_release_moe_temporaries(
+    BnModel *model,
+    BnGPUMoETemporaryBuffers *temporaries) {
+    bn_gpu_moe_bridge_release_temporaries(model, temporaries);
+}
+
 int bn_transformer_gpu_resolve_decode_session_resources(
     BnTransformerGPUDecodeSessionResources *out,
     BnBackendSession *backend,

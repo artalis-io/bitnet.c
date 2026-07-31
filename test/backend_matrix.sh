@@ -3830,9 +3830,9 @@ if grep -n 'gpu_\(qkv\|attention\|dense_ffn\)_resources_missing\|bn_transformer_
     fail=1
 fi
 
-if grep -n 'gpu_resolve_moe_all_active_two_resources\|bn_gpu_moe_bridge_get_expert' \
+if grep -n 'gpu_resolve_moe_all_active_two_resources\|bn_gpu_moe_bridge_' \
     src/transformer/gpu.c >/dev/null 2>&1; then
-    echo "GPU orchestration must delegate all-active-two MoE resource composition"
+    echo "GPU orchestration must delegate MoE bridge resource ownership"
     fail=1
 fi
 

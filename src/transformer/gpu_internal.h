@@ -208,6 +208,17 @@ int bn_transformer_gpu_resolve_all_active_two_moe_resources(
     int layer,
     void *router_diff,
     BnGPUMoETemporaryBuffers *temporaries);
+int bn_transformer_gpu_resolve_routed_moe_resources(
+    BnGPUMoEResources *out,
+    BnGPUMoEResolvedExpert *storage,
+    BnModel *model,
+    BnSession *session,
+    const BnLayerWeights *lw,
+    int layer,
+    BnGPUMoETemporaryBuffers *temporaries);
+void bn_transformer_gpu_release_moe_temporaries(
+    BnModel *model,
+    BnGPUMoETemporaryBuffers *temporaries);
 
 typedef struct {
     void *router;

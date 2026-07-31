@@ -397,7 +397,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu execute flush failed");
-                    bn_gpu_moe_bridge_release_temporaries(m, &moe_temporaries);
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
                 }
                 continue;
             }
@@ -997,8 +998,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &emit, "gpu moe compare setup failed");
                 }
             }
-            if (bn_gpu_moe_bridge_resolve_resources(
-                    &moe_res, expert_emit, BN_MAX_MOE_K, m, sess, lw, l,
+            if (bn_transformer_gpu_resolve_routed_moe_resources(
+                    &moe_res, expert_emit, m, sess, lw, l,
                     &moe_temporaries) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu moe resource resolution failed");
@@ -1060,7 +1061,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     free(moe_cpu_x);
                     free(moe_gpu_x);
                 }
-                bn_gpu_moe_bridge_release_temporaries(m, &moe_temporaries);
+                bn_transformer_gpu_release_moe_temporaries(
+                    m, &moe_temporaries);
             }
             continue;  // skip dense FFN below
         }

@@ -1031,7 +1031,7 @@ static void test_gpu_policy_helpers(void) {
         &gpu_moe_lw, &projection_resources));
     BnGPUMoEResources resolved_all_active_two;
     BnGPUMoEResolvedExpert all_active_two_storage[2];
-    BnGPUMoETemporaryBuffers all_active_two_temporaries;
+    BnGPUMoETemporaryBuffers all_active_two_temporaries = {0};
     BnModel all_active_two_model = {0};
     BnSession all_active_two_session = {0};
     assert(bn_transformer_gpu_resolve_all_active_two_moe_resources(
@@ -1042,6 +1042,12 @@ static void test_gpu_policy_helpers(void) {
                &resolved_all_active_two, all_active_two_storage,
                &all_active_two_model, &all_active_two_session, &gpu_moe_lw,
                0, (void *)1, &all_active_two_temporaries) == -1);
+    assert(bn_transformer_gpu_resolve_routed_moe_resources(
+               NULL, all_active_two_storage, &all_active_two_model,
+               &all_active_two_session, &gpu_moe_lw, 0,
+               &all_active_two_temporaries) == -1);
+    bn_transformer_gpu_release_moe_temporaries(
+        &all_active_two_model, &all_active_two_temporaries);
     float debug_norm_in[2] = {3.0f, 4.0f};
     float debug_norm_weight[2] = {1.0f, 1.0f};
     float debug_norm_out[2] = {0.0f, 0.0f};
