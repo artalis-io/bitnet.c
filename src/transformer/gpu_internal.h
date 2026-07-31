@@ -25,6 +25,13 @@ typedef struct {
 } BnTransformerGPUEmitContext;
 
 typedef struct {
+    void *command_buffer;
+    int command_cap;
+    int cached_op_count;
+    int cached_has_logits;
+} BnTransformerGPUDecodeSessionResources;
+
+typedef struct {
     const BnGPUBackend *gpu;
     void *gateup_stacked;
     void *ffn_sub_norm;
@@ -1456,6 +1463,17 @@ void bn_transformer_gpu_report_fallback(const char *reason);
 float *bn_transformer_gpu_reject_forward(
     BnTransformerGPUEmitContext *emit,
     const char *reason);
+int bn_transformer_gpu_resolve_decode_session_resources(
+    BnTransformerGPUDecodeSessionResources *out,
+    BnBackendSession *backend,
+    int max_ops,
+    int include_cached);
+void bn_transformer_gpu_clear_decode_session_cache(
+    BnBackendSession *backend);
+void bn_transformer_gpu_store_decode_session_cache(
+    BnBackendSession *backend,
+    int n_ops,
+    int has_logits);
 void *bn_transformer_gpu_resolve_output_norm(
     const BnBackendModel *backend);
 void *bn_transformer_gpu_resolve_initial_norm(

@@ -940,12 +940,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int max_ops = bn_transformer_gpu_graph_op_capacity(c);
 
     // Reuse the session-owned GPU IR/lowering storage to avoid per-token malloc.
-    int command_cap = 0;
-    void *command_buffer = bn_backend_session_ensure_gpu_command_buffer(
-        sess->backend, max_ops, &command_cap);
-    if (!command_buffer)
+    BnTransformerGPUDecodeSessionResources decode_session;
+    if (bn_transformer_gpu_resolve_decode_session_resources(
+            &decode_session, sess->backend, max_ops, 1) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
+    void *command_buffer = decode_session.command_buffer;
+    int command_cap = decode_session.command_cap;
     BnTransformerGPULogitsDispatchPolicy logits_dispatch =
         bn_transformer_gpu_logits_dispatch_policy(
             gpu, c, logit_res, argmax_token != NULL, need_logits);
@@ -963,17 +964,15 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             gpu_logits_need_cpu, policy.has_moe, &logits_refine, need_logits,
             &cpu_fallback, &compare_policy);
     int cacheable_decode = decode_cacheability.graph_cacheable;
-    int cached_n = cacheable_decode
-        ? bn_backend_session_gpu_cached_op_count(sess->backend)
-        : 0;
-    int cached_has_logits = cached_n > 0 &&
-        bn_backend_session_gpu_cached_has_logits(sess->backend);
+    int cached_n = cacheable_decode ? decode_session.cached_op_count : 0;
+    int cached_has_logits =
+        cached_n > 0 && decode_session.cached_has_logits;
     BnTransformerGPUCachedDecodePolicy cached_decode =
         bn_transformer_gpu_cached_decode_policy(
             cached_n, argmax_token != NULL, cached_has_logits,
             use_matvec_argmax);
     if (cached_decode.clear_cache) {
-        bn_backend_session_clear_gpu_cached_ops(sess->backend);
+        bn_transformer_gpu_clear_decode_session_cache(sess->backend);
         cached_n = 0;
         cached_has_logits = 0;
     }
@@ -997,7 +996,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                           penalty_tokens, n_penalty_tokens, repeat_penalty,
                           argmax_token);
                 if (argmax_rc != 0) {
-                    bn_backend_session_clear_gpu_cached_ops(sess->backend);
+                    bn_transformer_gpu_clear_decode_session_cache(
+                        sess->backend);
                     bn_transformer_gpu_emit_context_free(&emit);
                     return NULL;
                 }
@@ -1005,7 +1005,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             bn_transformer_gpu_emit_context_free(&emit);
             return need_logits ? s->logits : s->x;
         }
-        bn_backend_session_clear_gpu_cached_ops(sess->backend);
+        bn_transformer_gpu_clear_decode_session_cache(sess->backend);
     }
     if (bn_transformer_gpu_emit_context_init_session(
             &emit, sess->backend, command_buffer, command_cap,
@@ -2008,9 +2008,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu final execute failed");
     if (cacheable_decode && final_n > 0)
-        bn_backend_session_set_gpu_cached_op_count(sess->backend, final_n,
-                                                   emit_logits &&
-                                                   !use_matvec_argmax);
+        bn_transformer_gpu_store_decode_session_cache(
+            sess->backend, final_n,
+            emit_logits && !use_matvec_argmax);
     if (argmax_token) {
         if (!use_matvec_argmax &&
             logits_refine.native_quant_captures_xb) {

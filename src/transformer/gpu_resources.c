@@ -14,6 +14,39 @@ static inline void *backend_handle_or(const BnBackendModel *backend,
     return bn_backend_model_handle(backend, layer, role);
 }
 
+int bn_transformer_gpu_resolve_decode_session_resources(
+    BnTransformerGPUDecodeSessionResources *out,
+    BnBackendSession *backend,
+    int max_ops,
+    int include_cached) {
+    if (!out || !backend || max_ops <= 0)
+        return -1;
+    memset(out, 0, sizeof(*out));
+    out->command_buffer = bn_backend_session_ensure_gpu_command_buffer(
+        backend, max_ops, &out->command_cap);
+    if (!out->command_buffer)
+        return -1;
+    if (include_cached) {
+        out->cached_op_count =
+            bn_backend_session_gpu_cached_op_count(backend);
+        out->cached_has_logits =
+            bn_backend_session_gpu_cached_has_logits(backend);
+    }
+    return 0;
+}
+
+void bn_transformer_gpu_clear_decode_session_cache(
+    BnBackendSession *backend) {
+    bn_backend_session_clear_gpu_cached_ops(backend);
+}
+
+void bn_transformer_gpu_store_decode_session_cache(
+    BnBackendSession *backend,
+    int n_ops,
+    int has_logits) {
+    bn_backend_session_set_gpu_cached_op_count(backend, n_ops, has_logits);
+}
+
 void *bn_transformer_gpu_resolve_output_norm(
     const BnBackendModel *backend) {
     return backend_handle_or(backend, -1, BN_BACKEND_HANDLE_OUTPUT_NORM);

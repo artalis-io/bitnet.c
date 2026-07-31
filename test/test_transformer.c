@@ -3090,6 +3090,33 @@ static void test_gpu_policy_helpers(void) {
     assert(!cached_decode.use_cache);
     assert(cached_decode.clear_cache);
 
+    BnBackendSession *decode_backend = bn_backend_session_create();
+    assert(decode_backend);
+    BnTransformerGPUDecodeSessionResources decode_session_resources;
+    assert(bn_transformer_gpu_resolve_decode_session_resources(
+               NULL, decode_backend, 4, 0) == -1);
+    assert(bn_transformer_gpu_resolve_decode_session_resources(
+               &decode_session_resources, NULL, 4, 0) == -1);
+    assert(bn_transformer_gpu_resolve_decode_session_resources(
+               &decode_session_resources, decode_backend, 0, 0) == -1);
+    assert(bn_transformer_gpu_resolve_decode_session_resources(
+               &decode_session_resources, decode_backend, 4, 0) == 0);
+    assert(decode_session_resources.command_buffer != NULL);
+    assert(decode_session_resources.command_cap >= 4);
+    assert(decode_session_resources.cached_op_count == 0);
+    assert(!decode_session_resources.cached_has_logits);
+    bn_transformer_gpu_store_decode_session_cache(decode_backend, 3, 1);
+    assert(bn_transformer_gpu_resolve_decode_session_resources(
+               &decode_session_resources, decode_backend, 4, 1) == 0);
+    assert(decode_session_resources.cached_op_count == 3);
+    assert(decode_session_resources.cached_has_logits);
+    bn_transformer_gpu_clear_decode_session_cache(decode_backend);
+    assert(bn_transformer_gpu_resolve_decode_session_resources(
+               &decode_session_resources, decode_backend, 4, 1) == 0);
+    assert(decode_session_resources.cached_op_count == 0);
+    assert(!decode_session_resources.cached_has_logits);
+    bn_backend_session_free(decode_backend);
+
     setenv("BN_GPU_FLASH_MIN_KV", "0", 1);
     setenv("BN_GPU_FLASH_MAX_KV", "2048", 1);
     gpu.caps = BN_GPU_CAP_FLASH_ATTN;
