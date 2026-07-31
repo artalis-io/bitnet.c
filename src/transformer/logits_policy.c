@@ -114,6 +114,17 @@ bn_transformer_logits_tied_quant_dispatch_policy_for(
         bn_transformer_logits_native_quant_refine_enabled(gpu, c, W));
 }
 
+BnLogitsQuantResources bn_transformer_logits_quant_resources(
+    const BnBackendModel *backend,
+    const BnQWeight *W) {
+    if (!W)
+        return (BnLogitsQuantResources){0};
+    return (BnLogitsQuantResources){
+        .prepared = bn_backend_model_prepared_qweight(backend, W),
+        .gpu_buffer = bn_backend_model_qweight_buf(backend, W),
+    };
+}
+
 BnLogitsTiedQuantExecutionPolicy
 bn_transformer_logits_tied_quant_execution_policy_for(
     const BnGPUBackend *gpu,
@@ -123,9 +134,11 @@ bn_transformer_logits_tied_quant_execution_policy_for(
     BnLogitsTiedQuantExecutionPolicy policy = {0};
     if (!W)
         return policy;
+    BnLogitsQuantResources resources =
+        bn_transformer_logits_quant_resources(backend, W);
     policy.valid = 1;
     policy.weight = W;
-    policy.prepared = bn_backend_model_prepared_qweight(backend, W);
+    policy.prepared = resources.prepared;
     policy.backend_handle =
         bn_transformer_gpu_resolve_tied_embedding(backend);
     policy.dispatch =

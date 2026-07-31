@@ -59,6 +59,11 @@ typedef struct {
 } BnLogitsTiedQuantDispatchPolicy;
 
 typedef struct {
+    const BnPreparedWeight *prepared;
+    void *gpu_buffer;
+} BnLogitsQuantResources;
+
+typedef struct {
     int valid;
     const BnQWeight *weight;
     const BnPreparedWeight *prepared;
@@ -107,6 +112,9 @@ BnLogitsTiedQuantDispatchPolicy
 bn_transformer_logits_tied_quant_dispatch_policy_for(
     const BnGPUBackend *gpu,
     const BnConfig *c,
+    const BnQWeight *W);
+BnLogitsQuantResources bn_transformer_logits_quant_resources(
+    const BnBackendModel *backend,
     const BnQWeight *W);
 BnLogitsTiedQuantExecutionPolicy
 bn_transformer_logits_tied_quant_execution_policy_for(

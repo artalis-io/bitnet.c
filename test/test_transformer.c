@@ -4233,8 +4233,20 @@ static void test_logits_policy_helpers(void) {
     assert(backend);
     BnPreparedWeight prepared = {0};
     prepared.kind = BN_PREPARED_WEIGHT_Q6_K_EXPANDED;
+    BnLogitsQuantResources quant_resources =
+        bn_transformer_logits_quant_resources(NULL, NULL);
+    assert(quant_resources.prepared == NULL);
+    assert(quant_resources.gpu_buffer == NULL);
     assert(bn_backend_model_register_prepared_qweight(
                backend, &tied_q6, &prepared) == 0);
+    int quant_gpu_buffer;
+    assert(bn_backend_model_register_qweight(
+               backend, &tied_q6, &quant_gpu_buffer) == 0);
+    quant_resources =
+        bn_transformer_logits_quant_resources(backend, &tied_q6);
+    assert(quant_resources.prepared != NULL);
+    assert(quant_resources.prepared->kind == prepared.kind);
+    assert(quant_resources.gpu_buffer == &quant_gpu_buffer);
     int tied_handle;
     assert(bn_backend_model_register_handle(
                backend, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING,

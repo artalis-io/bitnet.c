@@ -188,21 +188,15 @@ static void logits_refine_native_quant(const BnModel *m,
                                   s->x_q, refine_top);
 }
 
-static inline void *qweight_backend_buf(const BnBackendModel *backend,
-                                        const BnQWeight *w) {
-    return bn_backend_model_qweight_buf(backend, w);
-}
-
 static void logits_quant_matvec_gpu(const BnModel *m,
                                     float *out,
                                     const BnQWeight *W,
                                     const float *x,
                                     int8_t *quantized_buf) {
-    const BnBackendModel *backend = bn_model_backend(m);
-    const BnPreparedWeight *prepared =
-        bn_backend_model_prepared_qweight(backend, W);
+    BnLogitsQuantResources resources =
+        bn_transformer_logits_quant_resources(bn_model_backend(m), W);
     bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
-        out, W, prepared, qweight_backend_buf(backend, W), x, quantized_buf,
+        out, W, resources.prepared, resources.gpu_buffer, x, quantized_buf,
         bn_model_pool(m), bn_model_gpu(m));
 }
 
