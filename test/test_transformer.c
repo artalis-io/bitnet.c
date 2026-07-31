@@ -1029,6 +1029,19 @@ static void test_gpu_policy_helpers(void) {
         &gpu_dense_lw, &projection_resources));
     assert(bn_transformer_gpu_layer_projection_resources_available(
         &gpu_moe_lw, &projection_resources));
+    BnGPUMoEResources resolved_all_active_two;
+    BnGPUMoEResolvedExpert all_active_two_storage[2];
+    BnGPUMoETemporaryBuffers all_active_two_temporaries;
+    BnModel all_active_two_model = {0};
+    BnSession all_active_two_session = {0};
+    assert(bn_transformer_gpu_resolve_all_active_two_moe_resources(
+               NULL, all_active_two_storage, &all_active_two_model,
+               &all_active_two_session, &gpu_moe_lw, 0, (void *)1,
+               &all_active_two_temporaries) == -1);
+    assert(bn_transformer_gpu_resolve_all_active_two_moe_resources(
+               &resolved_all_active_two, all_active_two_storage,
+               &all_active_two_model, &all_active_two_session, &gpu_moe_lw,
+               0, (void *)1, &all_active_two_temporaries) == -1);
     c.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
     assert(bn_transformer_gpu_uses_per_layer_embedding(&c));
     c.policy_flags = 0;

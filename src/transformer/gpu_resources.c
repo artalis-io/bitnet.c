@@ -43,6 +43,44 @@ int bn_transformer_gpu_layer_projection_resources_available(
            (!lw->ffn.ffn_down.data || ffn->ffn_down);
 }
 
+int bn_transformer_gpu_resolve_all_active_two_moe_resources(
+    BnGPUMoEResources *out,
+    BnGPUMoEResolvedExpert *storage,
+    BnModel *model,
+    BnSession *session,
+    const BnLayerWeights *lw,
+    int layer,
+    void *router_diff,
+    BnGPUMoETemporaryBuffers *temporaries) {
+    if (!out || !storage || !model || !session || !lw || !router_diff ||
+        !temporaries)
+        return -1;
+    BnTransformerGPUMoEAllActiveTwoResourcePolicy policy =
+        bn_transformer_gpu_moe_all_active_two_resource_policy(
+            &model->config);
+    if (!policy.enabled)
+        return -1;
+
+    memset(out, 0, sizeof(*out));
+    memset(temporaries, 0, sizeof(*temporaries));
+    out->expert_map = &lw->moe.expert_map;
+    out->experts = storage;
+    out->n_experts = policy.total_experts;
+    out->moe_hidden = policy.expert_hidden_dim;
+    for (int e = 0; e < policy.total_experts; e++) {
+        memset(&storage[e], 0, sizeof(storage[e]));
+        if (bn_gpu_moe_bridge_get_expert(
+                model, session, lw, layer, e, temporaries,
+                &storage[e].buffers) != 0)
+            return -1;
+        storage[e].weight = 1.0f;
+        storage[e].route_gate = router_diff;
+        storage[e].route_complement =
+            e >= policy.complement_route_from_expert;
+    }
+    return 0;
+}
+
 int bn_transformer_gpu_resolve_decode_session_resources(
     BnTransformerGPUDecodeSessionResources *out,
     BnBackendSession *backend,

@@ -199,6 +199,15 @@ typedef struct {
 int bn_transformer_gpu_layer_projection_resources_available(
     const BnLayerWeights *lw,
     const BnTransformerGPULayerResources *resources);
+int bn_transformer_gpu_resolve_all_active_two_moe_resources(
+    BnGPUMoEResources *out,
+    BnGPUMoEResolvedExpert *storage,
+    BnModel *model,
+    BnSession *session,
+    const BnLayerWeights *lw,
+    int layer,
+    void *router_diff,
+    BnGPUMoETemporaryBuffers *temporaries);
 
 typedef struct {
     void *router;

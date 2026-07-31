@@ -3826,7 +3826,13 @@ fi
 
 if grep -n 'gpu_\(qkv\|attention\|dense_ffn\)_resources_missing\|bn_transformer_gpu_can_stack_same_quant_format_\(qk_weights\|gateup\)' \
     src/transformer/gpu.c >/dev/null 2>&1; then
-    echo "GPU orchestration must delegate projection resource availability to GPU policy"
+    echo "GPU orchestration must delegate projection resource availability to GPU resources"
+    fail=1
+fi
+
+if grep -n 'gpu_resolve_moe_all_active_two_resources\|bn_gpu_moe_bridge_get_expert' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate all-active-two MoE resource composition"
     fail=1
 fi
 

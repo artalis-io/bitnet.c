@@ -87,41 +87,6 @@ static void gpu_moe_route_profile_add(int dim,
     }
 }
 
-static int gpu_resolve_moe_all_active_two_resources(
-    BnGPUMoEResources *out,
-    BnGPUMoEResolvedExpert *storage,
-    BnModel *m,
-    BnSession *sess,
-    const BnLayerWeights *lw,
-    int layer,
-    void *router_diff,
-    BnGPUMoETemporaryBuffers *temps) {
-    if (!out || !storage || !m || !sess || !lw || !router_diff || !temps)
-        return -1;
-    BnConfig *c = &m->config;
-    BnTransformerGPUMoEAllActiveTwoResourcePolicy policy =
-        bn_transformer_gpu_moe_all_active_two_resource_policy(c);
-    if (!policy.enabled)
-        return -1;
-    memset(out, 0, sizeof(*out));
-    memset(temps, 0, sizeof(*temps));
-    out->expert_map = &lw->moe.expert_map;
-    out->experts = storage;
-    out->n_experts = policy.total_experts;
-    out->moe_hidden = policy.expert_hidden_dim;
-    for (int e = 0; e < policy.total_experts; e++) {
-        memset(&storage[e], 0, sizeof(storage[e]));
-        if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, e, temps,
-                                         &storage[e].buffers) != 0)
-            return -1;
-        storage[e].weight = 1.0f;
-        storage[e].route_gate = router_diff;
-        storage[e].route_complement =
-            e >= policy.complement_route_from_expert;
-    }
-    return 0;
-}
-
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
 // no Q/K norms, no sub-norms, no FP16 KV cache).
@@ -499,7 +464,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     moe_decode_res.gate_all, moe_decode_res.up_all,
                     moe_decode_res.down_all);
             if (moe_dispatch.direct_route.enabled) {
-                if (gpu_resolve_moe_all_active_two_resources(
+                if (bn_transformer_gpu_resolve_all_active_two_moe_resources(
                         &moe_res, expert_emit, m, sess, lw, l,
                         moe_dispatch.direct_route.router_diff,
                         &moe_temporaries) != 0)
