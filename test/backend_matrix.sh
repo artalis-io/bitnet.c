@@ -3866,6 +3866,14 @@ if grep -n 'int did_gpu_route_topk\|float cpu_weights\[BN_MAX_MOE_K\]\|gpu moe r
     fail=1
 fi
 
+if awk '/BnTransformerGPUMoERouteResolution route_resolution;/{flag=1} /skip dense FFN below/{flag=0} flag{print}' \
+    src/transformer/gpu.c |
+    grep -n 'malloc\|moe_state_compare\|moe_norm_compare\|bn_transformer_gpu_fallback_moe_output' \
+        >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate nonresident MoE comparison mechanics to GPU fallback"
+    fail=1
+fi
+
 if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy/{flag=0} flag{print}' \
     src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1 ||
    awk '/ffn_block:;/{flag=1} /BnGPUMoETemporaryBuffers moe_temporaries;/{flag=0} flag{print}' \

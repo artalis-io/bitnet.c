@@ -1144,6 +1144,11 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_resolve_moe_route(
                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                0, 0, 0, 0, NULL) == -1);
+    assert(bn_transformer_gpu_prepare_moe_layer_comparison(
+               NULL, NULL, NULL, NULL, NULL, NULL, 0) == -1);
+    assert(bn_transformer_gpu_complete_moe_layer_comparison(
+               NULL, NULL, NULL, 0, 0, 0, 0.0f) == -1);
+    bn_transformer_gpu_discard_moe_layer_comparison(NULL);
     float gpu_logits[] = {4.0f, 3.0f, 2.0f};
     float gpu_xb[] = {1.0f, -1.0f};
     float host_logits[3] = {0};

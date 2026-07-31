@@ -908,27 +908,22 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, route_reason);
             double moe_prof_resolve_t0 = moe_route_profile
                 ? bn_platform_time_ms() : 0.0;
-            float *moe_cpu_x = NULL;
-            float *moe_gpu_x = NULL;
-            if (moe_debug.compare_layer) {
-                moe_cpu_x = (float *)malloc((size_t)dim * sizeof(float));
-                moe_gpu_x = (float *)malloc((size_t)dim * sizeof(float));
-                if (!moe_cpu_x || !moe_gpu_x ||
-                    bn_transformer_gpu_read_x(gpu, s->x,
-                                              (size_t)dim * sizeof(float)) != 0 ||
-                    bn_transformer_gpu_fallback_moe_output(
-                        m, sess, lw, dim, s->x, s->xb, moe_cpu_x) != 0) {
-                    free(moe_cpu_x);
-                    free(moe_gpu_x);
-                    return bn_transformer_gpu_reject_forward(
-                        &emit, "gpu moe compare setup failed");
-                }
-            }
+            BnTransformerGPUMoELayerComparison moe_comparison;
+            if (bn_transformer_gpu_prepare_moe_layer_comparison(
+                    &moe_comparison, gpu, m, sess, lw,
+                    &moe_debug, dim) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu moe compare setup failed");
             if (bn_transformer_gpu_resolve_routed_moe_resources(
                     &moe_res, expert_emit, m, sess, lw, l,
-                    &moe_temporaries) != 0)
+                    &moe_temporaries) != 0) {
+                bn_transformer_gpu_discard_moe_layer_comparison(
+                    &moe_comparison);
+                bn_transformer_gpu_release_moe_temporaries(
+                    m, &moe_temporaries);
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu moe resource resolution failed");
+            }
             double moe_prof_t4 = moe_route_profile
                 ? bn_platform_time_ms() : 0.0;
             bn_transformer_gpu_moe_route_profile_add(
@@ -941,52 +936,23 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             bn_transformer_gpu_emit_context_moe(
                 &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
                 moe_activation.uses_reference_silu);
-            if (moe_temporaries.n_buffers > 0 || moe_debug.compare_layer) {
-                if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
+            if (moe_temporaries.n_buffers > 0 || moe_comparison.enabled) {
+                if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0) {
+                    bn_transformer_gpu_discard_moe_layer_comparison(
+                        &moe_comparison);
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu execute flush failed");
-                if (moe_debug.compare_layer) {
-                    if (bn_transformer_gpu_read_x(gpu, moe_gpu_x,
-                                                  (size_t)dim * sizeof(float)) != 0) {
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu moe compare readback failed");
-                    }
-                    bn_transformer_gpu_debug_compare_vec(
-                        "moe_state_compare", l, pos, moe_cpu_x, moe_gpu_x,
-                        dim);
-                    if (moe_debug.compare_norm) {
-                        float *moe_cpu_norm =
-                            (float *)malloc((size_t)dim * sizeof(float));
-                        float *moe_gpu_norm =
-                            (float *)malloc((size_t)dim * sizeof(float));
-                        if (moe_cpu_norm && moe_gpu_norm &&
-                            bn_transformer_gpu_read_xb(
-                                gpu, moe_gpu_norm,
-                                (size_t)dim * sizeof(float)) == 0) {
-                            const float *nw = (l + 1 < c->n_layers)
-                                ? w->layers[l + 1].norm.attn_norm
-                                : w->output_norm;
-                            if (nw) {
-                                float ss = 0.0f;
-                                for (int i = 0; i < dim; i++)
-                                    ss += moe_cpu_x[i] * moe_cpu_x[i];
-                                float scale = 1.0f /
-                                    sqrtf(ss / (float)dim + norm_eps);
-                                for (int i = 0; i < dim; i++)
-                                    moe_cpu_norm[i] =
-                                        moe_cpu_x[i] * scale * nw[i];
-                                bn_transformer_gpu_debug_compare_vec(
-                                    "moe_norm_compare", l, pos,
-                                    moe_cpu_norm, moe_gpu_norm, dim);
-                            }
-                        }
-                        free(moe_cpu_norm);
-                        free(moe_gpu_norm);
-                    }
-                    free(moe_cpu_x);
-                    free(moe_gpu_x);
+                }
+                if (moe_comparison.enabled &&
+                    bn_transformer_gpu_complete_moe_layer_comparison(
+                        &moe_comparison, gpu, m, l, pos,
+                        dim, norm_eps) != 0) {
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu moe compare readback failed");
                 }
                 bn_transformer_gpu_release_moe_temporaries(
                     m, &moe_temporaries);

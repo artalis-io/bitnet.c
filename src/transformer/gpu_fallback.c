@@ -420,6 +420,100 @@ int bn_transformer_gpu_resolve_moe_route(
     return 0;
 }
 
+void bn_transformer_gpu_discard_moe_layer_comparison(
+    BnTransformerGPUMoELayerComparison *comparison) {
+    if (!comparison)
+        return;
+    free(comparison->cpu_state);
+    free(comparison->gpu_state);
+    memset(comparison, 0, sizeof(*comparison));
+}
+
+int bn_transformer_gpu_prepare_moe_layer_comparison(
+    BnTransformerGPUMoELayerComparison *comparison,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int dim) {
+    if (!comparison)
+        return -1;
+    memset(comparison, 0, sizeof(*comparison));
+    if (!debug || !debug->compare_layer)
+        return 0;
+    if (!gpu || !model || !session || !layer || dim <= 0)
+        return -1;
+    comparison->cpu_state =
+        (float *)malloc((size_t)dim * sizeof(float));
+    comparison->gpu_state =
+        (float *)malloc((size_t)dim * sizeof(float));
+    comparison->enabled = 1;
+    comparison->compare_norm = debug->compare_norm;
+    BnRunState *state = &session->state;
+    if (!comparison->cpu_state || !comparison->gpu_state ||
+        bn_transformer_gpu_read_x(
+            gpu, state->x, (size_t)dim * sizeof(float)) != 0 ||
+        bn_transformer_gpu_fallback_moe_output(
+            model, session, layer, dim, state->x, state->xb,
+            comparison->cpu_state) != 0) {
+        bn_transformer_gpu_discard_moe_layer_comparison(comparison);
+        return -1;
+    }
+    return 0;
+}
+
+int bn_transformer_gpu_complete_moe_layer_comparison(
+    BnTransformerGPUMoELayerComparison *comparison,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    int layer_index,
+    int pos,
+    int dim,
+    float norm_eps) {
+    if (!comparison || !comparison->enabled || !gpu || !model || dim <= 0)
+        return -1;
+    if (bn_transformer_gpu_read_x(
+            gpu, comparison->gpu_state,
+            (size_t)dim * sizeof(float)) != 0) {
+        bn_transformer_gpu_discard_moe_layer_comparison(comparison);
+        return -1;
+    }
+    bn_transformer_gpu_debug_compare_vec(
+        "moe_state_compare", layer_index, pos,
+        comparison->cpu_state, comparison->gpu_state, dim);
+    if (comparison->compare_norm) {
+        float *cpu_norm = (float *)malloc((size_t)dim * sizeof(float));
+        float *gpu_norm = (float *)malloc((size_t)dim * sizeof(float));
+        if (cpu_norm && gpu_norm &&
+            bn_transformer_gpu_read_xb(
+                gpu, gpu_norm, (size_t)dim * sizeof(float)) == 0) {
+            const float *norm_weight =
+                layer_index + 1 < model->config.n_layers
+                    ? model->weights.layers[layer_index + 1].norm.attn_norm
+                    : model->weights.output_norm;
+            if (norm_weight) {
+                float ss = 0.0f;
+                for (int i = 0; i < dim; i++)
+                    ss += comparison->cpu_state[i] *
+                          comparison->cpu_state[i];
+                float scale =
+                    1.0f / sqrtf(ss / (float)dim + norm_eps);
+                for (int i = 0; i < dim; i++)
+                    cpu_norm[i] =
+                        comparison->cpu_state[i] * scale * norm_weight[i];
+                bn_transformer_gpu_debug_compare_vec(
+                    "moe_norm_compare", layer_index, pos,
+                    cpu_norm, gpu_norm, dim);
+            }
+        }
+        free(cpu_norm);
+        free(gpu_norm);
+    }
+    bn_transformer_gpu_discard_moe_layer_comparison(comparison);
+    return 0;
+}
+
 void bn_transformer_gpu_run_model_moe_cpu(
     BnModel *model,
     BnSession *session,
