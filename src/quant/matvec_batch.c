@@ -112,8 +112,13 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
             for (int t = 0; t < n_tasks; t++) {
                 ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf,
                                           x_scales, tasks[t].prepared };
-                tp_tasks[t] = (BnTPTask){ bn_quant_q4_neon_sdot_range,
-                                           &ctxs[t], tasks[t].W->rows };
+                void (*fn)(void *, int, int) =
+                    tasks[t].prepared &&
+                            tasks[t].prepared->kind ==
+                                BN_PREPARED_WEIGHT_Q4_0_REPACK
+                        ? bn_quant_q4_repacked_neon_sdot_range
+                        : bn_quant_q4_neon_sdot_range;
+                tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
             }
             bn_tp_dispatch(pool, tp_tasks, n_tasks);
             return;

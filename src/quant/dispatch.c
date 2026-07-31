@@ -221,7 +221,11 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
 #endif
             BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-            BnTPTask task = { bn_quant_q4_neon_sdot_range, &ctx, W->rows };
+            void (*fn)(void *, int, int) =
+                prepared && prepared->kind == BN_PREPARED_WEIGHT_Q4_0_REPACK
+                    ? bn_quant_q4_repacked_neon_sdot_range
+                    : bn_quant_q4_neon_sdot_range;
+            BnTPTask task = { fn, &ctx, W->rows };
 #elif defined(__AVX2__)
             int n_groups = (W->rows + 3) / 4;
             BnTPTask task = { bn_quant_q4_avx2_4row_range, &ctx, n_groups };

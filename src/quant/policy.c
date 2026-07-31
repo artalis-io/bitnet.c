@@ -35,6 +35,15 @@ static int reference_q6_dot_env_enabled(void) {
                               "BN_CPU_LLAMA_Q6_DOT");
 }
 
+static int q4_dot_default_enabled(void) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
+    !defined(BN_FORCE_SCALAR)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 int bn_quant_policy_avx512_q5k_vnni_enabled(int rows) {
     const char *v = quant_env_value("BN_AVX512_KQUANT_VNNI",
                                     "BN_AVX512_Q5K_VNNI");
@@ -58,7 +67,8 @@ int bn_quant_policy_avx2_kquant_float_for_tasks(
 
 int bn_quant_policy_reference_q4_dot_enabled(uint32_t flags) {
     return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
-           ((flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
+           (q4_dot_default_enabled() ||
+            (flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
             reference_dot_env_enabled() ||
             reference_q4_dot_env_enabled());
 }
@@ -75,7 +85,8 @@ int bn_quant_policy_batch_reference_q4_dot_enabled(
     const BnMatvecTask *tasks,
     int n_tasks) {
     int reference_dot = reference_dot_env_enabled() ||
-                        reference_q4_dot_env_enabled();
+                        reference_q4_dot_env_enabled() ||
+                        q4_dot_default_enabled();
     for (int t = 0; t < n_tasks; t++)
         reference_dot = reference_dot ||
                         ((tasks[t].flags &

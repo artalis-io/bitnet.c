@@ -179,17 +179,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
     if (all_same_type && (type0 == BN_GGUF_TENSOR_Q8_0 || type0 == BN_GGUF_TENSOR_Q4_0)
         && n_tasks <= BN_MAX_BATCH) {
         if (type0 == BN_GGUF_TENSOR_Q4_0) {
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-            BnQ4Ctx ctxs[BN_MAX_BATCH];
-            BnTPTask tp_tasks[BN_MAX_BATCH];
-            for (int t = 0; t < n_tasks; t++) {
-                (void)tasks[t].prepared;
-                ctxs[t] = (BnQ4Ctx){ tasks[t].out, tasks[t].W, tasks[t].x };
-                tp_tasks[t] = (BnTPTask){ bn_quant_q4_neon_range, &ctxs[t], tasks[t].W->rows };
-            }
-            bn_tp_dispatch(pool, tp_tasks, n_tasks);
-            return;
-#elif !defined(__AVX512F__) && !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
+#if !defined(__ARM_NEON) && !defined(__AVX512F__) && \
+    !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
             BnQ4Ctx ctxs[BN_MAX_BATCH];
             BnTPTask tp_tasks[BN_MAX_BATCH];
             for (int t = 0; t < n_tasks; t++) {
