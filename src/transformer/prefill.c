@@ -8,7 +8,6 @@
 #include "transformer_prefill_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
-#include "backend_model.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_arena.h"

@@ -6,7 +6,6 @@
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
-#include "backend_model.h"
 #include "model_internal.h"
 #include "moe.h"
 #include "session.h"

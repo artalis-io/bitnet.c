@@ -1,6 +1,5 @@
 #include "gpu_internal.h"
 #include "../gpu_shader.h"
-#include "backend_model.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"

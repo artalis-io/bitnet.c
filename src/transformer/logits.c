@@ -2,7 +2,6 @@
 #include "transformer_plan_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_rmsnorm_internal.h"
-#include "backend_model.h"
 #include "model.h"
 #include "session.h"
 #include "sh_log.h"
