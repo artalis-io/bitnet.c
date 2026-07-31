@@ -5273,6 +5273,12 @@ if grep -n 'bn_backend_model_handle' src/main.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n '#include "backend_model.h"\|bn_backend_model_\|BnBackendModel' \
+    src/main.c >/dev/null 2>&1; then
+    echo "CLI orchestration must use model-owned backend behavior"
+    fail=1
+fi
+
 if grep -n '#include "backend_model.h"' \
     src/moe_internal.h \
     src/moe_prefill.c >/dev/null 2>&1; then

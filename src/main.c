@@ -1,5 +1,4 @@
 #include "platform.h"
-#include "backend_model.h"
 #include "gguf.h"
 #include "model.h"
 #include "moe.h"
@@ -435,9 +434,6 @@ static int model_count_gpu_routed_moe_resident(const BnModel *model,
         *moe_layers_out = 0;
     if (!model || !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
         return 0;
-    const BnBackendModel *backend = bn_model_backend(model);
-    if (!backend)
-        return 0;
     const BnConfig *c = &model->config;
     int moe_layers = 0;
     int resident_layers = 0;
@@ -446,9 +442,7 @@ static int model_count_gpu_routed_moe_resident(const BnModel *model,
         if (!main_loaded_moe_layer_policy(lw).uses_moe)
             continue;
         moe_layers++;
-        BnBackendModelMoEPrefillResidentResources resources =
-            bn_backend_model_moe_prefill_resident_resources(backend, l);
-        if (resources.valid)
+        if (bn_model_gpu_moe_prefill_resident(model, l))
             resident_layers++;
     }
     if (moe_layers_out)

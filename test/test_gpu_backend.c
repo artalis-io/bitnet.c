@@ -228,6 +228,33 @@ static void test_gpu_upload_moe_router(void) {
     printf("PASSED\n");
 }
 
+static void test_model_gpu_moe_prefill_resident(void) {
+    printf("test_model_gpu_moe_prefill_resident... ");
+
+    BnModel model = {0};
+    assert(!bn_model_gpu_moe_prefill_resident(NULL, 0));
+    assert(!bn_model_gpu_moe_prefill_resident(&model, 0));
+    assert(bn_model_ensure_backend(&model) == 0);
+
+    int gate;
+    int up;
+    int down;
+    BnBackendModel *backend = bn_model_backend(&model);
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_MOE_GATE_ALL, &gate) == 0);
+    assert(!bn_model_gpu_moe_prefill_resident(&model, 0));
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_MOE_UP_ALL, &up) == 0);
+    assert(!bn_model_gpu_moe_prefill_resident(&model, 0));
+    assert(bn_backend_model_register_handle(
+               backend, 0, BN_BACKEND_HANDLE_MOE_DOWN_ALL, &down) == 0);
+    assert(bn_model_gpu_moe_prefill_resident(&model, 0));
+    assert(!bn_model_gpu_moe_prefill_resident(&model, 1));
+
+    bn_model_free(&model);
+    printf("PASSED\n");
+}
+
 // --- Test 2: GPU matvec ---
 static void test_gpu_matvec(void) {
     printf("test_gpu_matvec... ");
@@ -5728,6 +5755,7 @@ int main(void) {
     test_backend_layout_prepared_qweights();
     test_gpu_upload_weights();
     test_gpu_upload_moe_router();
+    test_model_gpu_moe_prefill_resident();
     test_gpu_matvec();
     test_gpu_fallback();
     test_gpu_release();

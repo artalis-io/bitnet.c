@@ -55,6 +55,7 @@ void bn_model_set_gpu_moe_cache(BnModel *model, void *cache);
 void *bn_model_gpu_moe_cache(const BnModel *model);
 BnGPUBackend *bn_model_gpu(const BnModel *model);
 void bn_model_set_gpu_disabled(BnModel *model, int disabled);
+int bn_model_gpu_moe_prefill_resident(const BnModel *model, int layer);
 
 // Upload all model weights to backend-owned GPU buffers.
 // Returns 0 on success. On failure, releases partially uploaded buffers.

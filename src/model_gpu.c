@@ -38,6 +38,13 @@ void bn_model_set_gpu_disabled(BnModel *model, int disabled) {
     bn_backend_model_set_gpu_disabled(bn_model_backend(model), disabled);
 }
 
+int bn_model_gpu_moe_prefill_resident(const BnModel *model, int layer) {
+    BnBackendModelMoEPrefillResidentResources resources =
+        bn_backend_model_moe_prefill_resident_resources(
+            bn_model_backend(model), layer);
+    return resources.valid;
+}
+
 static void *upload_gpu_buffer_mode(BnGPUBackend *gpu,
                                     const void *data,
                                     size_t size,
