@@ -23,8 +23,10 @@ static void test_quant_policy_helpers(void) {
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
     !defined(BN_FORCE_SCALAR)
     const int q4_dot_default = 1;
+    const int q6_dot_default = 1;
 #else
     const int q4_dot_default = 0;
+    const int q6_dot_default = 0;
 #endif
 
     unsetenv("BN_AVX512_KQUANT_VNNI");
@@ -66,7 +68,7 @@ static void test_quant_policy_helpers(void) {
         BN_MATVEC_TASK_REFERENCE_DOT));
     assert(!bn_quant_policy_reference_q4_dot_enabled(
         BN_MATVEC_TASK_REFERENCE_DOT | BN_MATVEC_TASK_NATIVE_QUANT));
-    assert(!bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0) == q6_dot_default);
     setenv("BN_CPU_REFERENCE_BLOCK_QUANT_DOT", "1", 1);
     assert(bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q6_dot_enabled(0));

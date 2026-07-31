@@ -4990,7 +4990,12 @@ static void test_quant_registry(void) {
     unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
     unsetenv("BN_CPU_TIED_KQUANT_HYBRID_TOP");
     unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
+    !defined(BN_FORCE_SCALAR)
+    assert(bn_backend_quant_cpu_tied_kquant_refine_top() == 8);
+#else
     assert(bn_backend_quant_cpu_tied_kquant_refine_top() == 0);
+#endif
     assert(bn_backend_quant_cpu_tied_kquant_hybrid_top() == 0);
     setenv("BN_CPU_TIED_KQUANT_REFINE_TOP", "1", 1);
     setenv("BN_CPU_TIED_KQUANT_HYBRID_TOP", "2", 1);

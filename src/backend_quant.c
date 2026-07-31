@@ -22,8 +22,17 @@ static int backend_quant_compat_env_top_n(const char *name,
 }
 
 int bn_backend_quant_cpu_tied_kquant_refine_top(void) {
-    return backend_quant_compat_env_top_n("BN_CPU_TIED_KQUANT_REFINE_TOP",
-                                          "BN_CPU_TIED_Q6K_REFINE_TOP", 1);
+    if (getenv("BN_CPU_TIED_KQUANT_REFINE_TOP") ||
+        getenv("BN_CPU_TIED_Q6K_REFINE_TOP"))
+        return backend_quant_compat_env_top_n(
+            "BN_CPU_TIED_KQUANT_REFINE_TOP",
+            "BN_CPU_TIED_Q6K_REFINE_TOP", 1);
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
+    !defined(BN_FORCE_SCALAR)
+    return 8;
+#else
+    return 0;
+#endif
 }
 
 int bn_backend_quant_cpu_tied_kquant_hybrid_top(void) {

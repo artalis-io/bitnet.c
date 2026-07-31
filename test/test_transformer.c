@@ -4383,7 +4383,12 @@ static void test_logits_policy_helpers(void) {
 
     unsetenv("BN_CPU_TIED_KQUANT_REFINE_TOP");
     unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
+    !defined(BN_FORCE_SCALAR)
+    assert(bn_transformer_logits_cpu_tied_kquant_refine_top() == 8);
+#else
     assert(bn_transformer_logits_cpu_tied_kquant_refine_top() == 0);
+#endif
     setenv("BN_CPU_TIED_KQUANT_REFINE_TOP", "0", 1);
     assert(bn_transformer_logits_cpu_tied_kquant_refine_top() == 0);
     setenv("BN_CPU_TIED_KQUANT_REFINE_TOP", "7", 1);
