@@ -1,15 +1,9 @@
 #include "gpu_internal.h"
-#include "platform.h"
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 
-// GPU-resident forward pass: one submit per token, reads back logits only.
-// Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
-// no Q/K norms, no sub-norms, no FP16 KV cache).
-// Supports attention biases and tied embeddings.
-// Returns s->logits on success, NULL to fall back to CPU.
+// GPU-resident forward pass. Host access is owned by explicit fallback and
+// diagnostic helpers; this function only sequences planned operations.
 static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                               int token, int pos,
                                               int need_logits,
@@ -17,7 +11,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                               const int *penalty_tokens,
                                               int n_penalty_tokens,
                                               float repeat_penalty) {
-    /* no-op */
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
@@ -101,8 +94,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (bn_transformer_gpu_stage_token_input(gpu, m, token) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "write token embedding failed");
-
-    /* no-op */
 
     void *output_norm = policy.output_norm;
     BnTransformerGPULogitResources *logit_res = &policy.logits;
@@ -195,8 +186,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             dim, u_eps) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph rmsnorm emit failed");
-
-    /* no-op */
 
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
@@ -536,17 +525,18 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     l, pos, dim, moe_route_profile, &route_reason) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, route_reason);
-            double moe_prof_resolve_t0 = moe_route_profile
-                ? bn_platform_time_ms() : 0.0;
             BnTransformerGPUMoELayerComparison moe_comparison;
             if (bn_transformer_gpu_prepare_moe_layer_comparison(
                     &moe_comparison, gpu, m, sess, lw,
                     &moe_debug, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu moe compare setup failed");
-            if (bn_transformer_gpu_resolve_routed_moe_resources(
+            if (bn_transformer_gpu_resolve_profiled_routed_moe_resources(
                     &moe_res, expert_emit, m, sess, lw, l,
-                    &moe_temporaries) != 0) {
+                    &moe_temporaries, moe_route_profile, dim,
+                    route_policy.total_experts,
+                    route_resolution.flush_ms, route_resolution.read_ms,
+                    route_resolution.route_ms) != 0) {
                 bn_transformer_gpu_discard_moe_layer_comparison(
                     &moe_comparison);
                 bn_transformer_gpu_release_moe_temporaries(
@@ -554,13 +544,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu moe resource resolution failed");
             }
-            double moe_prof_t4 = moe_route_profile
-                ? bn_platform_time_ms() : 0.0;
-            bn_transformer_gpu_moe_route_profile_add(
-                dim, route_policy.total_experts,
-                route_resolution.flush_ms, route_resolution.read_ms,
-                route_resolution.route_ms,
-                moe_prof_t4 - moe_prof_resolve_t0);
             BnTransformerGPUMoESharedResources moe_shared =
                 gpu_layer_res.moe_shared;
             bn_transformer_gpu_emit_context_moe(

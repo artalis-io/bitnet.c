@@ -3908,15 +3908,15 @@ if grep -n 'moe_cpu_x\|moe_gpu_x\|moe_override_x\|bn_transformer_gpu_fallback_mo
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_read_x(gpu\|bn_transformer_gpu_read_xb(gpu' \
+if grep -n 'bn_transformer_gpu_\(read_x\|read_xb\|read_activation_buf\|write_x\|write_activation_buf\)' \
     src/transformer/gpu.c >/dev/null 2>&1; then
-    echo "GPU orchestration must delegate host state snapshots to GPU fallback"
+    echo "GPU orchestration must delegate raw host/backend transfers"
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_write_x\|bn_model_embed_token\|bn_transformer_gpu_emit_context_flush' \
+if grep -n 'bn_model_embed_token\|bn_transformer_gpu_emit_context_flush\|bn_platform_time_ms\|\<\(malloc\|calloc\|realloc\)(' \
     src/transformer/gpu.c >/dev/null 2>&1; then
-    echo "GPU orchestration must delegate input staging and temporary resource barriers"
+    echo "GPU orchestration must delegate input, barrier, timing, and allocation mechanics"
     fail=1
 fi
 

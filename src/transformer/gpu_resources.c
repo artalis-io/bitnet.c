@@ -3,6 +3,7 @@
 #include "backend_model.h"
 #include "backend_session.h"
 #include "model_internal.h"
+#include "platform.h"
 #include "session_internal.h"
 
 #include <string.h>
@@ -91,6 +92,32 @@ int bn_transformer_gpu_resolve_routed_moe_resources(
     BnGPUMoETemporaryBuffers *temporaries) {
     return bn_gpu_moe_bridge_resolve_resources(
         out, storage, BN_MAX_MOE_K, model, session, lw, layer, temporaries);
+}
+
+int bn_transformer_gpu_resolve_profiled_routed_moe_resources(
+    BnGPUMoEResources *out,
+    BnGPUMoEResolvedExpert *storage,
+    BnModel *model,
+    BnSession *session,
+    const BnLayerWeights *lw,
+    int layer,
+    BnGPUMoETemporaryBuffers *temporaries,
+    int profile_enabled,
+    int dim,
+    int n_experts,
+    double flush_ms,
+    double read_ms,
+    double route_ms) {
+    double resolve_t0 = profile_enabled ? bn_platform_time_ms() : 0.0;
+    int rc = bn_transformer_gpu_resolve_routed_moe_resources(
+        out, storage, model, session, lw, layer, temporaries);
+    if (rc != 0)
+        return rc;
+    double resolve_ms = profile_enabled
+        ? bn_platform_time_ms() - resolve_t0 : 0.0;
+    bn_transformer_gpu_moe_route_profile_add(
+        dim, n_experts, flush_ms, read_ms, route_ms, resolve_ms);
+    return 0;
 }
 
 void bn_transformer_gpu_release_moe_temporaries(

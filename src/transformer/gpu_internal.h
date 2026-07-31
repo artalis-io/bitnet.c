@@ -216,6 +216,20 @@ int bn_transformer_gpu_resolve_routed_moe_resources(
     const BnLayerWeights *lw,
     int layer,
     BnGPUMoETemporaryBuffers *temporaries);
+int bn_transformer_gpu_resolve_profiled_routed_moe_resources(
+    BnGPUMoEResources *out,
+    BnGPUMoEResolvedExpert *storage,
+    BnModel *model,
+    BnSession *session,
+    const BnLayerWeights *lw,
+    int layer,
+    BnGPUMoETemporaryBuffers *temporaries,
+    int profile_enabled,
+    int dim,
+    int n_experts,
+    double flush_ms,
+    double read_ms,
+    double route_ms);
 void bn_transformer_gpu_release_moe_temporaries(
     BnModel *model,
     BnGPUMoETemporaryBuffers *temporaries);
