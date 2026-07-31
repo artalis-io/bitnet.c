@@ -1931,6 +1931,14 @@ int bn_transformer_gpu_argmax_available(
     return !want_argmax || bn_gpu_backend_can_argmax_activation(gpu);
 }
 
+int bn_transformer_gpu_model_argmax_available(
+    const BnModel *model,
+    int want_argmax) {
+    return model &&
+        bn_transformer_gpu_argmax_available(
+            bn_model_gpu(model), want_argmax);
+}
+
 int bn_transformer_gpu_argmax_backend_run(
     BnGPUBackend *gpu,
     int buf_idx,
@@ -2906,6 +2914,7 @@ int bn_transformer_gpu_validate_forward(
     if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)
         GPU_POLICY_REJECT("dim exceeds VLA limit");
 
+    out->gpu = (BnGPUBackend *)gpu;
     out->initial_norm = bn_transformer_gpu_resolve_initial_norm(backend);
     out->output_norm = bn_transformer_gpu_resolve_output_norm(backend);
     if (!out->output_norm)
@@ -2978,7 +2987,10 @@ int bn_transformer_gpu_validate_model_forward(
             *reject_reason = "model missing";
         return -1;
     }
-    return bn_transformer_gpu_validate_forward(
+    int rc = bn_transformer_gpu_validate_forward(
         out, bn_model_gpu(model), bn_model_backend(model),
         &model->config, &model->weights, token, pos, reject_reason);
+    if (rc == 0)
+        out->has_tq = bn_model_has_tq(model);
+    return rc;
 }

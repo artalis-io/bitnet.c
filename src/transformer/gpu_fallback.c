@@ -62,6 +62,64 @@ static void fallback_cpu_matvec(const BnModel *m,
     fallback_cpu_matvec_batch(m, &task, 1, x, quantized_buf);
 }
 
+void bn_transformer_gpu_cpu_quant_matvec_batch_model(
+    const BnModel *model,
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const float *x,
+    int8_t *quantized_buf) {
+    bn_transformer_cpu_quant_matvec_batch(
+        tasks, n_tasks, x, quantized_buf, bn_model_pool(model));
+}
+
+void bn_transformer_gpu_cpu_quant_matvec_model(
+    const BnModel *model,
+    float *out,
+    const BnQWeight *weight,
+    const float *x,
+    int8_t *quantized_buf) {
+    bn_transformer_cpu_quant_matvec(
+        out, weight, x, quantized_buf, bn_model_pool(model));
+}
+
+const void *bn_transformer_gpu_model_expert_projection(
+    BnModel *model,
+    BnMoEState *state,
+    const BnMoEExpertMap *map,
+    int expert,
+    int projection) {
+    return bn_moe_get_expert_proj(
+        bn_model_moe_io(model), state, map, expert, projection);
+}
+
+void bn_transformer_gpu_route_model_moe(
+    BnModel *model,
+    BnMoEState *state,
+    const float *input,
+    const BnLayerWeights *layer,
+    int total_experts,
+    int active_experts,
+    int normalize_topk,
+    float expert_weights_scale) {
+    if (!model || !state || !input || !layer)
+        return;
+    bn_moe_route(state, input, layer->moe.router_weight,
+                 model->config.dim, total_experts, active_experts,
+                 normalize_topk, expert_weights_scale, bn_model_pool(model));
+}
+
+void bn_transformer_gpu_run_model_moe_cpu(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int layer_index) {
+    if (!model || !session || !layer)
+        return;
+    bn_model_set_gpu_disabled(model, 1);
+    bn_moe_forward(model, session, layer, layer_index);
+    bn_model_set_gpu_disabled(model, 0);
+}
+
 int bn_transformer_gpu_fallback_ssm_layer(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

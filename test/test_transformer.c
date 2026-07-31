@@ -1096,6 +1096,7 @@ static void test_gpu_policy_helpers(void) {
         assert(bn_transformer_gpu_validate_forward(
                    &forward_policy, &gpu, NULL, &c, &weights, 0, 0,
                    &reject_reason) != 0);
+        assert(forward_policy.gpu == &gpu);
         assert(reject_reason &&
                strcmp(reject_reason, "output norm not uploaded") == 0);
         memset(&gpu, 0, sizeof(gpu));

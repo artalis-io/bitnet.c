@@ -1,5 +1,4 @@
 #include "gpu_internal.h"
-#include "model_internal.h"
 #include "platform.h"
 #include "transformer_cpu_backend_internal.h"
 #include "../gpu_shader_ir_internal.h"
@@ -17,8 +16,8 @@ static void gpu_cpu_quant_matvec_batch(BnModel *m,
                                        int n_tasks,
                                        const float *x,
                                        int8_t *quantized_buf) {
-    bn_transformer_cpu_quant_matvec_batch(tasks, n_tasks, x, quantized_buf,
-                                          bn_model_pool(m));
+    bn_transformer_gpu_cpu_quant_matvec_batch_model(
+        m, tasks, n_tasks, x, quantized_buf);
 }
 
 static void gpu_cpu_quant_matvec(BnModel *m,
@@ -26,8 +25,8 @@ static void gpu_cpu_quant_matvec(BnModel *m,
                                  const BnQWeight *W,
                                  const float *x,
                                  int8_t *quantized_buf) {
-    bn_transformer_cpu_quant_matvec(out, W, x, quantized_buf,
-                                    bn_model_pool(m));
+    bn_transformer_gpu_cpu_quant_matvec_model(
+        m, out, W, x, quantized_buf);
 }
 
 static int gpu_compute_shared_expert_cpu_from_xb(
@@ -108,9 +107,7 @@ static int gpu_debug_compute_moe_actual_cpu_from_state(
         save_weights[k] = sess->moe_state->expert_weights[k];
     }
 
-    bn_model_set_gpu_disabled(m, 1);
-    bn_moe_forward(m, sess, lw, layer);
-    bn_model_set_gpu_disabled(m, 0);
+    bn_transformer_gpu_run_model_moe_cpu(m, sess, lw, layer);
     memcpy(x_out, s->x, (size_t)dim * sizeof(float));
 
     memcpy(s->x, save_x, (size_t)dim * sizeof(float));
@@ -160,12 +157,12 @@ static int gpu_debug_compute_moe_cpu_from_xb(
         int eidx = ms->expert_indices[k];
         float weight = ms->expert_weights[k];
         if (eidx < 0) continue;
-        const void *gate_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 0);
-        const void *up_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 1);
-        const void *down_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 2);
+        const void *gate_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 0);
+        const void *up_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 1);
+        const void *down_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 2);
         if (!gate_data || !up_data || !down_data) {
             free(expert_out);
             free(hb);
@@ -256,12 +253,12 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
         int eidx = ms->expert_indices[k];
         float weight = ms->expert_weights[k];
         if (eidx < 0) continue;
-        const void *gate_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 0);
-        const void *up_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 1);
-        const void *down_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 2);
+        const void *gate_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 0);
+        const void *up_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 1);
+        const void *down_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 2);
         if (!gate_data || !up_data || !down_data) {
             free(hb);
             free(hb2);
@@ -419,10 +416,10 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
                    (size_t)moe_hidden * sizeof(float));
             continue;
         }
-        const void *gate_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 0);
-        const void *up_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 1);
+        const void *gate_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 0);
+        const void *up_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 1);
         if (!gate_data || !up_data) {
             free(hb);
             free(hb2);
@@ -471,10 +468,10 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
 
     const BnMoEExpertMap *em = &lw->moe.expert_map;
     for (int eidx = 0; eidx < n_experts; eidx++) {
-        const void *gate_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 0);
-        const void *up_data = bn_moe_get_expert_proj(
-            bn_model_moe_io(m), ms, em, eidx, 1);
+        const void *gate_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 0);
+        const void *up_data = bn_transformer_gpu_model_expert_projection(
+            m, ms, em, eidx, 1);
         if (!gate_data || !up_data)
             return -1;
         BnQWeight wgate, wup;
@@ -839,11 +836,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
-    BnGPUBackend *gpu = bn_model_gpu(m);
     BnTransformerGPUEmitContext emit;
     bn_transformer_gpu_emit_context_init(&emit, NULL, 0);
     int emit_logits = need_logits || argmax_token != NULL;
-    if (!bn_transformer_gpu_argmax_available(gpu, argmax_token != NULL))
+    if (!bn_transformer_gpu_model_argmax_available(
+            m, argmax_token != NULL))
         return NULL;
 
     BnTransformerGPUForwardPolicy policy;
@@ -851,6 +848,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (bn_transformer_gpu_validate_model_forward(
             &policy, m, token, pos, &reject_reason) != 0)
         return bn_transformer_gpu_reject_forward(&emit, reject_reason);
+    BnGPUBackend *gpu = policy.gpu;
 
     int dim = c->dim;
     int kv_cache_stride = c->kv_dim;
@@ -862,7 +860,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerShapePlan shape;
         bn_transformer_plan_layer_shape(&shape, c, &w->layers[l], l,
-                                        bn_model_tq_state(m) != NULL);
+                                        policy.has_tq);
         if (!shape.is_attn)
             continue;
         int layer_rope_dims =
@@ -1026,7 +1024,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             return bn_transformer_gpu_reject_forward(
                 &emit, "gpu layer resource resolution failed");
         BnLayerShapePlan plan;
-        bn_transformer_plan_layer_shape(&plan, c, lw, l, bn_model_tq_state(m) != NULL);
+        bn_transformer_plan_layer_shape(&plan, c, lw, l, policy.has_tq);
         int is_attn = plan.is_attn;
         BnFFNPlan layer_ffn_plan;
         int layer_ffn_plan_valid = 0;
@@ -1297,13 +1295,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                 &emit, "gpu routed moe compare setup failed");
                         }
                     } else {
-                        bn_moe_route(sess->moe_state, s->xb,
-                                     lw->moe.router_weight, dim,
-                                     route_policy.total_experts,
-                                     route_policy.active_experts,
-                                     route_policy.norm_topk_prob,
-                                     route_policy.expert_weights_scale,
-                                     bn_model_pool(m));
+                        bn_transformer_gpu_route_model_moe(
+                            m, sess->moe_state, s->xb, lw,
+                            route_policy.total_experts,
+                            route_policy.active_experts,
+                            route_policy.norm_topk_prob,
+                            route_policy.expert_weights_scale);
                         if (gpu_debug_compute_moe_cpu_from_xb(
                                 m, sess, lw, dim, s->x, s->xb,
                                 moe_cpu_x) != 0) {
@@ -1321,13 +1318,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                    (size_t)dim * sizeof(float)) != 0)
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu moe cpu route input readback failed");
-                    bn_moe_route(sess->moe_state, s->xb,
-                                 lw->moe.router_weight, dim,
-                                 route_policy.total_experts,
-                                 route_policy.active_experts,
-                                 route_policy.norm_topk_prob,
-                                 route_policy.expert_weights_scale,
-                                 bn_model_pool(m));
+                    bn_transformer_gpu_route_model_moe(
+                        m, sess->moe_state, s->xb, lw,
+                        route_policy.total_experts,
+                        route_policy.active_experts,
+                        route_policy.norm_topk_prob,
+                        route_policy.expert_weights_scale);
                     float route_tmp[BN_MAX_MOE_K * 2];
                     int K = route_policy.active_experts;
                     if (K > BN_MAX_MOE_K)
@@ -1756,13 +1752,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                             &emit, "gpu moe route compare input failed");
                     float cpu_weights[BN_MAX_MOE_K];
                     int cpu_indices[BN_MAX_MOE_K];
-                    bn_moe_route(sess->moe_state, s->xb,
-                                 lw->moe.router_weight, dim,
-                                 route_policy.total_experts,
-                                 route_policy.active_experts,
-                                 route_policy.norm_topk_prob,
-                                 route_policy.expert_weights_scale,
-                                 bn_model_pool(m));
+                    bn_transformer_gpu_route_model_moe(
+                        m, sess->moe_state, s->xb, lw,
+                        route_policy.total_experts,
+                        route_policy.active_experts,
+                        route_policy.norm_topk_prob,
+                        route_policy.expert_weights_scale);
                     for (int k = 0; k < K; k++) {
                         cpu_weights[k] = sess->moe_state->expert_weights[k];
                         cpu_indices[k] = sess->moe_state->expert_indices[k];
@@ -1793,12 +1788,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             double moe_prof_t2 = moe_route_profile
                 ? bn_platform_time_ms() : 0.0;
             if (!did_gpu_route_topk) {
-                bn_moe_route(sess->moe_state, s->xb, lw->moe.router_weight,
-                             dim, route_policy.total_experts,
-                             route_policy.active_experts,
-                             route_policy.norm_topk_prob,
-                             route_policy.expert_weights_scale,
-                             bn_model_pool(m));
+                bn_transformer_gpu_route_model_moe(
+                    m, sess->moe_state, s->xb, lw,
+                    route_policy.total_experts,
+                    route_policy.active_experts,
+                    route_policy.norm_topk_prob,
+                    route_policy.expert_weights_scale);
             }
             double moe_prof_t3 = moe_route_profile
                 ? bn_platform_time_ms() : 0.0;

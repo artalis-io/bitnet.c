@@ -5261,6 +5261,12 @@ if grep -n 'BnBackendModel\|bn_model_backend\|bn_transformer_gpu_resolve_\(initi
     fail=1
 fi
 
+if grep -n '#include "model_internal.h"\|bn_model_\(gpu\|pool\|tq_state\|moe_io\|set_gpu_disabled\)\|bn_moe_get_expert_proj\|bn_moe_route(\|bn_transformer_cpu_quant_matvec' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "Transformer GPU orchestration must consume model-owned execution behavior"
+    fail=1
+fi
+
 if grep -n 'bn_backend_session_\(ensure_gpu_command_buffer\|gpu_cached_op_count\|gpu_cached_has_logits\|set_gpu_cached_op_count\|clear_gpu_cached_ops\)' \
     src/transformer/gpu.c >/dev/null 2>&1; then
     echo "Transformer GPU orchestration must compose backend decode-session resources"

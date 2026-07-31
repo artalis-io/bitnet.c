@@ -230,9 +230,11 @@ typedef struct {
 } BnTransformerGPULogitsDispatchPolicy;
 
 typedef struct {
+    BnGPUBackend *gpu;
     void *initial_norm;
     void *output_norm;
     BnTransformerGPULogitResources logits;
+    int has_tq;
     int has_moe;
     int has_ssm;
 } BnTransformerGPUForwardPolicy;
@@ -1209,6 +1211,9 @@ bn_transformer_gpu_generate_argmax_policy(
 int bn_transformer_gpu_argmax_available(
     const BnGPUBackend *gpu,
     int want_argmax);
+int bn_transformer_gpu_model_argmax_available(
+    const BnModel *model,
+    int want_argmax);
 int bn_transformer_gpu_argmax_backend_run(
     BnGPUBackend *gpu,
     int buf_idx,
@@ -1755,6 +1760,38 @@ int bn_transformer_gpu_fallback_ssm_layer(
     int dim,
     uint32_t u_eps,
     void *next_norm);
+void bn_transformer_gpu_cpu_quant_matvec_batch_model(
+    const BnModel *model,
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const float *x,
+    int8_t *quantized_buf);
+void bn_transformer_gpu_cpu_quant_matvec_model(
+    const BnModel *model,
+    float *out,
+    const BnQWeight *weight,
+    const float *x,
+    int8_t *quantized_buf);
+const void *bn_transformer_gpu_model_expert_projection(
+    BnModel *model,
+    BnMoEState *state,
+    const BnMoEExpertMap *map,
+    int expert,
+    int projection);
+void bn_transformer_gpu_route_model_moe(
+    BnModel *model,
+    BnMoEState *state,
+    const float *input,
+    const BnLayerWeights *layer,
+    int total_experts,
+    int active_experts,
+    int normalize_topk,
+    float expert_weights_scale);
+void bn_transformer_gpu_run_model_moe_cpu(
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int layer_index);
 int bn_transformer_gpu_fallback_moe_layer(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
