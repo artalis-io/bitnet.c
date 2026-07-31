@@ -1,7 +1,7 @@
 #include "gpu_internal.h"
 #include "model_internal.h"
 #include "platform.h"
-#include "session.h"
+#include "session_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "../gpu_shader_ir_internal.h"
 #include "../moe_internal.h"
@@ -941,7 +941,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     // Reuse the session-owned GPU IR/lowering storage to avoid per-token malloc.
     BnTransformerGPUDecodeSessionResources decode_session;
     if (bn_transformer_gpu_resolve_decode_session_resources(
-            &decode_session, sess->backend, max_ops, 1) != 0)
+            &decode_session, bn_session_backend(sess), max_ops, 1) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
     void *command_buffer = decode_session.command_buffer;
@@ -971,7 +971,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             cached_n, argmax_token != NULL, cached_has_logits,
             use_matvec_argmax);
     if (cached_decode.clear_cache) {
-        bn_transformer_gpu_clear_decode_session_cache(sess->backend);
+        bn_transformer_gpu_clear_decode_session_cache(
+            bn_session_backend(sess));
         cached_n = 0;
         cached_has_logits = 0;
     }
@@ -996,7 +997,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                           argmax_token);
                 if (argmax_rc != 0) {
                     bn_transformer_gpu_clear_decode_session_cache(
-                        sess->backend);
+                        bn_session_backend(sess));
                     bn_transformer_gpu_emit_context_free(&emit);
                     return NULL;
                 }
@@ -1004,10 +1005,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             bn_transformer_gpu_emit_context_free(&emit);
             return need_logits ? s->logits : s->x;
         }
-        bn_transformer_gpu_clear_decode_session_cache(sess->backend);
+        bn_transformer_gpu_clear_decode_session_cache(
+            bn_session_backend(sess));
     }
     if (bn_transformer_gpu_emit_context_init_session(
-            &emit, sess->backend, command_buffer, command_cap,
+            &emit, bn_session_backend(sess), command_buffer, command_cap,
             max_ops * 4, max_ops) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph reserve failed");
@@ -2008,7 +2010,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             &emit, "gpu final execute failed");
     if (cacheable_decode && final_n > 0)
         bn_transformer_gpu_store_decode_session_cache(
-            sess->backend, final_n,
+            bn_session_backend(sess), final_n,
             emit_logits && !use_matvec_argmax);
     if (argmax_token) {
         if (!use_matvec_argmax &&

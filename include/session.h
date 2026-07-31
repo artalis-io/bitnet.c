@@ -7,14 +7,14 @@
 #include "bn_alloc.h"
 
 typedef struct BnModel BnModel;
-typedef struct BnBackendSession BnBackendSession;
+typedef struct BnSessionBackendState BnSessionBackendState;
 
 // Per-request mutable state. Multiple sessions can share one BnModel.
 struct BnSession {
     BnRunState state;          // activation buffers + KV cache (arena-allocated)
     BnMoEState *moe_state;     // MoE compute buffers (NULL for dense models)
     SHArena *arena;            // owns all session buffer memory
-    BnBackendSession *backend; // per-request backend state
+    BnSessionBackendState *backend_state; // per-request backend ownership
     int pos;                   // generation position
     int gpu_kv_direct_valid;   // prefill wrote current KV window directly to GPU
 };

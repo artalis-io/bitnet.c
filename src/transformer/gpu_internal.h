@@ -8,6 +8,8 @@
 #include "session.h"
 #include "transformer_plan_internal.h"
 
+typedef struct BnBackendSession BnBackendSession;
+
 #define BN_TRANSFORMER_GPU_MAX_VLA_ELEMS 8192
 
 typedef struct {

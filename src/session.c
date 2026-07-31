@@ -1,5 +1,5 @@
 #include "model.h"
-#include "session.h"
+#include "session_internal.h"
 #include "backend_session.h"
 #include "model_internal.h"
 #include "turboquant.h"
@@ -26,6 +26,12 @@ static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out
     return checked_mul_size(tmp, d, out);
 }
 
+BnBackendSession *bn_session_backend(const BnSession *session) {
+    return (session && session->backend_state)
+        ? session->backend_state->backend
+        : NULL;
+}
+
 BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
     if (!model) return NULL;
     const BnConfig *c = &model->config;
@@ -39,8 +45,16 @@ BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
     }
     if (!s) return NULL;
     memset(s, 0, sizeof(BnSession));
-    s->backend = bn_backend_session_create();
-    if (!s->backend) {
+    s->backend_state =
+        (BnSessionBackendState *)calloc(1, sizeof(BnSessionBackendState));
+    if (!s->backend_state) {
+        if (alloc) bn_free(alloc, s, sizeof(BnSession));
+        else free(s);
+        return NULL;
+    }
+    s->backend_state->backend = bn_backend_session_create();
+    if (!s->backend_state->backend) {
+        free(s->backend_state);
         if (alloc) bn_free(alloc, s, sizeof(BnSession));
         else free(s);
         return NULL;
@@ -49,7 +63,8 @@ BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
     // Create session arena
     size_t arena_size = bn_model_session_arena_size(c, &model->weights);
     if (arena_size > SIZE_MAX / 2) {
-        bn_backend_session_free(s->backend);
+        bn_backend_session_free(bn_session_backend(s));
+        free(s->backend_state);
         if (alloc) bn_free(alloc, s, sizeof(BnSession));
         else free(s);
         return NULL;
@@ -58,7 +73,8 @@ BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
     s->arena = sh_arena_create(arena_size);
     if (!s->arena) {
         SH_LOG_ERROR("Failed to allocate session arena");
-        bn_backend_session_free(s->backend);
+        bn_backend_session_free(bn_session_backend(s));
+        free(s->backend_state);
         if (alloc) bn_free(alloc, s, sizeof(BnSession));
         else free(s);
         return NULL;
@@ -69,7 +85,8 @@ BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
                                         &s->state, &s->moe_state) != 0) {
         SH_LOG_ERROR("Failed to allocate session buffers");
         sh_arena_free(s->arena);
-        bn_backend_session_free(s->backend);
+        bn_backend_session_free(bn_session_backend(s));
+        free(s->backend_state);
         if (alloc) bn_free(alloc, s, sizeof(BnSession));
         else free(s);
         return NULL;
@@ -82,7 +99,8 @@ BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
 
 void bn_session_free(BnSession *s, BnAllocator *alloc) {
     if (!s) return;
-    bn_backend_session_free(s->backend);
+    bn_backend_session_free(bn_session_backend(s));
+    free(s->backend_state);
     sh_arena_free(s->arena);
     if (alloc) {
         bn_free(alloc, s, sizeof(BnSession));

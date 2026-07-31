@@ -1,4 +1,5 @@
 #include "session.h"
+#include "session_internal.h"
 #include "model.h"
 #include "model_internal.h"
 #include "backend_session.h"
@@ -39,7 +40,7 @@ static void test_session_create_free(void) {
     BnSession *s1 = bn_session_create(&model, NULL);
     assert(s1 != NULL);
     assert(bn_model_backend(&model) == NULL);
-    assert(s1->backend != NULL);
+    assert(bn_session_backend(s1) != NULL);
     assert(s1->state.x != NULL);
     assert(s1->state.logits != NULL);
     assert(s1->state.key_cache != NULL);
@@ -48,7 +49,7 @@ static void test_session_create_free(void) {
     BnSession *s2 = bn_session_create(&model, NULL);
     assert(s2 != NULL);
     assert(bn_model_backend(&model) == NULL);
-    assert(s2->backend != NULL);
+    assert(bn_session_backend(s2) != NULL);
     assert(s2->state.x != NULL);
 
     // Sessions should have independent buffers
@@ -357,27 +358,31 @@ static void test_session_gpu_graph_isolation(void) {
     BnSession *s1 = bn_session_create(&model, NULL);
     BnSession *s2 = bn_session_create(&model, NULL);
     assert(s1 && s2);
-    assert(bn_backend_session_gpu_graph(s1->backend) == NULL);
-    assert(bn_backend_session_gpu_graph(s2->backend) == NULL);
+    assert(bn_backend_session_gpu_graph(bn_session_backend(s1)) == NULL);
+    assert(bn_backend_session_gpu_graph(bn_session_backend(s2)) == NULL);
 
     BnGPUGraph *g1 =
-        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(s1->backend, 4);
+        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(
+            bn_session_backend(s1), 4);
     BnGPUGraph *g2 =
-        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(s2->backend, 8);
+        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(
+            bn_session_backend(s2), 8);
     assert(g1 && g2);
     assert(g1->ops && g2->ops);
     g1->cap = 4;
     g2->cap = 8;
-    assert(bn_backend_session_gpu_graph(s1->backend) !=
-           bn_backend_session_gpu_graph(s2->backend));
-    assert(bn_backend_session_ensure_gpu_graph(s1->backend, 2) == g1);
+    assert(bn_backend_session_gpu_graph(bn_session_backend(s1)) !=
+           bn_backend_session_gpu_graph(bn_session_backend(s2)));
+    assert(bn_backend_session_ensure_gpu_graph(
+               bn_session_backend(s1), 2) == g1);
     BnGPUGraph *g1_grown =
-        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(s1->backend, 16);
+        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(
+            bn_session_backend(s1), 16);
     assert(g1_grown != NULL);
     assert(g1_grown->cap == 16);
     assert(g1_grown->ops != NULL);
-    bn_backend_session_release_gpu_graph(s1->backend);
-    assert(bn_backend_session_gpu_graph(s1->backend) == NULL);
+    bn_backend_session_release_gpu_graph(bn_session_backend(s1));
+    assert(bn_backend_session_gpu_graph(bn_session_backend(s1)) == NULL);
 
     bn_session_free(s1, NULL);
     bn_session_free(s2, NULL);
