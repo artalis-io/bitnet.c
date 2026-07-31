@@ -24,14 +24,6 @@ static void fallback_rmsnorm(float *out,
     bn_transformer_rmsnorm_default(out, x, w, size, eps);
 }
 
-static const BnPreparedWeight *fallback_cpu_prepared_qweight(
-    const BnModel *m,
-    const BnQWeight *w) {
-    if (!bn_transformer_cpu_prepared_qweights_enabled())
-        return NULL;
-    return bn_backend_model_prepared_qweight(bn_model_backend(m), w);
-}
-
 static void fallback_cpu_matvec_batch(const BnModel *m,
                                       const BnMatvecTask *tasks,
                                       int n_tasks,
@@ -49,11 +41,12 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
         }
     }
     for (int i = 0; i < n_tasks; i++) {
+        BnTransformerCPUMatvecResourcePolicy resource =
+            bn_transformer_cpu_matvec_resource_policy(
+                &m->config, bn_model_backend(m), tasks[i].W);
         prepared[i] = tasks[i];
-        prepared[i].prepared =
-            fallback_cpu_prepared_qweight(m, tasks[i].W);
-        prepared[i].flags |=
-            bn_transformer_cpu_float_kquant_fallback_task_flags(&m->config);
+        prepared[i].prepared = resource.prepared;
+        prepared[i].flags |= resource.task_flags;
     }
     bn_transformer_cpu_quant_matvec_batch(prepared, n_tasks, x, quantized_buf,
                                           bn_model_pool(m));
@@ -442,9 +435,12 @@ static void debug_compare_vec(const char *label,
 
 static const BnPreparedWeight *debug_prepared_qweight(BnModel *m,
                                                       const BnQWeight *w) {
-    if (!m || !w || !bn_transformer_cpu_prepared_qweights_enabled())
+    if (!m || !w)
         return NULL;
-    return bn_backend_model_prepared_qweight(bn_model_backend(m), w);
+    BnTransformerCPUMatvecResourcePolicy resource =
+        bn_transformer_cpu_matvec_resource_policy(
+            &m->config, bn_model_backend(m), w);
+    return resource.prepared;
 }
 
 static void debug_quant_matvec_prepared(BnModel *m,
