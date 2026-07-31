@@ -3866,6 +3866,12 @@ if grep -n 'int did_gpu_route_topk\|float cpu_weights\[BN_MAX_MOE_K\]\|gpu moe r
     fail=1
 fi
 
+if grep -n 'float route_tmp\[BN_MAX_MOE_K \* 2\]\|gpu moe cpu route upload failed\|moe_route_compare layer=' \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must delegate routed MoE route preparation to GPU fallback"
+    fail=1
+fi
+
 if awk '/BnTransformerGPUMoERouteResolution route_resolution;/{flag=1} /skip dense FFN below/{flag=0} flag{print}' \
     src/transformer/gpu.c |
     grep -n 'malloc\|moe_state_compare\|moe_norm_compare\|bn_transformer_gpu_fallback_moe_output' \

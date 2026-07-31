@@ -1896,6 +1896,19 @@ int bn_transformer_gpu_resolve_moe_route(
     int dim,
     int profile_enabled,
     const char **reason);
+int bn_transformer_gpu_prepare_routed_moe_route(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDecodeRoutePolicy *route,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim,
+    const char **reason);
 int bn_transformer_gpu_prepare_moe_layer_comparison(
     BnTransformerGPUMoELayerComparison *comparison,
     const BnGPUBackend *gpu,

@@ -1144,6 +1144,9 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_resolve_moe_route(
                NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                0, 0, 0, 0, NULL) == -1);
+    assert(bn_transformer_gpu_prepare_routed_moe_route(
+               NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+               0, 0, 0, NULL) == -1);
     assert(bn_transformer_gpu_prepare_moe_layer_comparison(
                NULL, NULL, NULL, NULL, NULL, NULL, 0) == -1);
     assert(bn_transformer_gpu_complete_moe_layer_comparison(
