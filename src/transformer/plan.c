@@ -734,13 +734,14 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
         p->fusion_flags |= BN_FUSION_ROPE_QK;
 }
 
-void bn_transformer_plan_ffn(BnFFNPlan *p,
-                             const BnConfig *c,
-                             const BnLayerWeights *lw,
-                             const BnGPUBackend *gpu,
-                             const BnBackendModel *backend,
-                             int layer,
-                             int prefer_gpu) {
+void bn_transformer_plan_ffn_resources(
+    BnFFNPlan *p,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnGPUBackend *gpu,
+    const BnTransformerGPUDenseFFNResources *resources,
+    int layer,
+    int prefer_gpu) {
     memset(p, 0, sizeof(*p));
     p->layer = layer;
     p->placement = bn_transformer_preferred_placement(gpu, prefer_gpu);
@@ -756,13 +757,11 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->reference_activation =
         bn_transformer_ffn_uses_reference_activation(c);
 
-    BnTransformerGPUDenseFFNResources ffn_res =
-        bn_transformer_gpu_resolve_dense_ffn_resources(gpu, backend, lw, layer);
-
     p->use_fused_gateup_silu = bn_transformer_ffn_uses_fused_gateup_silu(
         gpu, c, lw, p->placement);
     p->use_gateup_split = bn_transformer_ffn_uses_gateup_split(
-        gpu, c, lw, p->placement, ffn_res.gateup_stacked);
+        gpu, c, lw, p->placement,
+        resources ? resources->gateup_stacked : NULL);
     if (p->use_fused_gateup_silu) p->fusion_flags |= BN_FUSION_GATEUP_SILU;
     if (p->use_gateup_split) p->fusion_flags |= BN_FUSION_GATEUP_SPLIT;
     if (bn_transformer_ffn_uses_residual_rmsnorm_fusion(p->placement))
@@ -773,6 +772,20 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
         p->backend = bn_transformer_backend_placement(gpu, p->placement);
         p->fusion_flags = BN_FUSION_NONE;
     }
+}
+
+void bn_transformer_plan_ffn(BnFFNPlan *p,
+                             const BnConfig *c,
+                             const BnLayerWeights *lw,
+                             const BnGPUBackend *gpu,
+                             const BnBackendModel *backend,
+                             int layer,
+                             int prefer_gpu) {
+    BnTransformerGPUDenseFFNResources resources =
+        bn_transformer_gpu_resolve_dense_ffn_resources(
+            gpu, backend, lw, layer);
+    bn_transformer_plan_ffn_resources(
+        p, c, lw, gpu, &resources, layer, prefer_gpu);
 }
 
 void bn_transformer_plan_ssm(BnSSMPlan *p,

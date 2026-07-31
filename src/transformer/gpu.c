@@ -841,7 +841,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
     BnGPUBackend *gpu = bn_model_gpu(m);
-    const BnBackendModel *backend = bn_model_backend(m);
     BnTransformerGPUEmitContext emit;
     bn_transformer_gpu_emit_context_init(&emit, NULL, 0);
     int emit_logits = need_logits || argmax_token != NULL;
@@ -850,8 +849,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
     BnTransformerGPUForwardPolicy policy;
     const char *reject_reason = NULL;
-    if (bn_transformer_gpu_validate_forward(
-            &policy, gpu, backend, c, w, token, pos, &reject_reason) != 0)
+    if (bn_transformer_gpu_validate_model_forward(
+            &policy, m, token, pos, &reject_reason) != 0)
         return bn_transformer_gpu_reject_forward(&emit, reject_reason);
 
     int dim = c->dim;
@@ -958,8 +957,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             gpu, c, w, logit_res,
             small_dense_native_quant_decode.small_dense_native_quant_default);
     BnTransformerGPUDecodeCacheabilityPolicy decode_cacheability =
-        bn_transformer_gpu_decode_cacheability_policy(
-            gpu, c, w, backend, emit_logits, argmax_token != NULL,
+        bn_transformer_gpu_model_decode_cacheability_policy(
+            m, emit_logits, argmax_token != NULL,
             gpu_logits_need_cpu, policy.has_moe, &logits_refine, need_logits,
             &cpu_fallback, &compare_policy);
     int cacheable_decode = decode_cacheability.graph_cacheable;
@@ -1016,7 +1015,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
     // ---- Initial RMSNorm: x -> xb (using layer 0 attn_norm) ----
     if (bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
-            &emit, bn_transformer_gpu_resolve_initial_norm(backend),
+            &emit, policy.initial_norm,
             dim, u_eps) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph rmsnorm emit failed");
@@ -1025,6 +1024,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
+        BnTransformerGPULayerResources gpu_layer_res;
+        if (bn_transformer_gpu_resolve_model_layer_resources(
+                &gpu_layer_res, m, lw, l, output_norm) != 0)
+            return bn_transformer_gpu_reject_forward(
+                &emit, "gpu layer resource resolution failed");
         BnLayerShapePlan plan;
         bn_transformer_plan_layer_shape(&plan, c, lw, l, bn_model_tq_state(m) != NULL);
         int is_attn = plan.is_attn;
@@ -1034,12 +1038,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         BnTransformerGPULayerKindPolicy layer_kind =
             bn_transformer_gpu_layer_kind_policy(lw);
         if (!layer_kind.uses_moe) {
-            bn_transformer_plan_ffn(
-                &layer_ffn_plan, c, lw, gpu, backend, l, 1);
+            bn_transformer_plan_ffn_resources(
+                &layer_ffn_plan, c, lw, gpu,
+                &gpu_layer_res.dense_ffn, l, 1);
             layer_ffn_plan_valid = 1;
-            layer_ffn_res =
-                bn_transformer_gpu_resolve_dense_ffn_resources(
-                    gpu, backend, lw, l);
+            layer_ffn_res = gpu_layer_res.dense_ffn;
         }
         BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy small_dense_native_quant_use =
             bn_transformer_gpu_small_dense_native_quant_layer_use_policy(
@@ -1052,8 +1055,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             BnTransformerGPUSSMFallbackPolicy ssm_fallback =
                 bn_transformer_gpu_ssm_fallback_policy(gpu);
             if (ssm_fallback.use_cpu) {
-                void *nn = bn_transformer_gpu_resolve_next_norm(
-                    backend, l, c->n_layers, output_norm);
+                void *nn = gpu_layer_res.next_norm;
                 if (bn_transformer_gpu_fallback_ssm_layer(
                         &emit, gpu, m, sess, lw, l, dim, u_eps, nn) != 0)
                     return bn_transformer_gpu_reject_forward(
@@ -1061,8 +1063,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 continue;
             }
 
-            BnTransformerGPUSSMResources ssm_res =
-                bn_transformer_gpu_resolve_ssm_resources(gpu, backend, lw, l);
+            BnTransformerGPUSSMResources ssm_res = gpu_layer_res.ssm;
             bn_transformer_gpu_emit_context_ssm(
                 &emit, c, lw, &plan, &ssm_res, dim, u_eps);
 
@@ -1081,8 +1082,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
         if (bn_transformer_gpu_cpu_fallback_layer_selected(
                 l, cpu_fallback.layer, cpu_fallback.from_layer)) {
-            void *next_norm = bn_transformer_gpu_resolve_next_norm(
-                backend, l, c->n_layers, output_norm);
+            void *next_norm = gpu_layer_res.next_norm;
             if (bn_transformer_gpu_fallback_cpu_layer(
                     &emit, gpu, m, sess, l, pos, cache_pos, layer_rope_dims,
                     rope_cos, rope_sin, dim, u_eps, next_norm) != 0)
@@ -1093,17 +1093,15 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
         uint32_t kv_cache_off =
             (uint32_t)(loff + (size_t)cache_pos * kv_cache_stride);
-        BnTransformerGPUQKVResources qkv_res =
-            bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, l);
+        BnTransformerGPUQKVResources qkv_res = gpu_layer_res.qkv;
         BnTransformerGPUAttentionResources attn_res =
-            bn_transformer_gpu_resolve_attention_resources(gpu, backend, lw, l);
+            gpu_layer_res.attention;
         if (gpu_qkv_resources_missing(lw, &plan, &qkv_res) ||
             gpu_attention_resources_missing(lw, &attn_res) ||
             (layer_ffn_plan_valid &&
              gpu_dense_ffn_resources_missing(
                  lw, &layer_ffn_plan, &layer_ffn_res))) {
-            void *next_norm = bn_transformer_gpu_resolve_next_norm(
-                backend, l, c->n_layers, output_norm);
+            void *next_norm = gpu_layer_res.next_norm;
             if (bn_transformer_gpu_fallback_cpu_layer(
                     &emit, gpu, m, sess, l, pos, cache_pos, layer_rope_dims,
                     rope_cos, rope_sin, dim, u_eps, next_norm) != 0)
@@ -1185,8 +1183,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     gpu, c, &lw->moe.expert_map, dim, 1, l,
                     &cpu_fallback);
             if (moe_ffn_fallback.use_cpu) {
-                void *moe_next_norm = bn_transformer_gpu_resolve_next_norm(
-                    backend, l, c->n_layers, output_norm);
+                void *moe_next_norm = gpu_layer_res.next_norm;
                 if (bn_transformer_gpu_fallback_moe_layer(
                         &emit, gpu, m, sess, lw, l, dim, u_eps,
                         moe_next_norm) != 0)
@@ -1196,12 +1193,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             }
 
             BnGPUMoETemporaryBuffers moe_temporaries;
-            void *next_norm = bn_transformer_gpu_resolve_next_norm(
-                backend, l, c->n_layers, output_norm);
+            void *next_norm = gpu_layer_res.next_norm;
             BnGPUMoEResolvedExpert expert_emit[BN_MAX_MOE_K];
             BnGPUMoEResources moe_res;
             BnTransformerGPUMoEDecodeResources moe_decode_res =
-                bn_transformer_gpu_resolve_moe_decode_resources(backend, l);
+                gpu_layer_res.moe_decode;
             BnTransformerGPUMoEDecodeDispatchPolicy moe_dispatch =
                 bn_transformer_gpu_moe_decode_dispatch_policy(
                     gpu, c, lw, &moe_route_layer, l, dim,
@@ -1216,8 +1212,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe all-active-two resource resolution failed");
                 BnTransformerGPUMoESharedResources moe_shared =
-                    bn_transformer_gpu_resolve_moe_shared_resources(
-                        gpu, backend, lw, l);
+                    gpu_layer_res.moe_shared;
                 bn_transformer_gpu_emit_context_moe(
                     &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
                     moe_activation.uses_reference_silu);
@@ -1586,8 +1581,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         BN_GPU_VALUE_XB, dim, u_eps, next_norm);
                 } else if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
                     BnTransformerGPUMoESharedResources moe_shared =
-                        bn_transformer_gpu_resolve_moe_shared_resources(
-                            gpu, backend, lw, l);
+                        gpu_layer_res.moe_shared;
                     BnGPUMoEResources shared_only = {
                         &lw->moe.expert_map, NULL, 1,
                         route_policy.expert_hidden_dim, 1
@@ -1840,8 +1834,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 moe_prof_t2 - moe_prof_t1, moe_prof_t3 - moe_prof_t2,
                 moe_prof_t4 - moe_prof_t3);
             BnTransformerGPUMoESharedResources moe_shared =
-                bn_transformer_gpu_resolve_moe_shared_resources(
-                    gpu, backend, lw, l);
+                gpu_layer_res.moe_shared;
             bn_transformer_gpu_emit_context_moe(
                 &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
                 moe_activation.uses_reference_silu);
@@ -1895,13 +1888,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             }
             continue;  // skip dense FFN below
         }
-        void *next_norm = bn_transformer_gpu_resolve_next_norm(
-            backend, l, c->n_layers, output_norm);
+        void *next_norm = gpu_layer_res.next_norm;
         BnFFNPlan ffn_plan;
         if (layer_ffn_plan_valid)
             ffn_plan = layer_ffn_plan;
         else
-            bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu, backend, l, 1);
+            bn_transformer_plan_ffn_resources(
+                &ffn_plan, c, lw, gpu, &gpu_layer_res.dense_ffn, l, 1);
         if (bn_transformer_gpu_cpu_fallback_layer_selected(
                 l, cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer)) {
             if (bn_transformer_gpu_fallback_cpu_ffn(

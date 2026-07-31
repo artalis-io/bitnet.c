@@ -41,6 +41,15 @@ typedef struct {
     void *ffn_down_prefill;
 } BnTransformerGPUDenseFFNResources;
 
+void bn_transformer_plan_ffn_resources(
+    BnFFNPlan *p,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnGPUBackend *gpu,
+    const BnTransformerGPUDenseFFNResources *resources,
+    int layer,
+    int prefer_gpu);
+
 typedef struct {
     int gate_type;
     int gate_rows;
@@ -178,6 +187,16 @@ typedef struct {
 } BnTransformerGPUMoEDecodeResources;
 
 typedef struct {
+    void *next_norm;
+    BnTransformerGPUDenseFFNResources dense_ffn;
+    BnTransformerGPUQKVResources qkv;
+    BnTransformerGPUAttentionResources attention;
+    BnTransformerGPUSSMResources ssm;
+    BnTransformerGPUMoESharedResources moe_shared;
+    BnTransformerGPUMoEDecodeResources moe_decode;
+} BnTransformerGPULayerResources;
+
+typedef struct {
     void *router;
     void *gate_all;
     void *up_all;
@@ -211,6 +230,7 @@ typedef struct {
 } BnTransformerGPULogitsDispatchPolicy;
 
 typedef struct {
+    void *initial_norm;
     void *output_norm;
     BnTransformerGPULogitResources logits;
     int has_moe;
@@ -397,6 +417,12 @@ int bn_transformer_gpu_validate_forward(
     const BnBackendModel *backend,
     const BnConfig *c,
     const BnWeights *w,
+    int token,
+    int pos,
+    const char **reject_reason);
+int bn_transformer_gpu_validate_model_forward(
+    BnTransformerGPUForwardPolicy *out,
+    const BnModel *model,
     int token,
     int pos,
     const char **reject_reason);
@@ -1256,6 +1282,17 @@ bn_transformer_gpu_decode_cacheability_policy(
     int need_logits,
     const BnTransformerGPUCPUFallbackPolicy *cpu_fallback,
     const BnTransformerGPUComparePolicy *compare);
+BnTransformerGPUDecodeCacheabilityPolicy
+bn_transformer_gpu_model_decode_cacheability_policy(
+    const BnModel *model,
+    int emit_logits,
+    int want_argmax,
+    int gpu_logits_need_cpu,
+    int has_moe,
+    const BnTransformerGPULogitsRefinePolicy *logits_refine,
+    int need_logits,
+    const BnTransformerGPUCPUFallbackPolicy *cpu_fallback,
+    const BnTransformerGPUComparePolicy *compare);
 int bn_transformer_gpu_all_active_two_kquant_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w);
@@ -1552,6 +1589,12 @@ BnTransformerGPUMoEPrefillFFNResources
 bn_transformer_gpu_resolve_moe_prefill_ffn_resources(
     const BnBackendModel *backend,
     int layer);
+int bn_transformer_gpu_resolve_model_layer_resources(
+    BnTransformerGPULayerResources *out,
+    const BnModel *model,
+    const BnLayerWeights *lw,
+    int layer,
+    void *output_norm);
 
 void bn_transformer_gpu_finalize_op_kinds(void *ops, int n);
 void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,

@@ -2128,6 +2128,26 @@ bn_transformer_gpu_decode_cacheability_policy(
     return policy;
 }
 
+BnTransformerGPUDecodeCacheabilityPolicy
+bn_transformer_gpu_model_decode_cacheability_policy(
+    const BnModel *model,
+    int emit_logits,
+    int want_argmax,
+    int gpu_logits_need_cpu,
+    int has_moe,
+    const BnTransformerGPULogitsRefinePolicy *logits_refine,
+    int need_logits,
+    const BnTransformerGPUCPUFallbackPolicy *cpu_fallback,
+    const BnTransformerGPUComparePolicy *compare) {
+    if (!model)
+        return (BnTransformerGPUDecodeCacheabilityPolicy){0};
+    return bn_transformer_gpu_decode_cacheability_policy(
+        bn_model_gpu(model), &model->config, &model->weights,
+        bn_model_backend(model), emit_logits, want_argmax,
+        gpu_logits_need_cpu, has_moe, logits_refine, need_logits,
+        cpu_fallback, compare);
+}
+
 int bn_transformer_gpu_all_active_two_kquant_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
@@ -2886,6 +2906,7 @@ int bn_transformer_gpu_validate_forward(
     if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)
         GPU_POLICY_REJECT("dim exceeds VLA limit");
 
+    out->initial_norm = bn_transformer_gpu_resolve_initial_norm(backend);
     out->output_norm = bn_transformer_gpu_resolve_output_norm(backend);
     if (!out->output_norm)
         GPU_POLICY_REJECT("output norm not uploaded");
@@ -2942,4 +2963,22 @@ int bn_transformer_gpu_validate_forward(
     cached_valid = 1;
     return 0;
 #undef GPU_POLICY_REJECT
+}
+
+int bn_transformer_gpu_validate_model_forward(
+    BnTransformerGPUForwardPolicy *out,
+    const BnModel *model,
+    int token,
+    int pos,
+    const char **reject_reason) {
+    if (!model) {
+        if (out)
+            *out = (BnTransformerGPUForwardPolicy){0};
+        if (reject_reason)
+            *reject_reason = "model missing";
+        return -1;
+    }
+    return bn_transformer_gpu_validate_forward(
+        out, bn_model_gpu(model), bn_model_backend(model),
+        &model->config, &model->weights, token, pos, reject_reason);
 }

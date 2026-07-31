@@ -5308,9 +5308,31 @@ static void test_block_planning(void) {
     BnTransformerGPUDenseFFNResources dense_ffn_res =
         bn_transformer_gpu_resolve_dense_ffn_resources(&gpu, backend, &lw, 0);
     assert(dense_ffn_res.gateup_stacked == (void *)5);
+    BnModelBackendState backend_state = {.backend = backend};
+    BnModel resource_model = {
+        .config = c,
+        .weights = {.layers = &lw},
+        .backend_state = &backend_state,
+    };
+    resource_model.config.n_layers = 1;
+    BnTransformerGPULayerResources layer_resources;
+    assert(bn_transformer_gpu_resolve_model_layer_resources(
+               &layer_resources, &resource_model, &lw, 0, (void *)9) == 0);
+    assert(layer_resources.qkv.qkv_stacked == (void *)1);
+    assert(layer_resources.qkv.q_bias == (void *)2);
+    assert(layer_resources.dense_ffn.gateup_stacked == (void *)5);
+    assert(layer_resources.ssm.ssm_qkvz_stacked == NULL);
+    assert(layer_resources.moe_decode.router == NULL);
+    assert(bn_transformer_gpu_resolve_model_layer_resources(
+               NULL, &resource_model, &lw, 0, (void *)9) == -1);
+    assert(bn_transformer_gpu_resolve_model_layer_resources(
+               &layer_resources, NULL, &lw, 0, (void *)9) == -1);
+    assert(bn_transformer_gpu_resolve_model_layer_resources(
+               &layer_resources, &resource_model, &lw, 1, (void *)9) == -1);
     lw.norm.ffn_sub_norm = (float *)1;
 
-    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
+    bn_transformer_plan_ffn_resources(
+        &ffn, &c, &lw, &gpu, &dense_ffn_res, 0, 1);
     assert(ffn.kind == BN_FFN_DENSE_GATE_UP);
     assert(bn_transformer_ffn_kind(&c, &lw) == BN_FFN_DENSE_GATE_UP);
     assert(bn_transformer_ffn_has_gate(&c));

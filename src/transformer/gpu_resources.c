@@ -2,6 +2,7 @@
 #include "../moe_internal.h"
 #include "backend_model.h"
 #include "backend_session.h"
+#include "model_internal.h"
 
 #include <string.h>
 
@@ -428,4 +429,39 @@ bn_transformer_gpu_resolve_moe_prefill_ffn_resources(
                                resources.up_all && resources.down_all &&
                                resources.ffn_norm;
     return resources;
+}
+
+int bn_transformer_gpu_resolve_model_layer_resources(
+    BnTransformerGPULayerResources *out,
+    const BnModel *model,
+    const BnLayerWeights *lw,
+    int layer,
+    void *output_norm) {
+    if (!out || !model || !lw || layer < 0 ||
+        layer >= model->config.n_layers)
+        return -1;
+    const BnBackendModel *backend = bn_model_backend(model);
+    const BnGPUBackend *gpu = bn_model_gpu(model);
+    *out = (BnTransformerGPULayerResources){0};
+    out->next_norm = bn_transformer_gpu_resolve_next_norm(
+        backend, layer, model->config.n_layers, output_norm);
+    if (bn_transformer_is_attn_layer(&model->config, layer)) {
+        out->qkv = bn_transformer_gpu_resolve_qkv_resources(
+            gpu, backend, lw, layer);
+        out->attention = bn_transformer_gpu_resolve_attention_resources(
+            gpu, backend, lw, layer);
+    } else {
+        out->ssm = bn_transformer_gpu_resolve_ssm_resources(
+            gpu, backend, lw, layer);
+    }
+    if (bn_transformer_gpu_layer_kind_policy(lw).uses_moe) {
+        out->moe_shared = bn_transformer_gpu_resolve_moe_shared_resources(
+            gpu, backend, lw, layer);
+        out->moe_decode = bn_transformer_gpu_resolve_moe_decode_resources(
+            backend, layer);
+    } else {
+        out->dense_ffn = bn_transformer_gpu_resolve_dense_ffn_resources(
+            gpu, backend, lw, layer);
+    }
+    return 0;
 }
