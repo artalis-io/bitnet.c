@@ -506,85 +506,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 if (!routed_types.valid)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed projection types failed");
-                if (moe_debug.compare_raw &&
-                    moe_decode_res.gate_all && moe_decode_res.up_all &&
-                    moe_route.all_active_two_kquant_moe) {
-                    int K = route_policy.active_experts;
-                    int n_experts = route_policy.total_experts;
-                    int moe_hidden = route_policy.expert_hidden_dim;
-                    size_t raw_bytes =
-                        (size_t)n_experts * (size_t)moe_hidden *
-                        sizeof(float);
-                    float *cpu_gate = (float *)malloc(raw_bytes);
-                    float *cpu_up = (float *)malloc(raw_bytes);
-                    float *gpu_gate = (float *)malloc(raw_bytes);
-                    float *gpu_up = (float *)malloc(raw_bytes);
-                    float route_save[BN_MAX_MOE_K * 2];
-                    uint32_t gate_raw_compare_flags =
-                        bn_transformer_gpu_moe_expert_projection_matvec_flags(
-                            &lw->moe.expert_map, 0, 1);
-                    uint32_t up_raw_compare_flags =
-                        bn_transformer_gpu_moe_expert_projection_matvec_flags(
-                            &lw->moe.expert_map, 1, 1);
-                    if (!cpu_gate || !cpu_up || !gpu_gate || !gpu_up ||
-                        K > BN_MAX_MOE_K ||
-                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_HB2, route_save,
-                            (size_t)(2 * K) * sizeof(float)) != 0 ||
-                        bn_transformer_gpu_fallback_moe_raw_gate_up(
-                            m, sess, lw, s->xb, cpu_gate, cpu_up) != 0 ||
-                        bn_transformer_gpu_emit_context_matvec_flags(
-                            &emit, routed_types.gate_type,
-                            moe_decode_res.gate_all, BN_GPU_VALUE_XB,
-                            BN_GPU_VALUE_MOE_HB,
-                            n_experts * moe_hidden, dim, 0,
-                            gate_raw_compare_flags) != 0 ||
-                        bn_transformer_gpu_emit_context_matvec_flags(
-                            &emit, routed_types.up_type,
-                            moe_decode_res.up_all, BN_GPU_VALUE_XB,
-                            BN_GPU_VALUE_MOE_HB2,
-                            n_experts * moe_hidden, dim, 0,
-                            up_raw_compare_flags) != 0 ||
-                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_HB, gpu_gate,
-                            raw_bytes) != 0 ||
-                        bn_transformer_gpu_read_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_HB2, gpu_up,
-                            raw_bytes) != 0 ||
-                        bn_transformer_gpu_write_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_HB2, route_save,
-                            (size_t)(2 * K) * sizeof(float)) != 0) {
-                        free(cpu_gate);
-                        free(cpu_up);
-                        free(gpu_gate);
-                        free(gpu_up);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe raw compare failed");
-                    }
-                    for (int eidx = 0; eidx < n_experts; eidx++) {
-                        char label[64];
-                        snprintf(label, sizeof(label),
-                                 "moe_raw_gate_compare[%d]", eidx);
-                        bn_transformer_gpu_debug_compare_vec(
-                            label, l, pos,
-                            cpu_gate + (size_t)eidx * (size_t)moe_hidden,
-                            gpu_gate + (size_t)eidx * (size_t)moe_hidden,
-                            moe_hidden);
-                        snprintf(label, sizeof(label),
-                                 "moe_raw_up_compare[%d]", eidx);
-                        bn_transformer_gpu_debug_compare_vec(
-                            label, l, pos,
-                            cpu_up + (size_t)eidx * (size_t)moe_hidden,
-                            gpu_up + (size_t)eidx * (size_t)moe_hidden,
-                            moe_hidden);
-                    }
-                    free(cpu_gate);
-                    free(cpu_up);
-                    free(gpu_gate);
-                    free(gpu_up);
-                }
+                if (bn_transformer_gpu_debug_compare_routed_moe_raw(
+                        &emit, gpu, m, sess, lw, &moe_decode_res,
+                        &route_policy, &moe_route, &routed_types,
+                        &moe_debug, l, pos, dim) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu routed moe raw compare failed");
                 if (bn_transformer_gpu_emit_context_moe_routed_ffn(
                         &emit, moe_decode_res.gate_all,
                         moe_decode_res.up_all, moe_decode_res.down_all,

@@ -503,6 +503,108 @@ int bn_transformer_gpu_prepare_routed_moe_route(
     return 0;
 }
 
+int bn_transformer_gpu_debug_compare_routed_moe_raw(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDecodeResources *resources,
+    const BnTransformerGPUMoEExecutionPolicy *route_policy,
+    const BnTransformerGPUMoEDecodeRoutePolicy *route,
+    const BnTransformerGPUMoEProjectionPolicy *projection,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim) {
+    if (!debug || !debug->compare_raw ||
+        !resources || !resources->gate_all || !resources->up_all ||
+        !route || !route->all_active_two_kquant_moe)
+        return 0;
+    if (!emit || !gpu || !model || !session || !layer || !route_policy ||
+        !projection || !projection->valid || dim <= 0)
+        return -1;
+    int active_experts = route_policy->active_experts;
+    int total_experts = route_policy->total_experts;
+    int hidden_dim = route_policy->expert_hidden_dim;
+    if (active_experts < 0 || active_experts > BN_MAX_MOE_K ||
+        total_experts <= 0 || hidden_dim <= 0)
+        return -1;
+    size_t raw_bytes =
+        (size_t)total_experts * (size_t)hidden_dim * sizeof(float);
+    float *cpu_gate = (float *)malloc(raw_bytes);
+    float *cpu_up = (float *)malloc(raw_bytes);
+    float *gpu_gate = (float *)malloc(raw_bytes);
+    float *gpu_up = (float *)malloc(raw_bytes);
+    float route_save[BN_MAX_MOE_K * 2];
+    int route_saved = 0;
+    int rc = -1;
+    uint32_t gate_flags =
+        bn_transformer_gpu_moe_expert_projection_matvec_flags(
+            &layer->moe.expert_map, 0, 1);
+    uint32_t up_flags =
+        bn_transformer_gpu_moe_expert_projection_matvec_flags(
+            &layer->moe.expert_map, 1, 1);
+    if (!cpu_gate || !cpu_up || !gpu_gate || !gpu_up ||
+        bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_HB2, route_save,
+            (size_t)(2 * active_experts) * sizeof(float)) != 0)
+        goto cleanup;
+    route_saved = 1;
+    if (bn_transformer_gpu_fallback_moe_raw_gate_up(
+            model, session, layer, session->state.xb,
+            cpu_gate, cpu_up) != 0 ||
+        bn_transformer_gpu_emit_context_matvec_flags(
+            emit, projection->gate_type, resources->gate_all,
+            BN_GPU_VALUE_XB, BN_GPU_VALUE_MOE_HB,
+            total_experts * hidden_dim, dim, 0, gate_flags) != 0 ||
+        bn_transformer_gpu_emit_context_matvec_flags(
+            emit, projection->up_type, resources->up_all,
+            BN_GPU_VALUE_XB, BN_GPU_VALUE_MOE_HB2,
+            total_experts * hidden_dim, dim, 0, up_flags) != 0 ||
+        bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_HB, gpu_gate, raw_bytes) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_HB2, gpu_up, raw_bytes) != 0 ||
+        bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_HB2, route_save,
+            (size_t)(2 * active_experts) * sizeof(float)) != 0)
+        goto cleanup;
+    route_saved = 0;
+    for (int expert = 0; expert < total_experts; expert++) {
+        char label[64];
+        snprintf(label, sizeof(label),
+                 "moe_raw_gate_compare[%d]", expert);
+        bn_transformer_gpu_debug_compare_vec(
+            label, layer_index, pos,
+            cpu_gate + (size_t)expert * (size_t)hidden_dim,
+            gpu_gate + (size_t)expert * (size_t)hidden_dim,
+            hidden_dim);
+        snprintf(label, sizeof(label),
+                 "moe_raw_up_compare[%d]", expert);
+        bn_transformer_gpu_debug_compare_vec(
+            label, layer_index, pos,
+            cpu_up + (size_t)expert * (size_t)hidden_dim,
+            gpu_up + (size_t)expert * (size_t)hidden_dim,
+            hidden_dim);
+    }
+    rc = 0;
+
+cleanup:
+    if (route_saved &&
+        bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_HB2, route_save,
+            (size_t)(2 * active_experts) * sizeof(float)) != 0)
+        rc = -1;
+    free(cpu_gate);
+    free(cpu_up);
+    free(gpu_gate);
+    free(gpu_up);
+    return rc;
+}
+
 void bn_transformer_gpu_discard_moe_layer_comparison(
     BnTransformerGPUMoELayerComparison *comparison) {
     if (!comparison)
