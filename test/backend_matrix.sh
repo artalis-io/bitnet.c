@@ -5228,6 +5228,12 @@ if grep -n 'bn_backend_model_prepared_qweight\|bn_backend_model_qweight_buf' \
     fail=1
 fi
 
+if grep -n 'bn_backend_model_prepared_qweight' \
+    src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer prefill orchestration must compose prepared quant resources through prefill policy"
+    fail=1
+fi
+
 if grep -n '__AVX\|__ARM_NEON\|__wasm_simd128__\|__wasm_relaxed_simd__\|arm_neon.h\|immintrin.h\|float32x\|__m[0-9]\|_mm[0-9]*_\|vld1q\|vst1q\|vdupq\|vcgtq\|vbslq' src/sampler.c >/dev/null 2>&1; then
     echo "src/sampler.c must use sampler backend helpers for ISA-specific argmax"
     fail=1

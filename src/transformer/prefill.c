@@ -945,18 +945,18 @@ static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,
                                                        const int16_t *block_sums,
                                                        const float *x_float) {
     const BnBackendModel *backend = bn_model_backend(m);
-    const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
     if (n > 4) {
         bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
             out, W, NULL, n, n_tokens, quantized, scales, block_sums, x_float,
             bn_model_pool(m));
         return;
     }
-    for (int i = 0; i < n; i++)
-        prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
+    BnTransformerPrefillQuantMatmulResourcePolicy resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            backend, W, n, 4);
     bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
-        out, W, prepared, n, n_tokens, quantized, scales, block_sums, x_float,
-        bn_model_pool(m));
+        out, W, resources.valid ? resources.prepared : NULL, n, n_tokens,
+        quantized, scales, block_sums, x_float, bn_model_pool(m));
 }
 
 typedef struct {
