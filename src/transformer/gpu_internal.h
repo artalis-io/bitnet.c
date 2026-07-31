@@ -412,6 +412,13 @@ typedef struct {
 } BnTransformerGPUMoELayerComparison;
 
 typedef struct {
+    float *cpu_routed;
+    float *cpu_shared;
+    float *gpu_routed;
+    int enabled;
+} BnTransformerGPUMoEPartsComparison;
+
+typedef struct {
     int valid;
     int gate_type;
     int up_type;
@@ -1933,6 +1940,26 @@ int bn_transformer_gpu_debug_compare_routed_moe_mid(
     const BnTransformerGPUMoEDebugPolicy *debug,
     int layer_index,
     int pos);
+int bn_transformer_gpu_prepare_routed_moe_parts_comparison(
+    BnTransformerGPUMoEPartsComparison *comparison,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim);
+void bn_transformer_gpu_compare_routed_moe_shared_part(
+    const BnTransformerGPUMoEPartsComparison *comparison,
+    const float *gpu_state,
+    const float *input_state,
+    int layer_index,
+    int pos,
+    int dim);
+void bn_transformer_gpu_discard_routed_moe_parts_comparison(
+    BnTransformerGPUMoEPartsComparison *comparison);
 int bn_transformer_gpu_prepare_moe_layer_comparison(
     BnTransformerGPUMoELayerComparison *comparison,
     const BnGPUBackend *gpu,

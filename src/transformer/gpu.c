@@ -414,9 +414,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         c, w, l, pos);
                 float *moe_cpu_x = NULL;
                 float *moe_gpu_x = NULL;
-                float *moe_cpu_routed_part = NULL;
-                float *moe_cpu_shared_part = NULL;
-                float *moe_gpu_routed_part = NULL;
                 float *moe_override_x = NULL;
                 if (moe_debug.override_cpu_actual) {
                     moe_override_x =
@@ -534,33 +531,15 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu routed moe mid compare failed");
                 }
-                if (moe_debug.compare_parts) {
-                    moe_cpu_routed_part =
-                        (float *)malloc((size_t)dim * sizeof(float));
-                    moe_cpu_shared_part =
-                        (float *)malloc((size_t)dim * sizeof(float));
-                    moe_gpu_routed_part =
-                        (float *)malloc((size_t)dim * sizeof(float));
-                    if (!moe_cpu_routed_part || !moe_cpu_shared_part ||
-                        !moe_gpu_routed_part ||
-                        bn_transformer_gpu_fallback_moe_parts(
-                            m, sess, lw, dim, s->xb, moe_cpu_routed_part,
-                            moe_cpu_shared_part) != 0 ||
-                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
-                        bn_transformer_gpu_read_activation_buf(
-                            gpu, BN_GPU_VALUE_MOE_OUT, moe_gpu_routed_part,
-                            (size_t)dim * sizeof(float)) != 0) {
-                        free(moe_cpu_routed_part);
-                        free(moe_cpu_shared_part);
-                        free(moe_gpu_routed_part);
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe parts compare failed");
-                    }
-                    bn_transformer_gpu_debug_compare_vec(
-                        "moe_routed_part_compare", l, pos,
-                        moe_cpu_routed_part, moe_gpu_routed_part, dim);
+                BnTransformerGPUMoEPartsComparison moe_parts_comparison;
+                if (bn_transformer_gpu_prepare_routed_moe_parts_comparison(
+                        &moe_parts_comparison, &emit, gpu, m, sess, lw,
+                        &moe_debug, l, pos, dim) != 0) {
+                    free(moe_cpu_x);
+                    free(moe_gpu_x);
+                    free(moe_override_x);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu routed moe parts compare failed");
                 }
                 BnTransformerGPUMoESharedCPUFallbackPolicy
                     shared_cpu_fallback =
@@ -585,6 +564,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         free(shared_cpu_xb);
                         free(shared_cpu_out);
                         free(shared_gpu_out);
+                        bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                            &moe_parts_comparison);
+                        free(moe_cpu_x);
+                        free(moe_gpu_x);
+                        free(moe_override_x);
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu shared moe cpu fallback failed");
                     }
@@ -596,6 +580,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         free(shared_cpu_xb);
                         free(shared_cpu_out);
                         free(shared_gpu_out);
+                        bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                            &moe_parts_comparison);
+                        free(moe_cpu_x);
+                        free(moe_gpu_x);
+                        free(moe_override_x);
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu shared moe cpu fallback upload failed");
                     }
@@ -626,27 +615,18 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                   (size_t)dim * sizeof(float)) != 0) {
                         free(moe_cpu_x);
                         free(moe_gpu_x);
+                        bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                            &moe_parts_comparison);
+                        free(moe_override_x);
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu routed moe compare readback failed");
                     }
                     bn_transformer_gpu_debug_compare_vec(
                         "moe_routed_state_compare", l, pos, moe_cpu_x,
                         moe_gpu_x, dim);
-                    if (moe_cpu_shared_part && moe_gpu_routed_part) {
-                        float *moe_gpu_shared_part =
-                            (float *)malloc((size_t)dim * sizeof(float));
-                        if (moe_gpu_shared_part) {
-                            for (int i = 0; i < dim; i++)
-                                moe_gpu_shared_part[i] =
-                                    moe_gpu_x[i] - s->x[i] -
-                                    moe_gpu_routed_part[i];
-                            bn_transformer_gpu_debug_compare_vec(
-                                "moe_shared_part_compare", l, pos,
-                                moe_cpu_shared_part, moe_gpu_shared_part,
-                                dim);
-                        }
-                        free(moe_gpu_shared_part);
-                    }
+                    bn_transformer_gpu_compare_routed_moe_shared_part(
+                        &moe_parts_comparison, moe_gpu_x, s->x,
+                        l, pos, dim);
                     if (moe_debug.compare_shared_mid &&
                         bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
                         BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
@@ -725,12 +705,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         free(moe_cpu_norm);
                         free(moe_gpu_norm);
                     }
-                    free(moe_cpu_routed_part);
-                    free(moe_cpu_shared_part);
-                    free(moe_gpu_routed_part);
+                    bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                        &moe_parts_comparison);
                     free(moe_cpu_x);
                     free(moe_gpu_x);
                 }
+                if (!moe_debug.compare_layer)
+                    bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                        &moe_parts_comparison);
                 if (moe_debug.override_cpu_actual) {
                     if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                         bn_transformer_gpu_write_x(

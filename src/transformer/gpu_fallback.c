@@ -653,6 +653,80 @@ cleanup:
     return rc;
 }
 
+void bn_transformer_gpu_discard_routed_moe_parts_comparison(
+    BnTransformerGPUMoEPartsComparison *comparison) {
+    if (!comparison)
+        return;
+    free(comparison->cpu_routed);
+    free(comparison->cpu_shared);
+    free(comparison->gpu_routed);
+    memset(comparison, 0, sizeof(*comparison));
+}
+
+int bn_transformer_gpu_prepare_routed_moe_parts_comparison(
+    BnTransformerGPUMoEPartsComparison *comparison,
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    int layer_index,
+    int pos,
+    int dim) {
+    if (!comparison)
+        return -1;
+    memset(comparison, 0, sizeof(*comparison));
+    if (!debug || !debug->compare_parts)
+        return 0;
+    if (!emit || !gpu || !model || !session || !layer || dim <= 0)
+        return -1;
+    size_t dim_bytes = (size_t)dim * sizeof(float);
+    comparison->cpu_routed = (float *)malloc(dim_bytes);
+    comparison->cpu_shared = (float *)malloc(dim_bytes);
+    comparison->gpu_routed = (float *)malloc(dim_bytes);
+    comparison->enabled = 1;
+    if (!comparison->cpu_routed || !comparison->cpu_shared ||
+        !comparison->gpu_routed ||
+        bn_transformer_gpu_fallback_moe_parts(
+            model, session, layer, dim, session->state.xb,
+            comparison->cpu_routed, comparison->cpu_shared) != 0 ||
+        bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_MOE_OUT,
+            comparison->gpu_routed, dim_bytes) != 0) {
+        bn_transformer_gpu_discard_routed_moe_parts_comparison(comparison);
+        return -1;
+    }
+    bn_transformer_gpu_debug_compare_vec(
+        "moe_routed_part_compare", layer_index, pos,
+        comparison->cpu_routed, comparison->gpu_routed, dim);
+    return 0;
+}
+
+void bn_transformer_gpu_compare_routed_moe_shared_part(
+    const BnTransformerGPUMoEPartsComparison *comparison,
+    const float *gpu_state,
+    const float *input_state,
+    int layer_index,
+    int pos,
+    int dim) {
+    if (!comparison || !comparison->enabled ||
+        !gpu_state || !input_state || dim <= 0)
+        return;
+    float *gpu_shared =
+        (float *)malloc((size_t)dim * sizeof(float));
+    if (!gpu_shared)
+        return;
+    for (int i = 0; i < dim; i++)
+        gpu_shared[i] =
+            gpu_state[i] - input_state[i] - comparison->gpu_routed[i];
+    bn_transformer_gpu_debug_compare_vec(
+        "moe_shared_part_compare", layer_index, pos,
+        comparison->cpu_shared, gpu_shared, dim);
+    free(gpu_shared);
+}
+
 void bn_transformer_gpu_discard_moe_layer_comparison(
     BnTransformerGPUMoELayerComparison *comparison) {
     if (!comparison)
