@@ -23,11 +23,16 @@ static void kv_write_fp16_neon(uint16_t *kc,
                                const float *k_tmp,
                                const float *v_tmp,
                                int kv_dim) {
-    for (int i = 0; i < kv_dim; i += 4) {
+    int i = 0;
+    for (; i + 3 < kv_dim; i += 4) {
         vst1_u16(kc + i,
                  vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(k_tmp + i))));
         vst1_u16(vc + i,
                  vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(v_tmp + i))));
+    }
+    for (; i < kv_dim; i++) {
+        kc[i] = bn_fp32_to_fp16(k_tmp[i]);
+        vc[i] = bn_fp32_to_fp16(v_tmp[i]);
     }
 }
 #endif
@@ -38,13 +43,18 @@ static void kv_write_fp16_avx2(uint16_t *kc,
                                const float *k_tmp,
                                const float *v_tmp,
                                int kv_dim) {
-    for (int i = 0; i < kv_dim; i += 8) {
+    int i = 0;
+    for (; i + 7 < kv_dim; i += 8) {
         _mm_storeu_si128((__m128i *)(kc + i),
                          _mm256_cvtps_ph(_mm256_loadu_ps(k_tmp + i),
                                          _MM_FROUND_TO_NEAREST_INT));
         _mm_storeu_si128((__m128i *)(vc + i),
                          _mm256_cvtps_ph(_mm256_loadu_ps(v_tmp + i),
                                          _MM_FROUND_TO_NEAREST_INT));
+    }
+    for (; i < kv_dim; i++) {
+        kc[i] = bn_fp32_to_fp16(k_tmp[i]);
+        vc[i] = bn_fp32_to_fp16(v_tmp[i]);
     }
 }
 #endif

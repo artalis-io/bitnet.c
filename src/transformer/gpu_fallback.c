@@ -3595,6 +3595,8 @@ int bn_transformer_gpu_debug_compare_attention(
         fprintf(stderr, "[bn:gpu:debug] attention_compare_flush_failed\n");
         free(cpu_in);
         free(gpu_x);
+        free(gpu_q);
+        free(gpu_k);
         return -1;
     }
     if (bn_transformer_gpu_read_x(gpu, gpu_x,

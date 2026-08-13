@@ -1,8 +1,5 @@
 #include "model_internal.h"
-#include "backend_layout.h"
-#include "backend_model.h"
 #include "model_arch.h"
-#include "moe.h"
 #include "sh_arena.h"
 #include "sh_log.h"
 #include "turboquant.h"
@@ -31,15 +28,6 @@ static int model_ensure_io(BnModel *m) {
     return 0;
 }
 
-static int model_ensure_backend_state(BnModel *m) {
-    if (!m) return -1;
-    if (!m->backend_state) {
-        m->backend_state = (BnModelBackendState *)calloc(1, sizeof(BnModelBackendState));
-        if (!m->backend_state) return -1;
-    }
-    return 0;
-}
-
 void bn_model_set_file(BnModel *model, BnMappedFile file) {
     if (model_ensure_io(model) != 0) return;
     model->io->file = file;
@@ -61,19 +49,6 @@ void bn_model_set_thread_pool(BnModel *model, BnThreadPool *pool, int owned) {
 
 SHArena *bn_model_weight_arena(const BnModel *model) {
     return (model && model->runtime) ? model->runtime->weight_arena : NULL;
-}
-
-BnBackendModel *bn_model_backend(const BnModel *model) {
-    return (model && model->backend_state) ? model->backend_state->backend : NULL;
-}
-
-int bn_model_ensure_backend(BnModel *model) {
-    if (model_ensure_backend_state(model) != 0) return -1;
-    if (!model->backend_state->backend) {
-        model->backend_state->backend = bn_backend_model_create();
-        if (!model->backend_state->backend) return -1;
-    }
-    return 0;
 }
 
 BnTQState *bn_model_tq_state(const BnModel *model) {
@@ -869,7 +844,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 goto fail_layers;
             expert_names.down = down_name;
 
-            if (bn_moe_load_expert_map(
+            if (bn_model_load_moe_expert_map(
                     f, &expert_names,
                     bn_model_load_policy_moe_total_experts(c),
                     bn_model_load_policy_moe_expert_hidden_dim(c),
@@ -956,9 +931,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         emb_i8_scales_bytes = (size_t)i8_emb_rows * sizeof(float);
     }
 
-    BnBackendLayoutPreparedStats prepared_stats = { 0 };
-    size_t prepared_weight_bytes =
-        bn_backend_layout_prepared_qweights_size(c, w, &prepared_stats);
+    size_t prepared_weight_bytes = bn_model_backend_prepared_size(c, w);
     size_t shared_gate_float_bytes = 0;
     if (bn_model_load_policy_has_shared_expert(c)) {
         for (int i = 0; i < c->n_layers; i++) {
@@ -1035,36 +1008,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
 
         if (prepared_weight_bytes > 0) {
-            BnBackendLayoutPreparedStats built_stats = { 0 };
-            bn_backend_layout_prepare_qweights(m->backend_state->backend, c, w,
-                                               m->runtime->weight_arena,
-                                               &built_stats);
-            if (built_stats.lowbit_repack_bytes > 0) {
-                char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f",
-                                          (double)built_stats.lowbit_repack_bytes / (1024*1024));
-                SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
-            }
-            if (built_stats.q8_repack_bytes > 0) {
-                char q8_rp_mb[16];
-                snprintf(q8_rp_mb, sizeof(q8_rp_mb), "%.0f",
-                         (double)built_stats.q8_repack_bytes / (1024*1024));
-                SH_LOG_INFO("Q8_0 weights repacked", "MB", q8_rp_mb);
-            }
-            if (built_stats.kquant_scale_table_bytes > 0) {
-                char q4k_mb[16]; snprintf(q4k_mb, sizeof(q4k_mb), "%.0f",
-                                           (double)built_stats.kquant_scale_table_bytes / (1024*1024));
-                SH_LOG_INFO("Q4_K scales prepared", "MB", q4k_mb);
-            }
-            if (built_stats.expanded_kquant_weight_bytes > 0) {
-                char q6k_mb[16]; snprintf(q6k_mb, sizeof(q6k_mb), "%.0f",
-                                           (double)built_stats.expanded_kquant_weight_bytes / (1024*1024));
-                SH_LOG_INFO("Q6_K weights expanded", "MB", q6k_mb);
-            }
-            if (built_stats.f32_scale_table_bytes > 0) {
-                char q8_mb[16]; snprintf(q8_mb, sizeof(q8_mb), "%.0f",
-                                          (double)built_stats.f32_scale_table_bytes / (1024*1024));
-                SH_LOG_INFO("Q8_0 FP32 scales ready", "MB", q8_mb);
-            }
+            bn_model_backend_prepare(m, m->runtime->weight_arena);
         }
     }
 
@@ -1099,8 +1043,7 @@ fail_layers:
 void bn_model_free(BnModel *m) {
     if (!m) return;
     bn_model_release_gpu(m);
-    if (m->io)
-        bn_moe_prefetch_destroy(&m->io->moe_io);
+    bn_model_moe_io_shutdown(m);
     if (m->runtime && m->runtime->owns_pool)
         bn_tp_free(m->runtime->pool);
     if (m->runtime && m->runtime->tq_state && m->runtime->owns_tq_state) {
@@ -1110,8 +1053,7 @@ void bn_model_free(BnModel *m) {
     free(m->weights.layers);
     if (m->runtime)
         sh_arena_free(m->runtime->weight_arena);
-    if (m->backend_state)
-        bn_backend_model_free(m->backend_state->backend);
+    bn_model_backend_free(m);
     if (m->io)
         bn_platform_unload_file(&m->io->file);
     free(m->runtime);

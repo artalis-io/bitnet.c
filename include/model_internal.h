@@ -11,6 +11,7 @@
 typedef struct BnBackendModel BnBackendModel;
 typedef struct BnThreadPool BnThreadPool;
 typedef struct BnTQState BnTQState;
+typedef struct BnMoEExpertTensorNames BnMoEExpertTensorNames;
 
 struct BnModelRuntime {
     BnThreadPool *pool;
@@ -31,6 +32,10 @@ struct BnModelBackendState {
 
 BnBackendModel *bn_model_backend(const BnModel *model);
 int bn_model_ensure_backend(BnModel *model);
+size_t bn_model_backend_prepared_size(const BnConfig *config,
+                                      const BnWeights *weights);
+void bn_model_backend_prepare(BnModel *model, SHArena *arena);
+void bn_model_backend_free(BnModel *model);
 BnGPUBackend *bn_model_gpu(const BnModel *model);
 void bn_model_set_gpu_disabled(BnModel *model, int disabled);
 int bn_model_gpu_moe_prefill_resident(const BnModel *model, int layer);
@@ -56,6 +61,12 @@ void bn_model_set_moe_cache(BnModel *model, void *cache);
 void *bn_model_moe_cache(const BnModel *model);
 void bn_model_set_gpu_moe_cache(BnModel *model, void *cache);
 void *bn_model_gpu_moe_cache(const BnModel *model);
+int bn_model_load_moe_expert_map(BnGGUFFile *file,
+                                 const BnMoEExpertTensorNames *names,
+                                 int n_experts,
+                                 int expert_hidden,
+                                 BnMoEExpertMap *map);
+void bn_model_moe_io_shutdown(BnModel *model);
 size_t bn_model_session_arena_size(const BnConfig *config,
                                    const BnWeights *weights);
 int bn_model_alloc_session_buffers(const BnConfig *config,

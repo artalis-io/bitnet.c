@@ -4,6 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct BnMoEExpertTensorNames {
+    const char *gate;
+    const char *up;
+    const char *gate_up;
+    const char *down;
+} BnMoEExpertTensorNames;
+
 typedef struct {
     size_t gate_offset, up_offset, down_offset;
     size_t expert_gate_bytes, expert_up_bytes, expert_down_bytes;

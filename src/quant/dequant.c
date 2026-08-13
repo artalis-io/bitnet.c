@@ -669,7 +669,8 @@ void bn_quant_dequant_iq2xxs(const BnBlockIQ2XXS *block, float *out) {
     const uint16_t *q = block->qs;
 
     for (int ib32 = 0; ib32 < BN_QK_K / 32; ib32 += 2) {
-        const uint32_t *q32 = (const uint32_t *)q;
+        uint32_t q32[4];
+        memcpy(q32, q, sizeof(q32));
         float db1 = d * (0.5f + (q32[1] >> 28));
         float db2 = d * (0.5f + (q32[3] >> 28));
 

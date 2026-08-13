@@ -500,6 +500,19 @@ static void test_fp16_conversion(void) {
     printf("PASSED\n");
 }
 
+static void test_iq2xxs_dequant_payload(void) {
+    BnBlockIQ2XXS block = {0};
+    block.d = bn_fp32_to_fp16(1.0f);
+    for (size_t i = 0; i < sizeof(block.qs) / sizeof(block.qs[0]); i++)
+        block.qs[i] = (uint16_t)(i * 997u);
+    float actual[BN_QK_K];
+    float again[BN_QK_K];
+    bn_quant_dequant_iq2xxs(&block, actual);
+    bn_quant_dequant_iq2xxs(&block, again);
+    for (int i = 0; i < BN_QK_K; i++)
+        assert(actual[i] == again[i]);
+}
+
 // --- Integration test: dispatch routing ---
 // Verifies that bn_quant_matvec dispatches correctly for each format.
 
@@ -2368,6 +2381,7 @@ int main(void) {
     printf("=== Quant Integration Tests ===\n");
     test_quant_policy_helpers();
     test_fp16_conversion();
+    test_iq2xxs_dequant_payload();
     test_dispatch_routing();
     test_logits_refine_rows();
     test_matvec_batch();

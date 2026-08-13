@@ -11,13 +11,6 @@ struct BnThreadPool;
 // Forward declaration — full definition in session.h
 typedef struct BnSession BnSession;
 
-typedef struct {
-    const char *gate;
-    const char *up;
-    const char *gate_up;
-    const char *down;
-} BnMoEExpertTensorNames;
-
 int bn_moe_load_expert_map(BnGGUFFile *f,
                            const BnMoEExpertTensorNames *names,
                            int n_experts,

@@ -89,6 +89,13 @@ if grep -Ein '#[[:space:]]*include[[:space:]]+"(model|model_arch|gpu_policy)\.h"
     fail=1
 fi
 
+if grep -Ein '#[[:space:]]*include[[:space:]]+"(backend_layout|backend_model|gpu_backend|gpu_policy)\.h"' \
+        src/model.c src/model_arch.c src/model_policy.c src/model_session.c \
+        src/model_embed.c >/dev/null 2>&1; then
+    echo "Core model ownership must not depend on backend/runtime implementation APIs"
+    fail=1
+fi
+
 if ! grep -q 'bn_quant_format_supports_native_quant_split(op->type)' \
         src/gpu_metal.m ||
    grep -n 'op->type == BN_GGUF_TENSOR_Q4_K' src/gpu_metal.m |
