@@ -36,6 +36,10 @@ typedef struct {
     double logits_ms;
 } BnPrefillProfile;
 
+static const BnCPURuntimePolicy *prefill_cpu_runtime(const BnModel *m) {
+    return bn_tp_cpu_policy(bn_model_pool(m));
+}
+
 static inline double prefill_profile_now(const BnPrefillProfile *p) {
     return p && p->enabled ? bn_platform_time_ms() : 0.0;
 }
@@ -129,7 +133,7 @@ static void prefill_quant_matmul_float_kquant_fallback(
         const float *X, int n_tokens, int8_t *quantized_buf) {
     BnTransformerPrefillQuantMatmulResourcePolicy resources =
         bn_transformer_prefill_quant_matmul_resource_policy(
-            bn_model_backend(m), W, n, 4);
+            prefill_cpu_runtime(m), bn_model_backend(m), W, n, 4);
     if (!resources.valid)
         return;
     BnMatvecTask tasks[4];
@@ -172,7 +176,7 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
     case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI: {
         BnTransformerPrefillQuantMatmulResourcePolicy resources =
             bn_transformer_prefill_quant_matmul_resource_policy(
-                bn_model_backend(m), weights, 1, 1);
+                prefill_cpu_runtime(m), bn_model_backend(m), weights, 1, 1);
         if (!resources.valid)
             return;
         bn_transformer_prefill_quant_matmul_prepared(
@@ -231,7 +235,7 @@ static void prefill_quant_matmul_multi(const BnModel *m,
         }
         BnTransformerPrefillQuantMatmulResourcePolicy resources =
             bn_transformer_prefill_quant_matmul_resource_policy(
-                bn_model_backend(m), W, n, 4);
+                prefill_cpu_runtime(m), bn_model_backend(m), W, n, 4);
         if (!resources.valid)
             return;
         bn_transformer_prefill_quant_matmul_prepared_multi(
@@ -242,7 +246,7 @@ static void prefill_quant_matmul_multi(const BnModel *m,
     const BnBackendModel *backend = bn_model_backend(m);
     BnTransformerPrefillQuantMatmulResourcePolicy resources =
         bn_transformer_prefill_quant_matmul_resource_policy(
-            backend, W, n, 16);
+            prefill_cpu_runtime(m), backend, W, n, 16);
     BnMatvecTask tasks[16];
     const void *bufs[16];
     int gpu_batch_available =
@@ -769,7 +773,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
         !plan->is_attn || !layer_kind.uses_moe ||
         lw->norm.attn_sub_norm ||
         lw->norm.layer_output_scale) {
-        if (bn_transformer_prefill_moe_chain_debug_enabled())
+        if (bn_transformer_prefill_moe_chain_debug_enabled(gpu))
             fprintf(stderr,
                     "[bn:prefill:moe-chain] reject layer=%d basic gpu=%d hook=%d backend=%d tq=%d toks=%d min=%d theta=%d attn=%d moe=%d shared=%d bias=%d subnorm=%d scale=%d\n",
                     layer, gpu != NULL,
@@ -797,7 +801,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
         bn_transformer_prefill_moe_layer_gpu_resource_policy(
             backend, c, layer, lw, attn_types);
     int ready = resources.valid;
-    if (!ready && bn_transformer_prefill_moe_chain_debug_enabled())
+    if (!ready && bn_transformer_prefill_moe_chain_debug_enabled(gpu))
         fprintf(stderr,
                 "[bn:prefill:moe-chain] reject layer=%d handles qk=%d wv=%d wo=%d router=%d gate=%d up=%d down=%d anorm=%d fnorm=%d\n",
                 layer,
@@ -850,7 +854,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
     BnTransformerPrefillSSMFFNFusePolicy ffn_fuse =
         bn_transformer_prefill_ssm_ffn_fuse_policy(
             fuse_ffn,
-            bn_transformer_prefill_ssm_ffn_fuse_allowed(),
+            bn_transformer_prefill_ssm_ffn_fuse_allowed(gpu),
             lw->ffn.ffn_gate.data != NULL,
             lw->ffn.ffn_up.data != NULL,
             lw->ffn.ffn_down.data != NULL,
@@ -952,7 +956,7 @@ static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,
     }
     BnTransformerPrefillQuantMatmulResourcePolicy resources =
         bn_transformer_prefill_quant_matmul_resource_policy(
-            backend, W, n, 4);
+            prefill_cpu_runtime(m), backend, W, n, 4);
     bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
         out, W, resources.valid ? resources.prepared : NULL, n, n_tokens,
         quantized, scales, block_sums, x_float, bn_model_pool(m));
@@ -1125,11 +1129,13 @@ static void prefill_fill_rope(float *rope_cos_buf, float *rope_sin_buf,
                               int rope_stride, int n_tokens, int pos0,
                               int rope_dims, float theta) {
     int half_rope = rope_dims / 2;
+    float angles[half_rope];
     for (int t = 0; t < n_tokens; t++) {
         int pos = pos0 + t;
+        bn_model_transformer_policy_init_rope_angles_for_theta(
+            theta, rope_dims, pos, angles, half_rope);
         for (int i = 0; i < half_rope; i++) {
-            float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
-            float angle = pos * freq;
+            float angle = angles[i];
             rope_cos_buf[(size_t)t * rope_stride + i] = cosf(angle);
             rope_sin_buf[(size_t)t * rope_stride + i] = sinf(angle);
         }
@@ -1165,7 +1171,7 @@ static int prefill_prepare_q_for_gpu_attention(BnBatchedAttnCtx *b) {
                                            b->norm_eps);
         }
         bn_transformer_cpu_apply_rope_heads(
-            row, n_heads, head_size, b->rope_dims,
+            b->runtime, row, n_heads, head_size, b->rope_dims,
             b->rope_cos + (size_t)t * rope_stride,
             b->rope_sin + (size_t)t * rope_stride);
         if (q_row_stride != n_heads * head_size)
@@ -1191,7 +1197,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int dim = c->dim;
     float norm_eps = bn_transformer_prefill_norm_epsilon(c);
     BnPrefillProfile prof = {0};
-    prof.enabled = bn_transformer_prefill_profile_enabled();
+    prof.enabled = bn_transformer_prefill_profile_enabled(
+        prefill_cpu_runtime(m));
     double t_prof = prefill_profile_now(&prof);
 
     int max_head_size = bn_transformer_attention_head_size(c, NULL);
@@ -1241,13 +1248,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     BnTransformerPrefillDecodeFallbackPolicy decode_fallback =
         bn_transformer_prefill_decode_fallback_policy(
             sequence_policy, gpu_moe_prefill,
-            bn_transformer_prefill_moe_enabled(), n_tokens,
+            bn_transformer_prefill_moe_enabled(prefill_gpu), n_tokens,
             bn_transformer_prefill_moe_chain_min_tokens(c, prefill_gpu),
             small_dense_prefill_chain,
             bn_transformer_prefill_dense_chain_min_tokens(c, prefill_gpu),
             gpu_hybrid_prefill,
-            bn_transformer_prefill_large_hybrid_disabled(),
-            bn_transformer_prefill_hybrid_batch_allowed());
+            bn_transformer_prefill_large_hybrid_disabled(prefill_gpu),
+            bn_transformer_prefill_hybrid_batch_allowed(
+                prefill_cpu_runtime(m)));
     if (decode_fallback.require_logits_decode)
         return prefill_decode_tokens_with_logits(
             m, sess, tokens, n_tokens, pos0, all_logits, need_last_logits);
@@ -1322,7 +1330,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     BnTransformerPrefillDenseModelChainPolicy dense_model_chain =
         bn_transformer_prefill_dense_model_chain_policy(
-            bn_transformer_prefill_dense_chain_enabled(),
+            bn_transformer_prefill_dense_chain_enabled(prefill_gpu),
             bn_model_gpu(m) != NULL, pos0, c->n_layers);
     if (dense_model_chain.enabled) {
         int chain_ready = 1;
@@ -1444,7 +1452,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         m, lw, &plan, l, n_tokens, layer_rope_theta) &&
                     !prefill_dense_layer_chain_ready(
                         m, lw, &plan, l, n_tokens, layer_rope_theta)) {
-                    if (bn_transformer_prefill_hybrid_chain_debug_enabled())
+                    if (bn_transformer_prefill_hybrid_chain_debug_enabled(
+                            prefill_gpu))
                         fprintf(stderr,
                                 "[bn:prefill:hybrid-chain] reject attn layer=%d\n",
                                 l);
@@ -1453,7 +1462,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
             } else if (!prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens) &&
                        !prefill_ssm_layer_chain_ready(m, lw, l, n_tokens)) {
-                if (bn_transformer_prefill_hybrid_chain_debug_enabled())
+                if (bn_transformer_prefill_hybrid_chain_debug_enabled(
+                        prefill_gpu))
                     fprintf(stderr,
                             "[bn:prefill:hybrid-chain] reject ssm layer=%d\n",
                             l);
@@ -1603,7 +1613,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 bn_transformer_prefill_dense_layer_batch_policy(
                     bn_model_gpu(m) != NULL,
                     bn_model_tq_state(m) != NULL,
-                    bn_transformer_prefill_dense_chain_enabled(),
+                    bn_transformer_prefill_dense_chain_enabled(prefill_gpu),
                     n_tokens,
                     bn_transformer_prefill_dense_chain_min_tokens(
                         c, bn_model_gpu(m)),
@@ -1680,7 +1690,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     q_gated,
                     pos0,
                     n_tokens,
-                    bn_transformer_prefill_attention_min_tokens(),
+                    bn_transformer_prefill_attention_min_tokens(gpu),
                     layer_rope_theta,
                     bn_transformer_rope_base_theta(c),
                     lw->attn.q_bias != NULL,
@@ -1819,7 +1829,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             BnTransformerPrefillAttentionModePolicy attention_mode =
                 bn_transformer_prefill_attention_mode_policy(
                     bn_model_tq_state(m) != NULL,
-                    bn_transformer_prefill_requires_token_attention(),
+                    bn_transformer_prefill_requires_token_attention(
+                        prefill_cpu_runtime(m)),
                     gpu_hybrid_prefill);
             if (attention_mode.use_batched_attention) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
@@ -1849,7 +1860,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         if (plan.value_shares_key)
                             prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
                                                        layer_head_size, norm_eps);
-                        bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
+                        bn_transformer_cpu_apply_rope_heads(
+                                                            prefill_cpu_runtime(m),
+                                                            k_t, layer_n_kv_heads,
                                                             layer_head_size,
                                                             layer_rope_dims, rc, rs);
 
@@ -1877,7 +1890,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                 // Phase 2: batched attention (Q processing + attention, parallel over heads)
                 BnBatchedAttnCtx bctx = {
-                    .c = c, .s = s,
+                    .c = c, .runtime = prefill_cpu_runtime(m), .s = s,
                     .Q_buf = Q_buf, .K_new = K_new, .V_new = V_new,
                     .out = q_gated ? Xb2 : Q_buf,
                     .loff = loff, .pos0 = pos0, .n_tokens = n_tokens,
@@ -1909,10 +1922,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         gpu != NULL,
                         bn_transformer_prefill_attention_gpu_available(gpu),
                         bn_transformer_prefill_attention_wo_gpu_available(gpu),
-                        bn_transformer_prefill_attention_enabled(),
+                        bn_transformer_prefill_attention_enabled(prefill_gpu),
                         attn_wo_buf != NULL,
                         n_tokens,
-                        bn_transformer_prefill_attention_min_tokens(),
+                        bn_transformer_prefill_attention_min_tokens(
+                            prefill_gpu),
                         lw->norm.attn_sub_norm != NULL,
                         attn_plan.use_post_norm,
                         lw->norm.attn_post_norm != NULL);
@@ -1999,10 +2013,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                     float *rc = rope_cos_buf + t * half_rope;
                     float *rs = rope_sin_buf + t * half_rope;
-                    bn_transformer_cpu_apply_rope_heads(s->q, layer_n_heads,
+                    bn_transformer_cpu_apply_rope_heads(
+                                                        prefill_cpu_runtime(m),
+                                                        s->q, layer_n_heads,
                                                         layer_head_size,
                                                         layer_rope_dims, rc, rs);
-                    bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
+                    bn_transformer_cpu_apply_rope_heads(
+                                                        prefill_cpu_runtime(m),
+                                                        k_t, layer_n_kv_heads,
                                                         layer_head_size,
                                                         layer_rope_dims, rc, rs);
 
@@ -2077,7 +2095,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
             int ssm_idx = plan.ssm_idx;
 
-            if (bn_transformer_prefill_ssm_run_chain_enabled() &&
+            if (bn_transformer_prefill_ssm_run_chain_enabled(prefill_gpu) &&
                 gpu_hybrid_prefill &&
                 (prefill_ssm_layer_chain_ready(m, lw, l, n_tokens) ||
                  prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens))) {
@@ -2206,7 +2224,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                           ssm_shape.qkv_dim,
                                           ssm_shape.conv_kernel };
                 BnTPTask conv_task = {
-                    bn_transformer_prefill_ssm_conv_silu_op(c, ssm_cpu_ops),
+                    bn_transformer_prefill_ssm_conv_silu_op(ssm_cpu_ops),
                     &conv_ctx, ssm_shape.qkv_dim
                 };
                 bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
@@ -2219,7 +2237,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     q_raw, k_raw, norm_eps, ssm_shape.head_k_dim
                 };
                 BnTPTask norm_task = {
-                    bn_transformer_prefill_ssm_l2norm_op(c, ssm_cpu_ops),
+                    bn_transformer_prefill_ssm_l2norm_op(ssm_cpu_ops),
                     &norm_ctx, ssm_shape.num_k_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
@@ -2252,7 +2270,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     ssm_shape.head_v_dim, q_scale
                 };
                 BnTPTask delta_task = {
-                    bn_transformer_prefill_ssm_delta_op(c, ssm_cpu_ops),
+                    bn_transformer_prefill_ssm_delta_op(ssm_cpu_ops),
                     &delta_ctx, ssm_shape.num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
@@ -2260,7 +2278,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm.ssm_norm,
                                           norm_eps, ssm_shape.head_v_dim };
                 BnTPTask gate_task = {
-                    bn_transformer_prefill_ssm_gate_op(c, ssm_cpu_ops),
+                    bn_transformer_prefill_ssm_gate_op(ssm_cpu_ops),
                     &gate_ctx, ssm_shape.num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);

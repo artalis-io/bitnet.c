@@ -7,30 +7,41 @@
 #ifdef __ARM_NEON
 #include <arm_neon.h>
 
-// Fast vectorized exp approximation using range reduction + polynomial.
-// Accurate enough for activation functions; not used for probability math.
+// Vectorized exp matching the AArch64 reduction and polynomial used by ggml.
 static inline float32x4_t bn_neon_fast_exp_f32(float32x4_t x) {
-    const float32x4_t log2e = vdupq_n_f32(1.4426950409f);
-    const float32x4_t ln2   = vdupq_n_f32(0.6931471806f);
-    const float32x4_t half  = vdupq_n_f32(0.5f);
-    const float32x4_t one   = vdupq_n_f32(1.0f);
-    const float32x4_t p2    = vdupq_n_f32(0.49999994f);
-    const float32x4_t p3    = vdupq_n_f32(0.16666667f);
-    const float32x4_t p4    = vdupq_n_f32(0.04166664f);
+    const float32x4_t r = vdupq_n_f32(0x1.8p23f);
+    const float32x4_t z = vfmaq_f32(r, x, vdupq_n_f32(0x1.715476p+0f));
+    const float32x4_t n = vsubq_f32(z, r);
+    const float32x4_t b = vfmsq_f32(
+        vfmsq_f32(x, n, vdupq_n_f32(0x1.62e4p-1f)), n,
+        vdupq_n_f32(0x1.7f7d1cp-20f));
+    const uint32x4_t e = vshlq_n_u32(vreinterpretq_u32_f32(z), 23);
+    const float32x4_t one = vdupq_n_f32(1.0f);
+    const float32x4_t k = vreinterpretq_f32_u32(
+        vaddq_u32(e, vreinterpretq_u32_f32(one)));
+    const uint32x4_t c = vcagtq_f32(n, vdupq_n_f32(126.0f));
+    const float32x4_t u = vmulq_f32(b, b);
+    const float32x4_t j = vfmaq_f32(
+        vmulq_f32(vdupq_n_f32(0x1.ffffecp-1f), b),
+        vfmaq_f32(
+            vfmaq_f32(vdupq_n_f32(0x1.fffdb6p-2f),
+                      vdupq_n_f32(0x1.555e66p-3f), b),
+            vfmaq_f32(vdupq_n_f32(0x1.573e2ep-5f),
+                      vdupq_n_f32(0x1.0e4020p-7f), b),
+            u),
+        u);
+    if (!vpaddd_u64(vreinterpretq_u64_u32(c)))
+        return vfmaq_f32(k, j, k);
 
-    x = vmaxq_f32(vdupq_n_f32(-87.3f), vminq_f32(vdupq_n_f32(88.7f), x));
-
-    float32x4_t n = vrndmq_f32(vmlaq_f32(half, x, log2e));
-    int32x4_t ni = vcvtq_s32_f32(n);
-    float32x4_t r = vmlsq_f32(x, n, ln2);
-
-    float32x4_t poly = vmlaq_f32(p3, p4, r);
-    poly = vmlaq_f32(p2, poly, r);
-    poly = vmlaq_f32(one, poly, r);
-    poly = vmlaq_f32(one, poly, r);
-
-    int32x4_t e2n = vshlq_n_s32(vaddq_s32(ni, vdupq_n_s32(127)), 23);
-    return vmulq_f32(poly, vreinterpretq_f32_s32(e2n));
+    const uint32x4_t d = vandq_u32(vclezq_f32(n),
+                                    vdupq_n_u32(0x82000000));
+    const float32x4_t s1 = vreinterpretq_f32_u32(
+        vaddq_u32(d, vdupq_n_u32(0x7f000000)));
+    const float32x4_t s2 = vreinterpretq_f32_u32(vsubq_u32(e, d));
+    return vbslq_f32(
+        vcagtq_f32(n, vdupq_n_f32(192.0f)), vmulq_f32(s1, s1),
+        vbslq_f32(c, vmulq_f32(vfmaq_f32(s2, s2, j), s1),
+                  vfmaq_f32(k, k, j)));
 }
 
 static inline float32x4_t bn_neon_fast_sigmoid_f32(float32x4_t x) {
@@ -40,7 +51,9 @@ static inline float32x4_t bn_neon_fast_sigmoid_f32(float32x4_t x) {
 }
 
 static inline float32x4_t bn_neon_fast_silu_f32(float32x4_t x) {
-    return vmulq_f32(x, bn_neon_fast_sigmoid_f32(x));
+    const float32x4_t one = vdupq_n_f32(1.0f);
+    const float32x4_t neg_x = vsubq_f32(vdupq_n_f32(0.0f), x);
+    return vdivq_f32(x, vaddq_f32(one, bn_neon_fast_exp_f32(neg_x)));
 }
 
 static inline float32x4_t bn_neon_fast_tanh_f32(float32x4_t x) {

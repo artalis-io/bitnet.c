@@ -53,7 +53,10 @@ void bn_quant_q4k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
                 sumi += slo * (int32_t)sc[2 * p] + shi * (int32_t)sc[2 * p + 1];
             }
 
-            row_sum += dx * (d * (float)sumi - dmin * (float)bsum_corr);
+            float dd = dx * d;
+            float ddmin = dx * dmin;
+            row_sum -= ddmin * (float)bsum_corr;
+            row_sum += dd * (float)sumi;
         }
         c->out[row] = row_sum;
     }
@@ -230,8 +233,10 @@ void bn_quant_q4k_scalar_sdot_matmul_range(void *ctx,
                                 shi * (int32_t)sc[2 * p + 1];
                     }
 
-                    sums[ti] += dx * (d * (float)sumi -
-                                       dmin * (float)bsum_corr);
+                    float dd = dx * d;
+                    float ddmin = dx * dmin;
+                    sums[ti] -= ddmin * (float)bsum_corr;
+                    sums[ti] += dd * (float)sumi;
                 }
             }
 

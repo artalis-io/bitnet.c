@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Q4_0 repacked fused gate/up matvec with prepared Q8 activation blocks.
+// Q4_0 f16-scale repacked fused gate/up matvec with prepared Q8 activation blocks.
 
 #define TILE_ROWS 16u
 
@@ -15,17 +15,24 @@ static inline float dot_char4(char4 a, char4 b) {
     return dot(float4(a), float4(b));
 }
 
-static inline float q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
-                              device const char4 *xq) {
-    float acc = 0.0f;
-    acc += dot_char4(DQ4(w0,  0), xq[0]);
-    acc += dot_char4(DQ4(w0, 16), xq[1]);
-    acc += dot_char4(DQ4(w1,  0), xq[2]);
-    acc += dot_char4(DQ4(w1, 16), xq[3]);
-    acc += dot_char4(DQ4(w2,  0), xq[4]);
-    acc += dot_char4(DQ4(w2, 16), xq[5]);
-    acc += dot_char4(DQ4(w3,  0), xq[6]);
-    acc += dot_char4(DQ4(w3, 16), xq[7]);
+static inline float2 q4_q8_dot_pair(device const uint *gate,
+                                    device const uint *up,
+                                    device const char4 *xq) {
+    float2 acc = 0.0f;
+#define DOT_PAIR(w, sh, xv) do { \
+    char4 x4 = (xv); \
+    acc.x += dot_char4(DQ4(gate[(w)], (sh)), x4); \
+    acc.y += dot_char4(DQ4(up[(w)], (sh)), x4); \
+} while (0)
+    DOT_PAIR(0,  0, xq[0]);
+    DOT_PAIR(0, 16, xq[1]);
+    DOT_PAIR(1,  0, xq[2]);
+    DOT_PAIR(1, 16, xq[3]);
+    DOT_PAIR(2,  0, xq[4]);
+    DOT_PAIR(2, 16, xq[5]);
+    DOT_PAIR(3,  0, xq[6]);
+    DOT_PAIR(3, 16, xq[7]);
+#undef DOT_PAIR
     return acc;
 }
 
@@ -47,6 +54,10 @@ static inline float bn_fast_silu(float x) {
     return x / (1.0f + bn_fast_exp(-x));
 }
 
+static inline float bn_reference_silu(float x) {
+    return x / (1.0f + exp(-x));
+}
+
 kernel void q4_fused_gateup_silu_prepared_q8(
     device const uint  *weights  [[buffer(0)]],
     device const char  *x_q      [[buffer(1)]],
@@ -63,6 +74,7 @@ kernel void q4_fused_gateup_silu_prepared_q8(
 
     uint blocks_per_row = cols >> 5;
     uint total_blocks = total_rows * blocks_per_row;
+    uint scale_words = (total_blocks + 1) >> 1;
     float gate_acc = 0.0f, up_acc = 0.0f;
 
     if (global_row < gate_rows) {
@@ -73,20 +85,16 @@ kernel void q4_fused_gateup_silu_prepared_q8(
 
             uint gate_block = gate_row_base + b;
             uint up_block = up_row_base + b;
-            float gate_d = as_type<float>(weights[gate_block]);
-            float up_d = as_type<float>(weights[up_block]);
-            uint gate_nib = total_blocks + gate_block * 4;
-            uint up_nib = total_blocks + up_block * 4;
+            float gate_d = float(((device const half *)weights)[gate_block]);
+            float up_d = float(((device const half *)weights)[up_block]);
+            uint gate_nib = scale_words + gate_block * 4;
+            uint up_nib = scale_words + up_block * 4;
             device const char4 *xqb = (device const char4 *)(x_q + b * 32);
 
-            float gate_dot = q4_q8_dot(weights[gate_nib], weights[gate_nib + 1],
-                                       weights[gate_nib + 2], weights[gate_nib + 3],
-                                       xqb);
-            float up_dot = q4_q8_dot(weights[up_nib], weights[up_nib + 1],
-                                     weights[up_nib + 2], weights[up_nib + 3],
-                                     xqb);
-            gate_acc += gate_d * dx * gate_dot;
-            up_acc += up_d * dx * up_dot;
+            float2 dots = q4_q8_dot_pair(weights + gate_nib,
+                                         weights + up_nib, xqb);
+            gate_acc += gate_d * dx * dots.x;
+            up_acc += up_d * dx * dots.y;
         }
     }
 
@@ -105,7 +113,10 @@ kernel void q4_fused_gateup_silu_prepared_q8(
             g += as_type<float>(weights[bias_offset + global_row]);
             u += as_type<float>(weights[bias_offset + global_row + gate_rows]);
         }
-        out[global_row] = bn_fast_silu(g) * u;
+        float activated = (p[3] & 4u) != 0u
+            ? bn_reference_silu(g)
+            : bn_fast_silu(g);
+        out[global_row] = activated * u;
     }
 }
 

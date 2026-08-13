@@ -15,6 +15,7 @@ void bn_quant_q4_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4_repacked_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_mxfp4_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_sdot_range(void *ctx, int start, int end);
+void bn_quant_q6k_scalar_sdot_4row_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_matmul_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_sdot_matmul_range(void *ctx, int start, int end);

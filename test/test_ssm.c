@@ -5,6 +5,9 @@
 #include <string.h>
 #include <assert.h>
 #include <math.h>
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
 
 // Simple deterministic pseudo-random float in [-1, 1]
 static float prand(uint32_t *state) {
@@ -25,6 +28,56 @@ static float max_diff(const float *a, const float *b, int n) {
     }
     return mx;
 }
+
+#ifdef __ARM_NEON
+static float neon_dot_reference(const float *x, const float *y, int n) {
+    float32x4_t sum0 = vdupq_n_f32(0.0f);
+    float32x4_t sum1 = vdupq_n_f32(0.0f);
+    float32x4_t sum2 = vdupq_n_f32(0.0f);
+    float32x4_t sum3 = vdupq_n_f32(0.0f);
+    int i = 0;
+    for (; i + 16 <= n; i += 16) {
+        sum0 = vfmaq_f32(sum0, vld1q_f32(x + i),
+                         vld1q_f32(y + i));
+        sum1 = vfmaq_f32(sum1, vld1q_f32(x + i + 4),
+                         vld1q_f32(y + i + 4));
+        sum2 = vfmaq_f32(sum2, vld1q_f32(x + i + 8),
+                         vld1q_f32(y + i + 8));
+        sum3 = vfmaq_f32(sum3, vld1q_f32(x + i + 12),
+                         vld1q_f32(y + i + 12));
+    }
+    float sum = vaddvq_f32(vaddq_f32(vaddq_f32(sum0, sum2),
+                                      vaddq_f32(sum1, sum3)));
+    for (; i < n; i++)
+        sum += x[i] * y[i];
+    return sum;
+}
+
+static void test_delta_neon_reduction_order(void) {
+    printf("test_ssm_delta_neon_reduction_order... ");
+
+    enum { head_dim = 128 };
+    float state[head_dim];
+    float q[head_dim];
+    float k[head_dim];
+    float v[1] = { 0.0f };
+    float out[1] = { 0.0f };
+    float alpha[1] = { 1.0f };
+    float beta[1] = { 0.0f };
+    uint32_t seed = 0x517cc1b7u;
+    fill_random(state, head_dim, &seed);
+    fill_random(q, head_dim, &seed);
+    fill_random(k, head_dim, &seed);
+
+    float expected = neon_dot_reference(state, q, head_dim);
+    BnSSMDeltaCtx ctx = {
+        state, out, q, k, v, alpha, beta, 1, head_dim, 1, 1.0f
+    };
+    bn_transformer_ssm_delta_neon_range(&ctx, 0, 1);
+    assert(memcmp(out, &expected, sizeof(expected)) == 0);
+    printf("PASSED\n");
+}
+#endif
 
 // --- Test conv_silu ---
 static void test_conv_silu(void) {
@@ -250,6 +303,9 @@ int main(void) {
     test_conv_silu();
     test_l2norm();
     test_delta();
+#ifdef __ARM_NEON
+    test_delta_neon_reduction_order();
+#endif
     test_gate();
 
     printf("All SSM kernel tests passed!\n");

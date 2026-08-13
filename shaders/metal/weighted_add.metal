@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Weighted addition: x[i] += weight * r[i]
+// Weighted addition: x[i] = clear ? weight * r[i] : x[i] + weight * r[i]
 // Dispatch: (ceil(dim/256), 1, 1)
 kernel void weighted_add(device float       *x [[buffer(0)]],
                          device const float *r [[buffer(1)]],
@@ -11,5 +11,6 @@ kernel void weighted_add(device float       *x [[buffer(0)]],
     uint gid = wid.x * 256 + lid.x;
     if (gid >= p[0]) return;
     float w = as_type<float>(p[1]);
-    x[gid] += w * r[gid];
+    float weighted = w * r[gid];
+    x[gid] = p[2] != 0 ? weighted : x[gid] + weighted;
 }

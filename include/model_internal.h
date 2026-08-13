@@ -135,7 +135,10 @@ int bn_model_embed_policy_dequant_row(int type,
 int bn_model_moe_policy_requires_float_kquant_gateup_fallback(
     const BnConfig *config);
 int bn_model_moe_policy_uses_scaled_router_input(const BnConfig *config);
+int bn_model_moe_policy_uses_reference_router_accumulation(
+    const BnConfig *config);
 int bn_model_moe_policy_uses_dense_residual_branch(const BnConfig *config);
+int bn_model_backend_policy_ffn_sub_norm_elements(const BnConfig *config);
 int bn_model_moe_policy_uses_reference_silu(const BnConfig *config);
 int bn_model_moe_policy_activation(const BnConfig *config);
 float bn_model_moe_policy_norm_epsilon(const BnConfig *config);
@@ -181,17 +184,7 @@ int bn_model_transformer_policy_uses_small_dense_shape(
     const BnConfig *config);
 int bn_model_transformer_policy_uses_large_dense_shape(
     const BnConfig *config);
-int bn_model_transformer_policy_uses_large_gpu_graph_fallback_shape(
-    const BnConfig *config);
-int bn_model_transformer_policy_uses_small_dense_native_quant_shape(
-    const BnConfig *config);
-int bn_model_transformer_policy_allows_small_dense_native_quant(
-    const BnConfig *config);
-int bn_model_transformer_policy_small_dense_native_quant_to_layer(
-    const BnConfig *config);
 int bn_model_transformer_policy_allows_small_dense_prefill_decode_fallback(
-    const BnConfig *config);
-int bn_model_transformer_policy_small_dense_prefill_min_tokens(
     const BnConfig *config);
 int bn_model_transformer_policy_dense_batch_prefill_shape_allowed(
     const BnConfig *config,
@@ -202,9 +195,13 @@ int bn_model_transformer_policy_dense_logits_argmax_shape_allowed(
 int bn_model_transformer_policy_moe_logits_mmvq_argmax_shape_allowed(
     const BnConfig *config,
     int logits_cols);
-int bn_model_transformer_policy_allows_small_dense_native_logit_refine(
+int bn_model_transformer_policy_moe_requires_reference_attention(
     const BnConfig *config);
-int bn_model_transformer_policy_moe_prefers_reference_gpu_attention(
+int bn_model_transformer_policy_requires_reference_attention(
+    const BnConfig *config);
+int bn_model_transformer_policy_requires_reference_recurrent(
+    const BnConfig *config);
+int bn_model_backend_policy_requires_stable_per_layer_input_layout(
     const BnConfig *config);
 float bn_model_transformer_policy_norm_epsilon(const BnConfig *config);
 int bn_model_transformer_policy_requires_float_kquant_fallback(
@@ -236,6 +233,17 @@ int bn_model_transformer_policy_uses_layer_output_scale(
     const BnConfig *config);
 int bn_model_transformer_policy_per_layer_embedding_dim(
     const BnConfig *config);
+void bn_model_transformer_policy_init_rope_frequencies_for_theta(
+    float theta,
+    int rope_dims,
+    float *freqs,
+    int capacity_pairs);
+void bn_model_transformer_policy_init_rope_angles_for_theta(
+    float theta,
+    int rope_dims,
+    int position,
+    float *angles,
+    int capacity_pairs);
 int bn_model_transformer_policy_uses_per_layer_embedding(
     const BnConfig *config);
 int bn_model_transformer_policy_divides_rope_freqs(const BnConfig *config,
@@ -249,21 +257,17 @@ float bn_model_transformer_policy_rope_base_theta(const BnConfig *config);
 int bn_model_transformer_policy_rope_uses_base_frequency(
     const BnConfig *config,
     int layer_head_size);
-int bn_model_transformer_policy_uses_reference_hybrid_ssm(
-    const BnConfig *config);
 int bn_model_transformer_policy_prefill_uses_reference_activation(
     const BnConfig *config);
 int bn_model_transformer_policy_ffn_uses_reference_activation(
     const BnConfig *config);
-int bn_model_gpu_policy_attention_layer_count(const BnConfig *config);
-int bn_model_gpu_policy_ssm_layer_count(const BnConfig *config);
-int bn_model_gpu_policy_uses_hybrid_ssm(const BnConfig *config);
-int bn_model_gpu_policy_uses_hybrid_moe(const BnConfig *config);
-int bn_model_gpu_policy_uses_moe(const BnConfig *config);
-int bn_model_gpu_policy_rope_dims_for_head(const BnConfig *config,
-                                           int layer_head_size);
-void bn_model_gpu_policy_init_rope_frequencies(const BnConfig *config,
-                                               float *freqs,
-                                               int capacity_pairs);
-
+int bn_model_activation_plan_attention_layer_count(const BnConfig *config);
+int bn_model_activation_plan_ssm_layer_count(const BnConfig *config);
+int bn_model_activation_plan_uses_hybrid_ssm(const BnConfig *config);
+int bn_model_activation_plan_uses_hybrid_moe(const BnConfig *config);
+int bn_model_activation_plan_uses_moe(const BnConfig *config);
+int bn_model_activation_plan_rope_dims_for_head(const BnConfig *config,
+                                                int layer_head_size);
+void bn_model_activation_plan_init_rope_frequencies(
+    const BnConfig *config, float *freqs, int capacity_pairs);
 #endif // BN_MODEL_INTERNAL_H

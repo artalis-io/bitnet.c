@@ -362,7 +362,7 @@ static char *make_shard_path(const char *path, int shard_no,
     return out;
 }
 
-BnGGUFFile *bn_gguf_open_file(const char *path) {
+static BnGGUFFile *gguf_open_file_with_storage(const char *path, int resident) {
     if (!path) return NULL;
 
     int cur = 0, count = 0, cur_width = 0, count_width = 0;
@@ -385,7 +385,9 @@ BnGGUFFile *bn_gguf_open_file(const char *path) {
             : make_shard_path(path, i + 1, cur_width, count_width,
                               cur_pos, count_pos, count_len, count);
         if (!paths[i]) goto fail;
-        maps[i] = bn_platform_load_file(paths[i]);
+        maps[i] = resident
+            ? bn_platform_load_file_resident(paths[i])
+            : bn_platform_load_file(paths[i]);
         if (!maps[i].data) {
             SH_LOG_ERROR("Failed to load GGUF shard", "path", paths[i]);
             goto fail;
@@ -480,6 +482,14 @@ fail:
     free(files);
     free(maps);
     return NULL;
+}
+
+BnGGUFFile *bn_gguf_open_file(const char *path) {
+    return gguf_open_file_with_storage(path, 0);
+}
+
+BnGGUFFile *bn_gguf_open_file_resident(const char *path) {
+    return gguf_open_file_with_storage(path, 1);
 }
 
 int bn_gguf_find_key(BnGGUFFile *f, const char *key) {

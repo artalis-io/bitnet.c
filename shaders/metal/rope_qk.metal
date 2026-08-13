@@ -36,7 +36,7 @@ kernel void rope_qk(device float       *q      [[buffer(0)]],
     uint half_rope = rope_dims / 2;
 
     for (uint i = tid; i < half_rope; i += 256) {
-        float angle = float(pos) * freq[i];
+        float angle = float(pos) * freq[p[6] + i];
         float cos_a = cos(angle);
         float sin_a = sin(angle);
         uint idx0 = base + i;

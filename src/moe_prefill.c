@@ -274,7 +274,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             : -1;
         if (route_rc == 0)
             used_gpu_route = 1;
-        else if (bn_transformer_gpu_moe_route_batch_debug_enabled())
+        else if (bn_transformer_gpu_moe_route_batch_debug_enabled(route_gpu))
             fprintf(stderr,
                     "[bn:gpu:moe-route-batch] fallback layer=%d handle=%d rc=%d tokens=%d experts=%d k=%d dim=%d\n",
                     l, route_resources.router != NULL, route_rc, n_tokens,

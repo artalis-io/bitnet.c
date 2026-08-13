@@ -5,19 +5,19 @@
 #include "gpu_internal.h"
 #include "model_internal.h"
 
-#include <stdlib.h>
-
-int bn_transformer_logits_cpu_tied_kquant_refine_top(void) {
-    return bn_backend_quant_cpu_tied_kquant_refine_top();
+int bn_transformer_logits_cpu_tied_kquant_refine_top(
+    const BnCPURuntimePolicy *runtime) {
+    return runtime ? runtime->tied_kquant_refine_top : 0;
 }
 
-int bn_transformer_logits_cpu_tied_kquant_hybrid_top(void) {
-    return bn_backend_quant_cpu_tied_kquant_hybrid_top();
+int bn_transformer_logits_cpu_tied_kquant_hybrid_top(
+    const BnCPURuntimePolicy *runtime) {
+    return runtime ? runtime->tied_kquant_hybrid_top : 0;
 }
 
-int bn_transformer_logits_cpu_native_tied_quant_enabled(void) {
-    return getenv("BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS") != NULL ||
-           getenv("BN_CPU_NATIVE_TIED_LOGITS") != NULL;
+int bn_transformer_logits_cpu_native_tied_quant_enabled(
+    const BnCPURuntimePolicy *runtime) {
+    return runtime && runtime->native_tied_quant_logits;
 }
 
 int bn_transformer_logits_backend_refine_supported(
@@ -40,8 +40,9 @@ int bn_transformer_logits_native_quant_refine_enabled(
                gpu, c, W->type);
 }
 
-int bn_transformer_logits_native_quant_refine_top(void) {
-    return bn_transformer_gpu_native_quant_logits_refine_top(1);
+int bn_transformer_logits_native_quant_refine_top(
+    const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_native_quant_logits_refine_top(gpu, 1);
 }
 
 int bn_transformer_logits_untied_uses_f16_path(int tensor_type) {
@@ -104,14 +105,15 @@ bn_transformer_logits_tied_quant_dispatch_policy(
 
 BnLogitsTiedQuantDispatchPolicy
 bn_transformer_logits_tied_quant_dispatch_policy_for(
+    const BnCPURuntimePolicy *runtime,
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnQWeight *W) {
     return bn_transformer_logits_tied_quant_dispatch_policy(
-        bn_transformer_logits_cpu_native_tied_quant_enabled(),
+        bn_transformer_logits_cpu_native_tied_quant_enabled(runtime),
         bn_transformer_logits_tied_kquant_refine_supported(W),
-        bn_transformer_logits_cpu_tied_kquant_hybrid_top(),
-        bn_transformer_logits_cpu_tied_kquant_refine_top(),
+        bn_transformer_logits_cpu_tied_kquant_hybrid_top(runtime),
+        bn_transformer_logits_cpu_tied_kquant_refine_top(runtime),
         bn_transformer_logits_native_quant_refine_enabled(gpu, c, W));
 }
 
@@ -128,6 +130,7 @@ BnLogitsQuantResources bn_transformer_logits_quant_resources(
 
 BnLogitsTiedQuantExecutionPolicy
 bn_transformer_logits_tied_quant_execution_policy_for(
+    const BnCPURuntimePolicy *runtime,
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnBackendModel *backend,
@@ -143,7 +146,8 @@ bn_transformer_logits_tied_quant_execution_policy_for(
     policy.backend_handle =
         bn_transformer_gpu_resolve_tied_embedding(backend);
     policy.dispatch =
-        bn_transformer_logits_tied_quant_dispatch_policy_for(gpu, c, W);
+        bn_transformer_logits_tied_quant_dispatch_policy_for(
+            runtime, gpu, c, W);
     return policy;
 }
 

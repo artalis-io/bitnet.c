@@ -57,6 +57,26 @@ static int prepare_per_layer_input_state(BnModel *m, BnSession *sess,
     return 0;
 }
 
+static int prepare_forward_token_state(BnModel *m, BnSession *sess,
+                                       int token, int pos) {
+    BnConfig *c = &m->config;
+    if (token < 0 || token >= c->vocab_size) {
+        SH_LOG_ERROR("Token out of range");
+        return -1;
+    }
+    if (pos < 0) {
+        SH_LOG_ERROR("Position out of range");
+        return -1;
+    }
+
+    bn_model_embed_token(m, sess->state.x, token);
+    if (prepare_per_layer_input_state(m, sess, token) != 0) {
+        SH_LOG_ERROR("Per-layer input preparation failed");
+        return -1;
+    }
+    return 0;
+}
+
 // Per-layer timing instrumentation (compile with -DBN_BENCH_LAYERS)
 #ifdef BN_BENCH_LAYERS
 static double bl_rmsnorm_us, bl_matvec_qkv_us, bl_rope_us, bl_gqa_us;
@@ -105,33 +125,13 @@ static void bl_print_reset(void) {
 
 // Embed + all layers (attention + FFN). Populates KV cache at `pos`.
 // Leaves final activation in s->x. Returns 0 on success, -1 on error.
-static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
+static int forward_layers(BnModel *m, BnSession *sess, int pos) {
     BnConfig *c = &m->config;
-    BnRunState *s = &sess->state;
     int head_size = c->head_size;
 
     // Guard against stack overflow from VLAs sized by model config
     if (head_size > BN_MAX_VLA_ELEMS || c->dim > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("Model dimensions too large for stack VLAs");
-        return -1;
-    }
-
-    // #9: Validate token bounds
-    if (token < 0 || token >= c->vocab_size) {
-        SH_LOG_ERROR("Token out of range");
-        return -1;
-    }
-
-    // #10: Validate pos bounds
-    if (pos < 0) {
-        SH_LOG_ERROR("Position out of range");
-        return -1;
-    }
-
-    // Embed the token
-    bn_model_embed_token(m, s->x, token);
-    if (prepare_per_layer_input_state(m, sess, token) != 0) {
-        SH_LOG_ERROR("Per-layer input preparation failed");
         return -1;
     }
 
@@ -144,17 +144,19 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
         int half_rope = rope_dims / 2;
         float rope_cos[half_rope], rope_sin[half_rope];
         float theta = bn_transformer_rope_theta_for_head(c, layer_head_size);
+        float rope_angle[half_rope];
+        bn_model_transformer_policy_init_rope_angles_for_theta(
+            theta, rope_dims, pos, rope_angle, half_rope);
         for (int i = 0; i < half_rope; i++) {
-            float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
+            float angle = rope_angle[i];
             if (bn_transformer_uses_per_layer_embedding(c) &&
                 bn_transformer_rope_uses_base_frequency(c, layer_head_size) &&
                 m->weights.rope_freqs) {
                 if (bn_transformer_divides_rope_freqs(c, l))
-                    freq /= m->weights.rope_freqs[i];
+                    angle /= m->weights.rope_freqs[i];
                 else
-                    freq *= m->weights.rope_freqs[i];
+                    angle *= m->weights.rope_freqs[i];
             }
-            float angle = pos * freq;
             rope_cos[i] = cosf(angle);
             rope_sin[i] = sinf(angle);
         }
@@ -179,6 +181,9 @@ static float *forward_logits(BnModel *m, BnSession *sess) {
 }
 
 float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
+    if (prepare_forward_token_state(m, s, token, pos) != 0)
+        return NULL;
+
     // Try GPU-resident forward pass first
     float *gpu_logits = bn_transformer_gpu_forward(m, s, token, pos);
     if (gpu_logits) {
@@ -186,15 +191,22 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
         return gpu_logits;
     }
 
-    // Fall back to CPU orchestration. Graph backend policy decides whether
-    // per-matvec backend fallback remains useful after full-graph rejection.
+    // A mixed GPU path may have flushed earlier layers before a later op
+    // rejects. CPU fallback must restart from the token-local input state.
+    if (prepare_forward_token_state(m, s, token, pos) != 0)
+        return NULL;
+
+    // Fall back to CPU orchestration. Preserve independently supported backend
+    // operations even when the full graph is unavailable.
     BnGPUBackend *gpu = bn_model_gpu(m);
     BnTransformerGPUMatvecFallbackPolicy matvec_fallback =
         bn_transformer_gpu_matvec_fallback_policy(m, gpu);
+    if (bn_gpu_backend_prepare_cpu_operations(gpu) != 0)
+        return NULL;
     int disable_gpu = matvec_fallback.disable_backend_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);
-    int rc = forward_layers(m, s, token, pos);
+    int rc = forward_layers(m, s, pos);
     float *logits = rc == 0 ? forward_logits(m, s) : NULL;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 0);
@@ -203,17 +215,25 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
 
 int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,
                                      int token, int pos) {
+    if (prepare_forward_token_state(m, s, token, pos) != 0)
+        return -1;
+
     float *gpu_state = bn_transformer_gpu_forward_no_logits(m, s, token, pos);
     if (gpu_state)
         return 0;
 
+    if (prepare_forward_token_state(m, s, token, pos) != 0)
+        return -1;
+
     BnGPUBackend *gpu = bn_model_gpu(m);
     BnTransformerGPUMatvecFallbackPolicy matvec_fallback =
         bn_transformer_gpu_matvec_fallback_policy(m, gpu);
+    if (bn_gpu_backend_prepare_cpu_operations(gpu) != 0)
+        return -1;
     int disable_gpu = matvec_fallback.disable_backend_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);
-    int rc = forward_layers(m, s, token, pos);
+    int rc = forward_layers(m, s, pos);
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 0);
     return rc == 0 ? 0 : -1;

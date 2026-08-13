@@ -27,8 +27,12 @@ VERBOSE=0
 STRICT=0
 BITNET_ARGS=()
 LLAMA_ARGS=(-ngl 0 -dev none)
+LLAMA_GPU_LAYERS=0
 LLAMA_FLASH=()
 LLAMA_THREADS=1
+LLAMA_CTX=0
+LLAMA_PROBE_KV_F16=0
+LLAMA_PROBE_FLASH=0
 LLAMA_THREADS_BATCH=()
 CUSTOM_PROMPTS=()
 LLAMA_BIN_DIR="${LLAMA_BIN_DIR:-/home/mark/artalis.io/tools/llama.cpp/build/bin}"
@@ -37,11 +41,11 @@ while [[ $# -gt 0 ]]; do
         -n) N_TOKENS="$2"; shift 2 ;;
         --prompt) CUSTOM_PROMPTS+=("$2"); shift 2 ;;
         --metal) BITNET_ARGS+=(--metal); shift ;;
-        --llama-metal) LLAMA_ARGS=(-ngl 99); shift ;;
+        --llama-metal) LLAMA_ARGS=(-ngl 99); LLAMA_GPU_LAYERS=99; shift ;;
         --cuda) BITNET_ARGS+=(--cuda); shift ;;
-        --kv16) BITNET_ARGS+=(--kv16); shift ;;
-        --llama-cuda) LLAMA_ARGS=(-ngl 99); shift ;;
-        --llama-gpu-layers) LLAMA_ARGS=(-ngl "$2"); shift 2 ;;
+        --kv16) BITNET_ARGS+=(--kv16); LLAMA_PROBE_KV_F16=1; shift ;;
+        --llama-cuda) LLAMA_ARGS=(-ngl 99); LLAMA_GPU_LAYERS=99; shift ;;
+        --llama-gpu-layers) LLAMA_ARGS=(-ngl "$2"); LLAMA_GPU_LAYERS="$2"; shift 2 ;;
         --llama-cache-k) LLAMA_ARGS+=(-ctk "$2"); shift 2 ;;
         --llama-cache-v) LLAMA_ARGS+=(-ctv "$2"); shift 2 ;;
         --llama-batch) LLAMA_ARGS+=(-b "$2"); shift 2 ;;
@@ -49,8 +53,11 @@ while [[ $# -gt 0 ]]; do
         --llama-threads-batch) LLAMA_THREADS_BATCH=(-tb "$2"); shift 2 ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
         --no-prefill) BITNET_ARGS+=(--no-prefill); shift ;;
-        --flash) BITNET_ARGS+=(--flash); LLAMA_FLASH=(-fa on); shift ;;
-        --llama-flash-off) LLAMA_FLASH=(-fa off); shift ;;
+        --pread) BITNET_ARGS+=(--pread); shift ;;
+        --cache-mb) BITNET_ARGS+=(--cache-mb "$2"); shift 2 ;;
+        --madvise) BITNET_ARGS+=(--madvise); shift ;;
+        --flash) BITNET_ARGS+=(--flash); LLAMA_FLASH=(-fa on); LLAMA_PROBE_FLASH=1; shift ;;
+        --llama-flash-off) LLAMA_FLASH=(-fa off); LLAMA_PROBE_FLASH=0; shift ;;
         --metal-disable-small-dense-native-quant|--metal-disable-small-dense-exact-native|--metal-disable-q4-q8) BITNET_ARGS+=(--metal-disable-small-dense-native-quant); shift ;;
         --metal-specialized-native-quant) BITNET_ARGS+=(--metal-specialized-native-quant); shift ;;
         --metal-enable-q6-q8k) BITNET_ARGS+=(--metal-specialized-native-quant); shift ;;
@@ -64,7 +71,8 @@ while [[ $# -gt 0 ]]; do
         --small-dense-native-quant-ffn-only|--small-dense-exact-native-ffn-only|--q4-q8-ffn-only) BITNET_ARGS+=(--small-dense-native-quant-ffn-only); shift ;;
         --gpu-flash-min-kv) BITNET_ARGS+=(--gpu-flash-min-kv "$2"); shift 2 ;;
         --metal-private-weights) BITNET_ARGS+=(--metal-private-weights); shift ;;
-        --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); shift 2 ;;
+        --metal-cpu-route-resident-moe) BITNET_ARGS+=(--metal-cpu-route-resident-moe); shift ;;
+        --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); LLAMA_CTX="$2"; shift 2 ;;
         -t) BITNET_ARGS+=(-t "$2"); LLAMA_THREADS="$2"; shift 2 ;;
         -v) VERBOSE=1; shift ;;
         --strict) STRICT=1; shift ;;
@@ -76,6 +84,7 @@ done
 BITNET="${BITNET:-./bitnet}"
 LLAMA="${LLAMA:-llama-completion}"
 LLAMA_TOKENIZE="${LLAMA_TOKENIZE:-llama-tokenize}"
+LLAMA_TOKEN_PROBE="${LLAMA_TOKEN_PROBE:-./test/llama_layer_probe}"
 if [[ "$LLAMA" == "llama-completion" && -x "$LLAMA_BIN_DIR/llama-completion" ]]; then
     LLAMA="$LLAMA_BIN_DIR/llama-completion"
 fi
@@ -121,6 +130,21 @@ token_ids_csv() {
     printf '%s\n' "$ids"
 }
 
+llama_generated_ids_csv() {
+    local prompt="$1"
+    local probe_args=()
+    if (( LLAMA_PROBE_KV_F16 )); then
+        probe_args+=(--kv-f16)
+    fi
+    if (( LLAMA_PROBE_FLASH )); then
+        probe_args+=(--flash)
+    fi
+    "$LLAMA_TOKEN_PROBE" -m "$MODEL" -p "$prompt" --generate "$N_TOKENS" \
+        --no-observer \
+        ${probe_args[@]+"${probe_args[@]}"} --ctx "$LLAMA_CTX" \
+        2>/dev/null | sed -n 's/^llama_token_id=//p' | paste -sd, -
+}
+
 # Prompts: factual completions with strong first-token predictions
 PROMPTS=(
     "The capital of France is"
@@ -151,6 +175,9 @@ exact_first_output_word_matches=0
 first_token_matches=0
 total_token_ids_matched=0
 total_token_ids_compared=0
+total_bitnet_token_ids=0
+total_llama_token_ids=0
+token_count_mismatches=0
 tmp_files=()
 cleanup() {
     if (( ${#tmp_files[@]} > 0 )); then
@@ -184,7 +211,9 @@ for prompt in "${PROMPTS[@]}"; do
         tmp_files+=("$bitnet_stderr")
         bitnet_run_args+=(--token-ids)
     fi
-    bitnet_out=$("$BITNET" "$MODEL" "${bitnet_run_args[@]}" -p "$prompt" -n "$N_TOKENS" \
+    bitnet_out=$("$BITNET" "$MODEL" \
+        ${bitnet_run_args[@]+"${bitnet_run_args[@]}"} \
+        -p "$prompt" -n "$N_TOKENS" \
         --temp 0 --repeat-penalty 1 2>"$bitnet_stderr") || true
 
     # Run llama.cpp (raw completion, no chat template, temp=0)
@@ -196,7 +225,9 @@ for prompt in "${PROMPTS[@]}"; do
     fi
     llama_out=$(LD_LIBRARY_PATH="$LLAMA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$LLAMA" -m "$MODEL" "${llama_run_args[@]}" -p "$prompt" -n "$N_TOKENS" \
-        --temp 0 --no-display-prompt -no-cnv --simple-io --verbosity 1 \
+        --temp 0 --repeat-penalty 1 --reasoning-format none \
+        --no-display-prompt -no-cnv \
+        --simple-io --verbosity 1 \
         -t "$LLAMA_THREADS" ${LLAMA_THREADS_BATCH[@]+"${LLAMA_THREADS_BATCH[@]}"} \
         2>"$llama_stderr" | sed 's/> EOF by user$//') || true
 
@@ -255,9 +286,18 @@ for prompt in "${PROMPTS[@]}"; do
             (( first_token_matches++ )) || true
         fi
         bitnet_ids_csv=$(sed -n 's/^token_id=//p' "$bitnet_stderr" | paste -sd, -) || bitnet_ids_csv=""
-        llama_ids_csv=$(token_ids_csv "$llama_out") || llama_ids_csv=""
+        if [[ -x "$LLAMA_TOKEN_PROBE" && "$LLAMA_GPU_LAYERS" -eq 0 ]]; then
+            llama_ids_csv=$(llama_generated_ids_csv "$prompt") || llama_ids_csv=""
+        else
+            llama_ids_csv=$(token_ids_csv "$llama_out") || llama_ids_csv=""
+        fi
         IFS=, read -ra bitnet_ids <<< "$bitnet_ids_csv"
         IFS=, read -ra llama_ids <<< "$llama_ids_csv"
+        total_bitnet_token_ids=$((total_bitnet_token_ids + ${#bitnet_ids[@]}))
+        total_llama_token_ids=$((total_llama_token_ids + ${#llama_ids[@]}))
+        if (( ${#bitnet_ids[@]} != ${#llama_ids[@]} )); then
+            token_count_mismatches=$((token_count_mismatches + 1))
+        fi
         token_id_cmp=${#bitnet_ids[@]}
         if (( ${#llama_ids[@]} < token_id_cmp )); then token_id_cmp=${#llama_ids[@]}; fi
         for (( i=0; i<token_id_cmp; i++ )); do
@@ -313,21 +353,40 @@ if (( STRICT )); then
     echo "First output-token ID matches: $first_token_matches / $total_prompts prompts"
     echo "Generated token-ID prefix matches: $total_token_ids_matched / $total_token_ids_compared tokens"
 fi
+if (( STRICT )) && [[ -x "$LLAMA_TOKEN_PROBE" && "$LLAMA_GPU_LAYERS" -eq 0 ]]; then
+    echo "strict token source: llama.cpp sampled IDs ($LLAMA_TOKEN_PROBE)"
+elif (( STRICT )); then
+    echo "strict token source: retokenized requested-backend llama.cpp text" >&2
+fi
 echo "Exact first output-word matches: $exact_first_output_word_matches / $total_prompts prompts"
 echo "Punctuation-normalized first-word matches: $first_word_matches / $total_prompts prompts"
 echo "Word prefix matches: $total_words_matched / $total_words_compared total words"
 echo ""
 
-# Strict mode requires decoded output-prefix parity. First-token ID parity is
-# reported, but it is not sufficient because many prompts first generate space.
-if (( STRICT && total_words_matched == total_words_compared && total_words_compared > 0 )); then
-    echo -e "${GREEN}${BOLD}PASS${RESET} — decoded output prefix parity with llama.cpp"
+# Strict mode uses actual llama.cpp sampled IDs when the probe is available.
+# Display text can include frontend formatting that was not sampled by the
+# model, and retokenized output is not necessarily invertible.
+sampled_ids_required=0
+if (( STRICT )) && [[ -x "$LLAMA_TOKEN_PROBE" && "$LLAMA_GPU_LAYERS" -eq 0 ]]; then
+    sampled_ids_required=1
+fi
+if (( STRICT && sampled_ids_required &&
+      token_count_mismatches == 0 &&
+      total_bitnet_token_ids == total_llama_token_ids &&
+      total_token_ids_compared == total_bitnet_token_ids &&
+      total_token_ids_matched == total_bitnet_token_ids &&
+      total_bitnet_token_ids > 0 )); then
+    echo -e "${GREEN}${BOLD}PASS${RESET} — sampled token ID parity with llama.cpp"
     exit 0
-elif (( STRICT && total_words_compared == 0 && total_token_ids_compared > 0 && total_token_ids_matched == total_token_ids_compared )); then
-    echo -e "${GREEN}${BOLD}PASS${RESET} — token ID parity with llama.cpp"
+elif (( STRICT && !sampled_ids_required &&
+        total_token_ids_matched == total_token_ids_compared &&
+        total_token_ids_compared > 0 &&
+        total_words_matched == total_words_compared &&
+        total_words_compared > 0 )); then
+    echo -e "${GREEN}${BOLD}PASS${RESET} — requested-backend token and text parity with llama.cpp"
     exit 0
 elif (( STRICT )); then
-    echo -e "${RED}${BOLD}FAIL${RESET} — decoded output prefix parity required by --strict"
+    echo -e "${RED}${BOLD}FAIL${RESET} — complete sampled token ID parity required by --strict"
     exit 1
 elif (( exact_first_output_word_matches == total_prompts )); then
     echo -e "${GREEN}${BOLD}PASS${RESET} — exact first output-word parity with llama.cpp"

@@ -211,16 +211,22 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                         tasks[t].prepared
                     };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-                    void (*fn)(void *, int, int) = (tasks[t].prepared && tasks[t].prepared->scales)
+                    int scalar_dot =
+                        bn_quant_policy_q4_scalar_dot_requested(
+                            bn_tp_quant_policy(pool));
+                    void (*fn)(void *, int, int) = scalar_dot
+                        ? bn_quant_q4_scalar_sdot_range
+                        : (tasks[t].prepared && tasks[t].prepared->scales)
                         ? bn_quant_q4_repacked_neon_sdot_range
-                        : bn_quant_q4_neon_sdot_range;
+                        : bn_quant_q4_neon_sdot_4row_range;
 #elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
                     void (*fn)(void *, int, int) = bn_quant_q4_avx512_vnni_4row_range;
 #elif defined(__AVX2__)
                     void (*fn)(void *, int, int) = bn_quant_q4_avx2_4row_range;
 #elif defined(__wasm_relaxed_simd__)
                     void (*fn)(void *, int, int) =
-                        bn_quant_policy_wasm_q4_canonical4_enabled()
+                        bn_quant_policy_wasm_q4_canonical4_enabled(
+                            bn_tp_quant_policy(pool))
                         ? bn_quant_q4_wasm_sdot_4row_range
                         : (tasks[t].prepared && tasks[t].prepared->qs
                            ? bn_quant_q4_repacked_wasm_sdot_8row_range
@@ -233,10 +239,17 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                         : bn_quant_q4_scalar_sdot_range;
 #endif
                     int n_items = tasks[t].W->rows;
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+                    if (scalar_dot)
+                        n_items = tasks[t].W->rows;
+                    else if (!tasks[t].prepared || !tasks[t].prepared->scales)
+                        n_items = (tasks[t].W->rows + 3) / 4;
+#endif
 #if defined(__AVX512F__) || defined(__AVX2__)
                     n_items = (tasks[t].W->rows + 3) / 4;
 #elif defined(__wasm_relaxed_simd__)
-                    if (bn_quant_policy_wasm_q4_canonical4_enabled())
+                    if (bn_quant_policy_wasm_q4_canonical4_enabled(
+                            bn_tp_quant_policy(pool)))
                         n_items = (tasks[t].W->rows + 3) / 4;
                     else if (tasks[t].prepared && tasks[t].prepared->qs)
                         n_items = (tasks[t].W->rows + 7) / 8;
@@ -258,7 +271,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                         tasks[t].prepared
                     };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-                    tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
+                    int n_groups = (tasks[t].W->rows + 3) / 4;
+                    tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_4row_range, &ctxs[t], n_groups };
 #elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
                     int n_groups = (tasks[t].W->rows + 3) / 4;
                     tp_tasks[t] = (BnTPTask){ bn_quant_q8_avx512_vnni_4row_range, &ctxs[t], n_groups };
@@ -307,8 +321,11 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     };
                     bn_tp_fn fn = (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
                         ? bn_quant_q4k_scalar_sdot_range
-                        : bn_quant_q6k_scalar_sdot_range;
-                    tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
+                        : bn_quant_q6k_scalar_sdot_4row_range;
+                    int n = tasks[t].W->rows;
+                    if (tasks[t].W->type == BN_GGUF_TENSOR_Q6_K)
+                        n = (n + 3) / 4;
+                    tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n };
                 }
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);
                 return;

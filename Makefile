@@ -1,7 +1,12 @@
 CC      ?= cc
+CXX     ?= c++
 NVCC    ?= /usr/local/cuda-13.2/bin/nvcc
 CUDA_ARCH ?= sm_120
 LDFLAGS = -lm
+
+LLAMA_PROBE_CFLAGS ?= $(shell pkg-config --cflags llama ggml 2>/dev/null)
+LLAMA_PROBE_LIBS ?= $(shell pkg-config --libs-only-L llama ggml 2>/dev/null) \
+                    $(shell pkg-config --libs-only-l llama 2>/dev/null)
 
 # Platform-specific arch flags:
 # -mcpu=apple-m1 on Darwin enables FP16 vector arithmetic + dotprod.
@@ -119,7 +124,7 @@ else
 endif
 
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
-MODEL_SRCS = src/model.c src/model_arch.c src/model_policy.c src/model_session.c src/model_gpu.c src/model_embed.c src/backend_layout.c src/backend_model.c src/backend_session.c src/backend_quant.c src/gpu_policy.c
+MODEL_SRCS = src/model.c src/model_arch.c src/model_policy.c src/model_session.c src/model_gpu.c src/model_embed.c src/backend_layout.c src/backend_model.c src/backend_session.c src/backend_quant.c src/runtime_policy.c src/gpu_backend_runtime.c src/gpu_policy.c
 MOE_SRCS = src/moe.c src/moe_cache.c src/moe_io.c src/moe_policy.c src/moe_cpu_kernels.c src/moe_route.c src/moe_math.c src/moe_execute.c src/moe_prefill.c src/moe_stats.c
 TRANSFORMER_SRCS = src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND)
 SAMPLER_SRCS = src/sampler.c src/sampler_backend.c
@@ -150,6 +155,7 @@ else
 endif
 
 # --- Metal (optional: BN_ENABLE_METAL=1, macOS only) ---
+.PHONY: test_metal_f32
 ifdef BN_ENABLE_METAL
   METAL_CFLAGS := -DBN_ENABLE_METAL
   METAL_FRAMEWORKS := -framework Metal -framework Foundation
@@ -188,18 +194,17 @@ OBJS = $(SRCS:.c=.o) $(METAL_OBJS) $(CUDA_OBJS)
 HEADERS = $(wildcard include/*.h src/*.h src/transformer/*.h)
 BUILD_CONFIG := webgpu=$(if $(BN_ENABLE_WEBGPU),1,0) metal=$(if $(BN_ENABLE_METAL),1,0) cuda=$(if $(BN_ENABLE_CUDA),1,0) cc=$(CC) nvcc=$(NVCC) cuda_arch=$(CUDA_ARCH) cflags=$(CFLAGS)
 BUILD_CONFIG_STAMP := .build-config
-
-.PHONY: config-check
-config-check:
-	@old=$$(cat $(BUILD_CONFIG_STAMP) 2>/dev/null || true); \
+BUILD_CONFIG_CHANGED := $(shell old=$$(cat $(BUILD_CONFIG_STAMP) 2>/dev/null || true); \
 	if [ "$$old" != "$(BUILD_CONFIG)" ]; then \
-		echo "Build config changed; rebuilding objects"; \
-		rm -f src/*.o src/quant/*.o src/transformer/*.o src/gpu_metal.o bitnet; \
 		printf '%s\n' "$(BUILD_CONFIG)" > $(BUILD_CONFIG_STAMP); \
-	fi
+		printf '1'; \
+	fi)
+ifneq ($(BUILD_CONFIG_CHANGED),)
+  $(info Build config changed; rebuilding objects)
+endif
 
 # Default target
-bitnet: config-check $(OBJS)
+bitnet: $(BUILD_CONFIG_STAMP) $(OBJS)
 	$(LINK) $(CFLAGS) -o $@ $(filter %.o,$^) $(LDFLAGS)
 
 # Debug build
@@ -212,20 +217,20 @@ asan: LDFLAGS += -fsanitize=address,undefined
 asan: bitnet
 
 # Pattern rules for object files
-src/%.o: src/%.c $(HEADERS)
+src/%.o: src/%.c $(HEADERS) $(BUILD_CONFIG_STAMP)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/quant/%.o: src/quant/%.c $(HEADERS)
+src/quant/%.o: src/quant/%.c $(HEADERS) $(BUILD_CONFIG_STAMP)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/transformer/%.o: src/transformer/%.c $(HEADERS)
+src/transformer/%.o: src/transformer/%.c $(HEADERS) $(BUILD_CONFIG_STAMP)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/%.o: src/%.cu $(HEADERS)
+src/%.o: src/%.cu $(HEADERS) $(BUILD_CONFIG_STAMP)
 	$(NVCC) -O3 -std=c++11 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
 
 # Objective-C pattern rule for Metal backend
-src/%.o: src/%.m $(HEADERS)
+src/%.o: src/%.m $(HEADERS) $(BUILD_CONFIG_STAMP)
 	$(CC) $(CFLAGS) -fobjc-arc -c -o $@ $<
 
 # --- Tests ---
@@ -417,7 +422,8 @@ test_arena: test/test_arena.c src/sh_arena.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 SSM_BACKEND = $(filter src/transformer/ssm_%, $(TRANSFORMER_BACKEND))
-test_ssm: test/test_ssm.c src/transformer/ssm_scalar.c $(SSM_BACKEND)
+test_ssm: test/test_ssm.c src/transformer/ssm_scalar.c \
+          src/transformer/math_scalar.c $(SSM_BACKEND)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_gguf_fuzz: test/test_gguf_fuzz.c src/gguf.c src/platform.c src/sh_log.c
@@ -637,7 +643,6 @@ ifeq ($(UNAME_M),x86_64)
 	$(CC) $(AVX2_BIN_FLAGS) -o $@ $^ $(LDFLAGS)
 else
 	@echo "bitnet_avx2 skipped: requires x86_64 host"
-	@exit 1
 endif
 
 AVX512_CHECK_FLAGS = -mavx512f -mavx512bw -mavx512vl -mavx512dq -mavx512vnni -mavx512vbmi \
@@ -669,14 +674,16 @@ ifeq ($(UNAME_M),x86_64)
 	$(CC) $(AVX512_BIN_FLAGS) -o $@ $^ $(LDFLAGS)
 else
 	@echo "bitnet_avx512 skipped: requires x86_64 host"
-	@exit 1
 endif
 
 build_cpu_parity_backends:
-	@backends="$${CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512}"; \
+	@backends="$${CPU_PARITY_BACKENDS:-}"; \
 	qwen_backends="$${QWEN_CPU_PARITY_BACKENDS:-$$backends}"; \
 	gemma_backends="$${GEMMA4_CPU_PARITY_BACKENDS:-$$backends}"; \
-	selected=",$$backends,$$qwen_backends,$$gemma_backends,"; \
+	selected=",$$qwen_backends,$$gemma_backends,"; \
+	if [ "$$selected" = ",,," ]; then \
+		selected=",neon,scalar,avx2,avx512,"; \
+	fi; \
 	case "$$selected" in *,avx2,* ) $(MAKE) bitnet_avx2 ;; esac; \
 	case "$$selected" in *,avx512,* ) $(MAKE) bitnet_avx512 ;; esac
 
@@ -743,6 +750,23 @@ endif
 test_gpu_validate: $(WEBGPU_VALIDATE_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
+test/llama_layer_probe: test/llama_layer_probe.cpp
+	$(CXX) -O2 -std=c++17 $(LLAMA_PROBE_CFLAGS) -o $@ $< $(LLAMA_PROBE_LIBS)
+
+test_llama_layer_probe: test/llama_layer_probe
+
+ifdef BN_ENABLE_METAL
+test_metal_f32: test/test_metal_f32.c $(filter-out src/main.c, $(SRCS)) src/gpu_metal.m
+	$(CC) $(CFLAGS) -c -o /tmp/bn_test_metal_f32.o src/gpu_metal.m -fobjc-arc
+	$(CC) $(CFLAGS) -o $@ test/test_metal_f32.c \
+		$(filter-out src/main.c, $(SRCS)) /tmp/bn_test_metal_f32.o $(LDFLAGS)
+	./$@
+else
+test_metal_f32:
+	@echo "test_metal_f32 requires BN_ENABLE_METAL=1"
+	@exit 1
+endif
+
 # Coherence test (WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec, requires model file)
 COHERENCE_SRCS = test/test_coherence.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                  src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
@@ -771,4 +795,4 @@ test_coherence: $(COHERENCE_SRCS) $(COHERENCE_EXTRA_OBJS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bitnet_avx2 bitnet_avx512 bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+	rm -f bitnet bitnet_scalar bitnet_avx2 bitnet_avx512 bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_metal_f32 test_coherence test_e2e test_prefill test_kv_f16 test/llama_layer_probe default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)

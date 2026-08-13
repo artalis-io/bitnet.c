@@ -232,7 +232,7 @@ static int assert_forward_finite_cuda(BnModel *model) {
     }
     assert(bn_model_upload_weights(model, gpu) == 0);
     assert(gpu->init_activations);
-    assert(gpu->init_activations(gpu->ctx, &model->config) == 0);
+    assert(bn_model_init_gpu_activations(model, gpu) == 0);
     assert_forward_finite(model);
     bn_model_free(model);
     bn_gpu_cuda_destroy(gpu);
@@ -253,7 +253,6 @@ static void test_gemma4_dense(void) {
     assert(bn_model_gpu(&m) == NULL);
     assert(bn_model_arch_attention_value_shares_key_config(&m.config));
     assert(bn_model_arch_uses_per_layer_embedding(&m.config));
-    assert(bn_model_arch_requires_large_gpu_graph_fallback(&m.config));
     assert(m.config.head_size == 64);
     assert(m.config.kv_dim == 64);
     assert(m.weights.layers[0].block_kind == BN_LAYER_BLOCK_ATTENTION);

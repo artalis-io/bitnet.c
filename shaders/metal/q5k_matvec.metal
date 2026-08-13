@@ -64,7 +64,6 @@ kernel void q5k_matvec(device const uchar *weights [[buffer(0)]],
         }
     }
 
-    // Simdgroup reduction for 8 threads per row (no barriers needed)
     float val = acc;
     val += simd_shuffle_xor(val, 4);
     val += simd_shuffle_xor(val, 2);

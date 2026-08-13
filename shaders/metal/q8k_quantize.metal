@@ -15,28 +15,41 @@ kernel void q8k_quantize(device const float *x      [[buffer(0)]],
     uint base = token * cols + block * 256u;
 
     threadgroup float abs_vals[256];
+    threadgroup float signed_vals[256];
+    threadgroup short quant_vals[256];
 
     float xv = x[base + tid];
     abs_vals[tid] = fabs(xv);
+    signed_vals[tid] = xv;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     for (uint stride = 128u; stride > 0u; stride >>= 1u) {
         if (tid < stride) {
-            abs_vals[tid] = max(abs_vals[tid], abs_vals[tid + stride]);
+            if (abs_vals[tid + stride] > abs_vals[tid]) {
+                abs_vals[tid] = abs_vals[tid + stride];
+                signed_vals[tid] = signed_vals[tid + stride];
+            }
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
 
     uint sb = token * (cols / 256u) + block;
     float amax = abs_vals[0];
-    float id = (amax == 0.0f) ? 0.0f : 127.0f / amax;
+    float max_value = signed_vals[0];
+    float id = (amax == 0.0f) ? 0.0f : -127.0f / max_value;
     if (tid == 0) {
-        xd[sb] = (amax == 0.0f) ? 0.0f : amax / 127.0f;
+        xd[sb] = (amax == 0.0f) ? 0.0f : 1.0f / id;
     }
 
     int q = int(rint(xv * id));
     q = min(127, max(-128, q));
     xq[base + tid] = char(q);
-
-    (void)bsums;
+    quant_vals[tid] = short(q);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid < 16u) {
+        short sum = 0;
+        for (uint i = 0; i < 16u; i++)
+            sum += quant_vals[tid * 16u + i];
+        bsums[sb * 16u + tid] = sum;
+    }
 }

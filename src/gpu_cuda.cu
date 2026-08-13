@@ -4,8 +4,6 @@
 
 #include "backend_quant.h"
 #include "gguf.h"
-#include "model_config.h"
-#include "model_internal.h"
 #include "moe_types.h"
 #include "quant.h"
 #include "gpu_policy.h"
@@ -38,6 +36,7 @@ typedef struct {
 } BnCudaBuffer;
 
 typedef struct {
+    const BnBackendRuntimePolicy *runtime_policy;
     int device;
     cudaStream_t stream;
     cudaStream_t exec_stream;
@@ -55,6 +54,8 @@ typedef struct {
     int exec_graph_ops;
     int kv_f16;
     int has_moe_model;
+    int moe_prefill_min_tokens;
+    int moe_route_batch_enabled;
     float *d_x;
     size_t d_x_bytes;
     float *d_out;
@@ -325,72 +326,87 @@ static double cuda_wall_ms(void) {
     return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
 }
 
-static int cuda_use_prefill_batched_gemm(void) {
-    return bn_gpu_policy_cuda_prefill_batched_gemm_enabled();
+static int cuda_use_prefill_batched_gemm(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_prefill_batched_gemm_enabled(ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_debug_prefill_gemm(void) {
-    return bn_gpu_policy_cuda_prefill_gemm_debug_enabled();
+static int cuda_debug_prefill_gemm(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_prefill_gemm_debug_enabled(ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_debug_readback(void) {
-    return bn_gpu_policy_cuda_readback_debug_enabled();
+static int cuda_debug_readback(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_readback_debug_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_debug_cublas_cache(void) {
-    return bn_gpu_policy_cuda_cublas_cache_debug_enabled();
+static int cuda_debug_cublas_cache(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_cublas_cache_debug_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_matmul_batch(void) {
-    return bn_gpu_policy_matmul_batch_enabled();
+static int cuda_use_matmul_batch(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_matmul_batch_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_matvec_batch(void) {
-    return bn_gpu_policy_matvec_batch_enabled();
+static int cuda_use_matvec_batch(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_matvec_batch_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_moe_cublas_gateup_f16_out(void) {
-    return bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled();
+static int cuda_use_moe_cublas_gateup_f16_out(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_moe_cublas_grouped_variable(void) {
-    return bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled();
+static int cuda_use_moe_cublas_grouped_variable(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_moe_ffn_batch(void) {
-    return bn_gpu_policy_cuda_moe_ffn_batch_enabled();
+static int cuda_use_moe_ffn_batch(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_ffn_batch_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_profile_moe_ffn_batch(void) {
-    return bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled();
+static int cuda_profile_moe_ffn_batch(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_moe_route_batch(void) {
-    return bn_gpu_policy_moe_route_batch_enabled();
+static int cuda_use_moe_route_batch(const BnCudaCtx *ctx) {
+    return ctx && ctx->moe_route_batch_enabled;
 }
 
-static int cuda_use_moe_routed_ffn_batch(void) {
-    return bn_gpu_policy_moe_routed_ffn_batch_enabled();
+static int cuda_use_moe_routed_ffn_batch(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_moe_routed_ffn_batch_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_dense_ffn(void) {
-    return bn_gpu_policy_cuda_dense_ffn_enabled();
+static int cuda_use_dense_ffn(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_dense_ffn_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_dense_ffn_batch(void) {
-    return bn_gpu_policy_cuda_dense_ffn_batch_enabled();
+static int cuda_use_dense_ffn_batch(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_dense_ffn_batch_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_argmax_fast(void) {
-    return bn_gpu_policy_cuda_argmax_fast_enabled();
+static int cuda_use_argmax_fast(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_argmax_fast_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_optimistic_argmax_penalty(void) {
-    return bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled();
+static int cuda_use_optimistic_argmax_penalty(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_moe_route_routed_ffn_batch(int n_experts) {
+static int cuda_use_moe_route_routed_ffn_batch(const BnCudaCtx *ctx,
+                                               int n_experts) {
     return bn_gpu_policy_moe_routed_ffn_batch_allowed(
+        ctx ? ctx->runtime_policy : NULL,
         bn_gpu_policy_moe_route_expanded_topk(n_experts, 0));
 }
 
@@ -433,12 +449,14 @@ static void cuda_dense_profile_add(double *totals, int code, double ms) {
         totals[code] += ms;
 }
 
-static void cuda_dense_profile_maybe_print(double *totals,
+static void cuda_dense_profile_maybe_print(
+                                           const BnBackendRuntimePolicy *policy,
+                                           double *totals,
                                            unsigned long long *layers,
                                            int n_tokens, int dim) {
     (*layers)++;
     int every =
-        bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(36);
+        bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(policy, 36);
     if ((*layers % (unsigned long long)every) != 0)
         return;
     double sum = 0.0;
@@ -9846,7 +9864,7 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
     const float zero = 0.0f;
     int q_ld = n_heads * head_size;
 
-    if (cuda_use_prefill_batched_gemm() &&
+    if (cuda_use_prefill_batched_gemm(ctx) &&
         cuda_ensure_gemm_ptrs(ctx, n_heads * 3) == 0) {
         const float **d_a = (const float **)ctx->d_gemm_ptrs;
         const float **d_b = d_a + n_heads;
@@ -9912,7 +9930,7 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
                     (int)st);
             return -1;
         }
-        if (cuda_debug_prefill_gemm())
+        if (cuda_debug_prefill_gemm(ctx))
             fprintf(stderr,
                     "[bn:gpu:cuda] prefill batched score gemm unavailable: status %d\n",
                     (int)st);
@@ -10612,9 +10630,10 @@ static __global__ void moe_scatter_sorted_grouped_kernel(
               w * src[src_off]);
 }
 
-static int cuda_type_supported(int type) {
-    return !bn_gpu_policy_matvec_disabled() &&
-           bn_gpu_policy_matvec_type_supported(type);
+static int cuda_type_supported(const BnCudaCtx *ctx, int type) {
+    return !bn_gpu_policy_matvec_disabled(ctx ? ctx->runtime_policy : NULL) &&
+           bn_gpu_policy_matvec_type_supported(
+               ctx ? ctx->runtime_policy : NULL, type);
 }
 
 static int cuda_ensure_scratch(BnCudaCtx *ctx, size_t x_bytes,
@@ -10741,16 +10760,20 @@ static int cuda_ensure_q8_0_f32(BnCudaCtx *ctx, int cols, int n_tokens) {
     return 0;
 }
 
-static int cuda_use_native_quant_matmul(void) {
-    return bn_gpu_policy_cuda_native_quant_matmul_enabled();
+static int cuda_use_native_quant_matmul(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_native_quant_matmul_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_f16_native_quant_matmul(void) {
-    return bn_gpu_policy_cuda_f16_native_quant_matmul_enabled();
+static int cuda_use_f16_native_quant_matmul(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_f16_native_quant_matmul_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_native_quant_prepared_input_split(void) {
-    return bn_gpu_policy_cuda_native_quant_prepared_input_split_enabled();
+static int cuda_use_native_quant_prepared_input_split(
+    const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_native_quant_prepared_input_split_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
 static int cuda_ensure_q8_k(BnCudaCtx *ctx, int cols, int n_tokens) {
@@ -10781,7 +10804,7 @@ static int cuda_launch_q8_0_matmul(BnCudaCtx *ctx, float *d_dst,
         return -1;
     int threads = 256;
     int warps = threads / 32;
-    if (cuda_use_native_quant_matmul()) {
+    if (cuda_use_native_quant_matmul(ctx)) {
         int x_blocks = cols / 32;
         if (cuda_ensure_q8_0_f32(ctx, cols, n_tokens) != 0)
             return -1;
@@ -11009,99 +11032,78 @@ static int cuda_alloc_activation(BnCudaCtx *ctx, int idx, size_t bytes) {
     return 0;
 }
 
-static int cuda_init_activations(void *vctx, const void *config_ptr) {
+static int cuda_init_activations(void *vctx,
+                                 const BnGPUActivationPlan *plan) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    const BnConfig *c = (const BnConfig *)config_ptr;
-    if (!ctx || !c) return -1;
+    if (!ctx || !plan) return -1;
     if (cuda_ctx_set_device(ctx) != 0) return -1;
 
     cuda_free_activations(ctx);
-    ctx->kv_f16 = c->kv_f16;
-    ctx->has_moe_model = bn_gpu_policy_uses_moe(c);
+    ctx->kv_f16 = plan->kv_f16;
+    ctx->has_moe_model = plan->uses_moe;
 
-    int n_attn = bn_gpu_policy_attention_layer_count(c);
-    BnGPUMoERouteShape moe_route_shape =
-        bn_gpu_policy_moe_route_shape(c);
-    int q_dim = c->n_heads * c->head_size;
-    int xb_size = q_dim > c->dim ? q_dim : c->dim;
-    int hb_dim = c->hidden_dim;
-    if (moe_route_shape.expert_hidden_dim > hb_dim)
-        hb_dim = moe_route_shape.expert_hidden_dim;
-
+    int q_dim = plan->n_heads * plan->head_size;
+    int xb_size = q_dim > plan->dim ? q_dim : plan->dim;
     size_t sizes[BN_GPU_VALUE_COUNT] = {0};
-    sizes[BN_GPU_VALUE_X] = (size_t)c->dim * sizeof(float);
+    sizes[BN_GPU_VALUE_X] = (size_t)plan->dim * sizeof(float);
     sizes[BN_GPU_VALUE_XB] = (size_t)xb_size * sizeof(float);
-    sizes[BN_GPU_VALUE_XB2] = (size_t)c->dim * sizeof(float);
+    sizes[BN_GPU_VALUE_XB2] = (size_t)plan->xb2_elements * sizeof(float);
     sizes[BN_GPU_VALUE_Q] = (size_t)q_dim * sizeof(float);
-    sizes[BN_GPU_VALUE_HB] = (size_t)hb_dim * sizeof(float);
-    sizes[BN_GPU_VALUE_HB2] = (size_t)hb_dim * sizeof(float);
-    size_t kv_elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
-    sizes[BN_GPU_VALUE_KEY_CACHE] =
-        (size_t)n_attn * c->seq_len * c->kv_dim * kv_elem_size;
-    sizes[BN_GPU_VALUE_VALUE_CACHE] =
-        (size_t)n_attn * c->seq_len * c->kv_dim * kv_elem_size;
+    sizes[BN_GPU_VALUE_HB] = (size_t)plan->hb_elements * sizeof(float);
+    sizes[BN_GPU_VALUE_HB2] = (size_t)plan->hb_elements * sizeof(float);
+    size_t kv_elem_size = plan->kv_f16 ? sizeof(uint16_t) : sizeof(float);
+    sizes[BN_GPU_VALUE_KEY_CACHE] = (size_t)plan->attention_layer_count *
+        plan->seq_len * plan->kv_dim * kv_elem_size;
+    sizes[BN_GPU_VALUE_VALUE_CACHE] = (size_t)plan->attention_layer_count *
+        plan->seq_len * plan->kv_dim * kv_elem_size;
     sizes[BN_GPU_VALUE_ATT] =
-        (size_t)c->n_heads * c->seq_len * sizeof(float);
-    sizes[BN_GPU_VALUE_LOGITS] =
-        (size_t)c->vocab_size * sizeof(float);
+        (size_t)plan->n_heads * plan->seq_len * sizeof(float);
+    sizes[BN_GPU_VALUE_LOGITS] = (size_t)plan->vocab_size * sizeof(float);
     sizes[BN_GPU_VALUE_ROPE_FREQ] =
-        (size_t)(c->head_size / 2) * sizeof(float);
+        (size_t)(plan->head_size / 2) * sizeof(float);
     sizes[BN_GPU_VALUE_SCRATCH] = (size_t)xb_size * sizeof(float);
     {
-        size_t qkv_size = (size_t)(q_dim + 2 * c->kv_dim) * sizeof(float);
+        size_t qkv_size =
+            (size_t)(q_dim + 2 * plan->kv_dim) * sizeof(float);
         size_t gated_q_size = (size_t)(2 * q_dim) * sizeof(float);
-        if (bn_gpu_policy_uses_hybrid_moe(c)) {
+        if (plan->uses_hybrid_moe) {
             size_t hybrid_q_size = (size_t)(4 * q_dim) * sizeof(float);
-            if (hybrid_q_size > gated_q_size)
-                gated_q_size = hybrid_q_size;
+            if (hybrid_q_size > gated_q_size) gated_q_size = hybrid_q_size;
         }
         sizes[BN_GPU_VALUE_QKV] = qkv_size > gated_q_size
-            ? qkv_size
-            : gated_q_size;
+            ? qkv_size : gated_q_size;
     }
-    if (moe_route_shape.expert_hidden_dim > 0) {
-        int moe_scratch = moe_route_shape.expert_hidden_dim;
-        if (moe_route_shape.total_experts > moe_scratch)
-            moe_scratch = moe_route_shape.total_experts;
-        if (2 * moe_route_shape.active_experts > moe_scratch)
-            moe_scratch = 2 * moe_route_shape.active_experts;
-        if (moe_route_shape.active_experts > 0 &&
-            moe_route_shape.expert_hidden_dim <=
-                INT_MAX / moe_route_shape.active_experts &&
-            moe_route_shape.expert_hidden_dim *
-                moe_route_shape.active_experts > moe_scratch)
-            moe_scratch = moe_route_shape.expert_hidden_dim *
-                moe_route_shape.active_experts;
-        sizes[BN_GPU_VALUE_MOE_HB] =
-            (size_t)moe_scratch * sizeof(float);
-        sizes[BN_GPU_VALUE_MOE_HB2] =
-            (size_t)moe_scratch * sizeof(float);
-        sizes[BN_GPU_VALUE_MOE_OUT] =
-            (size_t)c->dim * sizeof(float);
+    if (plan->moe_expert_hidden_dim > 0) {
+        int moe_scratch = plan->moe_expert_hidden_dim;
+        if (plan->moe_total_experts > moe_scratch)
+            moe_scratch = plan->moe_total_experts;
+        if (2 * plan->moe_active_experts > moe_scratch)
+            moe_scratch = 2 * plan->moe_active_experts;
+        if (plan->moe_active_experts > 0 &&
+            plan->moe_expert_hidden_dim <= INT_MAX / plan->moe_active_experts &&
+            plan->moe_expert_hidden_dim * plan->moe_active_experts > moe_scratch)
+            moe_scratch = plan->moe_expert_hidden_dim * plan->moe_active_experts;
+        sizes[BN_GPU_VALUE_MOE_HB] = (size_t)moe_scratch * sizeof(float);
+        sizes[BN_GPU_VALUE_MOE_HB2] = (size_t)moe_scratch * sizeof(float);
+        sizes[BN_GPU_VALUE_MOE_OUT] = (size_t)plan->dim * sizeof(float);
     }
-    if (bn_gpu_policy_uses_hybrid_ssm(c)) {
-        int n_ssm = bn_gpu_policy_ssm_layer_count(c);
-        int num_v_heads = c->ssm_time_step_rank;
-        int head_k_dim = c->ssm_state_size;
-        int head_v_dim = c->ssm_inner_size /
+    if (plan->uses_hybrid_ssm) {
+        int num_v_heads = plan->ssm_time_step_rank;
+        int head_k_dim = plan->ssm_state_size;
+        int head_v_dim = plan->ssm_inner_size /
             (num_v_heads > 0 ? num_v_heads : 1);
-        int key_dim = c->ssm_group_count * head_k_dim;
-        int value_dim = c->ssm_inner_size;
+        int key_dim = plan->ssm_group_count * head_k_dim;
+        int value_dim = plan->ssm_inner_size;
         int qkv_dim = key_dim * 2 + value_dim;
-        int kern = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
-        sizes[BN_GPU_VALUE_SSM_STATE] =
-            (size_t)n_ssm * num_v_heads * head_k_dim * head_v_dim *
-            sizeof(float);
+        int kern = plan->ssm_conv_kernel > 0 ? plan->ssm_conv_kernel : 4;
+        sizes[BN_GPU_VALUE_SSM_STATE] = (size_t)plan->ssm_layer_count *
+            num_v_heads * head_k_dim * head_v_dim * sizeof(float);
         sizes[BN_GPU_VALUE_SSM_CONV_STATE] =
-            (size_t)n_ssm * (kern - 1) * qkv_dim * sizeof(float);
+            (size_t)plan->ssm_layer_count * (kern - 1) * qkv_dim * sizeof(float);
         sizes[BN_GPU_VALUE_SSM_QKV] = (size_t)qkv_dim * sizeof(float);
         sizes[BN_GPU_VALUE_SSM_Z] = (size_t)value_dim * sizeof(float);
-        if (value_dim > c->dim)
-            sizes[BN_GPU_VALUE_XB2] = (size_t)value_dim * sizeof(float);
-        sizes[BN_GPU_VALUE_SSM_ALPHA] =
-            (size_t)num_v_heads * sizeof(float);
-        sizes[BN_GPU_VALUE_SSM_BETA] =
-            (size_t)num_v_heads * sizeof(float);
+        sizes[BN_GPU_VALUE_SSM_ALPHA] = (size_t)num_v_heads * sizeof(float);
+        sizes[BN_GPU_VALUE_SSM_BETA] = (size_t)num_v_heads * sizeof(float);
         sizes[BN_GPU_VALUE_SSM_V] = (size_t)value_dim * sizeof(float);
     }
 
@@ -11112,19 +11114,17 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
         }
     }
 
-    int rope_dims = bn_gpu_policy_rope_dims_for_head(c, c->head_size);
-    int half = rope_dims / 2;
-    if (half > 0 && ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ]) {
-        float *freq = (float *)malloc((size_t)half * sizeof(float));
-        if (!freq) {
+    if (plan->rope_frequency_count > 0 &&
+        ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ]) {
+        if (!plan->rope_frequencies) {
             cuda_free_activations(ctx);
             return -1;
         }
-        bn_gpu_policy_init_rope_frequencies(c, freq, half);
         cudaError_t err = cudaMemcpy(ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ],
-                                     freq, (size_t)half * sizeof(float),
+                                     plan->rope_frequencies,
+                                     (size_t)plan->rope_frequency_count *
+                                         sizeof(float),
                                      cudaMemcpyHostToDevice);
-        free(freq);
         if (err != cudaSuccess) {
             fprintf(stderr, "[bn:gpu:cuda] rope frequency upload failed: %s\n",
                     cudaGetErrorString(err));
@@ -11132,7 +11132,6 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
             return -1;
         }
     }
-
     return 0;
 }
 
@@ -11160,7 +11159,7 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
                                 size_t size, size_t offset) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
     if (!ctx || !out || buf_idx < 0 || buf_idx >= BN_GPU_VALUE_COUNT) {
-        if (cuda_debug_readback()) {
+        if (cuda_debug_readback(ctx)) {
             fprintf(stderr,
                     "[bn:gpu:cuda] read_activation invalid args: ctx=%p "
                     "out=%p buf=%d size=%zu offset=%zu\n",
@@ -11170,7 +11169,7 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
     }
     if (cuda_ctx_set_device(ctx) != 0) return -1;
     if (!ctx->act_bufs[buf_idx] || offset + size > ctx->act_sizes[buf_idx]) {
-        if (cuda_debug_readback()) {
+        if (cuda_debug_readback(ctx)) {
             fprintf(stderr,
                     "[bn:gpu:cuda] read_activation invalid buffer: buf=%d "
                     "ptr=%p size=%zu offset=%zu alloc=%zu\n",
@@ -11189,7 +11188,7 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
         err = cudaMemcpy(out, (char *)ctx->act_bufs[buf_idx] + offset,
                          size, cudaMemcpyDeviceToHost);
     }
-    if (err != cudaSuccess && cuda_debug_readback()) {
+    if (err != cudaSuccess && cuda_debug_readback(ctx)) {
         fprintf(stderr,
                 "[bn:gpu:cuda] read_activation failed: buf=%d size=%zu "
                 "offset=%zu err=%s\n",
@@ -11198,12 +11197,14 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
     return err == cudaSuccess ? 0 : -1;
 }
 
-static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
+static int cuda_buffer_create_f16_cache(const BnCudaCtx *ctx,
+                                        BnCudaBuffer *buf,
                                         int aux_cache_mode) {
     if (!buf || !buf->data || buf->rows <= 0 || buf->cols <= 0 ||
         (buf->cols & 31) != 0)
         return 0;
-    if (!bn_gpu_policy_cuda_cublas_aux_cache_supported(buf->type, buf->cols))
+    if (!bn_gpu_policy_cuda_cublas_aux_cache_supported(
+            ctx ? ctx->runtime_policy : NULL, buf->type, buf->cols))
         return 0;
 
     int force_down_kquant_f32 = aux_cache_mode == 2;
@@ -11213,10 +11214,11 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
             buf->type, aux_cache_mode == 2);
     int down_kquant_as_f16 = bn_backend_quant_aux_cache_down_kquant_can_use_f16(
                         buf->type, force_f16, force_down_kquant_f32) &&
-                    bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled();
+                    bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled(
+                        ctx ? ctx->runtime_policy : NULL);
     int add_down_kquant_f32_cache =
         bn_backend_quant_aux_cache_add_down_kquant_f32(buf->type, force_f16) &&
-        bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache();
+        bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache(&ctx->runtime_policy);
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
     int f32_cache = bn_backend_quant_aux_cache_f32_storage(
         buf->type, force_asymmetric_kquant_f32, down_kquant_as_f16);
@@ -11224,14 +11226,16 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
                         ? sizeof(float)
                         : sizeof(__half));
     int max_mb = bn_gpu_policy_cuda_cublas_aux_cache_max_mb(
-        buf->type, force_down_kquant_f32, force_f16);
+        ctx ? ctx->runtime_policy : NULL, buf->type,
+        force_down_kquant_f32, force_f16);
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
         return 0;
     size_t free_mem = 0;
     size_t total_mem = 0;
     if (cudaMemGetInfo(&free_mem, &total_mem) == cudaSuccess) {
         int reserve_mb =
-            bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096);
+            bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(
+                ctx ? ctx->runtime_policy : NULL, 4096);
         size_t reserve = reserve_mb > 0
             ? (size_t)reserve_mb * 1024u * 1024u : 0u;
         if (free_mem <= bytes + reserve)
@@ -11242,7 +11246,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         : &buf->f16_data;
     cudaError_t err = cudaMalloc(cache_ptr, bytes);
     if (err != cudaSuccess) {
-        if (cuda_debug_cublas_cache())
+        if (cuda_debug_cublas_cache(ctx))
             fprintf(stderr,
                     "[bn:gpu:cuda] cublas cache alloc skipped type=%d rows=%d cols=%d bytes=%zu: %s\n",
                     buf->type, buf->rows, buf->cols, bytes,
@@ -11309,7 +11313,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     }
     err = cudaGetLastError();
     if (err != cudaSuccess) {
-        if (cuda_debug_cublas_cache())
+        if (cuda_debug_cublas_cache(ctx))
             fprintf(stderr,
                     "[bn:gpu:cuda] cublas cache dequant skipped type=%d rows=%d cols=%d: %s\n",
                     buf->type, buf->rows, buf->cols,
@@ -11318,7 +11322,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         *cache_ptr = NULL;
         return 0;
     }
-    if (cuda_debug_cublas_cache())
+    if (cuda_debug_cublas_cache(ctx))
         fprintf(stderr,
                 "[bn:gpu:cuda] cublas cache ready type=%d rows=%d cols=%d bytes=%zu precision=%s\n",
                 buf->type, buf->rows, buf->cols, bytes,
@@ -11333,7 +11337,8 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         size_t total_mem2 = 0;
         if (cudaMemGetInfo(&free_mem2, &total_mem2) == cudaSuccess) {
             int reserve_mb =
-                bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096);
+                bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(
+                    ctx ? ctx->runtime_policy : NULL, 4096);
             size_t reserve = reserve_mb > 0
                 ? (size_t)reserve_mb * 1024u * 1024u : 0u;
             if (free_mem2 <= f32_bytes + reserve)
@@ -11341,7 +11346,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         }
         cudaError_t f32_err = cudaMalloc(&buf->f32_data, f32_bytes);
         if (f32_err != cudaSuccess) {
-            if (cuda_debug_cublas_cache())
+            if (cuda_debug_cublas_cache(ctx))
                 fprintf(stderr,
                         "[bn:gpu:cuda] q6 f32 companion cache skipped "
                         "rows=%d cols=%d bytes=%zu: %s\n",
@@ -11355,7 +11360,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
             buf->rows, buf->cols);
         f32_err = cudaGetLastError();
         if (f32_err != cudaSuccess) {
-            if (cuda_debug_cublas_cache())
+            if (cuda_debug_cublas_cache(ctx))
                 fprintf(stderr,
                         "[bn:gpu:cuda] q6 f32 companion dequant skipped "
                         "rows=%d cols=%d: %s\n",
@@ -11366,7 +11371,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
             return 0;
         }
         buf->f32_size = f32_bytes;
-        if (cuda_debug_cublas_cache())
+        if (cuda_debug_cublas_cache(ctx))
             fprintf(stderr,
                     "[bn:gpu:cuda] q6 f32 companion cache ready rows=%d "
                     "cols=%d bytes=%zu\n",
@@ -11375,26 +11380,30 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     return 0;
 }
 
-static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
+static int cuda_buffer_create_iq_f16_cache(const BnCudaCtx *ctx,
+                                           BnCudaBuffer *buf,
                                            const void *host_data) {
     if (!buf || !host_data || !buf->data || buf->rows <= 0 ||
         buf->cols <= 0 || (buf->cols % BN_QK_K) != 0)
         return 0;
     if (!bn_backend_quant_supports_lazy_moe_aux_cache(buf->type))
         return 0;
-    if (!bn_gpu_policy_cuda_cublas_matmul_enabled())
+    if (!bn_gpu_policy_cuda_cublas_matmul_enabled(
+            ctx ? ctx->runtime_policy : NULL))
         return 0;
 
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
     size_t bytes = n * sizeof(uint16_t);
-    int max_mb = bn_gpu_policy_cuda_cublas_cache_max_mb(128, 0);
+    int max_mb = bn_gpu_policy_cuda_cublas_cache_max_mb(
+        ctx ? ctx->runtime_policy : NULL, 128, 0);
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
         return 0;
     size_t free_mem = 0;
     size_t total_mem = 0;
     if (cudaMemGetInfo(&free_mem, &total_mem) == cudaSuccess) {
         int reserve_mb =
-            bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096);
+            bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(
+                ctx ? ctx->runtime_policy : NULL, 4096);
         size_t reserve = reserve_mb > 0
             ? (size_t)reserve_mb * 1024u * 1024u : 0u;
         if (free_mem <= bytes + reserve)
@@ -11433,13 +11442,13 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
             cudaFree(buf->f16_data);
         buf->f16_data = NULL;
         buf->f16_size = 0;
-        if (cuda_debug_cublas_cache())
+        if (cuda_debug_cublas_cache(ctx))
             fprintf(stderr,
                     "[bn:gpu:cuda] iq f16 cache skipped type=%d rows=%d "
                     "cols=%d bytes=%zu: %s\n",
                     buf->type, buf->rows, buf->cols, bytes,
                     cudaGetErrorString(err));
-    } else if (cuda_debug_cublas_cache()) {
+    } else if (cuda_debug_cublas_cache(ctx)) {
         fprintf(stderr,
                 "[bn:gpu:cuda] iq f16 cache ready type=%d rows=%d cols=%d "
                 "bytes=%zu\n",
@@ -11479,9 +11488,9 @@ static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
     }
     if (create_aux_cache) {
         if (bn_backend_quant_supports_lazy_moe_aux_cache(type))
-            cuda_buffer_create_iq_f16_cache(buf, data);
+            cuda_buffer_create_iq_f16_cache(ctx, buf, data);
         else
-            cuda_buffer_create_f16_cache(buf, create_aux_cache);
+            cuda_buffer_create_f16_cache(ctx, buf, create_aux_cache);
     }
     return buf;
 }
@@ -11569,187 +11578,199 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                                   int rows, int cols, int n_tokens,
                                   int type);
 
-static int cuda_quant_matmul_preferred_for_type(int type) {
+static int cuda_quant_matmul_preferred_for_type(
+    const BnCudaCtx *ctx, int type) {
     return bn_gpu_policy_cuda_quant_matmul_preferred_for_type(
-        type, cuda_use_f16_native_quant_matmul());
+        &ctx->runtime_policy, type, cuda_use_f16_native_quant_matmul(ctx));
 }
 
-static int cuda_use_down_kquant_4warp_long(int rows, int cols) {
-    return bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(rows, cols);
+static int cuda_use_down_kquant_4warp_long(const BnCudaCtx *ctx, int rows, int cols) {
+    return bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(&ctx->runtime_policy, rows, cols);
 }
 
-static int cuda_use_down_kquant_5warp_shape(int rows, int cols) {
-    return bn_gpu_policy_cuda_down_kquant_5warp_shape_enabled(rows, cols);
+static int cuda_use_down_kquant_5warp_shape(const BnCudaCtx *ctx, int rows, int cols) {
+    return bn_gpu_policy_cuda_down_kquant_5warp_shape_enabled(&ctx->runtime_policy, rows, cols);
 }
 
-static int cuda_use_down_kquant_3warp_shape(int rows, int cols) {
-    return bn_gpu_policy_cuda_down_kquant_3warp_shape_enabled(rows, cols);
+static int cuda_use_down_kquant_3warp_shape(const BnCudaCtx *ctx, int rows, int cols) {
+    return bn_gpu_policy_cuda_down_kquant_3warp_shape_enabled(&ctx->runtime_policy, rows, cols);
 }
 
-static int cuda_use_down_kquant_2warp_long(int rows, int cols) {
-    return bn_gpu_policy_cuda_down_kquant_2warp_long_enabled(rows, cols);
+static int cuda_use_down_kquant_2warp_long(const BnCudaCtx *ctx, int rows, int cols) {
+    return bn_gpu_policy_cuda_down_kquant_2warp_long_enabled(&ctx->runtime_policy, rows, cols);
 }
 
-static int cuda_disable_down_kquant_matvec4_shape(int rows, int cols) {
-    return bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(rows, cols);
+static int cuda_disable_down_kquant_matvec4_shape(const BnCudaCtx *ctx, int rows, int cols) {
+    return bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(&ctx->runtime_policy, rows, cols);
 }
 
-static int cuda_prefer_moe_down_quant_path(int routed_asymmetric_kquant, int down_type,
+static int cuda_prefer_moe_down_quant_path(const BnCudaCtx *ctx, int routed_asymmetric_kquant, int down_type,
                                           int hidden_dim, int n_experts,
                                           int k) {
     return bn_gpu_policy_cuda_moe_down_quant_path_preferred(
-        routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
+        &ctx->runtime_policy, routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
 }
 
-static int cuda_use_moe_down_f32_cache_path(int routed_asymmetric_kquant, int down_type,
+static int cuda_use_moe_down_f32_cache_path(const BnCudaCtx *ctx, int routed_asymmetric_kquant, int down_type,
                                                 const BnCudaBuffer *down,
                                                 int prefer_quant_down,
                                                 int dim, int hidden_dim,
                                                 int n_experts, int k) {
     return bn_gpu_policy_cuda_moe_down_f32_cache_path_enabled(
-        routed_asymmetric_kquant, down_type, down && down->f32_data != NULL,
+        &ctx->runtime_policy, routed_asymmetric_kquant, down_type, down && down->f32_data != NULL,
         prefer_quant_down, dim, hidden_dim, n_experts, k);
 }
 
-static int cuda_use_moe_down_4row(int hidden_dim) {
-    return bn_gpu_policy_cuda_moe_down_4row_enabled(hidden_dim);
+static int cuda_use_moe_down_4row(const BnCudaCtx *ctx, int hidden_dim) {
+    return bn_gpu_policy_cuda_moe_down_4row_enabled(
+        ctx ? ctx->runtime_policy : NULL, hidden_dim);
 }
 
-static int cuda_use_moe_down_8row(int hidden_dim) {
-    return bn_gpu_policy_cuda_moe_down_8row_enabled(hidden_dim);
+static int cuda_use_moe_down_8row(const BnCudaCtx *ctx, int hidden_dim) {
+    return bn_gpu_policy_cuda_moe_down_8row_enabled(
+        ctx ? ctx->runtime_policy : NULL, hidden_dim);
 }
 
-static int cuda_use_moe_down_halfwarp(int down_type,
+static int cuda_use_moe_down_halfwarp(const BnCudaCtx *ctx, int down_type,
                                           int prefer_quant_down,
                                           int n_experts,
                                           int k) {
     return bn_gpu_policy_cuda_moe_down_halfwarp_enabled(
-        down_type, prefer_quant_down, n_experts, k);
+        ctx ? ctx->runtime_policy : NULL, down_type, prefer_quant_down,
+        n_experts, k);
 }
 
-static int cuda_use_moe_down_split4(int down_type, int use_halfwarp,
+static int cuda_use_moe_down_split4(const BnCudaCtx *ctx, int down_type,
+                                        int use_halfwarp,
                                         int n_experts, int k) {
     return bn_gpu_policy_cuda_moe_down_split4_enabled(
-        down_type, use_halfwarp, n_experts, k);
+        ctx ? ctx->runtime_policy : NULL, down_type, use_halfwarp,
+        n_experts, k);
 }
 
-static int cuda_use_moe_down_scatter(int down_type, int use_halfwarp,
+static int cuda_use_moe_down_scatter(const BnCudaCtx *ctx, int down_type,
+                                         int use_halfwarp,
                                          int use_split4) {
     return bn_gpu_policy_cuda_moe_down_scatter_enabled(
-        down_type, use_halfwarp, use_split4);
+        ctx ? ctx->runtime_policy : NULL, down_type, use_halfwarp,
+        use_split4);
 }
 
-static int cuda_use_moe_down_scatter_16row(int use_scatter,
+static int cuda_use_moe_down_scatter_16row(const BnCudaCtx *ctx,
+                                               int use_scatter,
                                                int hidden_dim) {
     return bn_gpu_policy_cuda_moe_down_scatter_16row_enabled(
-        use_scatter, hidden_dim);
+        ctx ? ctx->runtime_policy : NULL, use_scatter, hidden_dim);
 }
 
-static int cuda_use_moe_down_float_path(void) {
-    return bn_gpu_policy_cuda_moe_down_float_path_enabled();
+static int cuda_use_moe_down_float_path(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_down_float_path_enabled(&ctx->runtime_policy);
 }
 
-static int cuda_use_moe_down_pair_path(int f32_down_default,
+static int cuda_use_moe_down_pair_path(const BnCudaCtx *ctx, int f32_down_default,
                                       int pair_down_f32_layer,
                                       int all_active_two_disable_pair_down) {
     return bn_gpu_policy_cuda_moe_down_pair_path_enabled(
-        f32_down_default, pair_down_f32_layer, all_active_two_disable_pair_down);
+        &ctx->runtime_policy, f32_down_default, pair_down_f32_layer, all_active_two_disable_pair_down);
 }
 
-static int cuda_prefer_moe_down_f32_cache(const BnCudaBuffer *down,
+static int cuda_prefer_moe_down_f32_cache(const BnCudaCtx *ctx, const BnCudaBuffer *down,
                                         int hidden_dim,
                                         int all_active_two_kquant,
                                         int all_active_two_f32_down) {
     return bn_gpu_policy_cuda_moe_down_prefers_f32_cache(
-        down && down->f32_data != NULL, hidden_dim, all_active_two_kquant,
+        &ctx->runtime_policy, down && down->f32_data != NULL, hidden_dim, all_active_two_kquant,
         all_active_two_f32_down);
 }
 
-static int cuda_use_moe_down_f32_pair2(int n_experts, int k) {
-    return bn_gpu_policy_cuda_moe_down_f32_pair2_enabled(n_experts, k);
+static int cuda_use_moe_down_f32_pair2(const BnCudaCtx *ctx, int n_experts, int k) {
+    return bn_gpu_policy_cuda_moe_down_f32_pair2_enabled(&ctx->runtime_policy, n_experts, k);
 }
 
-static int cuda_use_moe_down_f32_pair2_4row(void) {
-    return bn_gpu_policy_cuda_moe_down_f32_pair2_4row_enabled();
+static int cuda_use_moe_down_f32_pair2_4row(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_down_f32_pair2_4row_enabled(&ctx->runtime_policy);
 }
 
 static int cuda_use_all_active_two_kquant_moe_down_accum(
-    int all_active_two_kquant) {
+    const BnCudaCtx *ctx, int all_active_two_kquant) {
     return bn_gpu_policy_all_active_two_kquant_moe_down_accum_enabled(
-        all_active_two_kquant);
+        &ctx->runtime_policy, all_active_two_kquant);
 }
 
-static int cuda_use_all_active_two_kquant_moe_down_pair4_sum(int all_active_two_kquant) {
+static int cuda_use_all_active_two_kquant_moe_down_pair4_sum(const BnCudaCtx *ctx, int all_active_two_kquant) {
     return bn_gpu_policy_all_active_two_kquant_moe_down_pair4_sum_enabled(
-        all_active_two_kquant);
+        &ctx->runtime_policy, all_active_two_kquant);
 }
 
-static int cuda_use_moe_down_prepared_native_quant_4row_sum(int all_active_two_kquant,
+static int cuda_use_moe_down_prepared_native_quant_4row_sum(const BnCudaCtx *ctx, int all_active_two_kquant,
                                                  int k,
                                                  int hidden_dim) {
     return bn_gpu_policy_cuda_moe_down_prepared_native_quant_4row_sum_enabled(
-        all_active_two_kquant, k, hidden_dim);
+        &ctx->runtime_policy, all_active_two_kquant, k, hidden_dim);
 }
 
-static int cuda_use_moe_down_prepared_native_quant_8row_sum(int prepared_native_quant_4row_sum,
+static int cuda_use_moe_down_prepared_native_quant_8row_sum(const BnCudaCtx *ctx, int prepared_native_quant_4row_sum,
                                                  int hidden_dim) {
     return bn_gpu_policy_cuda_moe_down_prepared_native_quant_8row_sum_enabled(
-        prepared_native_quant_4row_sum, hidden_dim);
+        &ctx->runtime_policy, prepared_native_quant_4row_sum, hidden_dim);
 }
 
 static int cuda_use_all_active_two_kquant_moe_down_fixed(
-    int all_active_two_kquant) {
+    const BnCudaCtx *ctx, int all_active_two_kquant) {
     return bn_gpu_policy_all_active_two_kquant_moe_down_fixed_enabled(
-        all_active_two_kquant);
+        &ctx->runtime_policy, all_active_two_kquant);
 }
 
-static int cuda_use_moe_down_resid_rmsnorm_fuse(void) {
-    return bn_gpu_policy_cuda_moe_down_resid_rmsnorm_fuse_enabled();
+static int cuda_use_moe_down_resid_rmsnorm_fuse(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_down_resid_rmsnorm_fuse_enabled(
+        ctx ? ctx->runtime_policy : NULL);
 }
 
-static int cuda_use_moe_down_prepared_native_quant_shape_2048_768(int dim,
+static int cuda_use_moe_down_prepared_native_quant_shape_2048_768(const BnCudaCtx *ctx, int dim,
                                                        int hidden_dim,
                                                        int k) {
     return bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
-        dim, hidden_dim, k);
+        &ctx->runtime_policy, dim, hidden_dim, k);
 }
 
-static int cuda_use_all_active_two_kquant_moe_down_accum_4row(void) {
-    return bn_gpu_policy_all_active_two_kquant_moe_down_accum_4row_enabled();
+static int cuda_use_all_active_two_kquant_moe_down_accum_4row(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_all_active_two_kquant_moe_down_accum_4row_enabled(&ctx->runtime_policy);
 }
 
-static int cuda_use_moe_down_prepared_pair_4row(void) {
-    return bn_gpu_policy_cuda_moe_down_prepared_pair_4row_enabled();
+static int cuda_use_moe_down_prepared_pair_4row(const BnCudaCtx *ctx) {
+    return bn_gpu_policy_cuda_moe_down_prepared_pair_4row_enabled(&ctx->runtime_policy);
 }
 
-static int cuda_use_moe_down_f32_cache(const BnCudaBuffer *down,
+static int cuda_use_moe_down_f32_cache(const BnCudaCtx *ctx, const BnCudaBuffer *down,
                                            int all_active_two_disable_f32_cache) {
     return bn_gpu_policy_cuda_moe_down_f32_cache_enabled(
-        down && down->f32_data != NULL, all_active_two_disable_f32_cache);
+        &ctx->runtime_policy, down && down->f32_data != NULL, all_active_two_disable_f32_cache);
 }
 
-static int cuda_use_moe_down_f16_cache(const BnCudaBuffer *down) {
+static int cuda_use_moe_down_f16_cache(const BnCudaCtx *ctx, const BnCudaBuffer *down) {
     return bn_gpu_policy_cuda_moe_down_f16_cache_enabled(
-        down && down->f16_data != NULL);
+        &ctx->runtime_policy, down && down->f16_data != NULL);
 }
 
-static int cuda_use_moe_down_aux_f32_cache(const BnCudaBuffer *down) {
+static int cuda_use_moe_down_aux_f32_cache(const BnCudaCtx *ctx, const BnCudaBuffer *down) {
     return bn_gpu_policy_cuda_moe_down_aux_f32_cache_enabled(
-        down && down->f32_data != NULL);
+        &ctx->runtime_policy, down && down->f32_data != NULL);
 }
 
-static int cuda_use_moe_down_prepared_pair8(int n_experts, int k,
+static int cuda_use_moe_down_prepared_pair8(const BnCudaCtx *ctx, int n_experts, int k,
                                             int hidden_dim) {
     return bn_gpu_policy_cuda_moe_down_prepared_pair8_enabled(
-        n_experts, k, hidden_dim);
+        &ctx->runtime_policy, n_experts, k, hidden_dim);
 }
 
-static int cuda_use_moe_down_prepared_8row(int hidden_dim) {
-    return bn_gpu_policy_cuda_moe_down_prepared_8row_enabled(hidden_dim);
+static int cuda_use_moe_down_prepared_8row(const BnCudaCtx *ctx, int hidden_dim) {
+    return bn_gpu_policy_cuda_moe_down_prepared_8row_enabled(&ctx->runtime_policy, hidden_dim);
 }
 
-static cublasGemmAlgo_t cuda_cublas_gemm_algo_from_policy(void) {
-    int index = bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24);
+static cublasGemmAlgo_t cuda_cublas_gemm_algo_from_policy(
+    const BnCudaCtx *ctx) {
+    int index = bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(
+        ctx ? ctx->runtime_policy : NULL, 24);
     if (index < 0)
         return CUBLAS_GEMM_DEFAULT;
     if (index <= 23)
@@ -11848,7 +11869,7 @@ static int cuda_cublas_matmul_f16_preconverted(BnCudaCtx *ctx, float *d_out,
         &beta,
         d_out, CUDA_R_32F, rows,
         CUBLAS_COMPUTE_32F_FAST_16F,
-        cuda_cublas_gemm_algo_from_policy());
+        cuda_cublas_gemm_algo_from_policy(ctx));
     if (st != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[bn:gpu:cuda] cublas matmul failed: status %d\n",
                 (int)st);
@@ -11877,7 +11898,7 @@ static int cuda_cublas_matmul_f16_preconverted_out_f16(
         &beta,
         d_out, CUDA_R_16F, rows,
         CUBLAS_COMPUTE_32F_FAST_16F,
-        cuda_cublas_gemm_algo_from_policy());
+        cuda_cublas_gemm_algo_from_policy(ctx));
     if (st != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[bn:gpu:cuda] cublas matmul f16 out failed: status %d\n",
                 (int)st);
@@ -12213,7 +12234,7 @@ static int cuda_moe_cublas_grouped_prefill(
     size_t hidden_values = (size_t)n_active * (size_t)max_count *
                            (size_t)hidden_dim;
     size_t out_values = gather_values;
-    int gateup_f16_out = cuda_use_moe_cublas_gateup_f16_out();
+    int gateup_f16_out = cuda_use_moe_cublas_gateup_f16_out(ctx);
     size_t x_bytes = gather_values * sizeof(__half) +
                      hidden_values * sizeof(__half);
     if (gateup_f16_out)
@@ -12318,7 +12339,7 @@ static int cuda_moe_cublas_grouped_prefill(
     if (ctx->exec_stream)
         cublasSetStream(ctx->cublas, ctx->exec_stream);
     cublasStatus_t st = CUBLAS_STATUS_SUCCESS;
-    int use_grouped_var = cuda_use_moe_cublas_grouped_variable();
+    int use_grouped_var = cuda_use_moe_cublas_grouped_variable(ctx);
     cublasOperation_t *h_ta = NULL;
     cublasOperation_t *h_tb = NULL;
     int *h_m = NULL;
@@ -12695,7 +12716,7 @@ static int cuda_matmul_device_out_preconverted_f16(
         BnCudaCtx *ctx, float *d_dst, const BnCudaBuffer *w,
         const float *d_x, const void *d_x_f16,
         int rows, int cols, int n_tokens, int type) {
-    if (!cuda_quant_matmul_preferred_for_type(type) &&
+    if (!cuda_quant_matmul_preferred_for_type(ctx, type) &&
         w && w->f16_data && d_x_f16 &&
         cuda_cublas_matmul_f16_preconverted(ctx, d_dst, w, d_x_f16,
                                             rows, cols, n_tokens) == 0)
@@ -12709,13 +12730,13 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                                   int rows, int cols, int n_tokens,
                                   int type) {
     if (!ctx || !d_dst || !w || !w->data || !d_x || rows <= 0 ||
-        cols <= 0 || n_tokens <= 0 || !cuda_type_supported(type))
+        cols <= 0 || n_tokens <= 0 || !cuda_type_supported(ctx, type))
         return -1;
 
     int threads = 256;
     int warps = threads / 32;
     cudaError_t err = cudaSuccess;
-    if (!cuda_quant_matmul_preferred_for_type(type) &&
+    if (!cuda_quant_matmul_preferred_for_type(ctx, type) &&
         (w->f16_data || w->f32_data) && n_tokens > 1 &&
         cuda_cublas_matmul_f16(ctx, d_dst, w, d_x, rows, cols,
                                n_tokens) == 0) {
@@ -12723,7 +12744,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
     } else if (bn_backend_quant_supports_asymmetric_kquant_dot_matmul(type) &&
                (cols % BN_QK_K) == 0 &&
                n_tokens > 1 &&
-               bn_gpu_policy_kquant_dot_enabled()) {
+               bn_gpu_policy_kquant_dot_enabled(&ctx->runtime_policy)) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0)
             return -1;
@@ -12752,8 +12773,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         quantize_q8_1_batch_kernel<<<qgrid, 32, 0>>>(
             xq, d_x, cols, n_tokens);
         if (n_tokens >= 8 &&
-            bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled() &&
-            bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled()) {
+            bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled(&ctx->runtime_policy) &&
+            bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled(&ctx->runtime_policy)) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 7) / 8, 1);
             size_t shared =
@@ -12765,7 +12786,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         } else if (n_tokens >= 4) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled(&ctx->runtime_policy)) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -12806,20 +12827,20 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         }
     } else if (bn_backend_quant_supports_down_kquant_dot_matmul(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_dot_enabled(&ctx->runtime_policy)) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
         quantize_q8k_batch_kernel<<<dim3(x_blocks, n_tokens, 1),
                                     BN_QK_K>>>(xq, d_x, cols, n_tokens);
-        if (n_tokens >= 8 && bn_gpu_policy_cuda_down_kquant_matmul8_enabled()) {
+        if (n_tokens >= 8 && bn_gpu_policy_cuda_down_kquant_matmul8_enabled(&ctx->runtime_policy)) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 7) / 8, 1);
             q6k_dot_matmul8_token_kernel<<<grid, threads, 0>>>(
                 d_dst, (const BnBlockQ6K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         } else if (n_tokens >= 4 &&
-                   bn_gpu_policy_cuda_down_kquant_matmul4_enabled()) {
+                   bn_gpu_policy_cuda_down_kquant_matmul4_enabled(&ctx->runtime_policy)) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
             q6k_dot_matmul4_token_kernel<<<grid, threads, 0>>>(
@@ -12863,7 +12884,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
     BnCudaBuffer *w = (BnCudaBuffer *)W_buf;
     if (!out || !w || !w->data || !x || rows <= 0 || cols <= 0)
         return -1;
-    if (!cuda_type_supported(type))
+    if (!cuda_type_supported(ctx, type))
         return -1;
 
     size_t x_bytes = (size_t)cols * sizeof(float);
@@ -12886,14 +12907,14 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_supports_legacy_block_matvec(type) &&
                (cols & 31) == 0 &&
-               bn_gpu_policy_cuda_legacy_block_matvec4_enabled()) {
+               bn_gpu_policy_cuda_legacy_block_matvec4_enabled(&ctx->runtime_policy)) {
         q5_0_matvec4_kernel<<<(rows + 3) / 4, threads,
             (size_t)threads * sizeof(float) * 4>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
     } else if (bn_backend_quant_supports_legacy_block_matvec(type) &&
                (cols & 31) == 0 &&
-               bn_gpu_policy_cuda_legacy_block_warp_enabled()) {
+               bn_gpu_policy_cuda_legacy_block_warp_enabled(&ctx->runtime_policy)) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         q5_0_matvec_warp_kernel<<<blocks, threads>>>(
@@ -12901,7 +12922,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_supports_asymmetric_kquant_dot_matvec(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_kquant_dot_enabled()) {
+               bn_gpu_policy_kquant_dot_enabled(&ctx->runtime_policy)) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
         quantize_q8k_batch_kernel<<<dim3(cols / BN_QK_K, 1, 1),
@@ -12913,7 +12934,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_supports_down_kquant_dot_matvec(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_down_kquant_dot_forced()) {
+               bn_gpu_policy_cuda_down_kquant_dot_forced(&ctx->runtime_policy)) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
         quantize_q8k_batch_kernel<<<dim3(cols / BN_QK_K, 1, 1),
@@ -12925,7 +12946,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_supports_down_kquant_warp_matvec(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_down_kquant_warp_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_warp_enabled(&ctx->runtime_policy)) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         q6k_matvec_warp_kernel<<<blocks, threads>>>(
@@ -12973,7 +12994,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
     if (!out || !w || !w->data || !X || rows <= 0 || cols <= 0 ||
         n_tokens <= 0)
         return -1;
-    if (!cuda_type_supported(type))
+    if (!cuda_type_supported(ctx, type))
         return -1;
 
     size_t x_bytes = (size_t)n_tokens * cols * sizeof(float);
@@ -12988,14 +13009,14 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
 
     int threads = 256;
     int warps = threads / 32;
-    if (!cuda_quant_matmul_preferred_for_type(type) &&
+    if (!cuda_quant_matmul_preferred_for_type(ctx, type) &&
         (w->f16_data || w->f32_data) && n_tokens > 1 &&
         cuda_cublas_matmul_f16(ctx, ctx->d_out, w, ctx->d_x, rows, cols,
                                n_tokens) == 0) {
         err = cudaSuccess;
     } else if (bn_backend_quant_supports_asymmetric_kquant_dot_matmul(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_kquant_dot_enabled()) {
+               bn_gpu_policy_kquant_dot_enabled(&ctx->runtime_policy)) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0)
             return -1;
@@ -13027,7 +13048,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         if (n_tokens >= 4) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled(&ctx->runtime_policy)) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -13068,14 +13089,14 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         }
     } else if (bn_backend_quant_supports_down_kquant_dot_matmul(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_down_kquant_dot_forced()) {
+               bn_gpu_policy_cuda_down_kquant_dot_forced(&ctx->runtime_policy)) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
         quantize_q8k_batch_kernel<<<dim3(x_blocks, n_tokens, 1),
                                     BN_QK_K>>>(xq, ctx->d_x, cols,
                                                n_tokens);
-        if (n_tokens >= 8 && bn_gpu_policy_cuda_down_kquant_matmul8_enabled()) {
+        if (n_tokens >= 8 && bn_gpu_policy_cuda_down_kquant_matmul8_enabled(&ctx->runtime_policy)) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 7) / 8, 1);
             q6k_dot_matmul8_token_kernel<<<grid, threads, 0>>>(
@@ -13135,7 +13156,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
 static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                              const float *X, int n_tokens, int x_cols) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (!cuda_use_matmul_batch()) return -1;
+    if (!cuda_use_matmul_batch(ctx)) return -1;
     if (!ctx || !ops || !X || n_ops <= 1 || n_ops > 16 ||
         n_tokens <= 1 || x_cols <= 0)
         return -1;
@@ -13144,7 +13165,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
     for (int i = 0; i < n_ops; i++) {
         BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
         if (!ops[i].out || !w || !w->data || ops[i].cols != x_cols ||
-            ops[i].rows <= 0 || !cuda_type_supported(ops[i].type))
+            ops[i].rows <= 0 || !cuda_type_supported(ctx, ops[i].type))
             return -1;
         total_values += (size_t)n_tokens * ops[i].rows;
     }
@@ -13194,13 +13215,13 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
         int rows = ops[i].rows;
         int type = ops[i].type;
-        if (!cuda_quant_matmul_preferred_for_type(type) &&
+        if (!cuda_quant_matmul_preferred_for_type(ctx, type) &&
             w->f16_data && x_f16_ready &&
             cuda_cublas_matmul_f16_preconverted(
                 ctx, ctx->d_out + out_offset, w, ctx->d_x_f16, rows,
                 x_cols, n_tokens) == 0) {
             err = cudaSuccess;
-        } else if (!cuda_quant_matmul_preferred_for_type(type) &&
+        } else if (!cuda_quant_matmul_preferred_for_type(ctx, type) &&
             (w->f16_data || w->f32_data) &&
             cuda_cublas_matmul_f16(ctx, ctx->d_out + out_offset, w,
                                    ctx->d_x, rows, x_cols,
@@ -13233,7 +13254,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
             if (n_tokens >= 4) {
                 dim3 grid((rows + warps - 1) / warps,
                           (n_tokens + 3) / 4, 1);
-                if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
+                if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled(&ctx->runtime_policy)) {
                     size_t shared =
                         (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                     q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -13282,7 +13303,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
             }
         } else if (bn_backend_quant_supports_down_kquant_dot_matmul(type) &&
                    (x_cols % BN_QK_K) == 0 &&
-                   bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
+                   bn_gpu_policy_cuda_down_kquant_dot_enabled(&ctx->runtime_policy)) {
             int x_blocks = x_cols / BN_QK_K;
             if (!q8_k_ready) {
                 if (cuda_ensure_q8_k(ctx, x_cols, n_tokens) != 0)
@@ -13294,7 +13315,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                 q8_k_ready = 1;
             }
             if (n_tokens >= 8 &&
-                bn_gpu_policy_cuda_down_kquant_matmul8_enabled()) {
+                bn_gpu_policy_cuda_down_kquant_matmul8_enabled(&ctx->runtime_policy)) {
                 dim3 grid((rows + warps - 1) / warps,
                           (n_tokens + 7) / 8, 1);
                 q6k_dot_matmul8_token_kernel<<<grid, threads, 0>>>(
@@ -13302,7 +13323,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                     (const BnBlockQ8K *)ctx->d_q8_k, rows, x_cols,
                     n_tokens, out_offset);
             } else if (n_tokens >= 4 &&
-                       bn_gpu_policy_cuda_down_kquant_matmul4_enabled()) {
+                       bn_gpu_policy_cuda_down_kquant_matmul4_enabled(&ctx->runtime_policy)) {
                 dim3 grid((rows + warps - 1) / warps,
                           (n_tokens + 3) / 4, 1);
                 q6k_dot_matmul4_token_kernel<<<grid, threads, 0>>>(
@@ -13389,10 +13410,10 @@ static int cuda_argmax_activation(void *vctx, int buf_idx, int n,
     int *d_result = (int *)(partials + blocks);
     int no_penalty_fast =
         n_penalty_tokens == 0 &&
-        cuda_use_argmax_fast();
+        cuda_use_argmax_fast(ctx);
     int optimistic_penalty =
         n_penalty_tokens > 0 &&
-        cuda_use_optimistic_argmax_penalty();
+        cuda_use_optimistic_argmax_penalty(ctx);
     if (no_penalty_fast) {
         argmax_stage1_fast_kernel<<<blocks, threads, 0, stream>>>(
             partials, x, n);
@@ -13498,16 +13519,17 @@ static int cuda_matvec_argmax_activation(void *vctx, void *W_buf, int type,
     }
     int threads = 256;
     int use_mmvq =
-        bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled(rows, cols);
+        bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled(
+            ctx->runtime_policy, rows, cols);
     int use_mmvq_1warp8 =
         bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_enabled(
-            use_mmvq, rows, cols);
+            ctx->runtime_policy, use_mmvq, rows, cols);
     int use_mmvq_1warp16 =
         bn_gpu_policy_cuda_moe_logits_mmvq_1warp16_1536_enabled(
-            use_mmvq_1warp8);
+            ctx->runtime_policy, use_mmvq_1warp8);
     int use_mmvq_1warp8_1536 =
         bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_unroll_enabled(
-            use_mmvq_1warp8, use_mmvq_1warp16);
+            ctx->runtime_policy, use_mmvq_1warp8, use_mmvq_1warp16);
     int blocks = use_mmvq
         ? (use_mmvq_1warp16 ? (rows + 15) / 16 :
            (use_mmvq_1warp8 ? (rows + 7) / 8 : (rows + 3) / 4))
@@ -13531,7 +13553,7 @@ static int cuda_matvec_argmax_activation(void *vctx, void *W_buf, int type,
     int *d_result = (int *)(partials + blocks);
     int optimistic_penalty =
         n_penalty_tokens > 0 &&
-        cuda_use_optimistic_argmax_penalty();
+        cuda_use_optimistic_argmax_penalty(ctx);
     if (use_mmvq) {
         if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
         BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
@@ -13675,13 +13697,13 @@ static int cuda_memory_info(void *vctx,
 static int cuda_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                              const float *x, int x_cols) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (!cuda_use_matvec_batch()) return -1;
+    if (!cuda_use_matvec_batch(ctx)) return -1;
     if (!ctx || !ops || !x || n_ops <= 0) return -1;
     size_t total_rows = 0;
     for (int i = 0; i < n_ops; i++) {
         BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
         if (!ops[i].out || !w || !w->data || ops[i].cols != x_cols ||
-            ops[i].rows <= 0 || !cuda_type_supported(ops[i].type))
+            ops[i].rows <= 0 || !cuda_type_supported(ctx, ops[i].type))
             return -1;
         total_rows += (size_t)ops[i].rows;
     }
@@ -13776,7 +13798,7 @@ static int cuda_dense_ffn(void *vctx, float *out,
     BnCudaBuffer *gate = (BnCudaBuffer *)gate_buf;
     BnCudaBuffer *up = (BnCudaBuffer *)up_buf;
     BnCudaBuffer *down = (BnCudaBuffer *)down_buf;
-    if (!cuda_use_dense_ffn())
+    if (!cuda_use_dense_ffn(ctx))
         return -1;
     if (!ctx || !out || !gate || !up || !down || !x ||
         !gate->data || !up->data || !down->data ||
@@ -13786,8 +13808,8 @@ static int cuda_dense_ffn(void *vctx, float *out,
         gate->cols != dim || up->cols != dim ||
         down->rows != dim || down->cols != hidden_dim)
         return -1;
-    if (!cuda_type_supported(gate_type) || !cuda_type_supported(up_type) ||
-        !cuda_type_supported(down_type))
+    if (!cuda_type_supported(ctx, gate_type) || !cuda_type_supported(ctx, up_type) ||
+        !cuda_type_supported(ctx, down_type))
         return -1;
 
     size_t x_bytes = (size_t)dim * sizeof(float);
@@ -13889,9 +13911,9 @@ static int cuda_dense_ffn_batch_device(BnCudaCtx *ctx, float *d_out,
         gate->cols != dim ||
         down->rows != dim || down->cols != hidden_dim)
         return -1;
-    if (!cuda_type_supported(gate_type) ||
-        (!stacked_gateup && !cuda_type_supported(up_type)) ||
-        !cuda_type_supported(down_type))
+    if (!cuda_type_supported(ctx, gate_type) ||
+        (!stacked_gateup && !cuda_type_supported(ctx, up_type)) ||
+        !cuda_type_supported(ctx, down_type))
         return -1;
 
     if (stacked_gateup) {
@@ -13946,7 +13968,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
     BnCudaBuffer *down = (BnCudaBuffer *)down_buf;
     BnCudaBuffer *norm = (BnCudaBuffer *)norm_buf;
     int stacked_gateup = up == NULL;
-    if (!cuda_use_dense_ffn_batch())
+    if (!cuda_use_dense_ffn_batch(ctx))
         return -1;
     if (!ctx || !out || !gate || !down || !X ||
         !gate->data || !down->data ||
@@ -13966,9 +13988,9 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         return -1;
     if (add_residual && !norm)
         return -1;
-    if (!cuda_type_supported(gate_type) ||
-        (!stacked_gateup && !cuda_type_supported(up_type)) ||
-        !cuda_type_supported(down_type))
+    if (!cuda_type_supported(ctx, gate_type) ||
+        (!stacked_gateup && !cuda_type_supported(ctx, up_type)) ||
+        !cuda_type_supported(ctx, down_type))
         return -1;
 
     size_t input_bytes = (size_t)n_tokens * dim * sizeof(float);
@@ -14038,7 +14060,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         if (n_tokens >= 4) {
             dim3 grid((hidden_dim * 2 + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled(&ctx->runtime_policy)) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -14139,7 +14161,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         if (n_tokens >= 4) {
             dim3 grid((hidden_dim + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled(&ctx->runtime_policy)) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -14270,7 +14292,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         }
     } else if (bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
                (hidden_dim % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_dot_enabled(&ctx->runtime_policy)) {
         int x_blocks = hidden_dim / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, hidden_dim, n_tokens) != 0)
             return -1;
@@ -14278,7 +14300,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         quantize_q8k_batch_kernel<<<dim3(x_blocks, n_tokens, 1),
                                     BN_QK_K>>>(
             xq, ctx->d_x, hidden_dim, n_tokens);
-        if (n_tokens >= 4 && bn_gpu_policy_cuda_down_kquant_matmul4_enabled()) {
+        if (n_tokens >= 4 && bn_gpu_policy_cuda_down_kquant_matmul4_enabled(&ctx->runtime_policy)) {
             dim3 grid((dim + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
             q6k_dot_matmul4_token_kernel<<<grid, threads, 0>>>(
@@ -14292,7 +14314,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         }
     } else if (bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
                (hidden_dim % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_down_kquant_batch_warp_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_batch_warp_enabled(&ctx->runtime_policy)) {
         dim3 grid((dim + warps - 1) / warps, n_tokens, 1);
         q6k_matmul_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ6K *)down->data, ctx->d_x,
@@ -14396,7 +14418,7 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
     BnCudaBuffer *shared_down = (BnCudaBuffer *)shared_down_buf;
     BnCudaBuffer *shared_gate_weight =
         (BnCudaBuffer *)shared_gate_weight_buf;
-    if (!cuda_use_moe_ffn_batch())
+    if (!cuda_use_moe_ffn_batch(ctx))
         return -1;
     if (!ctx || !out || !experts || !expert_offsets || !expert_counts ||
         !token_ids || !weights || !X || n_experts <= 0 || n_tokens <= 0 ||
@@ -14419,9 +14441,9 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
               shared_up->cols != dim)) ||
             shared_down->rows != dim ||
             shared_down->cols != shared_hidden_dim ||
-            !cuda_type_supported(shared_gate_type) ||
-            (!shared_gateup_stacked && !cuda_type_supported(shared_up_type)) ||
-            !cuda_type_supported(shared_down_type))
+            !cuda_type_supported(ctx, shared_gate_type) ||
+            (!shared_gateup_stacked && !cuda_type_supported(ctx, shared_up_type)) ||
+            !cuda_type_supported(ctx, shared_down_type))
             return -1;
         if (shared_gateup_stacked && shared_gate_type != shared_up_type)
             return -1;
@@ -14455,7 +14477,7 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
     if (total_assignments <= 0 || max_count <= 0)
         return -1;
 
-    int profile = cuda_profile_moe_ffn_batch();
+    int profile = cuda_profile_moe_ffn_batch(ctx);
     cudaEvent_t ev_start = NULL;
     cudaEvent_t ev_stop = NULL;
     double prof_upload_ms = 0.0;
@@ -14656,7 +14678,8 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
         shared_ms += prof_shared_ms;
         readback_ms += prof_readback_ms;
         int every =
-            bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(24);
+            bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(
+                ctx->runtime_policy, 24);
         if ((calls % (unsigned long long)every) == 0) {
             fprintf(stderr,
                     "[bn:gpu:cuda:moe-ffn-batch] calls=%llu upload=%.3fms assign=%.3f expert=%.3f shared=%.3f readback=%.3f\n",
@@ -14678,7 +14701,7 @@ static int cuda_moe_route_batch(void *vctx, int *indices, float *weights,
                                 float expert_weights_scale) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
     BnCudaBuffer *router = (BnCudaBuffer *)router_buf;
-    if (!cuda_use_moe_route_batch())
+    if (!cuda_use_moe_route_batch(ctx))
         return -1;
     if (!ctx || !indices || !weights || !router || !router->data || !X ||
         n_tokens <= 0 || dim <= 0 || n_experts <= 0 || k <= 0 ||
@@ -14752,7 +14775,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     BnCudaBuffer *gate = (BnCudaBuffer *)gate_all_buf;
     BnCudaBuffer *up = (BnCudaBuffer *)up_all_buf;
     BnCudaBuffer *down = (BnCudaBuffer *)down_all_buf;
-    if (!cuda_use_moe_routed_ffn_batch())
+    if (!cuda_use_moe_routed_ffn_batch(ctx))
         return -1;
     int routed_asymmetric_kquant =
         bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
@@ -14788,6 +14811,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_all_active_two_decode =
         bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+            ctx->runtime_policy,
             n_tokens, routed_asymmetric_kquant, down_type, hidden_dim,
             n_experts, k, gate->f16_data != NULL, up->f16_data != NULL,
             down->f16_data != NULL);
@@ -14841,7 +14865,8 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             }
         }
         d_mid = ctx->d_out;
-        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled())
+        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled(
+                ctx->runtime_policy))
             fprintf(stderr,
                     "[bn:gpu:cuda] all-active-two cublas moe decode failed; falling back\n");
     }
@@ -14851,11 +14876,11 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     int gateup_tasks = n_tokens * k * hidden_dim;
     int gateup_blocks = (gateup_tasks + warps - 1) / warps;
     int use_moe_gateup_prepared_dot =
-        bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(n_tokens, dim, 1);
+        bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(&ctx->runtime_policy, n_tokens, dim, 1);
 
     int use_moe_block_prepared_batch =
-        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_native_quant);
-    int prefer_moe_down_quant_path = cuda_prefer_moe_down_quant_path(
+        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(&ctx->runtime_policy, routed_native_quant);
+    int prefer_moe_down_quant_path = cuda_prefer_moe_down_quant_path(ctx,
         routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
     if (use_moe_block_prepared_batch) {
         int x_blocks = dim / 32;
@@ -14866,7 +14891,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             xq, d_full_x, dim, n_tokens);
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
-        if (bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(hidden_dim)) {
+        if (bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(&ctx->runtime_policy, hidden_dim)) {
             int gateup2_blocks =
                 (gateup_tasks + warps * 2 - 1) / (warps * 2);
             moe_q8_0_gateup_routed_mid_q8_1_2row_batch_kernel<<<gateup2_blocks, threads, 0>>>(
@@ -14900,9 +14925,11 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                 return -1;
             }
             int use_gateup_8row =
-                bn_gpu_policy_cuda_moe_gateup_prepared_8row_enabled(dim);
+                bn_gpu_policy_cuda_moe_gateup_prepared_8row_enabled(
+                    ctx->runtime_policy, dim);
             int use_gateup_split =
-                bn_gpu_policy_cuda_moe_gateup_prepared_split_enabled(dim,
+                bn_gpu_policy_cuda_moe_gateup_prepared_split_enabled(
+                    ctx->runtime_policy, dim,
                                                                 n_experts);
             if (use_gateup_split) {
                 int gateup2_blocks =
@@ -14965,13 +14992,13 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             mid_q, d_mid, hidden_dim, n_mid);
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
-        if (bn_gpu_policy_cuda_moe_down_block_4row_enabled(hidden_dim)) {
+        if (bn_gpu_policy_cuda_moe_down_block_4row_enabled(&ctx->runtime_policy, hidden_dim)) {
             int down4_blocks = (down_tasks + warps * 4 - 1) / (warps * 4);
             moe_q8_0_down_routed_q8_1_accum_4row_batch_kernel<<<down4_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,
                 d_indices, d_weights, dim, hidden_dim, n_experts, k,
                 n_tokens);
-        } else if (bn_gpu_policy_cuda_moe_down_block_2row_enabled(hidden_dim)) {
+        } else if (bn_gpu_policy_cuda_moe_down_block_2row_enabled(&ctx->runtime_policy, hidden_dim)) {
             int down2_blocks = (down_tasks + warps * 2 - 1) / (warps * 2);
             moe_q8_0_down_routed_q8_1_accum_2row_batch_kernel<<<down2_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,
@@ -14987,7 +15014,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
-    } else if (cuda_use_moe_down_f32_cache_path(
+    } else if (cuda_use_moe_down_f32_cache_path(ctx,
                    routed_asymmetric_kquant, down_type, down, prefer_moe_down_quant_path,
                    dim, hidden_dim, n_experts, k)) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
@@ -15008,20 +15035,20 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                     cudaGetErrorString(err));
             return -1;
         }
-        int use_down_4row = cuda_use_moe_down_4row(hidden_dim);
+        int use_down_4row = cuda_use_moe_down_4row(ctx, hidden_dim);
         if (use_down_4row) {
             int down4_tasks = n_tokens * dim;
             int down4_blocks = (down4_tasks + warps * 4 - 1) / (warps * 4);
-            int use_down_8row = cuda_use_moe_down_8row(hidden_dim);
+            int use_down_8row = cuda_use_moe_down_8row(ctx, hidden_dim);
             if (use_down_8row) {
-                int use_halfwarp = cuda_use_moe_down_halfwarp(
+                int use_halfwarp = cuda_use_moe_down_halfwarp(ctx,
                     down_type, prefer_moe_down_quant_path, n_experts, k);
-                int use_split4 = cuda_use_moe_down_split4(
+                int use_split4 = cuda_use_moe_down_split4(ctx,
                     down_type, use_halfwarp, n_experts, k);
-                int use_scatter = cuda_use_moe_down_scatter(
+                int use_scatter = cuda_use_moe_down_scatter(ctx,
                     down_type, use_halfwarp, use_split4);
                 int use_scatter_16row =
-                    cuda_use_moe_down_scatter_16row(use_scatter,
+                    cuda_use_moe_down_scatter_16row(ctx, use_scatter,
                                                         hidden_dim);
                 int down8_tasks = use_scatter ? n_tokens * k * dim : down4_tasks;
                 int down8_blocks = (down8_tasks + warps * 8 - 1) / (warps * 8);
@@ -15118,7 +15145,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     BnCudaBuffer *shared_gate_weight =
         (BnCudaBuffer *)shared_gate_weight_buf;
     BnCudaBuffer *norm = (BnCudaBuffer *)norm_buf;
-    if (!cuda_use_moe_route_routed_ffn_batch(n_experts))
+    if (!cuda_use_moe_route_routed_ffn_batch(ctx, n_experts))
         return -1;
     int routed_asymmetric_kquant =
         bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
@@ -15153,9 +15180,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             shared_up->cols != dim ||
             shared_down->rows != dim ||
             shared_down->cols != shared_hidden_dim ||
-            !cuda_type_supported(shared_gate_type) ||
-            !cuda_type_supported(shared_up_type) ||
-            !cuda_type_supported(shared_down_type))
+            !cuda_type_supported(ctx, shared_gate_type) ||
+            !cuda_type_supported(ctx, shared_up_type) ||
+            !cuda_type_supported(ctx, shared_down_type))
             return -1;
         if (shared_gate_weight &&
             (!shared_gate_weight->data ||
@@ -15192,25 +15219,29 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_grouped =
         bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+            ctx->runtime_policy,
             routed_native_quant, routed_asymmetric_kquant,
             gate->f16_data != NULL,
             up->f16_data != NULL, down->f16_data != NULL,
             n_experts, k, n_tokens * k);
     int use_cublas_gateup_only =
         bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+            ctx->runtime_policy,
             use_cublas_grouped, routed_native_quant, routed_asymmetric_kquant,
             gate->f16_data != NULL, up->f16_data != NULL,
             down->f16_data != NULL, n_tokens);
     int use_cublas_all_active_two_fixed =
         bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
-            use_cublas_grouped, n_experts, k);
+            ctx->runtime_policy, use_cublas_grouped, n_experts, k);
     int use_cublas_all_active_two_decode =
         bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+            ctx->runtime_policy,
             n_tokens, routed_asymmetric_kquant, down_type, hidden_dim,
             n_experts, k, gate->f16_data != NULL, up->f16_data != NULL,
             down->f16_data != NULL);
     int use_sorted_slots =
         bn_gpu_policy_cuda_moe_sorted_slots_enabled(
+            ctx->runtime_policy,
             routed_asymmetric_kquant, routed_native_quant, n_tokens,
             use_cublas_all_active_two_fixed,
             use_cublas_grouped, use_cublas_gateup_only);
@@ -15222,21 +15253,23 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     size_t route_aux_bytes = sorted_route_aux_bytes + decode_route_bytes;
 
     int profile_prefill_moe =
-        bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled();
-    int prefer_moe_down_quant_path = cuda_prefer_moe_down_quant_path(
+        bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled(
+            ctx->runtime_policy);
+    int prefer_moe_down_quant_path = cuda_prefer_moe_down_quant_path(ctx,
         routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
     int init_out_with_residual =
         add_norm_resid &&
         ((routed_native_quant && hidden_dim <= 1024) ||
          (bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
-          cuda_use_moe_down_4row(hidden_dim) &&
-          cuda_use_moe_down_8row(hidden_dim) &&
-          cuda_use_moe_down_scatter(down_type, 0, 0) &&
-          !cuda_use_moe_down_f32_cache_path(
+          cuda_use_moe_down_4row(ctx, hidden_dim) &&
+          cuda_use_moe_down_8row(ctx, hidden_dim) &&
+          cuda_use_moe_down_scatter(ctx, down_type, 0, 0) &&
+          !cuda_use_moe_down_f32_cache_path(ctx,
               routed_asymmetric_kquant, down_type, down, prefer_moe_down_quant_path,
               dim, hidden_dim, n_experts, k)));
     int direct_device_resid_out =
         bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+            ctx->runtime_policy,
             add_norm_resid, out != NULL, has_shared, init_out_with_residual);
     if (direct_device_resid_out)
         prefill_values = full_values + logits_values + mid_values;
@@ -15348,7 +15381,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int threads = 256;
     int warps = threads / 32;
     int use_fused_batch_route =
-        bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(n_experts);
+        bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(
+            ctx->runtime_policy, n_experts);
     if (use_fused_batch_route) {
         moe_route_fused_batch_warp_topk_kernel<<<n_tokens, threads, 0>>>(
             d_indices, d_weights, (const float *)router->data, d_full_x,
@@ -15407,7 +15441,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             return -1;
         }
     }
-    if (bn_gpu_policy_cuda_moe_route_dist_profile_enabled()) {
+    if (bn_gpu_policy_cuda_moe_route_dist_profile_enabled(
+            ctx->runtime_policy)) {
         int *h_indices = (int *)malloc(route_items * sizeof(int));
         int *h_counts = (int *)calloc((size_t)n_experts, sizeof(int));
         if (h_indices && h_counts &&
@@ -15437,7 +15472,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             dist_singleton += (unsigned long long)singleton;
             dist_max_sum += (unsigned long long)max_count;
             int every =
-                bn_gpu_policy_cuda_moe_route_dist_profile_every_or_default(48);
+                bn_gpu_policy_cuda_moe_route_dist_profile_every_or_default(
+                    ctx->runtime_policy, 48);
             if ((dist_calls % (unsigned long long)every) == 0) {
                 fprintf(stderr,
                         "[bn:gpu:cuda:moe-route-dist] calls=%llu assign=%zu avg_active=%.2f avg_singleton=%.2f avg_max_per_expert=%.2f experts=%d\n",
@@ -15458,9 +15494,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int down_tasks = n_tokens * dim;
     int down_blocks = (down_tasks + warps - 1) / warps;
     int use_moe_gateup_prepared_dot =
-        bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(n_tokens, dim, 0);
+        bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(&ctx->runtime_policy, n_tokens, dim, 0);
     int use_moe_block_prepared_batch =
-        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_native_quant);
+        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(&ctx->runtime_policy, routed_native_quant);
 
     if (use_cublas_all_active_two_decode) {
         moe_pack_all_active_two_route_kernel<<<1, 1>>>(d_decode_route, d_indices,
@@ -15478,7 +15514,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             goto moe_route_routed_readback;
         }
         d_mid = ctx->d_out;
-        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled())
+        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled(
+                ctx->runtime_policy))
             fprintf(stderr,
                     "[bn:gpu:cuda] all-active-two cublas moe decode failed; falling back\n");
     } else if (use_cublas_all_active_two_fixed) {
@@ -15492,7 +15529,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
             goto moe_route_routed_readback;
         }
-        if (bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled())
+        if (bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled(
+                ctx->runtime_policy))
             fprintf(stderr,
                     "[bn:gpu:cuda] all-active-two cublas moe prefill failed; falling back\n");
     } else if (use_cublas_grouped) {
@@ -15508,7 +15546,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
             goto moe_route_routed_readback;
         }
-        if (bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled())
+        if (bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled(
+                ctx->runtime_policy))
             fprintf(stderr,
                     "[bn:gpu:cuda] grouped cublas moe prefill failed; falling back\n");
     }
@@ -15527,7 +15566,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
             goto moe_route_routed_down;
         }
-        if (bn_gpu_policy_cuda_moe_cublas_gateup_debug_enabled())
+        if (bn_gpu_policy_cuda_moe_cublas_gateup_debug_enabled(
+                ctx->runtime_policy))
             fprintf(stderr,
                     "[bn:gpu:cuda] grouped cublas moe gate/up failed; falling back\n");
     }
@@ -15544,7 +15584,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(2);
-        if (bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(hidden_dim)) {
+        if (bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(&ctx->runtime_policy, hidden_dim)) {
             int gateup2_blocks =
                 (gateup_tasks + warps * 2 - 1) / (warps * 2);
             if (use_sorted_slots) {
@@ -15584,9 +15624,11 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(2);
         int use_gateup_8row =
-            bn_gpu_policy_cuda_moe_gateup_prepared_8row_enabled(dim);
+            bn_gpu_policy_cuda_moe_gateup_prepared_8row_enabled(
+                ctx->runtime_policy, dim);
         int use_gateup_split =
-            bn_gpu_policy_cuda_moe_gateup_prepared_split_enabled(dim,
+            bn_gpu_policy_cuda_moe_gateup_prepared_split_enabled(
+                ctx->runtime_policy, dim,
                                                             n_experts);
         if (use_gateup_split) {
             int gateup2_blocks =
@@ -15670,13 +15712,13 @@ moe_route_routed_down:
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(4);
-        if (bn_gpu_policy_cuda_moe_down_block_4row_enabled(hidden_dim)) {
+        if (bn_gpu_policy_cuda_moe_down_block_4row_enabled(&ctx->runtime_policy, hidden_dim)) {
             int down4_blocks = (down_tasks + warps * 4 - 1) / (warps * 4);
             moe_q8_0_down_routed_q8_1_accum_4row_batch_kernel<<<down4_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,
                 d_indices, d_weights, dim, hidden_dim, n_experts, k,
                 n_tokens);
-        } else if (bn_gpu_policy_cuda_moe_down_block_2row_enabled(hidden_dim)) {
+        } else if (bn_gpu_policy_cuda_moe_down_block_2row_enabled(&ctx->runtime_policy, hidden_dim)) {
             int down2_blocks = (down_tasks + warps * 2 - 1) / (warps * 2);
             moe_q8_0_down_routed_q8_1_accum_2row_batch_kernel<<<down2_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,
@@ -15692,7 +15734,7 @@ moe_route_routed_down:
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
-    } else if (cuda_use_moe_down_f32_cache_path(
+    } else if (cuda_use_moe_down_f32_cache_path(ctx,
                    routed_asymmetric_kquant, down_type, down, prefer_moe_down_quant_path,
                    dim, hidden_dim, n_experts, k)) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
@@ -15709,20 +15751,20 @@ moe_route_routed_down:
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(4);
-        int use_down_4row = cuda_use_moe_down_4row(hidden_dim);
+        int use_down_4row = cuda_use_moe_down_4row(ctx, hidden_dim);
         if (use_down_4row) {
             int down4_tasks = n_tokens * dim;
             int down4_blocks = (down4_tasks + warps * 4 - 1) / (warps * 4);
-            int use_down_8row = cuda_use_moe_down_8row(hidden_dim);
+            int use_down_8row = cuda_use_moe_down_8row(ctx, hidden_dim);
             if (use_down_8row) {
-                int use_halfwarp = cuda_use_moe_down_halfwarp(
+                int use_halfwarp = cuda_use_moe_down_halfwarp(ctx,
                     down_type, prefer_moe_down_quant_path, n_experts, k);
-                int use_split4 = cuda_use_moe_down_split4(
+                int use_split4 = cuda_use_moe_down_split4(ctx,
                     down_type, use_halfwarp, n_experts, k);
-                int use_scatter = cuda_use_moe_down_scatter(
+                int use_scatter = cuda_use_moe_down_scatter(ctx,
                     down_type, use_halfwarp, use_split4);
                 int use_scatter_16row =
-                    cuda_use_moe_down_scatter_16row(use_scatter,
+                    cuda_use_moe_down_scatter_16row(ctx, use_scatter,
                                                         hidden_dim);
                 int down8_tasks = use_scatter ? n_tokens * k * dim : down4_tasks;
                 int down8_blocks = (down8_tasks + warps * 8 - 1) / (warps * 8);
@@ -15911,14 +15953,14 @@ static int cuda_prefill_attention(void *vctx, float *out,
                                   int head_size, int kv_mul, int kv_dim,
                                   float attention_scale) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (!bn_gpu_policy_cuda_prefill_attention_enabled())
+    if (!bn_gpu_policy_cuda_prefill_attention_enabled(ctx->runtime_policy))
         return -1;
     if (!ctx || !out || !Q || !K || !V || n_tokens <= 1 ||
         n_heads <= 0 || n_kv_heads <= 0 || head_size <= 0 ||
         kv_mul <= 0 || kv_dim <= 0 || n_heads / kv_mul != n_kv_heads)
         return -1;
     int min_tokens =
-        bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(ctx->runtime_policy, 16);
     if (n_tokens < min_tokens)
         return -1;
     if (n_tokens > 2048)
@@ -15984,17 +16026,17 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
                                      float attention_scale) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
     BnCudaBuffer *wo = (BnCudaBuffer *)wo_buf;
-    if (!bn_gpu_policy_cuda_prefill_attention_wo_enabled())
+    if (!bn_gpu_policy_cuda_prefill_attention_wo_enabled(ctx->runtime_policy))
         return -1;
     if (!ctx || !out || !wo || !wo->data || !Q || !K || !V ||
         n_tokens <= 1 || n_heads <= 0 || n_kv_heads <= 0 ||
         head_size <= 0 || kv_mul <= 0 || kv_dim <= 0 ||
         n_heads / kv_mul != n_kv_heads || wo_rows <= 0 ||
         wo_cols != n_heads * head_size || wo->rows != wo_rows ||
-        wo->cols != wo_cols || !cuda_type_supported(wo_type))
+        wo->cols != wo_cols || !cuda_type_supported(ctx, wo_type))
         return -1;
     int min_tokens =
-        bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(ctx->runtime_policy, 16);
     if (n_tokens < min_tokens || n_tokens > 2048)
         return -1;
 
@@ -16002,7 +16044,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
                       (size_t)head_size;
     size_t kv_values = (size_t)n_tokens * (size_t)kv_dim;
     int use_gemm_attention =
-        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(n_tokens, 512);
+        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(ctx->runtime_policy, n_tokens, 512);
     size_t score_values = use_gemm_attention
         ? (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens
         : 0;
@@ -16069,7 +16111,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
         if (n_tokens >= 4) {
             dim3 grid((wo_rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled(&ctx->runtime_policy)) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -16109,7 +16151,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
         }
     } else if (bn_backend_quant_supports_down_kquant_dot_matmul(wo_type) &&
                (wo_cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_dot_enabled(&ctx->runtime_policy)) {
         int x_blocks = wo_cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, wo_cols, n_tokens) != 0)
             return -1;
@@ -16188,7 +16230,7 @@ static int cuda_prefill_qkv_attention_wo_impl(
     BnCudaBuffer *q_bias = (BnCudaBuffer *)q_bias_buf;
     BnCudaBuffer *k_bias = (BnCudaBuffer *)k_bias_buf;
     BnCudaBuffer *v_bias = (BnCudaBuffer *)v_bias_buf;
-    if (!bn_gpu_policy_cuda_prefill_qkv_attention_wo_enabled())
+    if (!bn_gpu_policy_cuda_prefill_qkv_attention_wo_enabled(ctx->runtime_policy))
         return -1;
     int q_dim = n_heads * head_size;
     int q_gated = qk && qk->data && qk_rows == 2 * q_dim + kv_dim;
@@ -16202,8 +16244,8 @@ static int cuda_prefill_qkv_attention_wo_impl(
         kv_mul <= 0 || kv_dim <= 0 || n_heads / kv_mul != n_kv_heads ||
         (!q_gated && qk_rows != q_dim + kv_dim) || wv_rows != kv_dim ||
         wo_cols != n_heads * head_size || wo->rows != wo_rows ||
-        wo->cols != wo_cols || !cuda_type_supported(qk_type) ||
-        !cuda_type_supported(wv_type) || !cuda_type_supported(wo_type) ||
+        wo->cols != wo_cols || !cuda_type_supported(ctx, qk_type) ||
+        !cuda_type_supported(ctx, wv_type) || !cuda_type_supported(ctx, wo_type) ||
         pos0 != 0 || rope_dims <= 0 ||
         !ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ])
         return -1;
@@ -16215,8 +16257,8 @@ static int cuda_prefill_qkv_attention_wo_impl(
         (v_bias && (!v_bias->data || v_bias->rows * v_bias->cols < kv_dim)))
         return -1;
     int min_tokens =
-        bn_gpu_policy_cuda_prefill_attention_min_tokens_configured()
-            ? bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(64)
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_configured(ctx->runtime_policy)
+            ? bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(ctx->runtime_policy, 64)
             : 16;
     if (min_tokens_override > 0)
         min_tokens = min_tokens_override;
@@ -16228,7 +16270,7 @@ static int cuda_prefill_qkv_attention_wo_impl(
     size_t kv_values = (size_t)n_tokens * (size_t)kv_dim;
     size_t qk_values = (size_t)n_tokens * (size_t)qk_rows;
     int use_gemm_attention =
-        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(n_tokens, 512);
+        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(ctx->runtime_policy, n_tokens, 512);
     size_t score_values =
         use_gemm_attention
             ? (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens
@@ -16536,7 +16578,8 @@ static int cuda_prefill_moe_layer(
         uint32_t kv_cache_off, int kv_cache_stride,
         float attention_scale, int norm_topk_prob,
         float expert_weights_scale) {
-    if (bn_gpu_policy_cuda_prefill_moe_layer_disabled())
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    if (bn_gpu_policy_cuda_prefill_moe_layer_disabled(ctx->runtime_policy))
         return -1;
     if (!cuda_activation_is_silu(act_type))
         return -1;
@@ -16547,7 +16590,7 @@ static int cuda_prefill_moe_layer(
             wv_rows, wv_type, wo_rows, wo_cols, wo_type, qk_norm_per_head,
             norm_eps, pos0, rope_dims, attention_scale, 1, kv_cache_off,
             kv_cache_stride,
-            bn_gpu_policy_moe_prefill_min_tokens_or_default(1)) != 0)
+            ctx ? ctx->moe_prefill_min_tokens : 1) != 0)
         return -1;
     return cuda_moe_route_routed_ffn_batch_impl(
         vctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
@@ -16590,8 +16633,8 @@ static int cuda_prefill_dense_layer(
     int packed_qkv = qk && qk->data && !wv && qk_rows == q_dim + 2 * kv_dim;
     int q_gated = !packed_qkv && qk_rows == 2 * q_dim + kv_dim;
     int debug_dense_prefill =
-        bn_gpu_policy_cuda_prefill_dense_debug_enabled();
-    if (bn_gpu_policy_cuda_prefill_dense_layer_disabled())
+        bn_gpu_policy_cuda_prefill_dense_debug_enabled(ctx->runtime_policy);
+    if (bn_gpu_policy_cuda_prefill_dense_layer_disabled(ctx->runtime_policy))
         return -1;
     if (!ctx || !qk || !qk->data || (!packed_qkv && (!wv || !wv->data)) ||
         !wo || !wo->data || !gate || !gate->data || !down || !down->data ||
@@ -16637,23 +16680,23 @@ static int cuda_prefill_dense_layer(
         (k_bias && (!k_bias->data || k_bias->rows * k_bias->cols < kv_dim)) ||
         (v_bias && (!v_bias->data || v_bias->rows * v_bias->cols < kv_dim)))
         return -1;
-    if (!cuda_type_supported(qk_type) ||
-        (!packed_qkv && !cuda_type_supported(wv_type)) ||
-        !cuda_type_supported(wo_type) || !cuda_type_supported(gate_type) ||
-        (!stacked_gateup && !cuda_type_supported(up_type)) ||
-        !cuda_type_supported(down_type))
+    if (!cuda_type_supported(ctx, qk_type) ||
+        (!packed_qkv && !cuda_type_supported(ctx, wv_type)) ||
+        !cuda_type_supported(ctx, wo_type) || !cuda_type_supported(ctx, gate_type) ||
+        (!stacked_gateup && !cuda_type_supported(ctx, up_type)) ||
+        !cuda_type_supported(ctx, down_type))
         return -1;
     int min_tokens =
-        bn_gpu_policy_cuda_prefill_attention_min_tokens_configured()
-            ? bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(64)
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_configured(ctx->runtime_policy)
+            ? bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(ctx->runtime_policy, 64)
             : (dim <= 2560 ? 2 : 16);
     if (n_tokens < min_tokens || n_tokens > 512)
         return -1;
     int use_gemm_attention =
-        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(n_tokens, 0);
+        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(ctx->runtime_policy, n_tokens, 0);
 
     const int dense_profile =
-        bn_gpu_policy_cuda_prefill_dense_profile_enabled();
+        bn_gpu_policy_cuda_prefill_dense_profile_enabled(ctx->runtime_policy);
     static double dense_profile_totals[BN_CUDA_DENSE_PROF_MAX] = {0.0};
     static unsigned long long dense_profile_layers = 0;
     double dense_profile_t0 = dense_profile ? cuda_wall_ms() : 0.0;
@@ -16872,7 +16915,7 @@ static int cuda_prefill_dense_layer(
     if (stacked_gateup &&
         bn_backend_quant_supports_asymmetric_kquant_prepared_input_fused_gateup(gate_type) &&
         !gate->f16_data && (dim % BN_QK_K) == 0 &&
-        bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled()) {
+        bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled(ctx->runtime_policy)) {
         int x_blocks = (dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -16997,7 +17040,8 @@ static int cuda_prefill_dense_layer(
         BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_OUT_READBACK);
     }
     if (dense_profile)
-        cuda_dense_profile_maybe_print(dense_profile_totals,
+        cuda_dense_profile_maybe_print(ctx->runtime_policy,
+                                       dense_profile_totals,
                                        &dense_profile_layers, n_tokens, dim);
 #undef BN_CUDA_DENSE_PROFILE_STEP
     return 0;
@@ -17039,7 +17083,7 @@ static int cuda_prefill_ssm_layer(
                    cuda_activation_is_silu(act_type);
     if (did_ffn)
         *did_ffn = 0;
-    if (bn_gpu_policy_cuda_prefill_ssm_layer_disabled())
+    if (bn_gpu_policy_cuda_prefill_ssm_layer_disabled(ctx->runtime_policy))
         return -1;
     if (!ctx || (!X && !ctx->d_out) ||
         !wqkv || !wqkv->data || !wz || !wz->data ||
@@ -17061,9 +17105,9 @@ static int cuda_prefill_ssm_layer(
         !ctx->act_bufs[BN_GPU_VALUE_SSM_STATE] ||
         !ctx->act_bufs[BN_GPU_VALUE_SSM_CONV_STATE])
         return -1;
-    if (!cuda_type_supported(wqkv_type) || !cuda_type_supported(wz_type) ||
-        !cuda_type_supported(alpha_type) || !cuda_type_supported(beta_type) ||
-        !cuda_type_supported(out_type))
+    if (!cuda_type_supported(ctx, wqkv_type) || !cuda_type_supported(ctx, wz_type) ||
+        !cuda_type_supported(ctx, alpha_type) || !cuda_type_supported(ctx, beta_type) ||
+        !cuda_type_supported(ctx, out_type))
         return -1;
     if (fuse_ffn) {
         if ((!stacked_ffn_gateup &&
@@ -17075,15 +17119,15 @@ static int cuda_prefill_ssm_layer(
               ffn_gate_type != ffn_up_type)) ||
             ffn_down->rows != dim || ffn_down->cols != hidden_dim ||
             ffn_norm->rows * ffn_norm->cols < dim ||
-            !cuda_type_supported(ffn_gate_type) ||
-            (!stacked_ffn_gateup && !cuda_type_supported(ffn_up_type)) ||
-            !cuda_type_supported(ffn_down_type)) {
+            !cuda_type_supported(ctx, ffn_gate_type) ||
+            (!stacked_ffn_gateup && !cuda_type_supported(ctx, ffn_up_type)) ||
+            !cuda_type_supported(ctx, ffn_down_type)) {
             fuse_ffn = 0;
         }
     }
 
     const int ssm_profile =
-        bn_gpu_policy_cuda_prefill_ssm_profile_enabled();
+        bn_gpu_policy_cuda_prefill_ssm_profile_enabled(ctx->runtime_policy);
     enum {
         BN_CUDA_SSM_PROF_UPLOAD = 0,
         BN_CUDA_SSM_PROF_NORM,
@@ -17114,7 +17158,7 @@ static int cuda_prefill_ssm_layer(
     } while (0)
 
     int use_stacked_prefill =
-        bn_gpu_policy_cuda_prefill_ssm_stacked_enabled();
+        bn_gpu_policy_cuda_prefill_ssm_stacked_enabled(ctx->runtime_policy);
     int use_qkvz = use_stacked_prefill &&
                    qkvz && qkvz->data && wqkv_type == wz_type &&
                    qkvz->rows == qkv_dim + inner_dim &&
@@ -17123,15 +17167,15 @@ static int cuda_prefill_ssm_layer(
                  ab && ab->data && alpha_type == beta_type &&
                  ab->rows == 2 * num_v_heads && ab->cols == dim;
     int ssm_stream_safe =
-        bn_gpu_policy_cuda_prefill_ssm_stream_enabled() &&
+        bn_gpu_policy_cuda_prefill_ssm_stream_enabled(ctx->runtime_policy) &&
         ctx->stream &&
         ctx->ssm_stream_entry_event &&
         ctx->ssm_stream_exit_event &&
-        !cuda_quant_matmul_preferred_for_type(wqkv_type) &&
-        !cuda_quant_matmul_preferred_for_type(wz_type) &&
-        !cuda_quant_matmul_preferred_for_type(alpha_type) &&
-        !cuda_quant_matmul_preferred_for_type(beta_type) &&
-        !cuda_quant_matmul_preferred_for_type(out_type) &&
+        !cuda_quant_matmul_preferred_for_type(ctx, wqkv_type) &&
+        !cuda_quant_matmul_preferred_for_type(ctx, wz_type) &&
+        !cuda_quant_matmul_preferred_for_type(ctx, alpha_type) &&
+        !cuda_quant_matmul_preferred_for_type(ctx, beta_type) &&
+        !cuda_quant_matmul_preferred_for_type(ctx, out_type) &&
         ((use_qkvz && qkvz->f16_data) ||
          (!use_qkvz && wqkv->f16_data && wz->f16_data)) &&
         ((bn_backend_quant_uses_dense_float(alpha_type) &&
@@ -17140,11 +17184,11 @@ static int cuda_prefill_ssm_layer(
          (!use_ab && alpha->f16_data && beta->f16_data)) &&
         ssm_out->f16_data &&
         (!fuse_ffn ||
-         (!cuda_quant_matmul_preferred_for_type(ffn_gate_type) &&
-          !cuda_quant_matmul_preferred_for_type(ffn_down_type) &&
+         (!cuda_quant_matmul_preferred_for_type(ctx, ffn_gate_type) &&
+          !cuda_quant_matmul_preferred_for_type(ctx, ffn_down_type) &&
           ffn_gate->f16_data && ffn_down->f16_data &&
           (stacked_ffn_gateup ||
-           (!cuda_quant_matmul_preferred_for_type(ffn_up_type) &&
+           (!cuda_quant_matmul_preferred_for_type(ctx, ffn_up_type) &&
             ffn_up->f16_data))));
     BnCudaExecStreamScope ssm_stream_scope(
         ctx, ctx->stream, ssm_stream_safe);
@@ -17190,7 +17234,7 @@ static int cuda_prefill_ssm_layer(
     cudaError_t err = cudaSuccess;
     int alias_prev_output =
         !X && fuse_ffn &&
-        bn_gpu_policy_cuda_prefill_ssm_input_alias_enabled();
+        bn_gpu_policy_cuda_prefill_ssm_input_alias_enabled(ctx->runtime_policy);
     const float *d_input = alias_prev_output ? ctx->d_out : ctx->d_x;
     if (X) {
         err = cudaMemcpy(ctx->d_x, X, dim_values * sizeof(float),
@@ -17283,7 +17327,7 @@ static int cuda_prefill_ssm_layer(
     BN_CUDA_SSM_PROFILE_STEP(BN_CUDA_SSM_PROF_QKVZ);
 
     int ab_preactivated = 0;
-    if (bn_gpu_policy_cuda_prefill_ssm_f32_ab_enabled() &&
+    if (bn_gpu_policy_cuda_prefill_ssm_f32_ab_enabled(ctx->runtime_policy) &&
         bn_backend_quant_uses_dense_float(alpha_type) &&
         bn_backend_quant_uses_dense_float(beta_type)) {
         ssm_prefill_alpha_beta_f32_kernel<<<dim3(num_v_heads, n_tokens, 1),
@@ -17331,7 +17375,7 @@ static int cuda_prefill_ssm_layer(
     size_t conv_off = (size_t)ssm_idx * (size_t)(conv_kernel - 1) *
                       (size_t)qkv_dim;
     int fast_prefill = head_k_dim == 128 && head_v_dim == 128 &&
-                       bn_gpu_policy_cuda_prefill_ssm_scan_enabled();
+                       bn_gpu_policy_cuda_prefill_ssm_scan_enabled(ctx->runtime_policy);
     if (fast_prefill) {
         ssm_prefill_conv_silu_kernel<<<(qkv_dim + threads - 1) / threads,
                                        threads, 0, ssm_stream>>>(
@@ -17438,7 +17482,7 @@ static int cuda_prefill_ssm_layer(
             }
 
             if (head_k_dim == 128 && head_v_dim == 128 &&
-                bn_gpu_policy_cuda_prefill_ssm_delta_128_warp_enabled()) {
+                bn_gpu_policy_cuda_prefill_ssm_delta_128_warp_enabled(ctx->runtime_policy)) {
                 ssm_delta_128_warp_kernel<<<dim3(num_v_heads, 32, 1),
                                             dim3(32, 4, 1), 0,
                                             ssm_stream>>>(
@@ -17492,7 +17536,7 @@ static int cuda_prefill_ssm_layer(
 
     if (fuse_ffn) {
         const int ssm_ffn_profile =
-            bn_gpu_policy_cuda_prefill_ssm_ffn_profile_enabled();
+            bn_gpu_policy_cuda_prefill_ssm_ffn_profile_enabled(ctx->runtime_policy);
         static double ssm_ffn_profile_norm = 0.0;
         static double ssm_ffn_profile_gateup = 0.0;
         static double ssm_ffn_profile_act = 0.0;
@@ -17565,7 +17609,7 @@ static int cuda_prefill_ssm_layer(
         int gateup_f16_ready = 0;
         if (stacked_ffn_gateup && ffn_norm_f16 && ffn_gate->f16_data &&
             ffn_down->f16_data &&
-            bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled()) {
+            bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled(ctx->runtime_policy)) {
             if (cuda_cublas_matmul_f16_preconverted_out_f16(
                     ctx, ctx->d_x, ffn_gate, ffn_norm_f16,
                     hidden_dim * 2, dim, n_tokens) != 0)
@@ -17575,7 +17619,7 @@ static int cuda_prefill_ssm_layer(
             bn_backend_quant_supports_asymmetric_kquant_prepared_input_fused_gateup(
                 ffn_gate_type) &&
             (dim % BN_QK_K) == 0 &&
-            bn_gpu_policy_cuda_prefill_ssm_fused_asymmetric_kquant_gateup_batch_enabled()) {
+            bn_gpu_policy_cuda_prefill_ssm_fused_asymmetric_kquant_gateup_batch_enabled(ctx->runtime_policy)) {
             int x_blocks = (dim + 31) / 32;
             if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
                 return -1;
@@ -17906,7 +17950,8 @@ static void cuda_debug_scan_activation(BnCudaCtx *ctx, int buf,
         if (v < min_v) min_v = v;
         if (v > max_v) max_v = v;
     }
-    if (bad || bn_gpu_policy_cuda_nan_verbose_debug_enabled()) {
+    if (bad || bn_gpu_policy_cuda_nan_verbose_debug_enabled(
+                   ctx->runtime_policy)) {
         fprintf(stderr,
                 "[bn:gpu:cuda:nan] op=%d %s buf=%d n=%zu bad=%d first=%zu "
                 "min=%.9g max=%.9g first_v=%.9g\n",
@@ -17998,10 +18043,13 @@ static int cuda_ops_have_logits(const BnGPUOp *ops, int n_ops) {
     return 0;
 }
 
-static int cuda_ops_have_moe_cublas_decode(const BnGPUOp *ops, int n_ops) {
-    if (!ops || !bn_gpu_policy_cuda_moe_cublas_decode_enabled())
+static int cuda_ops_have_moe_cublas_decode(const BnCudaCtx *ctx,
+                                           const BnGPUOp *ops, int n_ops) {
+    if (!ops || !bn_gpu_policy_cuda_moe_cublas_decode_enabled(
+                    ctx ? ctx->runtime_policy : NULL))
         return 0;
-    if (!bn_gpu_policy_all_active_two_kquant_moe_cublas_decode_enabled())
+    if (!bn_gpu_policy_all_active_two_kquant_moe_cublas_decode_enabled(
+            ctx ? ctx->runtime_policy : NULL))
         return 0;
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
@@ -18075,14 +18123,19 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     if (!ctx || !ops || n_ops <= 0) return -1;
     if (cuda_ctx_set_device(ctx) != 0) return -1;
     ctx->exec_stream =
-        bn_gpu_policy_cuda_stream_exec_enabled() ? ctx->stream : (cudaStream_t)0;
+        bn_gpu_policy_cuda_stream_exec_enabled(ctx->runtime_policy)
+            ? ctx->stream : (cudaStream_t)0;
 
-    const int profile = bn_gpu_policy_cuda_profile_enabled();
-    const int profile_wall = bn_gpu_policy_cuda_wall_profile_enabled();
-    const int debug_exec_fail = bn_gpu_policy_cuda_exec_fail_debug_enabled();
+    const int profile = bn_gpu_policy_cuda_profile_enabled(
+        ctx->runtime_policy);
+    const int profile_wall = bn_gpu_policy_cuda_wall_profile_enabled(
+        ctx->runtime_policy);
+    const int debug_exec_fail = bn_gpu_policy_cuda_exec_fail_debug_enabled(
+        ctx->runtime_policy);
     const int debug_sync_each_op =
-        bn_gpu_policy_cuda_sync_each_op_debug_enabled();
-    const int debug_nan = bn_gpu_policy_cuda_nan_debug_enabled();
+        bn_gpu_policy_cuda_sync_each_op_debug_enabled(ctx->runtime_policy);
+    const int debug_nan = bn_gpu_policy_cuda_nan_debug_enabled(
+        ctx->runtime_policy);
     static unsigned long long profile_calls = 0;
     static unsigned long long profile_ops[BN_CUDA_PROFILE_MAX] = {0};
     static double profile_ms[BN_CUDA_PROFILE_MAX] = {0.0};
@@ -18111,11 +18164,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         cudaEventCreate(&ev_stop);
     }
 
-    if (bn_gpu_policy_cuda_dump_ops_enabled() && n_ops > 0) {
+    if (bn_gpu_policy_cuda_dump_ops_enabled(ctx->runtime_policy) &&
+        n_ops > 0) {
         static int dumped = 0;
-        if (!dumped || bn_gpu_policy_cuda_dump_ops_every_enabled()) {
+        if (!dumped || bn_gpu_policy_cuda_dump_ops_every_enabled(
+                           ctx->runtime_policy)) {
             int dump_limit =
-                bn_gpu_policy_cuda_dump_ops_limit_or_default(256);
+                bn_gpu_policy_cuda_dump_ops_limit_or_default(
+                    ctx->runtime_policy, 256);
             if (dump_limit <= 0 || dump_limit > n_ops) dump_limit = n_ops;
             int limit = n_ops < dump_limit ? n_ops : dump_limit;
             fprintf(stderr, "[bn:gpu:cuda:ops] n_ops=%d showing=%d\n",
@@ -18157,45 +18213,50 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int enable_native_quant_prepared_input_all_flag = 0;
     static int disable_native_quant_prepared_input_logits_flag = 0;
     if (!flags_init) {
-        fuse_bias_enabled_flag = bn_gpu_policy_cuda_fuse_bias_enabled();
+        fuse_bias_enabled_flag = bn_gpu_policy_cuda_fuse_bias_enabled(
+            ctx->runtime_policy);
         fuse_rope_flash_enabled_flag =
-            bn_gpu_policy_cuda_rope_flash_fuse_enabled();
+            bn_gpu_policy_cuda_rope_flash_fuse_enabled(ctx->runtime_policy);
         enable_legacy_block_matvec4_flag =
-            bn_gpu_policy_cuda_legacy_block_matvec4_enabled();
+            bn_gpu_policy_cuda_legacy_block_matvec4_enabled(&ctx->runtime_policy);
         enable_legacy_block_warp_flag =
-            bn_gpu_policy_cuda_legacy_block_warp_enabled();
+            bn_gpu_policy_cuda_legacy_block_warp_enabled(&ctx->runtime_policy);
         enable_symmetric_kquant_dot_flag =
-            bn_gpu_policy_cuda_symmetric_kquant_dot_enabled();
+            bn_gpu_policy_cuda_symmetric_kquant_dot_enabled(&ctx->runtime_policy);
         enable_deinterleaved_kquant_dot_flag =
-            bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled();
+            bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled(&ctx->runtime_policy);
         enable_down_kquant_dot_flag =
-            bn_gpu_policy_cuda_down_kquant_dot_enabled();
+            bn_gpu_policy_cuda_down_kquant_dot_enabled(&ctx->runtime_policy);
         force_down_kquant_dot_flag =
-            bn_gpu_policy_cuda_down_kquant_dot_forced();
+            bn_gpu_policy_cuda_down_kquant_dot_forced(&ctx->runtime_policy);
         enable_down_kquant_warp_flag =
-            bn_gpu_policy_cuda_down_kquant_warp_enabled();
+            bn_gpu_policy_cuda_down_kquant_warp_enabled(&ctx->runtime_policy);
         enable_asymmetric_kquant_4warp_flag =
-            bn_gpu_policy_cuda_asymmetric_kquant_4warp_enabled();
+            bn_gpu_policy_cuda_asymmetric_kquant_4warp_enabled(&ctx->runtime_policy);
         disable_native_quant_warp_flag =
-            bn_gpu_policy_cuda_native_quant_warp_disabled();
+            bn_gpu_policy_cuda_native_quant_warp_disabled(&ctx->runtime_policy);
         disable_qkv_mixed_fuse_flag =
-            bn_gpu_policy_cuda_qkv_mixed_fuse_disabled();
+            bn_gpu_policy_cuda_qkv_mixed_fuse_disabled(ctx->runtime_policy);
         qkv_fuse_key_cache_flag =
-            bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled();
+            bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled(
+                ctx->runtime_policy);
         enable_qkv_kpair_opt_flag =
-            bn_gpu_policy_cuda_qkv_kpair_opt_enabled();
+            bn_gpu_policy_cuda_qkv_kpair_opt_enabled(ctx->runtime_policy);
         disable_legacy_block_gateup_warp_flag =
-            bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled();
+            bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled(&ctx->runtime_policy);
         disable_native_quant_gateup_warp_flag =
-            bn_gpu_policy_cuda_native_quant_gateup_warp_disabled();
+            bn_gpu_policy_cuda_native_quant_gateup_warp_disabled(&ctx->runtime_policy);
         enable_bias_rope_flash_fuse_flag =
-            bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled();
+            bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled(
+                ctx->runtime_policy);
         enable_graph_exec_flag =
-            bn_gpu_policy_cuda_graph_exec_requested();
+            bn_gpu_policy_cuda_graph_exec_requested(ctx->runtime_policy);
         enable_native_quant_prepared_input_all_flag =
-            bn_gpu_policy_cuda_native_quant_prepared_input_all_enabled();
+            bn_gpu_policy_cuda_native_quant_prepared_input_all_enabled(
+                ctx->runtime_policy);
         disable_native_quant_prepared_input_logits_flag =
-            bn_gpu_policy_cuda_native_quant_prepared_input_logits_disabled();
+            bn_gpu_policy_cuda_native_quant_prepared_input_logits_disabled(
+                ctx->runtime_policy);
         flags_init = 1;
     }
     const int fuse_bias_enabled = fuse_bias_enabled_flag;
@@ -18230,7 +18291,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     int prepared_kquant_input_cache_tokens = 0;
     int prepared_kquant_input_cache_mark_op = -1;
     const int enable_prepared_kquant_input_cache =
-        bn_gpu_policy_prepared_kquant_input_cache_enabled();
+        bn_gpu_policy_prepared_kquant_input_cache_enabled(
+            ctx->runtime_policy);
 #define BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(buf_, cols_, tokens_) do { \
         prepared_kquant_input_cache_valid = enable_prepared_kquant_input_cache; \
         prepared_kquant_input_cache_buf = (buf_); \
@@ -18274,23 +18336,27 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     int default_moe_graph =
         moe_graph && !native_quant_moe_graph && moe_max_experts > 0 &&
         moe_max_experts <=
-            bn_gpu_policy_cuda_moe_graph_max_experts_or_default(128);
+            bn_gpu_policy_cuda_moe_graph_max_experts_or_default(
+                ctx->runtime_policy, 128);
     int default_graph_exec =
         bn_gpu_policy_cuda_decode_graph_default_enabled(
-            moe_graph, default_moe_graph) &&
+            ctx->runtime_policy, moe_graph, default_moe_graph) &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
     int native_quant_prepared_input_logits_default =
         bn_gpu_policy_cuda_native_quant_prepared_input_logits_default_enabled(
+            ctx->runtime_policy,
             disable_native_quant_prepared_input_logits);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_static_params = graph_exec && cuda_ops_have_logits(ops, n_ops);
-    if (graph_exec && cuda_ops_have_moe_cublas_decode(ops, n_ops))
+    if (graph_exec && cuda_ops_have_moe_cublas_decode(ctx, ops, n_ops))
         graph_exec = 0;
     if (graph_exec &&
-        bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled() &&
-        bn_gpu_policy_all_active_two_kquant_moe_fast_graph_disabled() &&
+        bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled(
+            ctx->runtime_policy) &&
+        bn_gpu_policy_all_active_two_kquant_moe_fast_graph_disabled(
+            ctx->runtime_policy) &&
         cuda_ops_have_moe_all_active_two_kquant_routed_ffn(ops, n_ops))
         graph_exec = 0;
     graph_static_params = graph_exec && graph_static_params;
@@ -18332,8 +18398,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                rop->type) &&
                            (rop->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
                            ((rop->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
-                            bn_gpu_policy_kquant_dot_forced()) &&
-                           bn_gpu_policy_kquant_dot_enabled()) {
+                            bn_gpu_policy_kquant_dot_forced(&ctx->runtime_policy)) &&
+                           bn_gpu_policy_kquant_dot_enabled(&ctx->runtime_policy)) {
                     if (rop->cols > reserve_q8_k_cols)
                         reserve_q8_k_cols = rop->cols;
                 } else if (bn_backend_quant_gpu_graph_matvec_needs_prepared_input_scratch(
@@ -18457,7 +18523,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         runtime_params_ready = graph_exec;
     }
     if (!graph_exec && !profile &&
-        bn_gpu_policy_cuda_qk_norm_rope_flash_fuse_enabled()) {
+        bn_gpu_policy_cuda_qk_norm_rope_flash_fuse_enabled(
+            ctx->runtime_policy)) {
         int wants_qk_norm_flash_runtime = 0;
         for (int ri = 0; ri + 3 < n_ops; ri++) {
             const BnGPUOp *qnorm = &ops[ri];
@@ -18561,7 +18628,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int fused_copy_idx = -1;
             size_t out_offset = (size_t)op->p[5];
             if (!w || !w->data || !in || !out ||
-                !cuda_type_supported(op->type) ||
+                !cuda_type_supported(ctx, op->type) ||
                 op->rows <= 0 || op->cols <= 0) {
                 if (debug_exec_fail) {
                     fprintf(stderr,
@@ -18569,7 +18636,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             "in=%p out=%p type=%d supported=%d\n",
                             (void *)w, w ? w->data : NULL, (void *)in,
                             (void *)out, op->type,
-                            cuda_type_supported(op->type));
+                            cuda_type_supported(ctx, op->type));
                 }
                 BN_CUDA_EXEC_FAIL("matvec invalid args");
             }
@@ -18642,7 +18709,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 cuda_find_fusable_bias(ops, n_ops, i + 2,
                                        ops[i + 2].buf_out,
                                        ops[i + 2].rows) < 0 &&
-                bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled()) {
+                bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled(&ctx->runtime_policy)) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)ops[i + 2].W_buf;
                 float *out1 = cuda_act(ctx, ops[i + 2].buf_out);
                 if (w1 && w1->data && out1) {
@@ -18681,7 +18748,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 op->cols % BN_QK_K == 0 &&
                 op->rows > 0 && next->rows > 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(op->cols)) {
+                bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(&ctx->runtime_policy, op->cols)) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
                 if (w1 && w1->data && out1) {
@@ -18693,26 +18760,26 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         xq, in, op->cols, 1);
                     int pair_threads = 256;
                     int warps = pair_threads / 32;
-                    if (cuda_use_down_kquant_3warp_shape(op->rows, op->cols)) {
+                    if (cuda_use_down_kquant_3warp_shape(ctx, op->rows, op->cols)) {
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec_3warp_kernel,
                             op->rows, 96, 0,
                             out, (const BnBlockQ6K *)w->data, xq,
                             (const float *)NULL,
                             op->rows, op->cols, out_offset);
-                    } else if (cuda_use_down_kquant_5warp_shape(op->rows, op->cols)) {
+                    } else if (cuda_use_down_kquant_5warp_shape(ctx, op->rows, op->cols)) {
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec_5warp_kernel,
                             op->rows, 160, 0,
                             out, (const BnBlockQ6K *)w->data, xq,
                             (const float *)NULL,
                             op->rows, op->cols, out_offset);
-                    } else if (cuda_use_down_kquant_2warp_long(op->rows, op->cols)) {
+                    } else if (cuda_use_down_kquant_2warp_long(ctx, op->rows, op->cols)) {
                         int q6_blocks = (op->rows + 3) / 4;
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec_2warp_kernel,
                             q6_blocks, pair_threads, 0,
                             out, (const BnBlockQ6K *)w->data, xq,
                             (const float *)NULL,
                             op->rows, op->cols, out_offset);
-                    } else if (cuda_use_down_kquant_4warp_long(op->rows, op->cols)) {
+                    } else if (cuda_use_down_kquant_4warp_long(ctx, op->rows, op->cols)) {
                         int q6_blocks = op->rows;
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec_4warp_kernel,
                             q6_blocks, pair_threads, 0,
@@ -18722,8 +18789,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     } else if ((op->cols <= 4096 ||
                          (op->cols >= 5120 && op->cols <= 8192) ||
                          op->cols >= 16384) &&
-                        !cuda_disable_down_kquant_matvec4_shape(op->rows, op->cols) &&
-                        bn_gpu_policy_cuda_down_kquant_matvec4_enabled()) {
+                        !cuda_disable_down_kquant_matvec4_shape(ctx, op->rows, op->cols) &&
+                        bn_gpu_policy_cuda_down_kquant_matvec4_enabled(&ctx->runtime_policy)) {
                         int q6_blocks =
                             (op->rows + warps * 4 - 1) / (warps * 4);
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec4_kernel,
@@ -18750,7 +18817,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             int use_f16_down_kquant_matvec =
-                bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(
+                bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(&ctx->runtime_policy,
                     op->rows, op->cols,
                     (op->flags & BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0);
             int small_state_native_matvec =
@@ -18760,20 +18827,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 (op->buf_out == BN_GPU_VALUE_SSM_V ||
                  op->buf_out == BN_GPU_VALUE_SSM_ALPHA ||
                  op->buf_out == BN_GPU_VALUE_SSM_BETA) &&
-                bn_gpu_policy_cuda_native_quant_ssm_matvec_enabled();
+                bn_gpu_policy_cuda_native_quant_ssm_matvec_enabled(&ctx->runtime_policy);
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 ((bn_backend_quant_supports_native_quant_f16_cache_matvec(
                       op->type) &&
                   ((small_state_native_matvec &&
-                    bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled()) ||
+                    bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled(&ctx->runtime_policy)) ||
                    (op->cols <= 2048 &&
-                    bn_gpu_policy_cuda_f16_native_quant_matvec_enabled()))) ||
+                    bn_gpu_policy_cuda_f16_native_quant_matvec_enabled(&ctx->runtime_policy)))) ||
                  bn_backend_quant_supports_f16_float_cache_matvec(
                      op->type) ||
                  (bn_backend_quant_supports_packed_kquant_f16_cache_matvec(
                       op->type) &&
-                  bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled()))) {
+                  bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled(&ctx->runtime_policy)))) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;
@@ -18799,7 +18866,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_gpu_policy_cuda_cublas_logits_enabled()) {
+                bn_gpu_policy_cuda_cublas_logits_enabled(gpu)) {
                 if (cuda_convert_f32_to_f16(ctx, in, (size_t)op->cols) == 0 &&
                     cuda_cublas_matmul_f16_preconverted(
                         ctx, out, w, ctx->d_x_f16, op->rows, op->cols, 1) == 0) {
@@ -18811,7 +18878,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_backend_quant_supports_kquant_logits_cache_matvec(
                     op->type) &&
                 op->rows >= 65536 &&
-                bn_gpu_policy_cuda_f32_logits_matvec_enabled()) {
+                bn_gpu_policy_cuda_f32_logits_matvec_enabled(gpu)) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;
@@ -18825,7 +18892,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_backend_quant_supports_kquant_logits_cache_matvec(
                     op->type) &&
                 op->rows >= 65536 &&
-                bn_gpu_policy_cuda_f16_logits_matvec_enabled()) {
+                bn_gpu_policy_cuda_f16_logits_matvec_enabled(gpu)) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;
@@ -18846,7 +18913,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bias == NULL && bias_idx < 0 &&
                 (op->cols % BN_QK_K) == 0 &&
                 enable_symmetric_kquant_dot &&
-                bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled()) {
+                bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled(&ctx->runtime_policy)) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
                 if (w1 && w1->data && out1) {
@@ -18891,9 +18958,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
                         (enable_down_kquant_dot && op->cols >= 2048))) {
                 int use_down_kquant_prepared_dot =
-                    bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(is_logits_op);
+                    bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(&ctx->runtime_policy, is_logits_op);
                 int use_down_kquant_mmvq =
-                    bn_gpu_policy_cuda_down_kquant_mmvq_enabled(
+                    bn_gpu_policy_cuda_down_kquant_mmvq_enabled(&ctx->runtime_policy,
                         op->rows, op->cols, is_logits_op,
                         (op->flags & BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0) &&
                     bias == NULL && bias_idx < 0;
@@ -18904,7 +18971,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         quantize_q8_1_kernel, (op->cols + 31) / 32, 32, 0,
                         xq, in, op->cols);
-                    if (bn_gpu_policy_cuda_down_kquant_mmvq_2warp_logits_enabled(
+                    if (bn_gpu_policy_cuda_down_kquant_mmvq_2warp_logits_enabled(&ctx->runtime_policy,
                             op->rows, op->cols, is_logits_op)) {
                         BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                             q6k_dot_matvec_mmvq_2warp_kernel, op->rows,
@@ -18955,27 +19022,27 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                                          op->cols, 1);
                 int q6_threads = 256;
                 int warps = q6_threads / 32;
-                if (cuda_use_down_kquant_3warp_shape(op->rows, op->cols)) {
+                if (cuda_use_down_kquant_3warp_shape(ctx, op->rows, op->cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q6k_dot_matvec_3warp_kernel, op->rows, 96, 0,
                         out, (const BnBlockQ6K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
-                } else if (cuda_use_down_kquant_5warp_shape(op->rows, op->cols)) {
+                } else if (cuda_use_down_kquant_5warp_shape(ctx, op->rows, op->cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q6k_dot_matvec_5warp_kernel, op->rows, 160, 0,
                         out, (const BnBlockQ6K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
-                } else if (cuda_use_down_kquant_2warp_long(op->rows, op->cols)) {
+                } else if (cuda_use_down_kquant_2warp_long(ctx, op->rows, op->cols)) {
                     int blocks = (op->rows + 3) / 4;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q6k_dot_matvec_2warp_kernel, blocks,
                         q6_threads, 0,
                         out, (const BnBlockQ6K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
-                } else if (cuda_use_down_kquant_4warp_long(op->rows, op->cols)) {
+                } else if (cuda_use_down_kquant_4warp_long(ctx, op->rows, op->cols)) {
                     int blocks = op->rows;
                     int fuse_resid_norm =
-                        bn_gpu_policy_cuda_down_kquant_residual_rmsnorm_fuse_enabled() &&
+                        bn_gpu_policy_cuda_down_kquant_residual_rmsnorm_fuse_enabled(&ctx->runtime_policy) &&
                         next && next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                         next->buf_in == BN_GPU_VALUE_X &&
                         next->buf_aux == op->buf_out &&
@@ -19012,8 +19079,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if ((op->cols <= 4096 ||
                      (op->cols >= 5120 && op->cols <= 8192) ||
                      op->cols >= 16384) &&
-                    !cuda_disable_down_kquant_matvec4_shape(op->rows, op->cols) &&
-                    bn_gpu_policy_cuda_down_kquant_matvec4_enabled()) {
+                    !cuda_disable_down_kquant_matvec4_shape(ctx, op->rows, op->cols) &&
+                    bn_gpu_policy_cuda_down_kquant_matvec4_enabled(&ctx->runtime_policy)) {
                     int blocks = (op->rows + warps * 4 - 1) / (warps * 4);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q6k_dot_matvec4_kernel, blocks,
@@ -19043,8 +19110,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
-                        bn_gpu_policy_kquant_dot_forced()) &&
-                       bn_gpu_policy_kquant_dot_enabled()) {
+                        bn_gpu_policy_kquant_dot_forced(&ctx->runtime_policy)) &&
+                       bn_gpu_policy_kquant_dot_enabled(&ctx->runtime_policy)) {
                 int reuse_prepared_kquant_input =
                     BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
                         op->buf_in, op->cols, 1) &&
@@ -19063,7 +19130,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                                          op->cols, 1);
                 int asymmetric_kquant_threads = 256;
                 int warps = asymmetric_kquant_threads / 32;
-                if (bn_gpu_policy_kquant_matvec4_enabled(op->cols)) {
+                if (bn_gpu_policy_kquant_matvec4_enabled(&ctx->runtime_policy, op->cols)) {
                     int blocks = (op->rows + warps * 4 - 1) / (warps * 4);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q4k_q8k_dot_matvec4_kernel, blocks,
@@ -19088,10 +19155,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
                 if (enable_asymmetric_kquant_4warp &&
-                    bn_gpu_policy_cuda_asymmetric_kquant_4warp_shape_enabled(op->rows,
+                    bn_gpu_policy_cuda_asymmetric_kquant_4warp_shape_enabled(&ctx->runtime_policy, op->rows,
                                                                op->cols)) {
                     int fuse_resid_norm =
-                        bn_gpu_policy_cuda_asymmetric_kquant_out_residual_rmsnorm_fuse_enabled() &&
+                        bn_gpu_policy_cuda_asymmetric_kquant_out_residual_rmsnorm_fuse_enabled(&ctx->runtime_policy) &&
                         next && next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                         next->buf_in == BN_GPU_VALUE_X &&
                         next->buf_aux == op->buf_out &&
@@ -19144,7 +19211,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
-                if (bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(op->cols)) {
+                if (bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(&ctx->runtime_policy, op->cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q5k_dot_matvec_4warp_kernel, op->rows, 128, 0,
                         out, (const BnBlockQ5K *)w->data, xq, bias,
@@ -19160,7 +19227,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if ((enable_native_quant_prepared_input_all ||
                         (small_state_native_matvec &&
-                         bn_gpu_policy_cuda_native_quant_ssm_prepared_input_enabled()) ||
+                         bn_gpu_policy_cuda_native_quant_ssm_prepared_input_enabled(
+                             ctx->runtime_policy)) ||
                         (is_logits_op && native_quant_prepared_input_logits_default)) &&
                        bn_backend_quant_supports_native_quant_prepared_input_matvec(
                            op->type) &&
@@ -19241,13 +19309,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int split0 = (int)op->p[2];
             int split1 = (int)op->p[3];
             if (!w || !w->data || !in || !out0 || !out1 ||
-                !cuda_type_supported(op->type) || total_rows <= 0 ||
+                !cuda_type_supported(ctx, op->type) || total_rows <= 0 ||
                 cols <= 0 || split0 <= 0 || split0 > total_rows)
                 BN_CUDA_EXEC_FAIL("matvec split invalid args");
             if (split1 > split0 && (!out2 || split1 > total_rows))
                 BN_CUDA_EXEC_FAIL("matvec split invalid third output");
             int qkv_mixed_type_enabled =
-                bn_gpu_policy_cuda_asymmetric_kquant_qkv_mixed_fuse_enabled(op->type);
+                bn_gpu_policy_cuda_asymmetric_kquant_qkv_mixed_fuse_enabled(&ctx->runtime_policy, op->type);
             if (!disable_qkv_mixed_fuse && qkv_mixed_type_enabled &&
                 next && i + 7 < n_ops &&
                 next->op_code == BN_GPU_CODE_BIAS_ADD &&
@@ -19289,7 +19357,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     vbw->data && value_cache &&
                     (!qkv_fuse_key_cache ||
                      (kbw && kbw->data && key_cache)) &&
-                    cuda_type_supported(ops[i + 5].type)) {
+                    cuda_type_supported(ctx, ops[i + 5].type)) {
                     float *freq = qkv_fuse_key_cache
                         ? cuda_act(ctx, BN_GPU_VALUE_ROPE_FREQ)
                         : NULL;
@@ -19301,6 +19369,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         : total_rows - split0;
                     const BnCudaBlockQ8_1 *xq_mixed = NULL;
                     if (bn_gpu_policy_cuda_native_quant_mixed_prepared_input_enabled(
+                            ctx->runtime_policy,
                             op->type, ops[i + 5].type, cols)) {
                         if (cuda_ensure_q8_1(ctx, cols) != 0)
                             BN_CUDA_EXEC_FAIL("qkv mixed q8 scratch alloc failed");
@@ -19392,7 +19461,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (bn_backend_quant_supports_asymmetric_kquant_dot_split(op->type) &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_symmetric_kquant_dot &&
                 (op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) &&
-                bn_gpu_policy_kquant_dot_enabled()) {
+                bn_gpu_policy_kquant_dot_enabled(&ctx->runtime_policy)) {
                 int reuse_prepared_kquant_input =
                     BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
                         op->buf_in, cols, 1) &&
@@ -19431,7 +19500,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int fused_k_rope_cache = 0;
                 int fused_q_rope_idx = -1;
                 int k_bias_idx = -1;
-                if (bn_gpu_policy_cuda_asymmetric_kquant_split_k_rope_cache_fuse_enabled() &&
+                if (bn_gpu_policy_cuda_asymmetric_kquant_split_k_rope_cache_fuse_enabled(&ctx->runtime_policy) &&
                     next && i + 4 < n_ops &&
                     split1 <= split0 &&
                     next->op_code == BN_GPU_CODE_BIAS_ADD &&
@@ -19459,7 +19528,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int rope_dims = (int)ops[i + 3].p[3];
                         int q_rope_idx = i + 8;
                         if (q_rope_idx < n_ops &&
-                            bn_gpu_policy_cuda_asymmetric_kquant_split_qk_rope_cache_fuse_enabled() &&
+                            bn_gpu_policy_cuda_asymmetric_kquant_split_qk_rope_cache_fuse_enabled(&ctx->runtime_policy) &&
                             ops[q_rope_idx].op_code == BN_GPU_CODE_ROPE &&
                             ops[q_rope_idx].buf_in == op->buf_out &&
                             (int)ops[q_rope_idx].p[1] == head_size &&
@@ -19506,13 +19575,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     skip_ops[i + 4] = 1;
                     if (fused_q_rope_idx >= 0)
                         skip_ops[fused_q_rope_idx] = 1;
-                } else if (bn_gpu_policy_cuda_asymmetric_kquant_split_4warp_enabled(cols)) {
+                } else if (bn_gpu_policy_cuda_asymmetric_kquant_split_4warp_enabled(&ctx->runtime_policy, cols)) {
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_4warp_kernel,
                         total_rows, 128, 0,
                         out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
-                } else if (bn_gpu_policy_cuda_asymmetric_kquant_split_5warp_enabled(cols)) {
+                } else if (bn_gpu_policy_cuda_asymmetric_kquant_split_5warp_enabled(&ctx->runtime_policy, cols)) {
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_5warp_kernel,
                         total_rows, 160, 0,
                         out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
@@ -19527,8 +19596,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (size_t)op->p[6], (size_t)op->p[7]);
                 }
                 int value_rows =
-                    bn_gpu_policy_cuda_asymmetric_kquant_split_value_rows(total_rows, cols);
-                if (bn_gpu_policy_cuda_asymmetric_kquant_split_value_fuse_enabled(
+                    bn_gpu_policy_cuda_asymmetric_kquant_split_value_rows(&ctx->runtime_policy, total_rows, cols);
+                if (bn_gpu_policy_cuda_asymmetric_kquant_split_value_fuse_enabled(&ctx->runtime_policy,
                         value_rows)) {
                     int v_idx = -1;
                     for (int si = i + 1; si < n_ops && si <= i + 6; si++) {
@@ -19610,7 +19679,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
-                if (bn_gpu_policy_cuda_deinterleaved_kquant_split_4warp_enabled(cols)) {
+                if (bn_gpu_policy_cuda_deinterleaved_kquant_split_4warp_enabled(&ctx->runtime_policy, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         q5k_dot_matvec_split_4warp_kernel, total_rows, 128,
                         0, out0, out1, out2,
@@ -19630,7 +19699,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int q8_threads = 256;
                 int warps = q8_threads / 32;
                 int blocks = (total_rows + warps - 1) / warps;
-                if (cuda_use_native_quant_prepared_input_split()) {
+                if (cuda_use_native_quant_prepared_input_split(ctx)) {
                     if (cuda_ensure_q8_1(ctx, cols) != 0)
                         BN_CUDA_EXEC_FAIL("q8 split q8 scratch alloc failed");
                     BnCudaBlockQ8_1 *xq =
@@ -19670,7 +19739,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int gate_rows = (int)op->p[2];
             int up_rows = total_rows - gate_rows;
             if (!w || !w->data || !in || !out ||
-                !cuda_type_supported(op->type) || total_rows <= 0 ||
+                !cuda_type_supported(ctx, op->type) || total_rows <= 0 ||
                 cols <= 0 || gate_rows <= 0 || up_rows <= 0)
                 return -1;
             int stable_decode_gateup = graph_exec;
@@ -19700,8 +19769,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (bn_backend_quant_supports_asymmetric_kquant_dot_fused_gateup(
                            op->type) &&
                        (cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
-                       bn_gpu_policy_kquant_dot_enabled() &&
-                       bn_gpu_policy_kquant_gateup_prepared_path_enabled(
+                       bn_gpu_policy_kquant_dot_enabled(&ctx->runtime_policy) &&
+                       bn_gpu_policy_kquant_gateup_prepared_path_enabled(&ctx->runtime_policy,
                            (op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) != 0)) {
                 const BnGPUOp *prev_prepared_kquant =
                     (i > 0) ? &ops[i - 1] : NULL;
@@ -19730,7 +19799,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
                 int asymmetric_kquant_gateup_threads = 256;
                 int warps = asymmetric_kquant_gateup_threads / 32;
-                if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_qwarp4_enabled(cols)) {
+                if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_qwarp4_enabled(&ctx->runtime_policy, cols)) {
                     int blocks = ((gate_rows + 3) / 4 + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_q8k_dot_fused_gateup_silu_qwarp4_kernel,
@@ -19753,14 +19822,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
-                if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_5warp_enabled(
+                if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_5warp_enabled(&ctx->runtime_policy,
                         enable_asymmetric_kquant_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_5warp_kernel,
                         gate_rows, 160, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, uses_reference_silu);
-                } else if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_2warp_enabled(
+                } else if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_2warp_enabled(&ctx->runtime_policy,
                                enable_asymmetric_kquant_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_2warp_kernel,
@@ -19792,7 +19861,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
-                if (bn_gpu_policy_cuda_deinterleaved_kquant_gateup_2warp_enabled()) {
+                if (bn_gpu_policy_cuda_deinterleaved_kquant_gateup_2warp_enabled(&ctx->runtime_policy)) {
                     int q5_gateup_threads = 256;
                     int groups = q5_gateup_threads / 64;
                     int blocks = (gate_rows + groups - 1) / groups;
@@ -19848,14 +19917,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (int)next->p[3], dim, (int)next->p[0]);
             int moe_all_active_two_route_dot_prepared_input_default_enabled =
                 bn_gpu_policy_cuda_moe_route_dot_prepared_input_enabled(
-                    dim, next_moe_all_active_two_kquant);
+                    ctx->runtime_policy, dim,
+                    next_moe_all_active_two_kquant);
             if (route_diff2) {
                 int next_uses_reference_silu =
                     next_moe_all_active_two_kquant &&
                     (next->flags & BN_GPU_OP_FLAG_REFERENCE_SILU) != 0;
                 int route_block_prepared_input =
                     bn_gpu_policy_cuda_moe_route_block_prepared_input_enabled(
-                        dim, next_moe_all_active_two_kquant,
+                        ctx->runtime_policy, dim,
+                        next_moe_all_active_two_kquant,
                         next_uses_reference_silu);
                 int route_dot_prepared_input =
                     !route_block_prepared_input &&
@@ -19892,7 +19963,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                    w->rows >= 2 &&
                    (dim % 16) == 0 &&
                    moe_all_active_two_route_dot_prepared_input_default_enabled &&
-                   !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled()) {
+                   !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled(
+                       ctx->runtime_policy)) {
                 if (cuda_ensure_q8_k(ctx, dim, 1) != 0)
                     BN_CUDA_EXEC_FAIL(
                         "moe reference route dot prepared-input scratch alloc failed");
@@ -19905,6 +19977,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0);
                 BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(op->buf_in, dim, 1);
             } else if (bn_gpu_policy_cuda_moe_router_fused_topk_enabled(
+                           ctx->runtime_policy,
                            n_experts,
                            (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK) != 0)) {
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
@@ -19913,6 +19986,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0,
                     expert_weights_scale);
             } else if (bn_gpu_policy_cuda_moe_router_warp_disabled(
+                           ctx->runtime_policy,
                            (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK) != 0)) {
                 BN_CUDA_LAUNCH(ctx, moe_router_logits_kernel, n_experts,
                     threads, (size_t)threads * sizeof(float),
@@ -19923,13 +19997,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     expert_weights_scale);
             } else {
                 int warps = threads / 32;
-                if (bn_gpu_policy_cuda_moe_router_4warp_enabled(dim)) {
+                if (bn_gpu_policy_cuda_moe_router_4warp_enabled(
+                        ctx->runtime_policy, dim)) {
                     int groups = threads / 128;
                     int blocks = (n_experts + groups - 1) / groups;
                     BN_CUDA_LAUNCH(ctx, moe_router_logits_4warp_kernel,
                         blocks, threads, 0, logits, (const float *)w->data,
                         in, n_experts, dim);
-                } else if (bn_gpu_policy_cuda_moe_router_2warp_enabled(dim)) {
+                } else if (bn_gpu_policy_cuda_moe_router_2warp_enabled(
+                               ctx->runtime_policy, dim)) {
                     int groups = threads / 64;
                     int blocks = (n_experts + groups - 1) / groups;
                     BN_CUDA_LAUNCH(ctx, moe_router_logits_2warp_kernel,
@@ -19942,7 +20018,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         n_experts, dim);
                 }
                 if (bn_gpu_policy_cuda_moe_router_warp_topk_enabled(
-                        n_experts)) {
+                        ctx->runtime_policy, n_experts)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         moe_route_topk_warp_kernel, 1, 32, 0, route, logits,
                         n_experts, k,
@@ -20005,7 +20081,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int gateup_blocks = (gateup_tasks + warps - 1) / warps;
                 int down_blocks = (dim + warps - 1) / warps;
                 if (routed_native_quant) {
-                    if (bn_gpu_policy_cuda_moe_block_prepared_decode_enabled()) {
+                    if (bn_gpu_policy_cuda_moe_block_prepared_decode_enabled(&ctx->runtime_policy)) {
                         int q8_scratch_elems =
                             dim > hidden * k ? dim : hidden * k;
                         if (cuda_ensure_q8_1(ctx, q8_scratch_elems) != 0)
@@ -20053,24 +20129,29 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         bn_backend_quant_moe_all_active_two_graph_kquant_shape(
                             n_experts, k, down_type, hidden, dim);
                     int moe_all_active_two_fast_moe_ffn =
-                        bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled();
+                        bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled(
+                            ctx->runtime_policy);
                     int moe_all_active_two_fast_enabled =
                         bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
+                            ctx->runtime_policy,
                             moe_all_active_two_graph_kquant);
                     int uses_reference_silu =
                         (op->flags & BN_GPU_OP_FLAG_REFERENCE_SILU) != 0;
                     int use_cublas_all_active_two_decode =
                         moe_all_active_two_kquant &&
                         gate->f16_data && up->f16_data && down->f16_data &&
-                        bn_gpu_policy_all_active_two_kquant_moe_cublas_decode_enabled() &&
-                        bn_gpu_policy_cuda_moe_cublas_decode_enabled();
+                        bn_gpu_policy_all_active_two_kquant_moe_cublas_decode_enabled(
+                            ctx->runtime_policy) &&
+                        bn_gpu_policy_cuda_moe_cublas_decode_enabled(
+                            ctx->runtime_policy);
                     if (use_cublas_all_active_two_decode) {
                         if (cuda_moe_cublas_all_active_two_decode(
                                 ctx, out, gate, up, down, in, route, dim,
                                 hidden, uses_reference_silu) == 0) {
                             break;
                         }
-                        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled()) {
+                        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled(
+                                ctx->runtime_policy)) {
                             fprintf(stderr,
                                     "[bn:gpu:cuda] all-active-two cublas moe decode "
                                     "failed; falling back\n");
@@ -20079,11 +20160,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     const BnGPUOp *prev = (i > 0) ? &ops[i - 1] : NULL;
                     int moe_all_active_two_route_block_prepared_input_enabled =
                         bn_gpu_policy_cuda_moe_route_block_prepared_input_enabled(
-                            dim, moe_all_active_two_kquant,
+                            ctx->runtime_policy, dim,
+                            moe_all_active_two_kquant,
                             uses_reference_silu);
                     int moe_all_active_two_route_dot_prepared_input_default_enabled =
                         bn_gpu_policy_cuda_moe_route_dot_prepared_input_enabled(
-                            dim, moe_all_active_two_kquant);
+                            ctx->runtime_policy, dim,
+                            moe_all_active_two_kquant);
                     int moe_all_active_two_x_dot_prepared =
                         moe_all_active_two_kquant &&
                         prev &&
@@ -20093,7 +20176,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (((BnCudaBuffer *)prev->W_buf)->rows == 1 ||
                          (((BnCudaBuffer *)prev->W_buf)->rows >= 2 &&
                           (dim % 16) == 0 &&
-                          !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled())) &&
+                          !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled(
+                              ctx->runtime_policy))) &&
                         !moe_all_active_two_route_block_prepared_input_enabled &&
                         moe_all_active_two_route_dot_prepared_input_default_enabled;
                     int moe_all_active_two_x_block_prepared =
@@ -20106,19 +20190,23 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         moe_all_active_two_route_block_prepared_input_enabled;
                     int use_moe_all_active_two_dot_prepared_default =
                         moe_all_active_two_kquant &&
-                        !bn_gpu_policy_all_active_two_kquant_moe_dot_prepared_input_default_disabled();
+                        !bn_gpu_policy_all_active_two_kquant_moe_dot_prepared_input_default_disabled(
+                            ctx->runtime_policy);
                     int moe_all_active_two_fast_prepared_gateup =
                         moe_all_active_two_graph_kquant &&
-                        bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_enabled() &&
-                        !bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_disabled();
+                        bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_enabled(
+                            ctx->runtime_policy) &&
+                        !bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_disabled(
+                            ctx->runtime_policy);
                     int use_moe_prepared_dot =
                         bn_gpu_policy_cuda_moe_prepared_dot_enabled(
+                            ctx->runtime_policy,
                             use_moe_all_active_two_dot_prepared_default,
                             moe_all_active_two_fast_prepared_gateup,
                             moe_all_active_two_kquant, hidden, dim);
                     int profile_moe_internal =
                         bn_gpu_policy_cuda_moe_internal_profile_enabled(
-                            profile);
+                            ctx->runtime_policy, profile);
                     cudaEvent_t moe_ev_start = NULL;
                     cudaEvent_t moe_ev_stop = NULL;
                     if (profile_moe_internal) {
@@ -20137,6 +20225,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 op->buf_in, dim, 1);
                         }
                         if (bn_gpu_policy_cuda_moe_all_active_two_fixed_prepared_4row_enabled(
+                                &ctx->runtime_policy,
                                 moe_all_active_two_x_dot_prepared,
                                 moe_all_active_two_fast_enabled)) {
                             int gateup4_tasks = (gateup_tasks + 3) / 4;
@@ -20148,7 +20237,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 mid, (const BnBlockQ4K *)gate->data,
                                 (const BnBlockQ4K *)up->data, xq, route,
                                 hidden, dim, uses_reference_silu);
-                        } else if (bn_gpu_policy_cuda_moe_gateup_prepared_4row_disabled()) {
+                        } else if (bn_gpu_policy_cuda_moe_gateup_prepared_4row_disabled(
+                                       &ctx->runtime_policy)) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q4k_gateup_routed_mid_q8k_kernel,
                                 gateup_blocks, route_threads, 0,
@@ -20203,33 +20293,41 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         cudaEventRecord(moe_ev_start, ctx->exec_stream);
                     }
                     if (bn_backend_quant_moe_down_uses_down_kquant(down_type)) {
-                        int use_moe_down_float_path = cuda_use_moe_down_float_path();
+                        int use_moe_down_float_path = cuda_use_moe_down_float_path(ctx);
                         int moe_all_active_two_pair_down_enabled =
-                            bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_enabled();
+                            bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_enabled(
+                                ctx->runtime_policy);
                         int moe_all_active_two_pair_down_f32_layer =
                             moe_all_active_two_kquant &&
                             down->f32_data &&
                             moe_all_active_two_pair_down_enabled &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layers_disabled() &&
-                            bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layer_selected(moe_layer);
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layers_disabled(
+                                ctx->runtime_policy) &&
+                            bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layer_selected(
+                                ctx->runtime_policy, moe_layer);
                         int moe_all_active_two_ordered_quant_down =
                             moe_all_active_two_kquant &&
-                            bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_enabled() &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_disabled();
+                            bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_enabled(
+                                ctx->runtime_policy) &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_disabled(
+                                ctx->runtime_policy);
                         int moe_all_active_two_allow_f32_down_default =
                             !moe_all_active_two_fast_moe_ffn ||
-                            bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_enabled();
+                            bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_enabled(
+                                ctx->runtime_policy);
                         int moe_all_active_two_f32_down_default =
                             moe_all_active_two_kquant &&
                             down->f32_data &&
                             !moe_all_active_two_ordered_quant_down &&
                             !moe_all_active_two_pair_down_enabled &&
                             moe_all_active_two_allow_f32_down_default &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_disabled(
+                                ctx->runtime_policy);
                         int moe_all_active_two_f32_down =
                             (moe_all_active_two_f32_down_default ||
                              moe_all_active_two_pair_down_f32_layer) &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_all_active_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_all_active_disabled(
+                                ctx->runtime_policy);
                         int moe_all_active_two_disable_pair_down =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
@@ -20237,44 +20335,49 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int moe_all_active_two_disable_f32_cache =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled(
+                                ctx->runtime_policy);
                         int use_moe_down_pair_path =
-                            cuda_use_moe_down_pair_path(
+                            cuda_use_moe_down_pair_path(ctx,
                                 moe_all_active_two_f32_down_default,
                                 moe_all_active_two_pair_down_f32_layer,
                                 moe_all_active_two_disable_pair_down);
                         int prefer_moe_down_f32_cache =
-                            cuda_prefer_moe_down_f32_cache(
+                            cuda_prefer_moe_down_f32_cache(ctx,
                                 down, hidden, moe_all_active_two_kquant,
                                 moe_all_active_two_f32_down);
                         int moe_all_active_two_float_4row_down =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled() &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled(
+                                ctx->runtime_policy) &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled(
+                                ctx->runtime_policy);
                         int moe_all_active_two_f32_4row_layer_selected =
                             bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(
-                                moe_layer);
+                                ctx->runtime_policy, moe_layer);
                         int moe_all_active_two_f32_4row_down =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
                             down->f32_data &&
                             moe_all_active_two_f32_4row_layer_selected &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_default_disabled() &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_default_disabled(
+                                ctx->runtime_policy) &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_disabled(
+                                ctx->runtime_policy);
                         if (moe_all_active_two_f32_4row_down) {
                             int row4_blocks = (dim + 3) / 4;
                             float skip_eps =
                                 bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(
-                                    1.0e-7f);
+                                    ctx->runtime_policy, 1.0e-7f);
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q6k_down_all_active_two_f32_cache_reference_4row_kernel,
                                 row4_blocks, dim3(256, 4, 1), 0,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden, skip_eps);
                         } else if (prefer_moe_down_f32_cache &&
-                            cuda_use_moe_down_f32_pair2(n_experts, k)) {
-                            if (!cuda_use_moe_down_f32_pair2_4row()) {
+                            cuda_use_moe_down_f32_pair2(ctx, n_experts, k)) {
+                            if (!cuda_use_moe_down_f32_pair2_4row(ctx)) {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                     moe_q6k_down_all_active_two_f32_cache_pair2_sum_kernel,
                                     (dim + 1) / 2, dim3(32, 4, 1), 0,
@@ -20304,16 +20407,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 route, dim, hidden, n_experts, k);
                         } else if (use_moe_down_pair_path) {
                             int use_all_active_two_down_accum =
-                                cuda_use_all_active_two_kquant_moe_down_accum(
+                                cuda_use_all_active_two_kquant_moe_down_accum(ctx,
                                     moe_all_active_two_kquant);
                             int use_moe_down_pair4_sum =
-                                cuda_use_all_active_two_kquant_moe_down_pair4_sum(
+                                cuda_use_all_active_two_kquant_moe_down_pair4_sum(ctx,
                                     moe_all_active_two_kquant);
                             int use_moe_down_prepared_native_quant_4row_sum =
-                                cuda_use_moe_down_prepared_native_quant_4row_sum(
+                                cuda_use_moe_down_prepared_native_quant_4row_sum(ctx,
                                     moe_all_active_two_kquant, k, hidden);
                             int use_moe_down_prepared_native_quant_8row_sum =
-                                cuda_use_moe_down_prepared_native_quant_8row_sum(
+                                cuda_use_moe_down_prepared_native_quant_8row_sum(ctx,
                                     use_moe_down_prepared_native_quant_4row_sum, hidden);
                             if (cuda_ensure_q8_k(ctx, hidden, k) != 0 ||
                                 cuda_ensure_prefill(ctx,
@@ -20342,7 +20445,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     out, (const BnBlockQ6K *)down->data,
                                     mid_q, route, dim, hidden, n_experts, k);
                             } else if (use_moe_down_pair4_sum) {
-                                if (cuda_use_all_active_two_kquant_moe_down_fixed(
+                                if (cuda_use_all_active_two_kquant_moe_down_fixed(ctx,
                                         moe_all_active_two_kquant)) {
                                     int pair4_sum_blocks =
                                         ((dim + 15) / 16);
@@ -20369,7 +20472,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     n_experts, k);
                             } else if (use_moe_down_prepared_native_quant_4row_sum) {
                                 int fuse_resid_norm =
-                                    cuda_use_moe_down_resid_rmsnorm_fuse() &&
+                                    cuda_use_moe_down_resid_rmsnorm_fuse(ctx) &&
                                     next &&
                                     next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                                     next->buf_in == BN_GPU_VALUE_X &&
@@ -20384,7 +20487,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     ? cuda_act(ctx, next->buf_out) : NULL;
                                 if (fuse_resid_norm && nw && nw->data &&
                                     resid && norm_out) {
-                                    if (cuda_use_moe_down_prepared_native_quant_shape_2048_768(
+                                    if (cuda_use_moe_down_prepared_native_quant_shape_2048_768(ctx,
                                             dim, hidden, k)) {
                                         BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                             moe_q6k_down_routed_q8k_prepared_native_quant_4row_residual_sum_2048_768_kernel,
@@ -20419,7 +20522,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         n_experts, k);
                                 }
                             } else if (use_all_active_two_down_accum) {
-                                if (!cuda_use_all_active_two_kquant_moe_down_accum_4row()) {
+                                if (!cuda_use_all_active_two_kquant_moe_down_accum_4row(ctx)) {
                                     int all_active_two_blocks =
                                         ((dim + 1) / 2 + warps - 1) / warps;
                                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
@@ -20436,7 +20539,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden);
                                 }
-                            } else if (cuda_use_moe_down_prepared_pair_4row()) {
+                            } else if (cuda_use_moe_down_prepared_pair_4row(ctx)) {
                                 int pair4_blocks =
                                     ((dim + 3) / 4 + warps - 1) / warps;
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
@@ -20468,14 +20571,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     (dim + threads - 1) / threads, threads, 0,
                                     out, pair_out, dim, k);
                             }
-                        } else if (cuda_use_moe_down_f32_cache(
+                        } else if (cuda_use_moe_down_f32_cache(ctx,
                                        down, moe_all_active_two_disable_f32_cache)) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q6k_down_routed_f32_cache_warp_kernel,
                                 down_blocks, route_threads, 0,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden, n_experts, k);
-                        } else if (cuda_use_moe_down_f16_cache(down)) {
+                        } else if (cuda_use_moe_down_f16_cache(ctx, down)) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q6k_down_routed_f16_cache_warp_kernel,
                                 down_blocks, route_threads, 0,
@@ -20509,7 +20612,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 out, (const BnBlockQ6K *)down->data, mid_q,
                                 route, dim, hidden, n_experts, k);
                         }
-                    } else if (cuda_use_moe_down_aux_f32_cache(down)) {
+                    } else if (cuda_use_moe_down_aux_f32_cache(ctx, down)) {
                         if (bn_gpu_policy_moe_route_all_active_two(n_experts,
                                                                    k) &&
                             moe_all_active_two_fast_enabled) {
@@ -20525,7 +20628,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden, n_experts, k);
                         }
-                    } else if (cuda_use_moe_down_prepared_pair8(
+                    } else if (cuda_use_moe_down_prepared_pair8(ctx,
                                    n_experts, k, hidden)) {
                         if (cuda_ensure_q8_k(ctx, hidden, k) != 0 ||
                             cuda_ensure_prefill(ctx,
@@ -20556,7 +20659,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                             mid_q, mid, hidden, k);
                         BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE();
-                        if (cuda_use_moe_down_prepared_8row(hidden)) {
+                        if (cuda_use_moe_down_prepared_8row(ctx, hidden)) {
                             int down8_blocks =
                                 (dim + warps * 8 - 1) / (warps * 8);
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
@@ -20628,7 +20731,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             const BnGPUOp *after_next = (i + 2 < n_ops) ? &ops[i + 2] : NULL;
             const BnGPUOp *flash = (i + 3 < n_ops) ? &ops[i + 3] : NULL;
             if (runtime_params_ready && next && after_next && flash &&
-                bn_gpu_policy_cuda_qk_norm_rope_flash_fuse_enabled() &&
+                bn_gpu_policy_cuda_qk_norm_rope_flash_fuse_enabled(
+                    ctx->runtime_policy) &&
                 op->buf_in == BN_GPU_VALUE_Q &&
                 next->op_code == BN_GPU_CODE_PER_HEAD_RMSNORM &&
                 next->buf_in == BN_GPU_VALUE_KEY_CACHE &&
@@ -20673,7 +20777,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (const BnCudaRuntimeParams *)ctx->d_runtime);
                 i += 3;
             } else if (next && after_next &&
-                bn_gpu_policy_cuda_qk_norm_rope_fuse_enabled() &&
+                bn_gpu_policy_cuda_qk_norm_rope_fuse_enabled(
+                    ctx->runtime_policy) &&
                 op->buf_in == BN_GPU_VALUE_Q &&
                 next->op_code == BN_GPU_CODE_PER_HEAD_RMSNORM &&
                 next->buf_in == BN_GPU_VALUE_KEY_CACHE &&
@@ -20870,7 +20975,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 return -1;
             int sigmoid_threads = dim >= 1536 ? 512 : 256;
             if (dim <= 8192 && next &&
-                bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled() &&
+                bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled(
+                    ctx->runtime_policy) &&
                 next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                 next->buf_aux == op->buf_in &&
                 (int)next->p[0] == n) {
@@ -20887,7 +20993,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (int)op->p[4], cuda_u32_to_f32(next->p[1]));
                 i++;
             } else if (dim <= 8192 && next &&
-                bn_gpu_policy_cuda_weighted_add_sigmoid_residual_fuse_enabled() &&
+                bn_gpu_policy_cuda_weighted_add_sigmoid_residual_fuse_enabled(
+                    ctx->runtime_policy) &&
                 next->op_code == BN_GPU_CODE_RESIDUAL_ADD &&
                 next->buf_aux == op->buf_in &&
                 (int)next->p[0] == n) {
@@ -21281,7 +21388,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 profile_ops[profile_code]++;
                 profile_ms[profile_code] += (double)ms;
             }
-            if (bn_gpu_policy_cuda_profile_shapes_enabled() &&
+            if (bn_gpu_policy_cuda_profile_shapes_enabled(
+                    ctx->runtime_policy) &&
                 (op->op_code == BN_GPU_CODE_MATVEC ||
                  op->op_code == BN_GPU_CODE_FUSED_GATEUP_SILU ||
                  op->op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT ||
@@ -21421,7 +21529,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         cudaEventDestroy(ev_start);
         cudaEventDestroy(ev_stop);
         profile_calls++;
-        int every = bn_gpu_policy_cuda_profile_every_or_default(1);
+        int every = bn_gpu_policy_cuda_profile_every_or_default(
+            ctx->runtime_policy, 1);
         if ((profile_calls % (unsigned long long)every) == 0) {
             fprintf(stderr, "[bn:gpu:cuda:profile] calls=%llu\n",
                     profile_calls);
@@ -21434,7 +21543,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         profile_ms[code] * 1000.0 /
                             (double)profile_ops[code]);
             }
-            if (bn_gpu_policy_cuda_profile_shapes_enabled()) {
+            if (bn_gpu_policy_cuda_profile_shapes_enabled(
+                    ctx->runtime_policy)) {
                 fprintf(stderr, "[bn:gpu:cuda:profile-shapes]\n");
                 for (int si = 0; si < shape_profile_count; si++) {
                     BnCudaShapeProfile *sp = &shape_profile[si];
@@ -21459,7 +21569,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         double exec_ms = cuda_wall_ms() - wall_start;
         unsigned long long next_wall_call = wall_calls + 1;
         int detail_limit =
-            bn_gpu_policy_cuda_wall_profile_detail_limit_or_default(0);
+            bn_gpu_policy_cuda_wall_profile_detail_limit_or_default(
+                ctx->runtime_policy, 0);
         if (detail_limit < 0 ||
             (detail_limit > 0 &&
              next_wall_call <= (unsigned long long)detail_limit)) {
@@ -21484,7 +21595,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             wall_launch_by_code[code] +=
                 (unsigned long long)exec_launch_by_code[code];
         wall_calls++;
-        int every = bn_gpu_policy_cuda_wall_profile_every_or_default(16);
+        int every = bn_gpu_policy_cuda_wall_profile_every_or_default(
+            ctx->runtime_policy, 16);
         if ((wall_calls % (unsigned long long)every) == 0) {
             fprintf(stderr,
                     "[bn:gpu:cuda:wall] calls=%llu ops=%llu launches=%llu "
@@ -21510,13 +21622,23 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
 }
 
 BnGPUBackend *bn_gpu_cuda_create(void) {
+    BnBackendRuntimePolicy policy;
+    if (bn_gpu_backend_runtime_policy_init(&policy) != 0) return NULL;
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    return gpu;
+}
+
+BnGPUBackend *bn_gpu_cuda_create_with_policy(
+    const BnBackendRuntimePolicy *runtime_policy) {
     int ndev = 0;
     if (cudaGetDeviceCount(&ndev) != cudaSuccess || ndev <= 0) {
         fprintf(stderr, "[bn:gpu:cuda] no CUDA device available\n");
         return NULL;
     }
     int device = 0;
-    const char *device_env = bn_gpu_policy_cuda_device_selector();
+    const char *device_env =
+        bn_gpu_policy_cuda_device_selector(runtime_policy);
     if (device_env && device_env[0]) {
         if (strcmp(device_env, "auto") == 0) {
             size_t best_free = 0;
@@ -21561,6 +21683,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
         free(gpu);
         return NULL;
     }
+    ctx->runtime_policy = runtime_policy;
     ctx->device = device;
     cudaError_t stream_err = cudaStreamCreateWithFlags(&ctx->stream,
                                                        cudaStreamNonBlocking);
@@ -21587,7 +21710,8 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
         return NULL;
     }
     (void)cublasSetMathMode(ctx->cublas, CUBLAS_TENSOR_OP_MATH);
-    int ws_mb = bn_gpu_policy_cuda_cublas_workspace_mb_or_default(32);
+    int ws_mb = bn_gpu_policy_cuda_cublas_workspace_mb_or_default(
+        ctx->runtime_policy, 32);
     if (ws_mb > 0) {
         size_t ws_bytes = (size_t)ws_mb * 1024u * 1024u;
         cudaError_t ws_err = cudaMalloc(&ctx->cublas_workspace, ws_bytes);
@@ -21647,8 +21771,21 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->execute = cuda_execute;
     gpu->ctx = ctx;
     gpu->kind = BN_GPU_BACKEND_CUDA;
+    if (bn_gpu_backend_capture_runtime_policy_from(gpu,
+                                                   runtime_policy) != 0) {
+        bn_gpu_cuda_destroy(gpu);
+        return NULL;
+    }
+    ctx->runtime_policy = &gpu->runtime_policy;
+    ctx->moe_prefill_min_tokens =
+        bn_gpu_policy_moe_prefill_min_tokens_or_default(gpu, 1);
+    ctx->moe_route_batch_enabled =
+        bn_gpu_policy_moe_route_batch_enabled(gpu);
     gpu->max_storage_binding_size = (size_t)-1;
     gpu->caps = BN_GPU_CAP_FLASH_ATTN |
+                BN_GPU_CAP_DECODE_GRAPH_CACHE |
+                BN_GPU_CAP_LARGE_GRAPH_NATIVE |
+                BN_GPU_CAP_SSM_GRAPH |
                 BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT |
                 BN_GPU_CAP_MIDBIT_BLOCK32_MATVEC_SPLIT |
                 BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT |
@@ -21658,7 +21795,9 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
                 BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU |
                 BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT |
                 BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT |
-                BN_GPU_CAP_MOE_ROUTED_FFN;
+                BN_GPU_CAP_MOE_ROUTED_FFN |
+                BN_GPU_CAP_MOE_ROUTED_KQUANT_DOWN_CACHE |
+                BN_GPU_CAP_MOE_ROUTED_NATIVE_QUANT;
     return gpu;
 }
 
@@ -21668,6 +21807,7 @@ void bn_gpu_cuda_destroy(BnGPUBackend *gpu) {
     if (ctx) {
         if (cuda_ctx_set_device(ctx) != 0) {
             free(ctx);
+            bn_gpu_backend_release_runtime_policy(gpu);
             free(gpu);
             return;
         }
@@ -21700,6 +21840,7 @@ void bn_gpu_cuda_destroy(BnGPUBackend *gpu) {
         if (ctx->stream) cudaStreamDestroy(ctx->stream);
     }
     free(ctx);
+    bn_gpu_backend_release_runtime_policy(gpu);
     free(gpu);
 }
 

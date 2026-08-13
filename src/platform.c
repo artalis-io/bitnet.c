@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -51,6 +52,56 @@ BnMappedFile bn_platform_load_file(const char *path) {
     f.fd = fd;  // keep fd open for pread (MoE expert loading)
 #endif
     return f;
+}
+
+BnMappedFile bn_platform_load_file_resident(const char *path) {
+    BnMappedFile f = {0};
+    f.fd = -1;
+#ifdef __EMSCRIPTEN__
+    return bn_platform_load_file(path);
+#else
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return f;
+    struct stat st;
+    if (fstat(fd, &st) < 0 || st.st_size <= 0) {
+        close(fd);
+        return f;
+    }
+    f.size = (size_t)st.st_size;
+    long page_value = sysconf(_SC_PAGESIZE);
+    size_t page = page_value > 0 ? (size_t)page_value : 4096u;
+    if (f.size > SIZE_MAX - (page - 1)) {
+        close(fd);
+        f.size = 0;
+        return f;
+    }
+    size_t allocation_size = (f.size + page - 1) & ~(page - 1);
+    void *data = aligned_alloc(page, allocation_size);
+    if (!data) {
+        close(fd);
+        f.size = 0;
+        return f;
+    }
+    size_t offset = 0;
+    while (offset < f.size) {
+        size_t remaining = f.size - offset;
+        size_t chunk = remaining > (size_t)1 << 30
+            ? (size_t)1 << 30 : remaining;
+        ssize_t n = read(fd, (uint8_t *)data + offset, chunk);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) {
+            free(data);
+            close(fd);
+            f.size = 0;
+            return f;
+        }
+        offset += (size_t)n;
+    }
+    f.data = (uint8_t *)data;
+    f.is_mmap = 0;
+    f.fd = fd;
+    return f;
+#endif
 }
 
 // #19, #20: bn_platform_load_buffer wraps an external buffer without taking ownership.
@@ -115,5 +166,34 @@ size_t bn_platform_rss_bytes(void) {
     return (size_t)pages * 4096;
 #else
     return 0;
+#endif
+}
+
+void *bn_platform_aligned_alloc(size_t alignment, size_t size) {
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0 || size == 0)
+        return NULL;
+#if defined(__APPLE__) || defined(__linux__)
+    void *ptr = NULL;
+    if (posix_memalign(&ptr, alignment, size) != 0)
+        return NULL;
+    return ptr;
+#else
+    if (size > SIZE_MAX - (alignment - 1))
+        return NULL;
+    size_t aligned_size = (size + alignment - 1) & ~(alignment - 1);
+    return aligned_alloc(alignment, aligned_size);
+#endif
+}
+
+void bn_platform_aligned_free(void *ptr) {
+    free(ptr);
+}
+
+char *const *bn_platform_environment(void) {
+#if defined(__EMSCRIPTEN__)
+    return NULL;
+#else
+    extern char **environ;
+    return environ;
 #endif
 }

@@ -15,14 +15,14 @@ kernel void gqa_scores(device const float *q         [[buffer(0)]],
     uint lane = lid.x & 31;
     uint i = wid.y * 8 + simd_id;
     uint n_heads = p[0], head_size = p[1], n_kv = p[2], kv_mul = p[3];
-    uint kv_dim = p[4], seq_len = p[5], loff = p[6];
+    uint kv_cache_stride = p[4], seq_len = p[5], loff = p[6];
     float scale = as_type<float>(p[7]);
 
     if (h >= n_heads || i >= n_kv) return;
 
     uint kv_h = h / kv_mul;
     uint q_base = h * head_size;
-    uint k_base = loff + i * kv_dim + kv_h * head_size;
+    uint k_base = loff + i * kv_cache_stride + kv_h * head_size;
 
     float dot = 0.0f;
     float comp = 0.0f;

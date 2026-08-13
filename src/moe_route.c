@@ -7,6 +7,7 @@ typedef struct {
     const float *router_w;
     const float *x;
     int dim;
+    int uses_reference_router_accumulation;
 } BnRouterCtx;
 
 static void moe_router_range(void *ctx, int start, int end) {
@@ -18,45 +19,59 @@ static void moe_router_range(void *ctx, int start, int end) {
     }
     for (int e = start; e < end; e++) {
         const float *row = c->router_w + (size_t)e * c->dim;
-        c->logits[e] = bn_moe_dot_row(row, c->x, c->dim);
+        c->logits[e] = c->uses_reference_router_accumulation
+            ? bn_moe_dot_row_reference(row, c->x, c->dim)
+            : bn_moe_dot_row(row, c->x, c->dim);
     }
 }
 
 // Router: SIMD matvec -> softmax -> top-K selection
 void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
                   int dim, int n_experts, int k, int norm_topk_prob,
-                  float expert_weights_scale, BnThreadPool *pool) {
+                  float expert_weights_scale,
+                  int uses_reference_router_accumulation,
+                  BnThreadPool *pool) {
     // Router matvec: vectorized + thread-dispatched
-    BnRouterCtx rctx = { ms->router_logits, router_w, x, dim };
+    BnRouterCtx rctx = {
+        ms->router_logits, router_w, x, dim,
+        uses_reference_router_accumulation
+    };
     BnTPTask rtask = { moe_router_range, &rctx, n_experts };
     bn_tp_dispatch(pool, &rtask, 1);
 
-    // Softmax over all experts
+    // Softmax denominator over all experts. Keep raw logits intact so routing
+    // diagnostics and downstream observers can inspect the actual scores.
     float max_val = ms->router_logits[0];
     for (int e = 1; e < n_experts; e++)
         if (ms->router_logits[e] > max_val)
             max_val = ms->router_logits[e];
 
-    float sum = 0.0f;
-    for (int e = 0; e < n_experts; e++) {
-        ms->router_logits[e] = expf(ms->router_logits[e] - max_val);
-        sum += ms->router_logits[e];
-    }
-    // Top-K selection (partial sort). Select over exp(logit - max);
-    // the all-expert softmax denominator is common and cancels after
-    // the selected weights are normalized below.
+    float probs[n_experts];
+    double sum = bn_moe_softmax_exp(probs, ms->router_logits,
+                                    n_experts, max_val);
+
+    // Top-K selection over raw logits. Softmax is monotonic, and retaining the
+    // scores avoids rewriting the full router output just to mark selections.
     for (int i = 0; i < k; i++) {
         int best = -1;
-        float best_val = -1.0f;
+        float best_val = -INFINITY;
         for (int e = 0; e < n_experts; e++) {
+            int already_selected = 0;
+            for (int j = 0; j < i; j++) {
+                if (ms->expert_indices[j] == e) {
+                    already_selected = 1;
+                    break;
+                }
+            }
+            if (already_selected)
+                continue;
             if (ms->router_logits[e] > best_val) {
                 best_val = ms->router_logits[e];
                 best = e;
             }
         }
         ms->expert_indices[i] = best;
-        ms->expert_weights[i] = best_val / sum;
-        ms->router_logits[best] = -1.0f;
+        ms->expert_weights[i] = (float)((double)probs[best] / sum);
     }
 
     if (norm_topk_prob) {

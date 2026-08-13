@@ -1,11 +1,14 @@
 #include <metal_stdlib>
 using namespace metal;
 
-static inline int q4_byte_dot(uchar stored, device const char *x0,
-                              device const char *x1) {
-    uchar raw = stored ^ uchar(0x88);
-    return (int(raw & uchar(0x0F)) - 8) * int(*x0) +
-           (int(raw >> 4) - 8) * int(*x1);
+static inline float q4_vec_dot(device const uchar *stored,
+                               device const char *x0,
+                               device const char *x1) {
+    uchar4 raw = *(device const uchar4 *)stored;
+    char4 lo = char4(raw & uchar4(0x0F)) - char4(8);
+    char4 hi = char4(raw >> 4) - char4(8);
+    return dot(float4(lo), float4(*(device const char4 *)x0)) +
+           dot(float4(hi), float4(*(device const char4 *)x1));
 }
 
 static inline float q4_prepared_row_dot(device const uchar *weights,
@@ -28,17 +31,14 @@ static inline float q4_prepared_row_dot(device const uchar *weights,
         float dx = x_scales[b];
         device const uchar *qbase = qs + gb * 64u;
         device const char *xb = x_q + b * 32u;
-        int idot = 0;
+        float idot = 0.0f;
         for (uint ng = 0; ng < 4; ng++) {
             device const uchar *qrow = qbase + ng * 16u + row_in_group * 4u;
             uint xlo = ng * 4u;
             uint xhi = 16u + ng * 4u;
-            idot += q4_byte_dot(qrow[0], xb + xlo + 0u, xb + xhi + 0u);
-            idot += q4_byte_dot(qrow[1], xb + xlo + 1u, xb + xhi + 1u);
-            idot += q4_byte_dot(qrow[2], xb + xlo + 2u, xb + xhi + 2u);
-            idot += q4_byte_dot(qrow[3], xb + xlo + 3u, xb + xhi + 3u);
+            idot += q4_vec_dot(qrow, xb + xlo, xb + xhi);
         }
-        row_sum = fma(d * dx, float(idot), row_sum);
+        row_sum = fma(d * dx, idot, row_sum);
     }
     return row_sum;
 }
@@ -72,7 +72,7 @@ kernel void q4_prepared_q8_gateup(
     uint row_lane = lid.x & 7u;
     uint local_row = lid.x >> 3;
     uint total_rows = p[0], cols = p[1], gate_rows = p[2];
-    uint row = wid.x * 32u + local_row;
+    uint row = wid.x * 16u + local_row;
     float gate = 0.0f;
     float up = 0.0f;
     if (row < gate_rows) {

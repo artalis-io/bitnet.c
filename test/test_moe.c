@@ -5,6 +5,9 @@
 #include "model_arch.h"
 #include "quant.h"
 #include "../src/moe_internal.h"
+#if defined(__ARM_NEON)
+#include "simd_helpers.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,12 +43,16 @@ static void test_moe_route(void) {
     for (int e = 0; e < n_experts; e++)
         router_w[e * dim + 0] = (float)e;
 
-    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 1, 0.0f, NULL);
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 1, 0.0f, 0, NULL);
 
     // Top-3 should be experts 7, 6, 5 (highest logits)
     assert(ms.expert_indices[0] == 7);
     assert(ms.expert_indices[1] == 6);
     assert(ms.expert_indices[2] == 5);
+
+    // Routing must preserve raw scores for diagnostics and reuse.
+    for (int e = 0; e < n_experts; e++)
+        assert(ms.router_logits[e] == (float)e);
 
     // Weights should sum to 1.0
     float wsum = 0.0f;
@@ -59,13 +66,41 @@ static void test_moe_route(void) {
     assert(ms.expert_weights[0] > ms.expert_weights[1]);
     assert(ms.expert_weights[1] > ms.expert_weights[2]);
 
-    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 0, 2.0f, NULL);
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 0, 2.0f, 0, NULL);
     wsum = 0.0f;
     for (int i = 0; i < k; i++)
         wsum += ms.expert_weights[i];
     assert(wsum < 2.0f);
     assert(wsum > 1.0f);
 
+    printf("PASSED\n");
+}
+
+static void test_moe_projection_buffer_layout(void) {
+    printf("test_moe_projection_buffer_layout... ");
+    BnConfig c = {0};
+    BnWeights w = {0};
+    BnLayerWeights layers[3] = {0};
+    c.n_layers = 3;
+    w.layers = layers;
+    layers[0].moe.expert_map.expert_gate_bytes = 64;
+    layers[0].moe.expert_map.expert_up_bytes = 80;
+    layers[0].moe.expert_map.expert_down_bytes = 96;
+    layers[1].moe.expert_map.expert_gate_bytes = 128;
+    layers[1].moe.expert_map.expert_up_bytes = 72;
+    layers[1].moe.expert_map.expert_down_bytes = 112;
+    layers[2].moe.expert_map.expert_gate_bytes = 48;
+    layers[2].moe.expert_map.expert_up_bytes = 144;
+    layers[2].moe.expert_map.expert_down_bytes = 160;
+
+    BnMoEProjectionBufferLayout layout =
+        bn_moe_projection_buffer_layout(&c, &w);
+    assert(layout.gate_bytes == 128);
+    assert(layout.up_bytes == 144);
+    assert(layout.down_bytes == 160);
+    assert(layout.max_bytes == 160);
+    assert(bn_moe_projection_buffer_layout(NULL, &w).max_bytes == 0);
+    assert(bn_moe_projection_buffer_layout(&c, NULL).max_bytes == 0);
     printf("PASSED\n");
 }
 
@@ -256,7 +291,7 @@ static void test_qwen2moe_arch_config(void) {
     assert(bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(bn_moe_float_kquant_gateup_fallback_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
-    assert(bn_model_arch_moe_prefers_reference_gpu_attention(&c));
+    assert(bn_model_arch_moe_requires_reference_attention(&c));
     assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
 
     BnConfig dense = {0};
@@ -321,11 +356,18 @@ static void test_moe_prefill_policy(void) {
     c.moe_norm_topk_prob = 1;
     c.moe_expert_weights_scale = 0.5f;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(&c);
+    assert(!route_policy.uses_reference_router_accumulation);
     assert(route_policy.total_experts == 4);
     assert(route_policy.active_experts == 2);
     assert(route_policy.expert_hidden_dim == 128);
     assert(route_policy.norm_topk_prob == 1);
     assert(route_policy.expert_weights_scale == 0.5f);
+    c.policy_flags |=
+        BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION;
+    route_policy = bn_moe_route_policy(&c);
+    assert(route_policy.uses_reference_router_accumulation);
+    c.policy_flags &=
+        ~BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION;
     assert(bn_moe_policy_normalizes_topk_route_weights(&c));
     c.moe_norm_topk_prob = 0;
     assert(!bn_moe_policy_normalizes_topk_route_weights(&c));
@@ -338,6 +380,7 @@ static void test_moe_prefill_policy(void) {
     assert(bn_model_moe_policy_total_experts(NULL) == 0);
     assert(bn_model_moe_policy_active_experts(NULL) == 0);
     assert(bn_model_moe_policy_expert_hidden_dim(NULL) == 0);
+
     assert(!bn_model_arch_moe_route_shape_valid(NULL));
     c.n_experts_active = 0;
     assert(!bn_model_arch_moe_route_shape_valid(&c));
@@ -739,10 +782,33 @@ static void test_swiglu(void) {
     float up[8] = {1.0f, -3.0f, 0.25f, 4.0f, -2.0f, 3.0f, 0.5f, -1.0f};
     float out[8];
 
-    bn_moe_swiglu(out, gate, up, 8, 1);
+    bn_moe_swiglu(out, gate, up, 8, 1, 0);
     for (int i = 0; i < 8; i++) {
         float expected = (gate[i] / (1.0f + expf(-gate[i]))) * up[i];
         assert(fabsf(out[i] - expected) < 1e-6f);
+    }
+
+    // Standard GEGLU keeps the FP32 tanh approximation.
+    float gelu_gate[4] = {-1.2345f, -0.12345f, 0.12345f, 1.2345f};
+    float gelu_up[4] = {0.5f, -2.0f, 3.0f, -0.75f};
+    bn_moe_swiglu(out, gelu_gate, gelu_up, 4, -1, 0);
+    for (int i = 0; i < 4; i++) {
+        float x = gelu_gate[i];
+        float inner = 0.7978845608028654f * x *
+                      (1.0f + 0.044715f * x * x);
+        float expected = 0.5f * x * (1.0f + tanhf(inner)) * gelu_up[i];
+        assert(fabsf(out[i] - expected) < 1e-7f);
+    }
+
+    // Reference activation policy rounds the GELU boundary through FP16.
+    bn_moe_swiglu(out, gelu_gate, gelu_up, 4, -1, 1);
+    for (int i = 0; i < 4; i++) {
+        float x = bn_fp16_to_fp32(bn_fp32_to_fp16(gelu_gate[i]));
+        float inner = 0.7978845608028654f * x *
+                      (1.0f + 0.044715f * x * x);
+        float gelu = 0.5f * x * (1.0f + tanhf(inner));
+        float rounded_gelu = bn_fp16_to_fp32(bn_fp32_to_fp16(gelu));
+        assert(out[i] == rounded_gelu * gelu_up[i]);
     }
 
     printf("PASSED\n");
@@ -770,7 +836,7 @@ static void test_route_uniform(void) {
     float x[2] = {1.0f, 0.0f};
     float router_w[8] = {1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f};
 
-    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 1, 0.0f, NULL);
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 1, 0.0f, 0, NULL);
 
     // All logits equal → after softmax all 0.25
     // Top-2 picks should still have normalized weights summing to 1.0
@@ -779,6 +845,39 @@ static void test_route_uniform(void) {
     // Equal weights: each should be ~0.5
     assert(fabsf(ms.expert_weights[0] - 0.5f) < 1e-5f);
     assert(fabsf(ms.expert_weights[1] - 0.5f) < 1e-5f);
+
+    printf("PASSED\n");
+}
+
+static void test_router_softmax_backend(void) {
+    printf("test_router_softmax_backend... ");
+
+    float logits[8] = {
+        -6.15005159f, -5.27897453f, -2.91207242f, -5.36358547f,
+        -4.85903406f, -5.60444450f, -6.29297018f, -2.38901019f,
+    };
+    float probs[8];
+    double sum = bn_moe_softmax_exp(probs, logits, 8, logits[7]);
+    assert(sum > 1.0);
+    for (int i = 0; i < 8; i++) {
+        assert(isfinite(probs[i]));
+        assert(probs[i] > 0.0f);
+    }
+    assert(probs[7] == 1.0f);
+
+#if defined(__ARM_NEON) && defined(__aarch64__)
+    float expected[8];
+    double expected_sum = 0.0;
+    float32x4_t maxv = vdupq_n_f32(logits[7]);
+    for (int i = 0; i < 8; i += 4) {
+        float32x4_t values = bn_neon_fast_exp_f32(
+            vsubq_f32(vld1q_f32(logits + i), maxv));
+        vst1q_f32(expected + i, values);
+        expected_sum += (double)vaddvq_f32(values);
+    }
+    assert(memcmp(probs, expected, sizeof(probs)) == 0);
+    assert(sum == expected_sum);
+#endif
 
     printf("PASSED\n");
 }
@@ -793,6 +892,7 @@ static void test_moe_cache(void) {
 int main(void) {
     printf("=== MoE Unit Tests ===\n");
     test_moe_route();
+    test_moe_projection_buffer_layout();
     test_expert_map_split();
     test_expert_map_fused_gate_up();
     test_moe_config_compat();
@@ -804,6 +904,7 @@ int main(void) {
     test_moe_resident_routed_ffn_layout_policy();
     test_swiglu();
     test_route_uniform();
+    test_router_softmax_backend();
     test_moe_cache();
     printf("All MoE tests passed!\n");
     return 0;

@@ -62,6 +62,9 @@ typedef struct {
     int cache_mb_set;   // whether user explicitly set --cache-mb
     int force_madvise;  // madvise-guided mmap for low-RSS expert streaming
     int prefault_moe;   // touch all mmap'd MoE expert pages before generation
+    int benchmark_warmup_tokens; // untimed decode tokens before single-shot generation
+    int benchmark_runs; // measured single-shot runs sharing one loaded model
+    int benchmark_warmup_runs; // unreported runs before measured benchmark runs
     int quiet;          // suppress generated token output
     int token_ids;      // print generated token IDs to stderr
     int prompt_bos;     // prepend BOS to single-shot raw prompt
@@ -78,6 +81,7 @@ typedef struct {
     int gpu_profile;    // hidden diagnostic: enable GPU timing logs
     int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
     int metal_specialized_native_quant; // hidden diagnostic: use specialized native-quant Metal path
+    int metal_disable_specialized_native_quant; // hidden diagnostic: disable specialized native-quant Metal path
     int metal_native_quant_prepared; // hidden diagnostic: use prepared native-quant Metal upload layout
     int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
     int gpu_disable_qkv_split; // hidden diagnostic: disable stacked QKV split
@@ -86,6 +90,7 @@ typedef struct {
     int gpu_split_residual_rmsnorm; // hidden diagnostic: split residual+rmsnorm
     int metal_disable_small_dense_native_quant; // hidden diagnostic: use baseline Metal native path
     int metal_private_weights; // hidden diagnostic: upload weights to private Metal buffers
+    int metal_cpu_route_resident_moe; // hidden diagnostic: CPU route with resident Metal experts
     int small_dense_native_quant_to_layer; // hidden diagnostic: last native-quant layer
     int small_dense_native_quant_tail; // hidden diagnostic: final layers to leave on backend-native path
     int small_dense_native_quant_attn_only; // hidden diagnostic: use native-quant path only for attention
@@ -121,8 +126,11 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
     fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
     fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert buffer cache in MB (default: 4096, 0 to disable)\n");
-    fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
+    fprintf(stderr, "  --madvise         Use madvise-guided mmap for MoE expert prefetch\n");
     fprintf(stderr, "  --prefault-moe    Fault all mmap'd MoE expert pages during startup\n");
+    fprintf(stderr, "  --bench-warmup-tokens <int>  Untimed decode warmup before reporting tok/s\n");
+    fprintf(stderr, "  --benchmark-runs <int>  Measured runs sharing one loaded model\n");
+    fprintf(stderr, "  --benchmark-warmup-runs <int>  Full warmup runs before measured runs\n");
     fprintf(stderr, "  --quiet           Suppress generated token output\n");
     fprintf(stderr, "  --token-ids       Print generated token IDs to stderr\n");
     fprintf(stderr, "  --bos             Prepend BOS to single-shot raw prompt\n");
@@ -133,8 +141,21 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --metal         Enable Metal backend (requires BN_ENABLE_METAL=1)\n");
     fprintf(stderr, "  --cuda          Enable experimental CUDA backend (requires BN_ENABLE_CUDA=1)\n");
     fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
+    fprintf(stderr, "  --dump-binary <path>  Write a selected transformer state as float32\n");
+    fprintf(stderr, "  --dump-tag <tag>       Select the shared diagnostic state tag\n");
+    fprintf(stderr, "  --dump-layer <int>     Select the diagnostic layer\n");
+    fprintf(stderr, "  --dump-pos <int>       Select the diagnostic token position\n");
+    fprintf(stderr, "  --gpu-compare-qkv-layer <int>  Compare GPU and CPU QKV projections\n");
+    fprintf(stderr, "  --gpu-compare-qkv-pos <int>    Select QKV comparison position\n");
+    fprintf(stderr, "  --gpu-compare-gqa-layer <int>  Compare GPU and CPU GQA output\n");
+    fprintf(stderr, "  --gpu-compare-gqa-pos <int>    Select GQA comparison position\n");
+    fprintf(stderr, "  --gpu-compare-attention-layer <int>  Compare complete attention state\n");
+    fprintf(stderr, "  --gpu-compare-attention-pos <int>    Select attention position\n");
+    fprintf(stderr, "  --gpu-compare-ffn-state-layer <int>  Compare GPU and CPU FFN states\n");
+    fprintf(stderr, "  --gpu-compare-ffn-state-pos <int>    Select FFN-state position\n");
     fprintf(stderr, "  --metal-disable-barriers  Skip Metal inter-dispatch barriers\n");
     fprintf(stderr, "  --metal-native-quant-prepared  Use prepared native-quant Metal upload layout\n");
+    fprintf(stderr, "  --metal-cpu-route-resident-moe  Route MoE on CPU and execute resident experts on Metal\n");
     fprintf(stderr, "  --gpu-debug-qkv-split  Print QKV split diagnostic\n");
     fprintf(stderr, "  --gpu-disable-qkv-split  Disable stacked QKV split diagnostic path\n");
     fprintf(stderr, "  --gpu-disable-gateup-split  Disable gate/up split diagnostic path\n");
@@ -258,6 +279,16 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.force_madvise = 1;
         } else if (strcmp(argv[i], "--prefault-moe") == 0) {
             args.prefault_moe = 1;
+        } else if (strcmp(argv[i], "--bench-warmup-tokens") == 0 &&
+                   i + 1 < argc) {
+            args.benchmark_warmup_tokens =
+                parse_int(argv[++i], "--bench-warmup-tokens");
+        } else if (strcmp(argv[i], "--benchmark-runs") == 0 && i + 1 < argc) {
+            args.benchmark_runs = parse_int(argv[++i], "--benchmark-runs");
+        } else if (strcmp(argv[i], "--benchmark-warmup-runs") == 0 &&
+                   i + 1 < argc) {
+            args.benchmark_warmup_runs =
+                parse_int(argv[++i], "--benchmark-warmup-runs");
         } else if (strcmp(argv[i], "--quiet") == 0) {
             args.quiet = 1;
         } else if (strcmp(argv[i], "--token-ids") == 0) {
@@ -299,6 +330,30 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_max_storage_binding_mb = parse_int(argv[++i], "--gpu-max-storage-binding-mb");
         } else if (strcmp(argv[i], "--gpu-profile") == 0 && i + 1 < argc) {
             args.gpu_profile = parse_int(argv[++i], "--gpu-profile");
+        } else if (strcmp(argv[i], "--dump-binary") == 0 && i + 1 < argc) {
+            setenv("BN_DUMP_BINARY_PATH", argv[++i], 1);
+        } else if (strcmp(argv[i], "--dump-tag") == 0 && i + 1 < argc) {
+            setenv("BN_DUMP_BINARY_TAG", argv[++i], 1);
+        } else if (strcmp(argv[i], "--dump-layer") == 0 && i + 1 < argc) {
+            setenv("BN_DUMP_BINARY_LAYER", argv[++i], 1);
+        } else if (strcmp(argv[i], "--dump-pos") == 0 && i + 1 < argc) {
+            setenv("BN_DUMP_LAYER_POS", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-qkv-layer") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_QKV_LAYER", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-qkv-pos") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_QKV_POS", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-gqa-layer") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_GQA_LAYER", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-gqa-pos") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_GQA_POS", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-attention-layer") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_ATTENTION_LAYER", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-attention-pos") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_ATTENTION_POS", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-ffn-state-layer") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_FFN_STATE_LAYER", argv[++i], 1);
+        } else if (strcmp(argv[i], "--gpu-compare-ffn-state-pos") == 0 && i + 1 < argc) {
+            setenv("BN_GPU_COMPARE_FFN_STATE_POS", argv[++i], 1);
         } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
             args.metal_disable_barriers = 1;
         } else if (strcmp(argv[i], "--metal-specialized-native-quant") == 0 ||
@@ -309,7 +364,7 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.metal_native_quant_prepared = 1;
         } else if (strcmp(argv[i], "--metal-disable-specialized-native-quant") == 0 ||
                    strcmp(argv[i], "--metal-disable-q6-q8k") == 0) {
-            /* Specialized native-quant decode is now opt-in; keep the old diagnostic flag harmless. */
+            args.metal_disable_specialized_native_quant = 1;
         } else if (strcmp(argv[i], "--gpu-debug-qkv-split") == 0) {
             args.gpu_debug_qkv_split = 1;
         } else if (strcmp(argv[i], "--gpu-disable-qkv-split") == 0) {
@@ -326,6 +381,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.metal_disable_small_dense_native_quant = 1;
         } else if (strcmp(argv[i], "--metal-private-weights") == 0) {
             args.metal_private_weights = 1;
+        } else if (strcmp(argv[i], "--metal-cpu-route-resident-moe") == 0) {
+            args.metal_cpu_route_resident_moe = 1;
         } else if ((strcmp(argv[i], "--small-dense-native-quant-to-layer") == 0 ||
                     strcmp(argv[i], "--small-dense-exact-native-to-layer") == 0 ||
                     strcmp(argv[i], "--q4-q8-to-layer") == 0) &&
@@ -393,7 +450,7 @@ typedef struct {
 static BnMainLoadedMoELayerPolicy
 main_loaded_moe_layer_policy(const BnLayerWeights *lw) {
     BnMainLoadedMoELayerPolicy policy = {0};
-    policy.uses_moe = bn_gpu_policy_moe_layer_uses_router(lw);
+    policy.uses_moe = bn_moe_policy_layer_has_router(lw);
     return policy;
 }
 
@@ -406,11 +463,30 @@ static size_t model_moe_entry_bytes(const BnModel *model,
         if (!main_loaded_moe_layer_policy(lw).uses_moe)
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
-        size_t entry = em->expert_gate_bytes + em->expert_up_bytes +
-                       em->expert_down_bytes;
-        size_t cache_bytes =
-            bn_gpu_policy_moe_down_aux_cache_bytes(
-                gpu, em->down_type, em->down_rows, em->down_cols);
+        const BnMoEIO *io = bn_model_moe_io_const(model);
+        size_t gate_charge = bn_moe_mmap_base_for_proj(io, em, 0)
+            ? bn_gpu_backend_buffer_cache_charge(
+                  gpu, em->expert_gate_bytes, em->gate_type,
+                  em->gate_rows, em->gate_cols)
+            : em->expert_gate_bytes;
+        size_t up_charge = bn_moe_mmap_base_for_proj(io, em, 1)
+            ? bn_gpu_backend_buffer_cache_charge(
+                  gpu, em->expert_up_bytes, em->up_type,
+                  em->up_rows, em->up_cols)
+            : em->expert_up_bytes;
+        size_t down_charge = bn_moe_mmap_base_for_proj(io, em, 2)
+            ? bn_gpu_backend_buffer_cache_charge(
+                  gpu, em->expert_down_bytes, em->down_type,
+                  em->down_rows, em->down_cols)
+            : em->expert_down_bytes;
+        if (gate_charge > SIZE_MAX - up_charge ||
+            gate_charge + up_charge > SIZE_MAX - down_charge)
+            return 0;
+        size_t entry = gate_charge + up_charge + down_charge;
+        size_t cache_bytes = down_charge == em->expert_down_bytes
+            ? bn_gpu_policy_moe_down_aux_cache_bytes(
+                  gpu, em->down_type, em->down_rows, em->down_cols)
+            : 0;
         if (cache_bytes > SIZE_MAX - entry)
             return 0;
         entry += cache_bytes;
@@ -433,7 +509,8 @@ static int model_count_gpu_routed_moe_resident(const BnModel *model,
                                                int *moe_layers_out) {
     if (moe_layers_out)
         *moe_layers_out = 0;
-    if (!model || !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
+    if (!model || !bn_gpu_policy_moe_resident_routed_ffn_enabled(
+            bn_model_gpu(model), 1))
         return 0;
     const BnConfig *c = &model->config;
     int moe_layers = 0;
@@ -461,24 +538,25 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
     if (!args || args->gpu_cache_mb <= 0 || entry_bytes == 0)
         return 0;
     size_t requested = (size_t)args->gpu_cache_mb * 1024u * 1024u;
-    if (!bn_gpu_policy_moe_auto_resident_enabled())
+    if (!bn_gpu_policy_moe_auto_resident_enabled(gpu))
         return requested;
     int moe_layers = model_moe_layer_count(model);
-    if (moe_layers <= 0 || !bn_gpu_policy_uses_moe(&model->config))
+    if (moe_layers <= 0 || !bn_model_uses_moe(model))
         return requested;
-    BnGPUMoERouteShape route_shape =
-        bn_gpu_policy_moe_route_shape(&model->config);
-    if (route_shape.total_experts <= 0)
+    int total_experts =
+        bn_model_moe_policy_total_experts(&model->config);
+    if (total_experts <= 0)
         return requested;
     size_t all_experts = entry_bytes * (size_t)moe_layers *
-                         (size_t)route_shape.total_experts;
+                         (size_t)total_experts;
     if (args->gpu_cache_mb_set && requested < all_experts)
         return requested;
     size_t free_bytes = 0;
     size_t total_bytes = 0;
     if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return requested;
-    size_t reserve = bn_gpu_policy_moe_cache_reserve_bytes();
+    size_t reserve = bn_gpu_policy_moe_cache_reserve_bytes(
+        &gpu->runtime_policy);
     if (all_experts > 0 && free_bytes > all_experts + reserve) {
         char total_mb[32], free_mb[32], reserve_mb_s[32];
         snprintf(total_mb, sizeof(total_mb), "%zu",
@@ -521,7 +599,7 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
 static void maybe_create_gpu_moe_cache(BnModel *model,
                                        const CLIArgs *args,
                                        BnGPUBackend *gpu) {
-    if (!model || !args || !gpu || !bn_gpu_policy_uses_moe(&model->config) ||
+    if (!model || !args || !gpu || !bn_model_uses_moe(model) ||
         args->gpu_cache_mb <= 0 || model->config.n_layers <= 0)
         return;
     int routed_moe_layers = 0;
@@ -536,7 +614,7 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
                     "moe_layers", layers);
     }
     int duplicate_cache_enabled =
-        bn_gpu_policy_duplicate_moe_cache_enabled();
+        bn_gpu_policy_duplicate_moe_cache_enabled(gpu);
     if (!args->gpu_cache_mb_set && !duplicate_cache_enabled &&
         routed_moe_layers > 0 && routed_resident_layers == routed_moe_layers)
         return;
@@ -549,8 +627,12 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
                                     &auto_resident);
     if (budget_bytes == 0)
         return;
-    bn_model_set_gpu_moe_cache(
-        model, bn_gpu_moe_cache_create(budget_bytes, entry_bytes, gpu));
+    int total_experts =
+        bn_model_moe_policy_total_experts(&model->config);
+    int max_entries = total_experts > 0
+        ? model_moe_layer_count(model) * total_experts : 0;
+    bn_model_set_gpu_moe_cache(model, bn_gpu_moe_cache_create(
+        budget_bytes, entry_bytes, max_entries, gpu));
     if (auto_resident && bn_model_gpu_moe_cache(model)) {
         double t0 = bn_platform_time_ms();
         int loaded = bn_gpu_moe_bridge_preload_all(model);
@@ -592,20 +674,176 @@ static int print_token(const char *piece, int token_id, void *user_data) {
     return 0;
 }
 
+static int print_token_id_only(const char *piece, int token_id,
+                               void *user_data) {
+    (void)piece;
+    (void)user_data;
+    fprintf(stderr, "token_id=%d\n", token_id);
+    return 0;
+}
+
+typedef struct {
+    int last_token;
+    int count;
+} BnBenchmarkWarmup;
+
+static int capture_benchmark_warmup_token(const char *piece, int token_id,
+                                          void *user_data) {
+    (void)piece;
+    BnBenchmarkWarmup *warmup = (BnBenchmarkWarmup *)user_data;
+    if (!warmup) return -1;
+    warmup->last_token = token_id;
+    warmup->count++;
+    return 0;
+}
+
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
+static int backend_policy_set_int(BnBackendRuntimePolicy *policy,
+                                  const char *name,
+                                  int value) {
+    char text[32];
+    snprintf(text, sizeof(text), "%d", value);
+    return bn_backend_runtime_policy_set(policy, name, text, 1);
+}
+
+static int backend_policy_from_cli(BnBackendRuntimePolicy *policy,
+                                   const CLIArgs *args) {
+    if (bn_gpu_backend_runtime_policy_init(policy) != 0) return -1;
+#define BN_SET_BACKEND_FLAG(condition, name) \
+    do { \
+        if ((condition) && \
+            bn_backend_runtime_policy_set(policy, (name), "1", 1) != 0) \
+            goto fail; \
+    } while (0)
+    if (args->gpu_profile > 0 &&
+        backend_policy_set_int(policy, "BN_GPU_PROFILE",
+                               args->gpu_profile) != 0)
+        goto fail;
+    if (args->metal_disable_barriers &&
+        bn_gpu_policy_apply_metal_barrier_disable_override(policy) != 0)
+        goto fail;
+    if (args->metal_specialized_native_quant &&
+        bn_gpu_policy_apply_specialized_native_quant_decode_override(policy) != 0)
+        goto fail;
+    if (args->metal_disable_specialized_native_quant &&
+        bn_gpu_policy_apply_specialized_native_quant_decode_disable_override(
+            policy) != 0)
+        goto fail;
+    if (args->metal_native_quant_prepared &&
+        bn_gpu_policy_apply_native_quant_prepared_override(policy) != 0)
+        goto fail;
+    BN_SET_BACKEND_FLAG(args->gpu_debug_qkv_split,
+                        "BN_GPU_DEBUG_QKV_SPLIT");
+    BN_SET_BACKEND_FLAG(args->gpu_disable_qkv_split,
+                        "BN_GPU_DISABLE_QKV_SPLIT");
+    BN_SET_BACKEND_FLAG(args->gpu_disable_gateup_split,
+                        "BN_GPU_DISABLE_GATEUP_SPLIT");
+    BN_SET_BACKEND_FLAG(args->gpu_disable_fused_gateup,
+                        "BN_GPU_DISABLE_FUSED_GATEUP");
+    BN_SET_BACKEND_FLAG(args->gpu_split_residual_rmsnorm,
+                        "BN_GPU_SPLIT_RESIDUAL_RMSNORM");
+    if (args->metal_disable_small_dense_native_quant &&
+        bn_gpu_policy_apply_metal_small_dense_native_quant_default_disable_override(
+            policy) != 0)
+        goto fail;
+    if (args->metal_private_weights &&
+        bn_gpu_policy_apply_metal_private_weights_override(policy) != 0)
+        goto fail;
+    if (args->metal_cpu_route_resident_moe &&
+        bn_gpu_policy_apply_metal_cpu_route_resident_moe_override(policy) != 0)
+        goto fail;
+    if (args->small_dense_native_quant_to_layer >= 0 &&
+        backend_policy_set_int(policy, "BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER",
+                               args->small_dense_native_quant_to_layer) != 0)
+        goto fail;
+    if (args->small_dense_native_quant_tail >= 0 &&
+        backend_policy_set_int(policy, "BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE",
+                               args->small_dense_native_quant_tail) != 0)
+        goto fail;
+    BN_SET_BACKEND_FLAG(args->small_dense_native_quant_attn_only,
+                        "BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY");
+    BN_SET_BACKEND_FLAG(args->small_dense_native_quant_ffn_only,
+                        "BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY");
+    BN_SET_BACKEND_FLAG(args->small_dense_native_quant_disable_gateup,
+                        "BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP");
+    BN_SET_BACKEND_FLAG(args->small_dense_native_quant_disable_ffn_down,
+                        "BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN");
+    if (args->gpu_flash_min_kv >= 0) {
+        if (backend_policy_set_int(policy, "BN_GPU_FLASH_MIN_KV",
+                                   args->gpu_flash_min_kv) != 0)
+            goto fail;
+    } else if (args->metal && args->flash_attn &&
+               !bn_backend_runtime_policy_enabled(policy,
+                                                   "BN_GPU_FLASH_MIN_KV")) {
+        if (bn_backend_runtime_policy_set(policy, "BN_GPU_FLASH_MIN_KV",
+                                          "256", 0) != 0)
+            goto fail;
+    }
+    if (args->metal && args->flash_attn &&
+        !bn_backend_runtime_policy_enabled(policy, "BN_GPU_FLASH_MAX_KV") &&
+        bn_backend_runtime_policy_set(policy, "BN_GPU_FLASH_MAX_KV",
+                                      "1024", 0) != 0)
+        goto fail;
+    if (args->gpu_max_storage_binding_mb >= 0 &&
+        backend_policy_set_int(policy, "BN_GPU_MAX_STORAGE_BINDING_MB",
+                               args->gpu_max_storage_binding_mb) != 0)
+        goto fail;
+    if (args->metal &&
+        bn_gpu_policy_metal_apply_small_dense_native_quant_default(policy) !=
+            0)
+        goto fail;
+#undef BN_SET_BACKEND_FLAG
+    return 0;
+fail:
+#undef BN_SET_BACKEND_FLAG
+    bn_backend_runtime_policy_free(policy);
+    return -1;
+}
+#endif
+
+#ifdef BN_ENABLE_METAL
+static BnGPUBackend *create_metal_backend(const CLIArgs *args,
+                                          const char *shader_dir) {
+    BnBackendRuntimePolicy policy;
+    if (backend_policy_from_cli(&policy, args) != 0) return NULL;
+    BnGPUBackend *gpu = bn_gpu_metal_create_with_policy(shader_dir, &policy);
+    bn_backend_runtime_policy_free(&policy);
+    return gpu;
+}
+#endif
+
+#ifdef BN_ENABLE_WEBGPU
+static BnGPUBackend *create_webgpu_backend(const CLIArgs *args,
+                                           const char *shader_dir) {
+    BnBackendRuntimePolicy policy;
+    if (backend_policy_from_cli(&policy, args) != 0) return NULL;
+    BnGPUBackend *gpu = bn_gpu_wgpu_create_with_policy(shader_dir, &policy);
+    bn_backend_runtime_policy_free(&policy);
+    return gpu;
+}
+#endif
+
+#ifdef BN_ENABLE_CUDA
+static BnGPUBackend *create_cuda_backend(const CLIArgs *args) {
+    BnBackendRuntimePolicy policy;
+    if (backend_policy_from_cli(&policy, args) != 0) return NULL;
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    return gpu;
+}
+#endif
+
 int main(int argc, char **argv) {
     sh_log_init(NULL);
     CLIArgs args = parse_args(argc, argv);
+    /* Compatibility mirror for policy predicates not yet migrated to the
+     * immutable backend snapshot. Backend constructors receive the snapshot
+     * built from these same values below. */
     if (args.gpu_profile > 0) {
-        char profile_env[16];
-        snprintf(profile_env, sizeof(profile_env), "%d", args.gpu_profile);
-        setenv("BN_GPU_PROFILE", profile_env, 1);
+        char value[16];
+        snprintf(value, sizeof(value), "%d", args.gpu_profile);
+        setenv("BN_GPU_PROFILE", value, 1);
     }
-    if (args.metal_disable_barriers)
-        bn_gpu_policy_apply_metal_barrier_disable_override();
-    if (args.metal_specialized_native_quant)
-        bn_gpu_policy_apply_specialized_native_quant_decode_override();
-    if (args.metal_native_quant_prepared)
-        bn_gpu_policy_apply_native_quant_prepared_override();
     if (args.top_logits > 0) {
         char top_env[16];
         snprintf(top_env, sizeof(top_env), "%d", args.top_logits);
@@ -621,19 +859,21 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     if (args.gpu_split_residual_rmsnorm)
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
-    if (args.metal_disable_small_dense_native_quant)
-        bn_gpu_policy_apply_metal_small_dense_native_quant_default_disable_override();
-    if (args.metal_private_weights)
-        bn_gpu_policy_apply_metal_private_weights_override();
+    if (args.metal_cpu_route_resident_moe) {
+        setenv("BN_GPU_DISABLE_ROUTED_MOE_DECODE", "1", 1);
+        setenv("BN_GPU_DISABLE_MOE_ALL_LAYOUT", "1", 1);
+    }
     if (args.small_dense_native_quant_to_layer >= 0) {
-        char layer_env[32];
-        snprintf(layer_env, sizeof(layer_env), "%d", args.small_dense_native_quant_to_layer);
-        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER", layer_env, 1);
+        char value[32];
+        snprintf(value, sizeof(value), "%d",
+                 args.small_dense_native_quant_to_layer);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER", value, 1);
     }
     if (args.small_dense_native_quant_tail >= 0) {
-        char tail_env[32];
-        snprintf(tail_env, sizeof(tail_env), "%d", args.small_dense_native_quant_tail);
-        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE", tail_env, 1);
+        char value[32];
+        snprintf(value, sizeof(value), "%d",
+                 args.small_dense_native_quant_tail);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE", value, 1);
     }
     if (args.small_dense_native_quant_attn_only)
         setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY", "1", 1);
@@ -644,18 +884,19 @@ int main(int argc, char **argv) {
     if (args.small_dense_native_quant_disable_ffn_down)
         setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN", "1", 1);
     if (args.gpu_flash_min_kv >= 0) {
-        char min_kv_env[32];
-        snprintf(min_kv_env, sizeof(min_kv_env), "%d", args.gpu_flash_min_kv);
-        setenv("BN_GPU_FLASH_MIN_KV", min_kv_env, 1);
+        char value[32];
+        snprintf(value, sizeof(value), "%d", args.gpu_flash_min_kv);
+        setenv("BN_GPU_FLASH_MIN_KV", value, 1);
     } else if (args.metal && args.flash_attn) {
         setenv("BN_GPU_FLASH_MIN_KV", "256", 0);
     }
     if (args.metal && args.flash_attn)
         setenv("BN_GPU_FLASH_MAX_KV", "1024", 0);
     if (args.gpu_max_storage_binding_mb >= 0) {
-        char mb_env[32];
-        snprintf(mb_env, sizeof(mb_env), "%d", args.gpu_max_storage_binding_mb);
-        setenv("BN_GPU_MAX_STORAGE_BINDING_MB", mb_env, 1);
+        char value[32];
+        snprintf(value, sizeof(value), "%d",
+                 args.gpu_max_storage_binding_mb);
+        setenv("BN_GPU_MAX_STORAGE_BINDING_MB", value, 1);
     }
 
     // Validate --kv-tq
@@ -673,6 +914,27 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+    if (args.benchmark_warmup_tokens < 0) {
+        fprintf(stderr, "--bench-warmup-tokens must be non-negative\n");
+        return 1;
+    }
+    if (args.benchmark_runs < 0 || args.benchmark_warmup_runs < 0) {
+        fprintf(stderr, "--benchmark-runs and --benchmark-warmup-runs must be non-negative\n");
+        return 1;
+    }
+    if (args.benchmark_warmup_runs > 0 && args.benchmark_runs == 0) {
+        fprintf(stderr, "--benchmark-warmup-runs requires --benchmark-runs\n");
+        return 1;
+    }
+    if (args.benchmark_runs > 0 && (args.chat || args.draft_path)) {
+        fprintf(stderr, "--benchmark-runs is not supported with --chat or --draft\n");
+        return 1;
+    }
+    if (args.benchmark_warmup_tokens > 0 && args.draft_path) {
+        fprintf(stderr,
+                "--bench-warmup-tokens is not supported with --draft\n");
+        return 1;
+    }
 
     // Validate GPU backend mutual exclusion
     if ((args.webgpu ? 1 : 0) + (args.metal ? 1 : 0) + (args.cuda ? 1 : 0) > 1) {
@@ -686,7 +948,6 @@ int main(int argc, char **argv) {
         n_workers = args.threads - 1;  // main thread counts as one
     } else {
 #if defined(__APPLE__)
-        pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
         {
             int ncores = 0;
             size_t len = sizeof(ncores);
@@ -735,13 +996,32 @@ int main(int argc, char **argv) {
 #endif
     }
 
+    BnGPUBackend *early_metal_gpu = NULL;
+#ifdef BN_ENABLE_METAL
+    if (args.metal) {
+        const char *sd = args.metal_shader_dir
+            ? args.metal_shader_dir : "shaders/metal/";
+        early_metal_gpu = create_metal_backend(&args, sd);
+    }
+#endif
+#if defined(__APPLE__)
+    /* Bootstrap Metal before changing the main thread's QoS. On macOS,
+     * device discovery can fail after the QoS override is applied. */
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
+
     // Load model file
     SH_LOG_INFO("Loading model", "path", args.model_path);
     double t0 = bn_platform_time_ms();
 
-    BnGGUFFile *gf = bn_gguf_open_file(args.model_path);
+    BnGGUFFile *gf = early_metal_gpu && !args.force_pread
+        ? bn_gguf_open_file_resident(args.model_path)
+        : bn_gguf_open_file(args.model_path);
     if (!gf) {
         SH_LOG_ERROR("Failed to parse GGUF", "path", args.model_path);
+#ifdef BN_ENABLE_METAL
+        if (early_metal_gpu) bn_gpu_metal_destroy(early_metal_gpu);
+#endif
         return 1;
     }
     const BnMappedFile *mf = bn_gguf_primary_file(gf);
@@ -761,8 +1041,10 @@ int main(int argc, char **argv) {
     }
 
     if ((args.webgpu || args.metal || args.cuda) && !args.max_seq_len_set) {
-        if (bn_gpu_policy_auto_caps_gguf_sequence(
-                args.webgpu, args.cuda, args.metal, gf,
+        if (bn_gpu_policy_auto_caps_sequence(
+                args.webgpu, args.cuda, args.metal,
+                bn_model_gguf_uses_moe(gf),
+                bn_model_gguf_context_length(gf),
                 BN_GPU_DEFAULT_MAXSEQ)) {
             args.max_seq_len = BN_GPU_DEFAULT_MAXSEQ;
             SH_LOG_WARN(args.webgpu ? "Auto-capping WebGPU sequence length" :
@@ -777,6 +1059,9 @@ int main(int argc, char **argv) {
     if (bn_model_load(&model, gf, args.max_seq_len, args.kv_f16, args.kv_tq_bits) != 0) {
         SH_LOG_ERROR("Failed to load model");
         bn_gguf_free(gf);
+#ifdef BN_ENABLE_METAL
+        if (early_metal_gpu) bn_gpu_metal_destroy(early_metal_gpu);
+#endif
         return 1;
     }
     model.config.flash_attn = args.flash_attn;
@@ -787,14 +1072,13 @@ int main(int argc, char **argv) {
         if (gf->n_shards > 1 && !args.force_pread && gf->shard_raws) {
             bn_model_set_moe_mmap_shards(&model, (const uint8_t **)gf->shard_raws,
                                          gf->n_shards);
-        } else if (gf->n_shards <= 1 && !args.force_pread && mf && mf->is_mmap == 1 && mf->data) {
+        } else if (gf->n_shards <= 1 && !args.force_pread && mf && mf->data) {
             bn_model_set_moe_mmap_base(&model, mf->data);
         }
         if (gf->n_shards <= 1 && mf && mf->fd >= 0) {
             bn_model_set_moe_fd(&model, mf->fd);
         }
 
-        // madvise-guided mmap: use WILLNEED prefetch hints
         if (args.force_madvise && args.force_pread) {
             SH_LOG_WARN("--madvise and --pread are mutually exclusive, ignoring --madvise");
         } else if (args.force_madvise && !bn_moe_io_has_mmap(moe_io)) {
@@ -827,10 +1111,12 @@ int main(int argc, char **argv) {
         if (!moe_io->madvise_mode &&
             args.cache_mb > 0 && !bn_moe_io_has_mmap(moe_io) && moe_io->fd >= 0
             && model.config.n_layers > 0) {
-            BnMoEExpertMap *em = &model.weights.layers[0].moe.expert_map;
+            BnMoEProjectionBufferLayout layout =
+                bn_moe_projection_buffer_layout(&model.config,
+                                                &model.weights);
             bn_model_set_moe_cache(&model, bn_moe_cache_create(
                 (size_t)args.cache_mb * 1024 * 1024,
-                em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes));
+                layout.gate_bytes, layout.up_bytes, layout.down_bytes));
         }
     }
 
@@ -844,11 +1130,14 @@ int main(int argc, char **argv) {
         SH_LOG_WARN("Failed to create thread pool, running single-threaded");
     }
 
+    BnGPUBackend *owned_gpu = NULL;
+    void (*destroy_owned_gpu)(BnGPUBackend *) = NULL;
+
     // WebGPU backend (optional)
 #ifdef BN_ENABLE_WEBGPU
     if (args.webgpu) {
         const char *sd = args.shader_dir ? args.shader_dir : "shaders/";
-        BnGPUBackend *gpu = bn_gpu_wgpu_create(sd);
+        BnGPUBackend *gpu = create_webgpu_backend(&args, sd);
         if (gpu) {
             double gpu_t0 = bn_platform_time_ms();
             if (bn_model_upload_weights(&model, gpu) == 0) {
@@ -857,12 +1146,18 @@ int main(int argc, char **argv) {
                 SH_LOG_INFO("WebGPU weights uploaded", "ms", ms);
                 // Initialize GPU-resident activation buffers for forward pass
                 if (bn_gpu_backend_can_init_activations(gpu) &&
-                    bn_gpu_backend_init_activations(gpu, &model.config) == 0) {
+                    bn_model_init_gpu_activations(&model, gpu) == 0) {
+                    owned_gpu = gpu;
+                    destroy_owned_gpu = bn_gpu_wgpu_destroy;
                     SH_LOG_INFO("GPU forward pass ready");
                     // Initialize GPU slab allocator for MoE weight suballocation
-                    if (bn_gpu_policy_uses_moe(&model.config))
+                    if (bn_model_uses_moe(&model))
                         bn_gpu_wgpu_init_slab(gpu, (size_t)args.gpu_cache_mb);
                     maybe_create_gpu_moe_cache(&model, &args, gpu);
+                } else {
+                    SH_LOG_WARN("WebGPU activation initialization failed, falling back to CPU");
+                    bn_model_release_gpu(&model);
+                    bn_gpu_wgpu_destroy(gpu);
                 }
             } else {
                 SH_LOG_WARN("WebGPU weight upload failed, falling back to CPU");
@@ -881,13 +1176,13 @@ int main(int argc, char **argv) {
     // Metal backend (optional)
 #ifdef BN_ENABLE_METAL
     if (args.metal) {
-        const char *sd = args.metal_shader_dir ? args.metal_shader_dir : "shaders/metal/";
-        BnGPUBackend *gpu = bn_gpu_metal_create(sd);
+        BnGPUBackend *gpu = early_metal_gpu;
         if (gpu) {
             // Zero-copy: let Metal wrap mmap'd weight data when explicitly enabled.
             if (gf->n_shards <= 1 &&
-                bn_gpu_policy_metal_mmap_zero_copy_enabled() &&
-                mf && mf->is_mmap && mf->data)
+                bn_gpu_policy_metal_mmap_zero_copy_enabled(
+                    &gpu->runtime_policy) &&
+                mf && mf->data)
                 bn_gpu_metal_set_mmap_range(gpu, mf->data, mf->size);
             double gpu_t0 = bn_platform_time_ms();
             if (bn_model_upload_weights(&model, gpu) == 0) {
@@ -895,15 +1190,26 @@ int main(int argc, char **argv) {
                 snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
                 SH_LOG_INFO("Metal weights uploaded", "ms", ms);
                 if (bn_gpu_backend_can_init_activations(gpu) &&
-                    bn_gpu_backend_init_activations(gpu, &model.config) == 0) {
+                    bn_model_init_gpu_activations(&model, gpu) == 0) {
+                    owned_gpu = gpu;
+                    destroy_owned_gpu = bn_gpu_metal_destroy;
                     SH_LOG_INFO("Metal forward pass ready");
                     if (args.gpu_cpu_logits)
                         setenv("BN_GPU_CPU_LOGITS", "1", 1);
                     if (args.gpu_compare_logits)
                         setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
-                    if (bn_gpu_policy_uses_moe(&model.config))
-                        bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
+                    if (bn_model_uses_moe(&model)) {
+                        size_t slab_mb = args.gpu_cache_mb_set
+                            ? (size_t)args.gpu_cache_mb
+                            : bn_gpu_metal_recommended_slab_mb(gpu);
+                        if (slab_mb > 0)
+                            bn_gpu_metal_init_slab(gpu, slab_mb);
+                    }
                     maybe_create_gpu_moe_cache(&model, &args, gpu);
+                } else {
+                    SH_LOG_WARN("Metal activation initialization failed, falling back to CPU");
+                    bn_model_release_gpu(&model);
+                    bn_gpu_metal_destroy(gpu);
                 }
             } else {
                 SH_LOG_WARN("Metal weight upload failed, falling back to CPU");
@@ -922,7 +1228,7 @@ int main(int argc, char **argv) {
     // CUDA backend (optional)
 #ifdef BN_ENABLE_CUDA
     if (args.cuda) {
-        BnGPUBackend *gpu = bn_gpu_cuda_create();
+        BnGPUBackend *gpu = create_cuda_backend(&args);
         if (gpu) {
             double gpu_t0 = bn_platform_time_ms();
             if (bn_model_upload_weights(&model, gpu) == 0) {
@@ -930,7 +1236,7 @@ int main(int argc, char **argv) {
                 snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
                 SH_LOG_INFO("CUDA weights uploaded", "ms", ms);
                 if (bn_gpu_backend_can_init_activations(gpu) &&
-                    bn_gpu_backend_init_activations(gpu, &model.config) != 0) {
+                    bn_model_init_gpu_activations(&model, gpu) != 0) {
                     SH_LOG_WARN("CUDA activation initialization failed, falling back to CPU");
                     bn_model_release_gpu(&model);
                     bn_gpu_cuda_destroy(gpu);
@@ -940,6 +1246,10 @@ int main(int argc, char **argv) {
                 }
                 if (gpu)
                     maybe_create_gpu_moe_cache(&model, &args, gpu);
+                if (gpu) {
+                    owned_gpu = gpu;
+                    destroy_owned_gpu = bn_gpu_cuda_destroy;
+                }
             } else {
                 SH_LOG_WARN("CUDA weight upload failed, falling back to CPU");
                 bn_gpu_cuda_destroy(gpu);
@@ -954,10 +1264,15 @@ int main(int argc, char **argv) {
     }
 #endif
 
+    if (!bn_model_gpu(&model))
+        bn_tp_set_cpu_decode_policy(bn_model_pool(&model));
+
     BnSession *session = bn_session_create(&model, NULL);
     if (!session) {
         SH_LOG_ERROR("Failed to create session");
         bn_model_free(&model);
+        if (destroy_owned_gpu)
+            destroy_owned_gpu(owned_gpu);
         bn_gguf_free(gf);
         return 1;
     }
@@ -1284,7 +1599,18 @@ int main(int argc, char **argv) {
             fprintf(stderr, "\n");
         }
 
-        // Generation loop
+        // Generation loop. Benchmark repetitions reset request-local state but
+        // deliberately retain the immutable model and backend-resident weights.
+        int repeated_benchmark = args.benchmark_runs > 0;
+        int total_runs = repeated_benchmark
+            ? args.benchmark_warmup_runs + args.benchmark_runs : 1;
+        for (int benchmark_run = 0; benchmark_run < total_runs; benchmark_run++) {
+        if (benchmark_run > 0) {
+            bn_session_reset(session, &model);
+            bn_sampler_reset_recent(&sampler);
+        }
+        if (repeated_benchmark && session->moe_state)
+            bn_moe_reset_stats(session->moe_state);
         {
             char nt[16]; snprintf(nt, sizeof(nt), "%d", args.n_tokens);
             SH_LOG_INFO("Starting generation", "n_tokens", nt);
@@ -1317,6 +1643,24 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < n_prompt; i++) {
                     bn_sampler_accept(&sampler, prompt_tokens[i]);
                 }
+                if (args.benchmark_warmup_tokens > 0) {
+                    BnBenchmarkWarmup warmup = { -1, 0 };
+                    int warm_count = bn_generate(
+                        &model, session, &tokenizer, &sampler,
+                        args.benchmark_warmup_tokens, &pos,
+                        capture_benchmark_warmup_token, &warmup,
+                        NULL, NULL);
+                    if (warm_count != args.benchmark_warmup_tokens ||
+                        warmup.count != args.benchmark_warmup_tokens ||
+                        warmup.last_token < 0 ||
+                        !bn_transformer_forward(
+                            &model, session, warmup.last_token, pos)) {
+                        SH_LOG_ERROR("Benchmark warmup failed");
+                        logits = NULL;
+                    } else {
+                        pos++;
+                    }
+                }
                 gen_start = bn_platform_time_ms();
 #ifdef DEBUG
                 // Dump top-10 logits after prefill
@@ -1338,7 +1682,9 @@ int main(int argc, char **argv) {
                 }
 #endif
                 // Generate tokens — speculative or standard
-                if (has_draft) {
+                if (!logits) {
+                    n_generated = -2;
+                } else if (has_draft) {
                     n_generated = bn_generate_speculative(
                         &model, session, &draft_model, draft_session, args.draft_k,
                         &tokenizer, &sampler, args.n_tokens, &pos,
@@ -1347,9 +1693,14 @@ int main(int argc, char **argv) {
                         SH_LOG_ERROR("Speculative generation failed");
                 } else {
                     BnChatHistory out_ctx = { NULL, 0, 0, args.token_ids };
+                    bn_token_callback output_callback = repeated_benchmark
+                        ? NULL
+                        : args.quiet
+                            ? (args.token_ids ? print_token_id_only : NULL)
+                            : print_token;
                     n_generated = bn_generate(&model, session, &tokenizer, &sampler,
                                                args.n_tokens, &pos,
-                                               args.quiet ? NULL : print_token,
+                                               output_callback,
                                                args.token_ids ? &out_ctx : NULL,
                                                NULL, NULL);
                 }
@@ -1360,7 +1711,8 @@ int main(int argc, char **argv) {
         double gen_time = gen_end - gen_start;
         double total_time = gen_end - t0;
 
-        printf("\n");
+        if (!repeated_benchmark)
+            printf("\n");
         {
             char ng[16], speed[32], prompt_ms[32], total[32];
             snprintf(ng, sizeof(ng), "%d", n_generated);
@@ -1371,13 +1723,23 @@ int main(int argc, char **argv) {
             }
             snprintf(prompt_ms, sizeof(prompt_ms), "%.1f", gen_start - prompt_start);
             snprintf(total, sizeof(total), "%.1f", total_time);
-            SH_LOG_INFO("Generation complete", "tokens", ng, "tok/s", speed,
-                        "prompt_ms", prompt_ms, "total_ms", total);
+            if (repeated_benchmark &&
+                benchmark_run >= args.benchmark_warmup_runs) {
+                char run[16];
+                snprintf(run, sizeof(run), "%d",
+                         benchmark_run - args.benchmark_warmup_runs + 1);
+                SH_LOG_INFO("Benchmark sample", "run", run, "tokens", ng,
+                            "tok/s", speed, "prompt_ms", prompt_ms);
+            } else if (!repeated_benchmark) {
+                SH_LOG_INFO("Generation complete", "tokens", ng, "tok/s", speed,
+                            "prompt_ms", prompt_ms, "total_ms", total);
+            }
         }
 
         // Print MoE stats if applicable
         if (session->moe_state)
             bn_moe_print_stats(session->moe_state, n_generated + n_prompt);
+        }
 
         free(prompt_tokens);
     }
@@ -1403,6 +1765,8 @@ int main(int argc, char **argv) {
     bn_sampler_free(&sampler);
     bn_tokenizer_free(&tokenizer);
     bn_model_free(&model);
+    if (destroy_owned_gpu)
+        destroy_owned_gpu(owned_gpu);
     bn_gguf_free(gf);
 
     return 0;

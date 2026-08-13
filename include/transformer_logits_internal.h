@@ -82,9 +82,12 @@ void bn_transformer_logits_f16_wasm_range(void *ctx, int start, int end);
 void bn_transformer_logits_f16_scalar_range(void *ctx, int start, int end);
 void bn_transformer_logits_f32_range(void *ctx, int start, int end);
 const BnLogitsBackendOps *bn_transformer_logits_backend_ops(void);
-int bn_transformer_logits_cpu_tied_kquant_refine_top(void);
-int bn_transformer_logits_cpu_tied_kquant_hybrid_top(void);
-int bn_transformer_logits_cpu_native_tied_quant_enabled(void);
+int bn_transformer_logits_cpu_tied_kquant_refine_top(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_logits_cpu_tied_kquant_hybrid_top(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_logits_cpu_native_tied_quant_enabled(
+    const BnCPURuntimePolicy *runtime);
 int bn_transformer_logits_backend_refine_supported(
     const BnLogitsBackendOps *ops, const BnQWeight *W);
 int bn_transformer_logits_tied_kquant_refine_supported(const BnQWeight *W);
@@ -92,7 +95,8 @@ int bn_transformer_logits_native_quant_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnQWeight *W);
-int bn_transformer_logits_native_quant_refine_top(void);
+int bn_transformer_logits_native_quant_refine_top(
+    const BnGPUBackend *gpu);
 int bn_transformer_logits_untied_uses_f16_path(int tensor_type);
 int bn_transformer_logits_tied_uses_quant_path(int tensor_type);
 int bn_transformer_logits_tied_uses_f16_path(int tensor_type);
@@ -110,6 +114,7 @@ bn_transformer_logits_tied_quant_dispatch_policy(
     int native_quant_refine_enabled);
 BnLogitsTiedQuantDispatchPolicy
 bn_transformer_logits_tied_quant_dispatch_policy_for(
+    const BnCPURuntimePolicy *runtime,
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnQWeight *W);
@@ -118,11 +123,15 @@ BnLogitsQuantResources bn_transformer_logits_quant_resources(
     const BnQWeight *W);
 BnLogitsTiedQuantExecutionPolicy
 bn_transformer_logits_tied_quant_execution_policy_for(
+    const BnCPURuntimePolicy *runtime,
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnBackendModel *backend,
     const BnQWeight *W);
 float bn_transformer_logits_final_softcap(const BnConfig *c);
+void bn_transformer_logits_apply_final_softcap(float *logits,
+                                               int vocab_size,
+                                               float softcap);
 uint32_t bn_transformer_logits_native_quant_task_flags(int enabled);
 void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
     float *out,

@@ -5,6 +5,10 @@
 #include "sh_arena.h"
 #include "quant_ctx.h"
 #include "quant_kernels_scalar.h"
+#if defined(__ARM_NEON)
+#include "quant_kernels_neon.h"
+#include "simd_helpers.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,118 +21,175 @@ static uint16_t test_fp32_to_bf16(float f) {
     return (uint16_t)(bits >> 16);
 }
 
+static void test_q8_blocks_scalar_reference(const float *x,
+                                            int8_t *q,
+                                            float *scales,
+                                            int n) {
+    for (int b = 0; b < n / 32; b++) {
+        const float *xb = x + b * 32;
+        float amax = 0.0f;
+        for (int i = 0; i < 32; i++)
+            amax = fmaxf(amax, fabsf(xb[i]));
+        if (amax == 0.0f) {
+            memset(q + b * 32, 0, 32);
+            scales[b] = 0.0f;
+            continue;
+        }
+        float scale = amax / 127.0f;
+        float inv_scale = 1.0f / scale;
+        scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(scale));
+        for (int i = 0; i < 32; i++) {
+            int v = (int)lrintf(xb[i] * inv_scale);
+            if (v < -127) v = -127;
+            if (v > 127) v = 127;
+            q[b * 32 + i] = (int8_t)v;
+        }
+    }
+}
+
+static const BnQuantRuntimePolicy *test_quant_policy_from_env(void) {
+    static BnQuantRuntimePolicy policy;
+    bn_quant_runtime_policy_from_env(&policy);
+    return &policy;
+}
+
+#define TEST_QUANT_POLICY() test_quant_policy_from_env()
+
 static void test_quant_policy_helpers(void) {
     printf("test_quant_policy_helpers... ");
 
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
-    !defined(BN_FORCE_SCALAR)
+#if defined(BN_FORCE_SCALAR) || \
+    (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
     const int q4_dot_default = 1;
-    const int q6_dot_default = 1;
 #else
     const int q4_dot_default = 0;
+#endif
+#if defined(BN_FORCE_SCALAR) || \
+    (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
+    const int q6_dot_default = 1;
+#else
     const int q6_dot_default = 0;
 #endif
 
     unsetenv("BN_AVX512_KQUANT_VNNI");
     unsetenv("BN_AVX512_Q5K_VNNI");
-    assert(!bn_quant_policy_avx512_q5k_vnni_enabled(1024));
-    assert(bn_quant_policy_avx512_q5k_vnni_enabled(4096));
+    assert(!bn_quant_policy_avx512_q5k_vnni_enabled(TEST_QUANT_POLICY(), 1024));
+    assert(bn_quant_policy_avx512_q5k_vnni_enabled(TEST_QUANT_POLICY(), 4096));
     setenv("BN_AVX512_KQUANT_VNNI", "0", 1);
-    assert(!bn_quant_policy_avx512_q5k_vnni_enabled(4096));
+    assert(!bn_quant_policy_avx512_q5k_vnni_enabled(TEST_QUANT_POLICY(), 4096));
     setenv("BN_AVX512_KQUANT_VNNI", "1", 1);
-    assert(bn_quant_policy_avx512_q5k_vnni_enabled(1024));
+    assert(bn_quant_policy_avx512_q5k_vnni_enabled(TEST_QUANT_POLICY(), 1024));
     unsetenv("BN_AVX512_KQUANT_VNNI");
     setenv("BN_AVX512_Q5K_VNNI", "1", 1);
-    assert(bn_quant_policy_avx512_q5k_vnni_enabled(1024));
+    assert(bn_quant_policy_avx512_q5k_vnni_enabled(TEST_QUANT_POLICY(), 1024));
     unsetenv("BN_AVX512_Q5K_VNNI");
 
     BnMatvecTask tasks[2];
     memset(tasks, 0, sizeof(tasks));
     unsetenv("BN_AVX2_KQUANT_FLOAT");
-    assert(!bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    assert(!bn_quant_policy_avx2_kquant_float_for_tasks(TEST_QUANT_POLICY(), tasks, 2));
     tasks[1].flags = BN_MATVEC_TASK_FORCE_FLOAT_KQUANT;
-    assert(bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    assert(bn_quant_policy_avx2_kquant_float_for_tasks(TEST_QUANT_POLICY(), tasks, 2));
     tasks[1].flags = 0;
     setenv("BN_AVX2_KQUANT_FLOAT", "1", 1);
-    assert(bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    assert(bn_quant_policy_avx2_kquant_float_for_tasks(TEST_QUANT_POLICY(), tasks, 2));
     setenv("BN_AVX2_KQUANT_FLOAT", "0", 1);
-    assert(!bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    assert(!bn_quant_policy_avx2_kquant_float_for_tasks(TEST_QUANT_POLICY(), tasks, 2));
     unsetenv("BN_AVX2_KQUANT_FLOAT");
 
     unsetenv("BN_CPU_LLAMA_DOT");
     unsetenv("BN_CPU_LLAMA_Q4_DOT");
     unsetenv("BN_CPU_LLAMA_Q6_DOT");
     unsetenv("BN_CPU_REFERENCE_DOT");
+    unsetenv("BN_CPU_DISABLE_Q4_DOT");
+    unsetenv("BN_CPU_BLOCK_QUANT_FLOAT");
     unsetenv("BN_CPU_REFERENCE_BLOCK_QUANT_DOT");
     unsetenv("BN_CPU_REFERENCE_Q4_DOT");
     unsetenv("BN_CPU_REFERENCE_KQUANT_DOT");
     unsetenv("BN_CPU_REFERENCE_Q6_DOT");
-    assert(bn_quant_policy_reference_q4_dot_enabled(0) == q4_dot_default);
+    unsetenv("BN_CPU_DISABLE_Q6_DOT");
+    unsetenv("BN_CPU_KQUANT_FLOAT");
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0) == q4_dot_default);
     assert(bn_quant_policy_reference_q4_dot_enabled(
-        BN_MATVEC_TASK_REFERENCE_DOT));
+        TEST_QUANT_POLICY(), BN_MATVEC_TASK_REFERENCE_DOT));
+    setenv("BN_CPU_DISABLE_Q4_DOT", "1", 1);
     assert(!bn_quant_policy_reference_q4_dot_enabled(
+        TEST_QUANT_POLICY(), BN_MATVEC_TASK_REFERENCE_DOT));
+    unsetenv("BN_CPU_DISABLE_Q4_DOT");
+    assert(!bn_quant_policy_reference_q4_dot_enabled(
+        TEST_QUANT_POLICY(),
         BN_MATVEC_TASK_REFERENCE_DOT | BN_MATVEC_TASK_NATIVE_QUANT));
-    assert(bn_quant_policy_reference_q6_dot_enabled(0) == q6_dot_default);
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0) == q6_dot_default);
+    setenv("BN_CPU_DISABLE_Q6_DOT", "1", 1);
+    assert(!bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
+    unsetenv("BN_CPU_DISABLE_Q6_DOT");
+    setenv("BN_CPU_KQUANT_FLOAT", "1", 1);
+    assert(!bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
+    unsetenv("BN_CPU_KQUANT_FLOAT");
     setenv("BN_CPU_REFERENCE_BLOCK_QUANT_DOT", "1", 1);
-    assert(bn_quant_policy_reference_q4_dot_enabled(0));
-    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
     unsetenv("BN_CPU_REFERENCE_BLOCK_QUANT_DOT");
     setenv("BN_CPU_REFERENCE_Q4_DOT", "1", 1);
-    assert(bn_quant_policy_reference_q4_dot_enabled(0));
-    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
     unsetenv("BN_CPU_REFERENCE_Q4_DOT");
     setenv("BN_CPU_REFERENCE_KQUANT_DOT", "1", 1);
-    assert(bn_quant_policy_reference_q4_dot_enabled(0) == q4_dot_default);
-    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0) == q4_dot_default);
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
     unsetenv("BN_CPU_REFERENCE_KQUANT_DOT");
     setenv("BN_CPU_REFERENCE_Q6_DOT", "1", 1);
-    assert(bn_quant_policy_reference_q4_dot_enabled(0) == q4_dot_default);
-    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0) == q4_dot_default);
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
     unsetenv("BN_CPU_REFERENCE_Q6_DOT");
     setenv("BN_CPU_LLAMA_DOT", "1", 1);
-    assert(bn_quant_policy_reference_q4_dot_enabled(0));
-    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
     unsetenv("BN_CPU_LLAMA_DOT");
     setenv("BN_CPU_LLAMA_Q4_DOT", "1", 1);
-    assert(bn_quant_policy_reference_q4_dot_enabled(0));
-    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
     unsetenv("BN_CPU_LLAMA_Q4_DOT");
     setenv("BN_CPU_LLAMA_Q6_DOT", "1", 1);
-    assert(bn_quant_policy_reference_q4_dot_enabled(0) == q4_dot_default);
-    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(TEST_QUANT_POLICY(), 0) == q4_dot_default);
+    assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0));
     unsetenv("BN_CPU_LLAMA_Q6_DOT");
 
     memset(tasks, 0, sizeof(tasks));
-    assert(bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2) ==
+    assert(bn_quant_policy_batch_reference_q4_dot_enabled(
+               TEST_QUANT_POLICY(), tasks, 2) ==
            q4_dot_default);
     setenv("BN_CPU_REFERENCE_DOT", "1", 1);
-    assert(bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
+    assert(bn_quant_policy_batch_reference_q4_dot_enabled(
+        TEST_QUANT_POLICY(), tasks, 2));
     unsetenv("BN_CPU_REFERENCE_DOT");
     tasks[0].flags = BN_MATVEC_TASK_REFERENCE_DOT;
-    assert(bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
+    assert(bn_quant_policy_batch_reference_q4_dot_enabled(
+        TEST_QUANT_POLICY(), tasks, 2));
     tasks[1].flags = BN_MATVEC_TASK_NATIVE_QUANT;
-    assert(!bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
+    assert(!bn_quant_policy_batch_reference_q4_dot_enabled(
+        TEST_QUANT_POLICY(), tasks, 2));
     tasks[0].flags = 0;
     tasks[1].flags = 0;
 
     unsetenv("BN_WASM_BLOCK_QUANT_CANONICAL4");
     unsetenv("BN_WASM_Q4_CANONICAL4");
-    assert(!bn_quant_policy_wasm_q4_canonical4_enabled());
+    assert(!bn_quant_policy_wasm_q4_canonical4_enabled(TEST_QUANT_POLICY()));
     setenv("BN_WASM_BLOCK_QUANT_CANONICAL4", "1", 1);
-    assert(bn_quant_policy_wasm_q4_canonical4_enabled());
+    assert(bn_quant_policy_wasm_q4_canonical4_enabled(TEST_QUANT_POLICY()));
     unsetenv("BN_WASM_BLOCK_QUANT_CANONICAL4");
     setenv("BN_WASM_Q4_CANONICAL4", "1", 1);
-    assert(bn_quant_policy_wasm_q4_canonical4_enabled());
+    assert(bn_quant_policy_wasm_q4_canonical4_enabled(TEST_QUANT_POLICY()));
     unsetenv("BN_WASM_Q4_CANONICAL4");
 
     unsetenv("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH");
     unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");
-    assert(bn_quant_policy_q8_0_matmul_batch_enabled());
+    assert(bn_quant_policy_q8_0_matmul_batch_enabled(TEST_QUANT_POLICY()));
     setenv("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH", "1", 1);
-    assert(!bn_quant_policy_q8_0_matmul_batch_enabled());
+    assert(!bn_quant_policy_q8_0_matmul_batch_enabled(TEST_QUANT_POLICY()));
     unsetenv("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH");
     setenv("BN_DISABLE_Q8_0_MATMUL_BATCH", "1", 1);
-    assert(!bn_quant_policy_q8_0_matmul_batch_enabled());
+    assert(!bn_quant_policy_q8_0_matmul_batch_enabled(TEST_QUANT_POLICY()));
     unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");
 
     assert(bn_quant_format_is_q4k(BN_GGUF_TENSOR_Q4_K));
@@ -207,11 +268,60 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_supports_direct_native_quant_matvec(
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_quant_format_supports_direct_native_quant_matvec(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_supports_direct_native_quant_matvec(
         BN_GGUF_TENSOR_Q6_K));
+    assert(bn_quant_format_gpu_matvec_native_quant_flag(
+               BN_GGUF_TENSOR_Q4_0, 1) ==
+           BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT);
+    assert(bn_quant_format_gpu_matvec_native_quant_flag(
+               BN_GGUF_TENSOR_Q4_0, 0) == 0);
+    assert(bn_quant_format_gpu_matvec_block_q8_activation_flag(
+               BN_GGUF_TENSOR_Q8_0, 1) ==
+           BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT);
+    assert(bn_quant_format_gpu_matvec_block_q8_activation_flag(
+               BN_GGUF_TENSOR_Q4_0, 1) ==
+           BN_QUANT_GPU_MATVEC_FLAG_BLOCK_Q8_ACTIVATION);
+    assert(bn_quant_format_gpu_matvec_reference_kquant_flag(
+               BN_GGUF_TENSOR_Q4_K, 1) ==
+           BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT);
+    assert(bn_quant_format_gpu_matvec_reference_kquant_flag(
+               BN_GGUF_TENSOR_Q5_K, 1) ==
+           BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT);
+    assert(bn_quant_format_gpu_matvec_reference_kquant_flag(
+               BN_GGUF_TENSOR_Q4_K, 0) == 0);
+    assert(bn_quant_format_gpu_matvec_native_quant_flag(
+               BN_GGUF_TENSOR_Q6_K, 1) == 0);
     assert(bn_quant_format_supports_specialized_native_quant_matvec(
         BN_GGUF_TENSOR_Q6_K));
+    assert(bn_quant_format_supports_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_supports_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q5_K));
     assert(!bn_quant_format_supports_specialized_native_quant_matvec(
         BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_format_supports_reference_prepared_accumulation(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_quant_format_supports_reference_prepared_accumulation(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_prefers_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q4_K, 2048));
+    assert(bn_quant_format_prefers_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q4_K, 4096));
+    assert(bn_quant_format_prefers_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q6_K, 4096));
+    assert(bn_quant_format_prefers_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q5_K, 4096));
+    assert(bn_quant_format_prefers_tall_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q6_K, 151936, 2048));
+    assert(!bn_quant_format_prefers_tall_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q6_K, 4096, 2048));
+    assert(!bn_quant_format_prefers_tall_specialized_native_quant_matvec(
+        BN_GGUF_TENSOR_Q4_K, 151936, 2048));
+    assert(bn_quant_format_supports_native_quant_split(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_quant_format_supports_native_quant_split(
+        BN_GGUF_TENSOR_Q6_K));
 
     assert(strcmp(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_Q4_0),
                   "q4") == 0);
@@ -318,6 +428,14 @@ static void test_quant_policy_helpers(void) {
                                                   BN_GGUF_TENSOR_Q4_K));
     assert(!bn_quant_format_supports_moe_routed_kquant_gateup(BN_GGUF_TENSOR_Q4_K,
                                                    BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_supports_moe_direct_routed_down(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_supports_moe_direct_routed_down(
+        BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_supports_moe_direct_routed_down(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_quant_format_supports_moe_direct_routed_down(
+        BN_GGUF_TENSOR_Q8_K));
     assert(bn_quant_format_supports_moe_asymmetric_kquant_down_route(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, 0));
     assert(!bn_quant_format_supports_moe_asymmetric_kquant_down_route(
@@ -1148,6 +1266,204 @@ static void test_q4_matvec_multi_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_q4_repacked_neon_reduction_order(void) {
+    printf("test_q4_repacked_neon_reduction_order... ");
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    enum { rows = 8, cols = 1024, n_blocks = cols / 32 };
+    BnBlockQ4_0 blocks[rows * n_blocks];
+    float x[cols];
+    int8_t x_q[cols];
+    float x_scales[n_blocks];
+    float native[rows];
+    float repacked[rows];
+    float repacked_scalar[rows];
+    float scalar[rows];
+    float production[rows];
+    memset(native, 0, sizeof(native));
+    memset(repacked, 0, sizeof(repacked));
+    memset(repacked_scalar, 0, sizeof(repacked_scalar));
+    memset(scalar, 0, sizeof(scalar));
+    memset(production, 0, sizeof(production));
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_blocks; b++) {
+            BnBlockQ4_0 *blk = &blocks[r * n_blocks + b];
+            blk->d = bn_fp32_to_fp16(0.015625f * (float)(r + b + 1));
+            for (int i = 0; i < 16; i++)
+                blk->qs[i] = (uint8_t)(r * 29 + b * 17 + i * 11);
+        }
+    }
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.03125f * (float)((i * 13 + 5) % 47) - 0.625f;
+
+    BnQWeight W = {
+        .data = blocks, .type = BN_GGUF_TENSOR_Q4_0,
+        .rows = rows, .cols = cols, .scale = 1.0f
+    };
+    BnPreparedWeightKind kind = BN_PREPARED_WEIGHT_NONE;
+    size_t bytes = bn_quant_prepared_qweight_size(&W, &kind);
+    assert(kind == BN_PREPARED_WEIGHT_Q4_0_REPACK && bytes > 0);
+    SHArena *arena = sh_arena_create(bytes + SH_ARENA_ALIGN);
+    assert(arena != NULL);
+    BnPreparedWeight prepared = {0};
+    assert(bn_quant_prepare_qweight(&prepared, &W, arena) == 0);
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, cols);
+
+    BnQ4SdotCtx native_ctx = { native, &W, x_q, x_scales, NULL };
+    BnQ4SdotCtx repacked_ctx = {
+        repacked, &W, x_q, x_scales, &prepared
+    };
+    BnQ4SdotCtx repacked_scalar_ctx = {
+        repacked_scalar, &W, x_q, x_scales, &prepared
+    };
+    BnQ4SdotCtx scalar_ctx = { scalar, &W, x_q, x_scales, NULL };
+    bn_quant_q4_scalar_sdot_range(&scalar_ctx, 1, 8);
+    bn_quant_q4_neon_sdot_range(&native_ctx, 1, 8);
+    bn_quant_q4_repacked_neon_sdot_range(&repacked_ctx, 1, 8);
+    bn_quant_q4_repacked_scalar_sdot_range(&repacked_scalar_ctx, 1, 8);
+    for (int r = 4; r < 8; r++) {
+        for (int b = 0; b < n_blocks; b++) {
+            const BnBlockQ4_0 *blk = &blocks[r * n_blocks + b];
+            int32_t dot = 0;
+            for (int i = 0; i < 16; i++) {
+                uint8_t q = blk->qs[i];
+                dot += ((int32_t)(q & 0x0f) - 8) * x_q[b * 32 + i];
+                dot += ((int32_t)(q >> 4) - 8) * x_q[b * 32 + i + 16];
+            }
+            float scale = bn_fp16_to_fp32(blk->d) * x_scales[b];
+            production[r] = fmaf((float)dot, scale, production[r]);
+        }
+    }
+    for (int r = 1; r < rows; r++) {
+        assert(native[r] == scalar[r]);
+        assert(fabsf(native[r] - repacked[r]) < 1e-4f);
+        if (r >= 4)
+            assert(repacked_scalar[r] == repacked[r]);
+        if (r >= 4)
+            assert(production[r] == repacked[r]);
+    }
+    sh_arena_free(arena);
+#endif
+    printf("PASSED\n");
+}
+
+static void test_q4_repacked_neon_fused_gateup_silu(void) {
+    printf("test_q4_repacked_neon_fused_gateup_silu... ");
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    enum { rows = 8, cols = 96, n_blocks = cols / 32 };
+    BnBlockQ4_0 gate_blocks[rows * n_blocks];
+    BnBlockQ4_0 up_blocks[rows * n_blocks];
+    float x[cols];
+    int8_t x_q[cols];
+    float x_scales[n_blocks];
+    float gate_out[rows], up_out[rows], fused[rows];
+    memset(gate_out, 0, sizeof(gate_out));
+    memset(up_out, 0, sizeof(up_out));
+    memset(fused, 0, sizeof(fused));
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_blocks; b++) {
+            BnBlockQ4_0 *gate = &gate_blocks[r * n_blocks + b];
+            BnBlockQ4_0 *up = &up_blocks[r * n_blocks + b];
+            gate->d = bn_fp32_to_fp16(
+                0.01171875f * (float)(1 + ((r + b * 3) % 9)));
+            up->d = bn_fp32_to_fp16(
+                0.0078125f * (float)(1 + ((r * 5 + b) % 11)));
+            for (int i = 0; i < 16; i++) {
+                gate->qs[i] = (uint8_t)(r * 31 + b * 19 + i * 7 + 3);
+                up->qs[i] = (uint8_t)(r * 17 + b * 23 + i * 13 + 5);
+            }
+        }
+    }
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.01953125f * (float)((i * 11 + 7) % 53) - 0.5f;
+
+    BnQWeight gate = {
+        .data = gate_blocks, .type = BN_GGUF_TENSOR_Q4_0,
+        .rows = rows, .cols = cols, .scale = 1.0f
+    };
+    BnQWeight up = {
+        .data = up_blocks, .type = BN_GGUF_TENSOR_Q4_0,
+        .rows = rows, .cols = cols, .scale = 1.0f
+    };
+    BnPreparedWeightKind gate_kind = BN_PREPARED_WEIGHT_NONE;
+    BnPreparedWeightKind up_kind = BN_PREPARED_WEIGHT_NONE;
+    size_t gate_bytes = bn_quant_prepared_qweight_size(&gate, &gate_kind);
+    size_t up_bytes = bn_quant_prepared_qweight_size(&up, &up_kind);
+    assert(gate_kind == BN_PREPARED_WEIGHT_Q4_0_REPACK);
+    assert(up_kind == BN_PREPARED_WEIGHT_Q4_0_REPACK);
+    SHArena *arena = sh_arena_create(
+        gate_bytes + up_bytes + 2 * SH_ARENA_ALIGN);
+    assert(arena != NULL);
+    BnPreparedWeight gate_prepared = {0};
+    BnPreparedWeight up_prepared = {0};
+    assert(bn_quant_prepare_qweight(&gate_prepared, &gate, arena) == 0);
+    assert(bn_quant_prepare_qweight(&up_prepared, &up, arena) == 0);
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, cols);
+
+    BnQ4SdotCtx gate_ctx = {
+        gate_out, &gate, x_q, x_scales, &gate_prepared
+    };
+    BnQ4SdotCtx up_ctx = {
+        up_out, &up, x_q, x_scales, &up_prepared
+    };
+    BnQ4GateUpCtx fused_ctx = {
+        fused, &gate, &up, x_q, x_scales,
+        &gate_prepared, &up_prepared
+    };
+    bn_quant_q4_repacked_neon_sdot_range(&gate_ctx, 1, 7);
+    bn_quant_q4_repacked_neon_sdot_range(&up_ctx, 1, 7);
+    bn_quant_q4_repacked_gate_up_silu_neon_range(&fused_ctx, 1, 7);
+    for (int r = 1; r < 7; r++) {
+        float32x4_t silu =
+            bn_neon_fast_silu_f32(vdupq_n_f32(gate_out[r]));
+        float expected = vgetq_lane_f32(silu, 0) * up_out[r];
+        assert(fused[r] == expected);
+    }
+    sh_arena_free(arena);
+#endif
+    printf("PASSED\n");
+}
+
+static void test_q4_neon_4row_reduction_order(void) {
+    printf("test_q4_neon_4row_reduction_order... ");
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    enum { rows = 7, cols = 160, n_blocks = cols / 32 };
+    BnBlockQ4_0 blocks[rows * n_blocks];
+    float x[cols];
+    int8_t x_q[cols];
+    float x_scales[n_blocks];
+    float single_row[rows];
+    float four_row[rows];
+    memset(single_row, 0, sizeof(single_row));
+    memset(four_row, 0, sizeof(four_row));
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_blocks; b++) {
+            BnBlockQ4_0 *blk = &blocks[r * n_blocks + b];
+            blk->d = bn_fp32_to_fp16(
+                0.0078125f * (float)(1 + ((r * 3 + b * 5) % 11)));
+            for (int i = 0; i < 16; i++)
+                blk->qs[i] = (uint8_t)(r * 37 + b * 19 + i * 13 + 7);
+        }
+    }
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.0234375f * (float)((i * 17 + 11) % 61) - 0.703125f;
+
+    BnQWeight W = {
+        .data = blocks, .type = BN_GGUF_TENSOR_Q4_0,
+        .rows = rows, .cols = cols, .scale = 1.0f
+    };
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, cols);
+    BnQ4SdotCtx single_ctx = { single_row, &W, x_q, x_scales, NULL };
+    BnQ4SdotCtx four_ctx = { four_row, &W, x_q, x_scales, NULL };
+    bn_quant_q4_neon_sdot_range(&single_ctx, 0, rows);
+    bn_quant_q4_neon_sdot_4row_range(&four_ctx, 0, (rows + 3) / 4);
+    for (int r = 0; r < rows; r++)
+        assert(fabsf(single_row[r] - four_row[r]) < 1e-6f);
+#endif
+    printf("PASSED\n");
+}
+
 static void test_q8_matvec_batch_correctness(void) {
     printf("test_q8_matvec_batch_correctness... ");
 
@@ -1195,6 +1511,106 @@ static void test_q8_matvec_batch_correctness(void) {
 
     free(blocks1);
     free(blocks2);
+    printf("PASSED\n");
+}
+
+static void test_q8_neon_reference_reduction_order(void) {
+    printf("test_q8_neon_reference_reduction_order... ");
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    enum { rows = 8, cols = 224, n_blocks = cols / 32 };
+    BnBlockQ8_0 blocks[rows * n_blocks];
+    int8_t x_q[cols];
+    float x_scales[n_blocks];
+    float reference[rows];
+    float scalar_order[rows];
+    float single_row[rows];
+    float four_row[rows];
+    float repacked[rows];
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_blocks; b++) {
+            BnBlockQ8_0 *blk = &blocks[r * n_blocks + b];
+            blk->d = bn_fp32_to_fp16(
+                0.00371f * (float)(1 + ((r * 5 + b * 7) % 13)));
+            for (int i = 0; i < 32; i++)
+                blk->qs[i] = (int8_t)(((r * 37 + b * 19 + i * 11) % 255) - 127);
+        }
+    }
+    for (int i = 0; i < cols; i++)
+        x_q[i] = (int8_t)(((i * 29 + 17) % 255) - 127);
+    for (int b = 0; b < n_blocks; b++)
+        x_scales[b] = 0.00731f * (float)(b + 1);
+
+    BnQWeight weight = {
+        .data = blocks,
+        .type = BN_GGUF_TENSOR_Q8_0,
+        .rows = rows,
+        .cols = cols,
+        .scale = 1.0f,
+    };
+    for (int r = 0; r < rows; r++) {
+        float32x4_t sum0 = vdupq_n_f32(0.0f);
+        float32x4_t sum1 = vdupq_n_f32(0.0f);
+        int b = 0;
+        for (; b + 1 < n_blocks; b += 2) {
+            int32_t lanes0[4] = { 0, 0, 0, 0 };
+            int32_t lanes1[4] = { 0, 0, 0, 0 };
+            const BnBlockQ8_0 *blk0 = &blocks[r * n_blocks + b];
+            const BnBlockQ8_0 *blk1 = blk0 + 1;
+            for (int lane = 0; lane < 4; lane++) {
+                for (int i = 0; i < 4; i++) {
+                    int j = lane * 4 + i;
+                    lanes0[lane] += (int32_t)blk0->qs[j] * x_q[b * 32 + j];
+                    lanes0[lane] += (int32_t)blk0->qs[j + 16] *
+                                    x_q[b * 32 + j + 16];
+                    lanes1[lane] += (int32_t)blk1->qs[j] *
+                                    x_q[(b + 1) * 32 + j];
+                    lanes1[lane] += (int32_t)blk1->qs[j + 16] *
+                                    x_q[(b + 1) * 32 + j + 16];
+                }
+            }
+            sum0 = vmlaq_n_f32(sum0, vcvtq_f32_s32(vld1q_s32(lanes0)),
+                                bn_fp16_to_fp32(blk0->d) * x_scales[b]);
+            sum1 = vmlaq_n_f32(sum1, vcvtq_f32_s32(vld1q_s32(lanes1)),
+                                bn_fp16_to_fp32(blk1->d) * x_scales[b + 1]);
+        }
+        reference[r] = vaddvq_f32(sum0) + vaddvq_f32(sum1);
+        for (; b < n_blocks; b++) {
+            const BnBlockQ8_0 *blk = &blocks[r * n_blocks + b];
+            int32_t dot = 0;
+            for (int i = 0; i < 32; i++)
+                dot += (int32_t)blk->qs[i] * x_q[b * 32 + i];
+            reference[r] += (float)dot * bn_fp16_to_fp32(blk->d) *
+                            x_scales[b];
+        }
+    }
+
+    BnQ8SdotCtx scalar_ctx = { scalar_order, &weight, x_q, x_scales, NULL };
+    BnQ8SdotCtx single_ctx = { single_row, &weight, x_q, x_scales, NULL };
+    BnQ8SdotCtx four_ctx = { four_row, &weight, x_q, x_scales, NULL };
+    bn_quant_q8_scalar_sdot_range(&scalar_ctx, 0, rows);
+    bn_quant_q8_neon_sdot_range(&single_ctx, 0, rows);
+    bn_quant_q8_neon_sdot_4row_range(&four_ctx, 0, (rows + 3) / 4);
+    assert(memcmp(reference, single_row, sizeof(reference)) == 0);
+    assert(memcmp(reference, four_row, sizeof(reference)) == 0);
+    assert(memcmp(reference, scalar_order, sizeof(reference)) != 0);
+
+    BnPreparedWeightKind kind = BN_PREPARED_WEIGHT_NONE;
+    size_t bytes = bn_quant_prepared_qweight_size(&weight, &kind);
+    assert(kind == BN_PREPARED_WEIGHT_Q8_0_REPACK && bytes > 0);
+    SHArena *arena = sh_arena_create(bytes + SH_ARENA_ALIGN);
+    assert(arena != NULL);
+    BnPreparedWeight prepared = {0};
+    assert(bn_quant_prepare_qweight(&prepared, &weight, arena) == 0);
+    assert(prepared.kind == BN_PREPARED_WEIGHT_Q8_0_REPACK);
+    BnQ8SdotCtx repacked_ctx = {
+        repacked, &weight, x_q, x_scales, &prepared
+    };
+    bn_quant_q8_repacked_neon_sdot_range(&repacked_ctx, 0, rows);
+    for (int r = 0; r < rows; r++)
+        assert(fabsf(repacked[r] - scalar_order[r]) < 1e-3f);
+    sh_arena_free(arena);
+#endif
     printf("PASSED\n");
 }
 
@@ -1507,6 +1923,107 @@ static void fill_q6k_blocks(BnBlockQ6K *q6, int rows, int n_bpr, int seed) {
     }
 }
 
+static void test_q6k_scalar_sdot_4row_correctness(void) {
+    printf("test_q6k_scalar_sdot_4row_correctness... ");
+
+    const int rows = 7;
+    const int cols = 512;
+    const int n_bpr = cols / BN_QK_K;
+    BnBlockQ6K *blocks =
+        (BnBlockQ6K *)calloc((size_t)rows * n_bpr, sizeof(*blocks));
+    float *x = (float *)malloc((size_t)cols * sizeof(*x));
+    int8_t *x_q = (int8_t *)malloc((size_t)cols);
+    float *x_d = (float *)malloc((size_t)n_bpr * sizeof(*x_d));
+    int16_t *x_bsums =
+        (int16_t *)malloc((size_t)n_bpr * 16 * sizeof(*x_bsums));
+    assert(blocks && x && x_q && x_d && x_bsums);
+
+    fill_q6k_blocks(blocks, rows, n_bpr, 53);
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.03125f * (float)((i * 17 + 9) % 47) - 0.625f;
+    bn_quant_x_to_q8k_scalar(x, x_q, x_d, x_bsums, cols);
+
+    BnQWeight weight = {
+        .data = blocks,
+        .type = BN_GGUF_TENSOR_Q6_K,
+        .rows = rows,
+        .cols = cols,
+        .scale = 1.0f,
+    };
+    float reference[rows];
+    float tiled[rows];
+    BnKQuantSdotCtx reference_ctx = {
+        reference, &weight, x_q, x_d, x_bsums, NULL
+    };
+    BnKQuantSdotCtx tiled_ctx = {
+        tiled, &weight, x_q, x_d, x_bsums, NULL
+    };
+    bn_quant_q6k_scalar_sdot_range(&reference_ctx, 0, rows);
+    bn_quant_q6k_scalar_sdot_4row_range(
+        &tiled_ctx, 0, (rows + 3) / 4);
+    for (int row = 0; row < rows; row++)
+        assert(fabsf(reference[row] - tiled[row]) <
+               1e-4f * fmaxf(1.0f, fabsf(reference[row])));
+
+    free(x_bsums);
+    free(x_d);
+    free(x_q);
+    free(x);
+    free(blocks);
+    printf("PASSED\n");
+}
+
+static void test_q6k_neon_pair_reduction_order(void) {
+    printf("test_q6k_neon_pair_reduction_order... ");
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    const int rows = 7;
+    const int cols = 768;
+    const int n_bpr = cols / BN_QK_K;
+    BnBlockQ6K *blocks =
+        (BnBlockQ6K *)calloc((size_t)rows * n_bpr, sizeof(*blocks));
+    float *x = (float *)malloc((size_t)cols * sizeof(*x));
+    int8_t *x_q = (int8_t *)malloc((size_t)cols);
+    float *x_d = (float *)malloc((size_t)n_bpr * sizeof(*x_d));
+    int16_t *x_bsums =
+        (int16_t *)malloc((size_t)n_bpr * 16 * sizeof(*x_bsums));
+    assert(blocks && x && x_q && x_d && x_bsums);
+
+    fill_q6k_blocks(blocks, rows, n_bpr, 67);
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.015625f * (float)((i * 29 + 5) % 89) - 0.6875f;
+    bn_quant_x_to_q8k(x, x_q, x_d, x_bsums, cols);
+
+    BnQWeight weight = {
+        .data = blocks,
+        .type = BN_GGUF_TENSOR_Q6_K,
+        .rows = rows,
+        .cols = cols,
+        .scale = 1.0f,
+    };
+    float paired[rows];
+    float single[rows];
+    BnKQuantSdotCtx paired_ctx = {
+        paired, &weight, x_q, x_d, x_bsums, NULL
+    };
+    BnKQuantSdotCtx single_ctx = {
+        single, &weight, x_q, x_d, x_bsums, NULL
+    };
+    bn_quant_q6k_neon_sdot_range(&paired_ctx, 0, rows);
+    for (int row = 0; row < rows; row++)
+        bn_quant_q6k_neon_sdot_range(&single_ctx, row, row + 1);
+    assert(memcmp(paired, single, sizeof(paired)) == 0);
+
+    free(x_bsums);
+    free(x_d);
+    free(x_q);
+    free(x);
+    free(blocks);
+#else
+    printf("SKIPPED");
+#endif
+    printf("PASSED\n");
+}
+
 static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
     printf("test_kquant_prepared_kquant_input_matmul_correctness... ");
 
@@ -1531,6 +2048,8 @@ static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
     int16_t *x_bsums = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
     float *ref4 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *ref6 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *float4 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *float6 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *force4 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *force6 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out4 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
@@ -1538,7 +2057,8 @@ static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
     float *out6 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out4_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out4b_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
-    assert(X && x_q && x_d && x_bsums && ref4 && ref6 && force4 && force6 &&
+    assert(X && x_q && x_d && x_bsums && ref4 && ref6 && float4 && float6 &&
+           force4 && force6 &&
            out4 && out4b && out6 && out4_prepared && out4b_prepared);
 
     for (int t = 0; t < n_tokens; t++) {
@@ -1552,6 +2072,14 @@ static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
                         x_q + (size_t)t * cols, NULL);
         bn_quant_matvec(ref6 + (size_t)t * rows, &W6, X + (size_t)t * cols,
                         x_q + (size_t)t * cols, NULL);
+        BnQ4KCtx float4_ctx = {
+            float4 + (size_t)t * rows, &W4a, X + (size_t)t * cols
+        };
+        BnQ4KCtx float6_ctx = {
+            float6 + (size_t)t * rows, &W6, X + (size_t)t * cols
+        };
+        bn_quant_get_float_kernel(W4a.type)(&float4_ctx, 0, rows);
+        bn_quant_get_float_kernel(W6.type)(&float6_ctx, 0, rows);
         BnMatvecTask force_tasks[2] = {
             { force4 + (size_t)t * rows, &W4a, NULL,
               BN_MATVEC_TASK_FORCE_FLOAT_KQUANT },
@@ -1599,8 +2127,8 @@ static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
     for (int i = 0; i < rows * n_tokens; i++) {
         assert(fabsf(out4[i] - ref4[i]) < 1e-3f);
         assert(fabsf(out6[i] - ref6[i]) < 1e-3f);
-        assert(fabsf(out4[i] - force4[i]) < 1e-3f);
-        assert(fabsf(out6[i] - force6[i]) < 1e-3f);
+        assert(fabsf(float4[i] - force4[i]) < 1e-6f);
+        assert(fabsf(float6[i] - force6[i]) < 1e-6f);
 #if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
         assert(fabsf(out4_prepared[i] - out4[i]) < 1e-5f);
         assert(fabsf(out4b_prepared[i] - out4b[i]) < 1e-5f);
@@ -1609,7 +2137,8 @@ static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
 
     free(q4a); free(q4b); free(q6);
     free(X); free(x_q); free(x_d); free(x_bsums);
-    free(ref4); free(ref6); free(force4); free(force6);
+    free(ref4); free(ref6); free(float4); free(float6);
+    free(force4); free(force6);
     free(out4); free(out4b); free(out6);
     free(out4_prepared); free(out4b_prepared);
 #if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
@@ -1737,6 +2266,21 @@ static void test_activation_quant_rounding(void) {
     assert(x_q8[5] == 2);
     assert(x_q8[6] == -2);
 
+    memset(x, 0, sizeof(x));
+    x[0] = 796.28125f;
+    x[1] = 310.361572265625f;
+    bn_quant_x_to_q8_blocks(x, x_q8, x_q8_scales, 32);
+    assert(x_q8[0] == 127);
+    assert(x_q8[1] == 49);
+
+    memset(x, 0, sizeof(x));
+    x[0] = 127.0f;
+    x[1] = 0.5f;
+    x[2] = -0.5f;
+    x[3] = 1.5f;
+    x[4] = -1.5f;
+    x[5] = 2.5f;
+    x[6] = -2.5f;
     bn_quant_x_to_q8k(x, x_q8k, x_d, x_bsums, BN_QK_K);
     assert(fabsf(x_d[0] + 1.0f) < 1e-6f);
     assert(x_q8k[0] == -127);
@@ -1746,6 +2290,34 @@ static void test_activation_quant_rounding(void) {
     assert(x_q8k[4] == 2);
     assert(x_q8k[5] == -2);
     assert(x_q8k[6] == 2);
+
+    enum { test_blocks = 4096, test_values = test_blocks * 32 };
+    float *values = (float *)malloc((size_t)test_values * sizeof(float));
+    int8_t *actual = (int8_t *)malloc((size_t)test_values);
+    int8_t *expected = (int8_t *)malloc((size_t)test_values);
+    float *actual_scales =
+        (float *)malloc((size_t)test_blocks * sizeof(float));
+    float *expected_scales =
+        (float *)malloc((size_t)test_blocks * sizeof(float));
+    assert(values && actual && expected && actual_scales && expected_scales);
+    uint32_t state = 0x6d2b79f5u;
+    for (int i = 0; i < test_values; i++) {
+        state = state * 1664525u + 1013904223u;
+        int mantissa = (int)((state >> 8) & 0xffffu) - 32768;
+        int exponent = (int)((state >> 24) & 7u) - 3;
+        values[i] = ldexpf((float)mantissa / 257.0f, exponent);
+    }
+    bn_quant_x_to_q8_blocks(values, actual, actual_scales, test_values);
+    test_q8_blocks_scalar_reference(
+        values, expected, expected_scales, test_values);
+    assert(memcmp(actual, expected, (size_t)test_values) == 0);
+    assert(memcmp(actual_scales, expected_scales,
+                  (size_t)test_blocks * sizeof(float)) == 0);
+    free(values);
+    free(actual);
+    free(expected);
+    free(actual_scales);
+    free(expected_scales);
 
     printf("PASSED\n");
 }
@@ -1809,7 +2381,11 @@ int main(void) {
     test_q5k_matvec_batch_correctness();
     test_i2s_matvec_multi_correctness();
     test_q4_matvec_multi_correctness();
+    test_q4_repacked_neon_reduction_order();
+    test_q4_repacked_neon_fused_gateup_silu();
+    test_q4_neon_4row_reduction_order();
     test_q8_matvec_batch_correctness();
+    test_q8_neon_reference_reduction_order();
     test_q8_matvec_multi_correctness();
     test_unquantized_matvec_correctness();
     test_bf16_matvec_batch_correctness();
@@ -1817,6 +2393,8 @@ int main(void) {
     test_mixed_kquant_matvec_batch_correctness();
     test_mixed_kquant_matvec_multi_correctness();
     test_kquant_prepared_kquant_input_matmul_correctness();
+    test_q6k_scalar_sdot_4row_correctness();
+    test_q6k_neon_pair_reduction_order();
     test_q6k_prepared_matmul_correctness();
     test_activation_quant_rounding();
     test_mxfp4_matvec_correctness();

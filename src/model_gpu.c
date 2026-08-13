@@ -4,6 +4,7 @@
 #include "gpu_backend.h"
 #include "gpu_policy.h"
 #include "moe_internal.h"
+#include "quant.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
@@ -19,9 +20,62 @@ static int checked_mul_size(size_t a, size_t b, size_t *out) {
 typedef enum {
     BN_MODEL_GPU_UPLOAD_STANDARD = 0,
     BN_MODEL_GPU_UPLOAD_QUANT_ONLY,
+    BN_MODEL_GPU_UPLOAD_BORROWED,
     BN_MODEL_GPU_UPLOAD_KQUANT_F32_CACHE,
     BN_MODEL_GPU_UPLOAD_F16_CACHE,
 } BnModelGPUUploadMode;
+
+int bn_model_init_gpu_activations(const BnModel *model, BnGPUBackend *gpu) {
+    if (!model || !gpu || !bn_gpu_backend_can_init_activations(gpu))
+        return -1;
+    const BnConfig *c = &model->config;
+    BnMoERoutePolicy route = bn_moe_route_policy(c);
+    int rope_dims =
+        bn_model_activation_plan_rope_dims_for_head(c, c->head_size);
+    int rope_count = rope_dims / 2;
+    float *rope = NULL;
+    if (rope_count > 0) {
+        rope = (float *)malloc((size_t)rope_count * sizeof(float));
+        if (!rope) return -1;
+        bn_model_activation_plan_init_rope_frequencies(c, rope, rope_count);
+    }
+    BnGPUActivationPlan plan = {
+        .dim = c->dim,
+        .n_layers = c->n_layers,
+        .seq_len = c->seq_len,
+        .kv_dim = c->kv_dim,
+        .n_heads = c->n_heads,
+        .head_size = c->head_size,
+        .vocab_size = c->vocab_size,
+        .per_layer_input_dim = c->per_layer_input_dim,
+        .kv_f16 = c->kv_f16,
+        .attention_layer_count =
+            bn_model_activation_plan_attention_layer_count(c),
+        .ssm_layer_count = bn_model_activation_plan_ssm_layer_count(c),
+        .uses_hybrid_ssm = bn_model_activation_plan_uses_hybrid_ssm(c),
+        .uses_hybrid_moe = bn_model_activation_plan_uses_hybrid_moe(c),
+        .uses_moe = bn_model_activation_plan_uses_moe(c),
+        .xb2_elements = c->ssm_inner_size > c->dim &&
+                        bn_model_activation_plan_uses_hybrid_ssm(c)
+                            ? c->ssm_inner_size : c->dim,
+        .hb_elements = route.expert_hidden_dim > c->hidden_dim
+                           ? route.expert_hidden_dim
+                           : (c->hidden_dim > c->dim ? c->hidden_dim : c->dim),
+        .moe_total_experts = route.total_experts,
+        .moe_active_experts = route.active_experts,
+        .moe_expert_hidden_dim = route.expert_hidden_dim,
+        .ssm_time_step_rank = c->ssm_time_step_rank,
+        .ssm_state_size = c->ssm_state_size,
+        .ssm_inner_size = c->ssm_inner_size,
+        .ssm_group_count = c->ssm_group_count,
+        .ssm_conv_kernel = c->ssm_conv_kernel,
+        .rope_frequencies = rope,
+        .rope_frequency_count = rope_count,
+    };
+    int rc = bn_gpu_backend_init_activations(gpu, &plan);
+    free(rope);
+    return rc;
+}
 
 typedef struct {
     int uses_moe;
@@ -55,6 +109,9 @@ static void *upload_gpu_buffer_mode(BnGPUBackend *gpu,
     switch (mode) {
         case BN_MODEL_GPU_UPLOAD_QUANT_ONLY:
             return bn_gpu_backend_create_quant_only_buffer(
+                gpu, data, size, type, rows, cols);
+        case BN_MODEL_GPU_UPLOAD_BORROWED:
+            return bn_gpu_backend_create_borrowed_buffer(
                 gpu, data, size, type, rows, cols);
         case BN_MODEL_GPU_UPLOAD_KQUANT_F32_CACHE:
             return bn_gpu_backend_create_kquant_f32_cache_buffer(
@@ -127,6 +184,17 @@ static void *upload_f32_buf(BnGPUBackend *gpu, const float *data, int n_elems) {
                                   BN_MODEL_GPU_UPLOAD_STANDARD);
 }
 
+static void *upload_scaled_f32_buf(BnGPUBackend *gpu, const float *data,
+                                   int n_elems, float scale) {
+    if (!data || n_elems <= 0) return NULL;
+    float *scaled = (float *)malloc((size_t)n_elems * sizeof(float));
+    if (!scaled) return NULL;
+    for (int i = 0; i < n_elems; i++) scaled[i] = data[i] * scale;
+    void *handle = upload_f32_buf(gpu, scaled, n_elems);
+    free(scaled);
+    return handle;
+}
+
 static void *upload_shared_expert_gate(BnGPUBackend *gpu,
                                        const BnLayerWeights *lw,
                                        int dim) {
@@ -135,7 +203,7 @@ static void *upload_shared_expert_gate(BnGPUBackend *gpu,
         return NULL;
     return upload_gpu_buffer_mode(gpu, gate_vector,
                                   (size_t)dim * sizeof(float),
-                                  bn_gpu_policy_float_buffer_type(), 1, dim,
+                                  bn_quant_format_gpu_float_buffer_type(), 1, dim,
                                   BN_MODEL_GPU_UPLOAD_STANDARD);
 }
 
@@ -151,7 +219,7 @@ static void *upload_moe_router_diff2(BnGPUBackend *gpu,
         diff[i] = r0[i] - r1[i];
     void *handle = upload_gpu_buffer_mode(
         gpu, diff, (size_t)dim * sizeof(float),
-        bn_gpu_policy_float_buffer_type(), 1, dim,
+        bn_quant_format_gpu_float_buffer_type(), 1, dim,
         BN_MODEL_GPU_UPLOAD_STANDARD);
     free(diff);
     return handle;
@@ -221,7 +289,8 @@ static void *upload_moe_all_proj(BnModel *model,
         prefer_down_kquant_f32_cache ||
         prefer_small_expert_f32_cache ||
         (proj == 2 &&
-         bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(type));
+         bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(
+             gpu ? &gpu->runtime_policy : NULL, type));
     BnModelGPUUploadMode upload_mode =
         force_f16_cache
             ? BN_MODEL_GPU_UPLOAD_F16_CACHE :
@@ -233,6 +302,18 @@ static void *upload_moe_all_proj(BnModel *model,
          bn_gpu_backend_can_create_quant_only_buffer(gpu))
             ? BN_MODEL_GPU_UPLOAD_QUANT_ONLY
             : BN_MODEL_GPU_UPLOAD_STANDARD;
+    if (bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_BORROWED_WEIGHT_BUFFERS) &&
+        bn_gpu_backend_can_create_borrowed_buffer(gpu)) {
+        size_t gaps = 0;
+        if (n_experts > 1 &&
+            checked_mul_size(stride, (size_t)(n_experts - 1), &gaps) != 0)
+            return NULL;
+        if (gaps > SIZE_MAX - expert_bytes)
+            return NULL;
+        return upload_gpu_buffer_mode(
+            gpu, base + offset, gaps + expert_bytes, type,
+            rows * n_experts, cols, BN_MODEL_GPU_UPLOAD_BORROWED);
+    }
     if (stride != expert_bytes) {
         uint8_t *packed = (uint8_t *)malloc(total_bytes);
         if (!packed)
@@ -254,15 +335,27 @@ static void *upload_moe_all_proj(BnModel *model,
 }
 
 static BnModelGPUMoELayerPolicy
-model_gpu_moe_layer_policy(const BnConfig *c, const BnLayerWeights *lw) {
+model_gpu_moe_layer_policy(const BnGPUBackend *gpu,
+                           const BnConfig *c,
+                           const BnLayerWeights *lw) {
     BnModelGPUMoELayerPolicy policy = {0};
-    policy.uses_moe = bn_gpu_policy_moe_layer_uses_router(lw);
+    policy.uses_moe = bn_moe_policy_layer_has_router(lw);
     if (!c || !policy.uses_moe)
         return policy;
     policy.uploads_router_diff2 =
-        bn_gpu_policy_moe_router_diff2_upload_enabled(c);
+        bn_moe_policy_uses_all_active_two_expert_route(c, c->dim);
+    const BnMoEExpertMap *em = &lw->moe.expert_map;
+    int standard_quant_eligible =
+        bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
+            em->gate_type, em->up_type, em->down_type);
+    int metal_quant_eligible =
+        bn_quant_format_supports_moe_routed_kquant_gateup(
+            em->gate_type, em->up_type) &&
+        bn_quant_format_supports_moe_direct_routed_down(em->down_type);
     policy.resident_routed_ffn_eligible =
-        bn_gpu_policy_moe_resident_routed_ffn_layer_eligible(c, lw);
+        bn_gpu_policy_backend_moe_resident_routed_ffn_eligible(
+            gpu, standard_quant_eligible, metal_quant_eligible,
+            bn_moe_policy_supports_resident_routed_ffn_layout(c, em));
     return policy;
 }
 
@@ -276,7 +369,7 @@ static int can_use_resident_moe_routed_ffn_model(const BnGPUBackend *gpu,
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];
         BnModelGPUMoELayerPolicy policy =
-            model_gpu_moe_layer_policy(c, lw);
+            model_gpu_moe_layer_policy(gpu, c, lw);
         if (!policy.uses_moe)
             continue;
         moe_layers++;
@@ -286,9 +379,11 @@ static int can_use_resident_moe_routed_ffn_model(const BnGPUBackend *gpu,
     return moe_layers > 0;
 }
 
-static size_t qweight_pair_upload_bytes(const BnQWeight *a,
+static size_t qweight_pair_upload_bytes(const BnGPUBackend *gpu,
+                                        const BnQWeight *a,
                                         const BnQWeight *b);
-static size_t qweight_triple_upload_bytes(const BnQWeight *a,
+static size_t qweight_triple_upload_bytes(const BnGPUBackend *gpu,
+                                          const BnQWeight *a,
                                           const BnQWeight *b,
                                           const BnQWeight *c);
 
@@ -302,7 +397,8 @@ static int optional_layout_fits_memory(BnGPUBackend *gpu, size_t bytes,
     size_t total_bytes = 0;
     if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 1;
-    size_t reserve = bn_gpu_policy_layout_reserve_bytes();
+    size_t reserve = bn_gpu_policy_layout_reserve_bytes(
+        &gpu->runtime_policy);
     if (free_bytes > bytes && free_bytes - bytes >= reserve)
         return 1;
 
@@ -379,36 +475,40 @@ static int add_qweight_bytes(size_t *total, const BnQWeight *w) {
     return add_size_checked(total, bn_backend_layout_qweight_data_size(w));
 }
 
-static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {
+static size_t qweight_default_aux_cache_bytes(const BnGPUBackend *gpu,
+                                              const BnQWeight *w) {
     if (!w || !w->data || w->rows <= 0 || w->cols <= 0 ||
         (w->cols & 31) != 0)
         return 0;
-    return bn_gpu_policy_aux_cache_bytes(w->type, w->rows, w->cols);
+    return bn_gpu_policy_aux_cache_bytes(gpu, w->type, w->rows, w->cols);
 }
 
-static size_t qweight_stacked_aux_cache_bytes(const BnQWeight *a,
+static size_t qweight_stacked_aux_cache_bytes(const BnGPUBackend *gpu,
+                                              const BnQWeight *a,
                                               int rows) {
     if (!a || rows <= 0)
         return 0;
     BnQWeight stacked = *a;
     stacked.rows = rows;
-    return qweight_default_aux_cache_bytes(&stacked);
+    return qweight_default_aux_cache_bytes(gpu, &stacked);
 }
 
-static size_t qweight_pair_upload_bytes(const BnQWeight *a,
+static size_t qweight_pair_upload_bytes(const BnGPUBackend *gpu,
+                                        const BnQWeight *a,
                                         const BnQWeight *b) {
     size_t raw = qweight_pair_bytes(a, b);
     if (raw == SIZE_MAX)
         return SIZE_MAX;
     if (!qweight_pair_stackable(a, b))
         return raw;
-    size_t aux = qweight_stacked_aux_cache_bytes(a, a->rows + b->rows);
+    size_t aux = qweight_stacked_aux_cache_bytes(gpu, a, a->rows + b->rows);
     if (aux == SIZE_MAX || raw > SIZE_MAX - aux)
         return SIZE_MAX;
     return raw + aux;
 }
 
-static size_t qweight_triple_upload_bytes(const BnQWeight *a,
+static size_t qweight_triple_upload_bytes(const BnGPUBackend *gpu,
+                                          const BnQWeight *a,
                                           const BnQWeight *b,
                                           const BnQWeight *c) {
     size_t raw = qweight_triple_bytes(a, b, c);
@@ -416,15 +516,16 @@ static size_t qweight_triple_upload_bytes(const BnQWeight *a,
         return SIZE_MAX;
     if (!qweight_triple_stackable(a, b, c))
         return raw;
-    size_t aux = qweight_stacked_aux_cache_bytes(
+    size_t aux = qweight_stacked_aux_cache_bytes(gpu,
         a, a->rows + b->rows + c->rows);
     if (aux == SIZE_MAX || raw > SIZE_MAX - aux)
         return SIZE_MAX;
     return raw + aux;
 }
 
-static int add_qweight_upload_bytes(size_t *total, const BnQWeight *w) {
-    size_t aux = qweight_default_aux_cache_bytes(w);
+static int add_qweight_upload_bytes(const BnGPUBackend *gpu,
+                                    size_t *total, const BnQWeight *w) {
+    size_t aux = qweight_default_aux_cache_bytes(gpu, w);
     if (add_qweight_bytes(total, w) != 0 || aux == SIZE_MAX)
         return -1;
     return add_size_checked(total, aux);
@@ -448,14 +549,15 @@ static int add_shared_expert_gate_upload_bytes(size_t *total,
     return add_f32_bytes(total, gate_vector, dim);
 }
 
-static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
+static size_t estimate_gpu_base_model_bytes(const BnGPUBackend *gpu,
+                                            const BnConfig *c,
                                             const BnWeights *w) {
     if (!c || !w)
         return 0;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     size_t total = 0;
     if (w->output_weight.data) {
-        if (add_qweight_upload_bytes(&total, &w->output_weight) != 0)
+        if (add_qweight_upload_bytes(gpu, &total, &w->output_weight) != 0)
             return SIZE_MAX;
     } else if (w->token_embedding) {
         size_t elems = 0;
@@ -482,7 +584,7 @@ static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (add_qweight_upload_bytes(&total, weights[i]) != 0)
+            if (add_qweight_upload_bytes(gpu, &total, weights[i]) != 0)
                 return SIZE_MAX;
         }
         if (add_f32_bytes(&total, lw->norm.attn_norm, c->dim) != 0 ||
@@ -492,7 +594,7 @@ static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
             add_shared_expert_gate_upload_bytes(&total, lw, c->dim) != 0)
             return SIZE_MAX;
         BnModelGPUMoELayerPolicy moe_layer =
-            model_gpu_moe_layer_policy(c, lw);
+            model_gpu_moe_layer_policy(NULL, c, lw);
         if (moe_layer.uploads_router_diff2 &&
             add_f32_bytes(&total, lw->moe.router_weight, c->dim) != 0)
             return SIZE_MAX;
@@ -509,6 +611,13 @@ static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
         if (lw->attn.k_norm) {
             int k_norm_size = c->qk_norm_per_head ? c->kv_dim : c->head_size;
             if (add_f32_bytes(&total, lw->attn.k_norm, k_norm_size) != 0)
+                return SIZE_MAX;
+        }
+        if (bn_model_transformer_policy_attention_value_shares_key(c)) {
+            int layer_head_size = lw->attn.head_size > 0
+                ? lw->attn.head_size : c->head_size;
+            if (add_size_checked(
+                    &total, (size_t)layer_head_size * sizeof(float)) != 0)
                 return SIZE_MAX;
         }
         if (add_f32_bytes(&total, lw->norm.attn_sub_norm, c->dim) != 0 ||
@@ -542,7 +651,7 @@ static size_t estimate_resident_moe_layer_bytes(const BnConfig *c,
                                                 const BnMoEExpertMap *em,
                                                 const BnGPUBackend *gpu,
                                                 int native_quant_f16_cache) {
-    if (!em || !bn_gpu_policy_uses_moe(c))
+    if (!em || !bn_model_activation_plan_uses_moe(c))
         return 0;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int total_experts = route_policy.total_experts;
@@ -596,7 +705,7 @@ static size_t estimate_resident_moe_layer_bytes(const BnConfig *c,
 static size_t estimate_resident_moe_gateup_f16_all_bytes(const BnConfig *c,
                                                          const BnWeights *w,
                                                          const BnGPUBackend *gpu) {
-    if (!w || !bn_gpu_policy_uses_moe(c))
+    if (!w || !bn_model_activation_plan_uses_moe(c))
         return 0;
     size_t total = 0;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
@@ -635,7 +744,7 @@ static size_t estimate_resident_moe_all_bytes(const BnConfig *c,
                                               const BnWeights *w,
                                               const BnGPUBackend *gpu,
                                               int native_quant_f16_cache) {
-    if (!w || !bn_gpu_policy_uses_moe(c))
+    if (!w || !bn_model_activation_plan_uses_moe(c))
         return 0;
     size_t total = 0;
     for (int l = 0; l < c->n_layers; l++) {
@@ -651,10 +760,43 @@ static size_t estimate_resident_moe_all_bytes(const BnConfig *c,
     return total;
 }
 
+static int resident_moe_quant_weights_are_borrowable(
+    const BnGPUBackend *gpu, const BnModel *model,
+    const BnConfig *c, const BnWeights *w) {
+    const BnMoEIO *io = bn_model_moe_io_const(model);
+    if (!gpu || !io || !c || !w ||
+        !bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_BORROWED_WEIGHT_BUFFERS) ||
+        !bn_gpu_backend_can_create_borrowed_buffer(gpu))
+        return 0;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnMoEExpertMap *em = &w->layers[l].moe.expert_map;
+        if (!bn_moe_policy_layer_has_router(&w->layers[l]))
+            continue;
+        if (!bn_moe_mmap_base_for_proj(io, em, 0) ||
+            !bn_moe_mmap_base_for_proj(io, em, 1) ||
+            !bn_moe_mmap_base_for_proj(io, em, 2))
+            return 0;
+        size_t gate_stride = em->gate_stride
+            ? em->gate_stride : em->expert_gate_bytes;
+        size_t up_stride = em->up_stride
+            ? em->up_stride : em->expert_up_bytes;
+        size_t down_stride = em->down_stride
+            ? em->down_stride : em->expert_down_bytes;
+        if (gate_stride != up_stride ||
+            down_stride != em->expert_down_bytes)
+            return 0;
+    }
+    return 1;
+}
+
 static int resident_moe_all_fits_memory(BnGPUBackend *gpu,
+                                        const BnModel *model,
                                         const BnConfig *c,
                                         const BnWeights *w,
                                         int native_quant_f16_cache) {
+    if (!native_quant_f16_cache &&
+        resident_moe_quant_weights_are_borrowable(gpu, model, c, w))
+        return 1;
     if (!bn_gpu_backend_can_query_memory(gpu))
         return 1;
     size_t need = estimate_resident_moe_all_bytes(c, w, gpu,
@@ -663,7 +805,7 @@ static int resident_moe_all_fits_memory(BnGPUBackend *gpu,
         return 0;
     if (need == SIZE_MAX)
         return 0;
-    size_t base = estimate_gpu_base_model_bytes(c, w);
+    size_t base = estimate_gpu_base_model_bytes(gpu, c, w);
     if (base == SIZE_MAX)
         return 0;
     size_t projected = 0;
@@ -674,7 +816,8 @@ static int resident_moe_all_fits_memory(BnGPUBackend *gpu,
     size_t total_bytes = 0;
     if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 1;
-    size_t reserve = bn_gpu_policy_moe_full_reserve_bytes();
+    size_t reserve = bn_gpu_policy_moe_full_reserve_bytes(
+        &gpu->runtime_policy);
     if (free_bytes > projected && free_bytes - projected >= reserve)
         return 1;
     fprintf(stderr,
@@ -699,7 +842,7 @@ static int resident_moe_gateup_f16_fits_memory(BnGPUBackend *gpu,
     size_t need = estimate_resident_moe_gateup_f16_all_bytes(c, w, gpu);
     if (need == 0 || need == SIZE_MAX)
         return 0;
-    size_t base = estimate_gpu_base_model_bytes(c, w);
+    size_t base = estimate_gpu_base_model_bytes(gpu, c, w);
     if (base == SIZE_MAX)
         return 0;
     size_t projected = 0;
@@ -710,10 +853,11 @@ static int resident_moe_gateup_f16_fits_memory(BnGPUBackend *gpu,
     size_t total_bytes = 0;
     if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 1;
-    size_t reserve = bn_gpu_policy_moe_full_reserve_bytes();
+    size_t reserve = bn_gpu_policy_moe_full_reserve_bytes(
+        &gpu->runtime_policy);
     if (free_bytes > projected && free_bytes - projected >= reserve)
         return 1;
-    if (bn_gpu_policy_moe_residency_fit_debug_enabled())
+    if (bn_gpu_policy_moe_residency_fit_debug_enabled(gpu))
         fprintf(stderr,
                 "[bn:gpu] skipping gate/up F16 resident GPU MoE aux cache: "
                 "moe=%.1f GiB base=%.1f GiB projected=%.1f GiB "
@@ -730,14 +874,15 @@ static int resident_moe_f16_cache_layers_that_fit(BnGPUBackend *gpu,
     if (!bn_gpu_backend_can_query_memory(gpu) || !c || !w)
         return 0;
     size_t quant_need = estimate_resident_moe_all_bytes(c, w, gpu, 0);
-    size_t base = estimate_gpu_base_model_bytes(c, w);
+    size_t base = estimate_gpu_base_model_bytes(gpu, c, w);
     if (quant_need == 0 || quant_need == SIZE_MAX || base == SIZE_MAX)
         return 0;
     size_t free_bytes = 0;
     size_t total_bytes = 0;
     if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 0;
-    size_t reserve = bn_gpu_policy_moe_full_reserve_bytes();
+    size_t reserve = bn_gpu_policy_moe_full_reserve_bytes(
+        &gpu->runtime_policy);
     size_t used = 0;
     if (add_size_checked(&used, base) != 0 ||
         add_size_checked(&used, quant_need) != 0 ||
@@ -773,27 +918,33 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
     BnWeights *w = &model->weights;
     BnConfig *c = &model->config;
+    int prepared_native_quant_layout =
+        bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_PREPARED_NATIVE_QUANT) &&
+        bn_model_backend_policy_requires_stable_per_layer_input_layout(c);
+    bn_gpu_backend_configure_prepared_native_quant(
+        gpu, prepared_native_quant_layout);
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int n_layers = c->n_layers;
     int upload_moe_all_model = bn_gpu_policy_moe_resident_routed_ffn_enabled(
-        can_use_resident_moe_routed_ffn_model(gpu, c, w));
+        gpu, can_use_resident_moe_routed_ffn_model(gpu, c, w));
     int upload_moe_all_native_quant_f16_cache = 0;
     int upload_moe_all_gateup_f16_cache = 0;
     int upload_moe_all_f16_cache_layers = 0;
     if (upload_moe_all_model) {
         int force_f16_cache =
-            bn_gpu_policy_moe_all_f16_cache_forced();
+            bn_gpu_policy_moe_all_f16_cache_forced(gpu);
         int auto_f16_cache =
-            bn_gpu_policy_moe_f16_aux_cache_auto_enabled(c);
+            bn_moe_policy_uses_grouped_expert_route(c) ||
+            bn_moe_policy_uses_all_active_two_expert_set(c);
         if ((force_f16_cache || auto_f16_cache) &&
-            resident_moe_all_fits_memory(gpu, c, w, 1)) {
+            resident_moe_all_fits_memory(gpu, model, c, w, 1)) {
             upload_moe_all_native_quant_f16_cache = 1;
             upload_moe_all_f16_cache_layers = c->n_layers;
         } else if (!force_f16_cache &&
-                   resident_moe_all_fits_memory(gpu, c, w, 0)) {
+                   resident_moe_all_fits_memory(gpu, model, c, w, 0)) {
             upload_moe_all_native_quant_f16_cache = 0;
             if (bn_gpu_policy_moe_gateup_f16_cache_enabled(
-                    auto_f16_cache) &&
+                    gpu, auto_f16_cache) &&
                 resident_moe_gateup_f16_fits_memory(gpu, c, w)) {
                 upload_moe_all_gateup_f16_cache = 1;
                 fprintf(stderr,
@@ -802,7 +953,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                         "down experts remain quantized\n");
             }
             if (bn_gpu_policy_partial_moe_f16_cache_enabled(
-                    auto_f16_cache))
+                    gpu, auto_f16_cache))
                 upload_moe_all_f16_cache_layers =
                     resident_moe_f16_cache_layers_that_fit(gpu, c, w);
             if (upload_moe_all_f16_cache_layers > 0) {
@@ -873,8 +1024,9 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             &lw->ssm.ssm_alpha, &lw->ssm.ssm_beta, &lw->ssm.ssm_out,
             &lw->shared.shared_gate, &lw->shared.shared_up,
             &lw->shared.shared_down,
+            &lw->per_layer.inp_gate, &lw->per_layer.proj,
         };
-        int quant_only_individual[15] = {0};
+        int quant_only_individual[17] = {0};
         if (bn_gpu_policy_individual_upload_quant_only_enabled(gpu)) {
             if (lw->ssm.wqkv.data &&
                 qweight_pair_stackable(&lw->ffn.ffn_gate,
@@ -896,10 +1048,89 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
 
+        void *wo_quant_gpu = NULL;
+        if (prepared_native_quant_layout && lw->attn.wo.data &&
+            bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_REFERENCE_ATTENTION) &&
+            !bn_gpu_backend_has_cap(
+                gpu, BN_GPU_CAP_PREPARED_NATIVE_QUANT_ATTENTION) &&
+            bn_gpu_backend_can_create_quant_only_buffer(gpu)) {
+            wo_quant_gpu = upload_qweight_mode(gpu, &lw->attn.wo, 1);
+            if (!wo_quant_gpu ||
+                register_gpu_handle(
+                    model, l, BN_BACKEND_HANDLE_WO_PREFILL,
+                    wo_quant_gpu) != 0) {
+                bn_gpu_backend_destroy_buffer(gpu, wo_quant_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+        }
+
+        void *ffn_down_quant_gpu = NULL;
+        void *ffn_gate_reference_gpu = NULL;
+        void *ffn_up_reference_gpu = NULL;
+        if (prepared_native_quant_layout && lw->ffn.ffn_down.data &&
+            bn_gpu_backend_has_cap(
+                gpu, BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32) &&
+            !bn_gpu_backend_has_cap(
+                gpu, BN_GPU_CAP_PREPARED_NATIVE_QUANT_PER_LAYER_FFN_DOWN) &&
+            bn_gpu_backend_can_create_quant_only_buffer(gpu)) {
+            ffn_down_quant_gpu = upload_qweight_mode(
+                gpu, &lw->ffn.ffn_down, 1);
+            if (!ffn_down_quant_gpu ||
+                register_gpu_handle(
+                    model, l, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL,
+                    ffn_down_quant_gpu) != 0) {
+                bn_gpu_backend_destroy_buffer(gpu, ffn_down_quant_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+        }
+        if (prepared_native_quant_layout && lw->ffn.ffn_gate.data &&
+            lw->ffn.ffn_up.data &&
+            bn_gpu_backend_has_cap(
+                gpu, BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32) &&
+            bn_gpu_backend_can_create_quant_only_buffer(gpu)) {
+            ffn_gate_reference_gpu = upload_qweight_mode(
+                gpu, &lw->ffn.ffn_gate, 1);
+            ffn_up_reference_gpu = upload_qweight_mode(
+                gpu, &lw->ffn.ffn_up, 1);
+            if (!ffn_gate_reference_gpu || !ffn_up_reference_gpu) {
+                bn_gpu_backend_destroy_buffer(gpu, ffn_gate_reference_gpu);
+                bn_gpu_backend_destroy_buffer(gpu, ffn_up_reference_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+            if (register_gpu_handle(
+                    model, l, BN_BACKEND_HANDLE_FFN_GATE_REFERENCE,
+                    ffn_gate_reference_gpu) != 0) {
+                bn_gpu_backend_destroy_buffer(gpu, ffn_gate_reference_gpu);
+                bn_gpu_backend_destroy_buffer(gpu, ffn_up_reference_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+            if (register_gpu_handle(
+                    model, l, BN_BACKEND_HANDLE_FFN_UP_REFERENCE,
+                    ffn_up_reference_gpu) != 0) {
+                bn_gpu_backend_destroy_buffer(gpu, ffn_up_reference_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+        }
+
         void *attn_norm_gpu = upload_f32_buf(gpu, lw->norm.attn_norm, c->dim);
         void *ffn_norm_gpu  = upload_f32_buf(gpu, lw->norm.ffn_norm, c->dim);
+        void *per_layer_post_norm_gpu = upload_f32_buf(
+            gpu, lw->per_layer.post_norm, c->dim);
+        void *attn_post_norm_gpu = upload_f32_buf(
+            gpu, lw->norm.attn_post_norm, c->dim);
+        void *ffn_post_norm_gpu = upload_f32_buf(
+            gpu, lw->norm.ffn_post_norm, c->dim);
+        void *ffn_post_norm_1_gpu = upload_f32_buf(
+            gpu, lw->norm.ffn_post_norm_1, c->dim);
+        void *ffn_post_norm_2_gpu = upload_f32_buf(
+            gpu, lw->norm.ffn_post_norm_2, c->dim);
         BnModelGPUMoELayerPolicy moe_layer =
-            model_gpu_moe_layer_policy(c, lw);
+            model_gpu_moe_layer_policy(gpu, c, lw);
         void *moe_router_diff_gpu =
             moe_layer.uploads_router_diff2
                 ? upload_moe_router_diff2(gpu, lw->moe.router_weight, c->dim)
@@ -909,9 +1140,20 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 gpu, lw->moe.router_weight,
                 (size_t)route_policy.total_experts * (size_t)c->dim *
                     sizeof(float),
-                bn_gpu_policy_float_buffer_type(),
+                bn_quant_format_gpu_float_buffer_type(),
                 route_policy.total_experts, c->dim,
                 BN_MODEL_GPU_UPLOAD_STANDARD)
+            : NULL;
+        void *moe_router_scale_gpu = moe_layer.uses_moe &&
+                lw->moe.router_scale
+            ? upload_scaled_f32_buf(
+                gpu, lw->moe.router_scale, c->dim,
+                1.0f / sqrtf((float)c->dim))
+            : NULL;
+        void *moe_expert_down_scale_gpu = moe_layer.uses_moe &&
+                lw->moe.expert_down_scale
+            ? upload_f32_buf(gpu, lw->moe.expert_down_scale,
+                             route_policy.total_experts)
             : NULL;
         int upload_moe_all = upload_moe_all_model &&
                              moe_layer.resident_routed_ffn_eligible;
@@ -980,10 +1222,26 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                                 attn_norm_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_NORM,
                                 ffn_norm_gpu) != 0 ||
+            register_gpu_handle(model, l,
+                                BN_BACKEND_HANDLE_PER_LAYER_POST_NORM,
+                                per_layer_post_norm_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_POST_NORM,
+                                attn_post_norm_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_POST_NORM,
+                                ffn_post_norm_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_POST_NORM_1,
+                                ffn_post_norm_1_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_POST_NORM_2,
+                                ffn_post_norm_2_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_MOE_ROUTER_DIFF,
                                 moe_router_diff_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_MOE_ROUTER,
                                 moe_router_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_MOE_ROUTER_SCALE,
+                                moe_router_scale_gpu) != 0 ||
+            register_gpu_handle(
+                model, l, BN_BACKEND_HANDLE_MOE_EXPERT_DOWN_SCALE,
+                moe_expert_down_scale_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_MOE_GATE_ALL,
                                 moe_gate_all_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_MOE_UP_ALL,
@@ -994,8 +1252,15 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                                 shared_expert_gate_gpu) != 0) {
             bn_gpu_backend_destroy_buffer(gpu, attn_norm_gpu);
             bn_gpu_backend_destroy_buffer(gpu, ffn_norm_gpu);
+            bn_gpu_backend_destroy_buffer(gpu, per_layer_post_norm_gpu);
+            bn_gpu_backend_destroy_buffer(gpu, attn_post_norm_gpu);
+            bn_gpu_backend_destroy_buffer(gpu, ffn_post_norm_gpu);
+            bn_gpu_backend_destroy_buffer(gpu, ffn_post_norm_1_gpu);
+            bn_gpu_backend_destroy_buffer(gpu, ffn_post_norm_2_gpu);
             bn_gpu_backend_destroy_buffer(gpu, moe_router_diff_gpu);
             bn_gpu_backend_destroy_buffer(gpu, moe_router_gpu);
+            bn_gpu_backend_destroy_buffer(gpu, moe_router_scale_gpu);
+            bn_gpu_backend_destroy_buffer(gpu, moe_expert_down_scale_gpu);
             bn_gpu_backend_destroy_buffer(gpu, moe_gate_all_gpu);
             bn_gpu_backend_destroy_buffer(gpu, moe_up_all_gpu);
             bn_gpu_backend_destroy_buffer(gpu, moe_down_all_gpu);
@@ -1051,7 +1316,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
         void *qkv_stacked_gpu = NULL;
         if (optional_layout_fits_memory(
-                gpu, qweight_triple_upload_bytes(&lw->attn.wq, &lw->attn.wk,
+                gpu, qweight_triple_upload_bytes(gpu, &lw->attn.wq, &lw->attn.wk,
                                                   &lw->attn.wv),
                 l, "qkv_stacked")) {
             qkv_stacked_gpu = bn_backend_layout_upload_stacked3_qkv(
@@ -1070,7 +1335,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
         void *qk_stacked_gpu = NULL;
         if (optional_layout_fits_memory(
-                gpu, qweight_pair_upload_bytes(&lw->attn.wq, &lw->attn.wk),
+                gpu, qweight_pair_upload_bytes(gpu, &lw->attn.wq, &lw->attn.wk),
                 l, "qk_stacked")) {
             qk_stacked_gpu =
                 bn_backend_layout_upload_stacked2(gpu, &lw->attn.wq,
@@ -1086,7 +1351,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         void *gateup_stacked_gpu = NULL;
         if (optional_layout_fits_memory(
                 gpu,
-                qweight_pair_upload_bytes(&lw->ffn.ffn_gate, &lw->ffn.ffn_up),
+                qweight_pair_upload_bytes(gpu, &lw->ffn.ffn_gate, &lw->ffn.ffn_up),
                 l, "gateup_stacked")) {
             gateup_stacked_gpu =
                 bn_backend_layout_upload_stacked2(gpu, &lw->ffn.ffn_gate,
@@ -1101,7 +1366,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
         void *shared_gateup_stacked_gpu = NULL;
         if (optional_layout_fits_memory(
-                gpu, qweight_pair_upload_bytes(&lw->shared.shared_gate,
+                gpu, qweight_pair_upload_bytes(gpu, &lw->shared.shared_gate,
                                                 &lw->shared.shared_up),
                 l, "shared_gateup_stacked")) {
             shared_gateup_stacked_gpu =
@@ -1118,7 +1383,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
         void *ssm_qkvz_stacked_gpu = NULL;
         if (optional_layout_fits_memory(
-                gpu, qweight_pair_upload_bytes(&lw->ssm.wqkv, &lw->ssm.wz),
+                gpu, qweight_pair_upload_bytes(gpu, &lw->ssm.wqkv, &lw->ssm.wz),
                 l, "ssm_qkvz_stacked")) {
             ssm_qkvz_stacked_gpu =
                 bn_backend_layout_upload_stacked2(gpu, &lw->ssm.wqkv,
@@ -1133,7 +1398,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
         void *ssm_ab_stacked_gpu = NULL;
         if (optional_layout_fits_memory(
-                gpu, qweight_pair_upload_bytes(&lw->ssm.ssm_alpha,
+                gpu, qweight_pair_upload_bytes(gpu, &lw->ssm.ssm_alpha,
                                                 &lw->ssm.ssm_beta),
                 l, "ssm_ab_stacked")) {
             ssm_ab_stacked_gpu =
@@ -1167,6 +1432,28 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 return -1;
             }
         }
+        if (bn_model_transformer_policy_attention_value_shares_key(c)) {
+            int layer_head_size = lw->attn.head_size > 0
+                ? lw->attn.head_size : c->head_size;
+            float *unit_norm = (float *)malloc(
+                (size_t)layer_head_size * sizeof(float));
+            if (!unit_norm) {
+                bn_model_release_gpu(model);
+                return -1;
+            }
+            for (int i = 0; i < layer_head_size; i++)
+                unit_norm[i] = 1.0f;
+            void *v_unit_norm_gpu = upload_f32_buf(
+                gpu, unit_norm, layer_head_size);
+            free(unit_norm);
+            if (register_gpu_handle(model, l,
+                                    BN_BACKEND_HANDLE_V_UNIT_NORM,
+                                    v_unit_norm_gpu) != 0) {
+                bn_gpu_backend_destroy_buffer(gpu, v_unit_norm_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+        }
         if (lw->norm.attn_sub_norm) {
             void *attn_sub_norm_gpu = upload_f32_buf(gpu, lw->norm.attn_sub_norm, c->dim);
             if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_SUB_NORM,
@@ -1177,7 +1464,10 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
         if (lw->norm.ffn_sub_norm) {
-            void *ffn_sub_norm_gpu = upload_f32_buf(gpu, lw->norm.ffn_sub_norm, c->hidden_dim);
+            int ffn_sub_norm_size =
+                bn_model_backend_policy_ffn_sub_norm_elements(c);
+            void *ffn_sub_norm_gpu = upload_f32_buf(
+                gpu, lw->norm.ffn_sub_norm, ffn_sub_norm_size);
             if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_SUB_NORM,
                                     ffn_sub_norm_gpu) != 0) {
                 bn_gpu_backend_destroy_buffer(gpu, ffn_sub_norm_gpu);

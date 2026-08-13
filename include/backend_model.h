@@ -41,6 +41,16 @@ typedef enum {
     BN_BACKEND_HANDLE_MOE_GATE_ALL = 28,
     BN_BACKEND_HANDLE_MOE_UP_ALL = 29,
     BN_BACKEND_HANDLE_MOE_DOWN_ALL = 30,
+    BN_BACKEND_HANDLE_PER_LAYER_POST_NORM = 31,
+    BN_BACKEND_HANDLE_ATTN_POST_NORM = 32,
+    BN_BACKEND_HANDLE_FFN_POST_NORM = 33,
+    BN_BACKEND_HANDLE_V_UNIT_NORM = 34,
+    BN_BACKEND_HANDLE_MOE_ROUTER_SCALE = 35,
+    BN_BACKEND_HANDLE_FFN_POST_NORM_1 = 36,
+    BN_BACKEND_HANDLE_FFN_POST_NORM_2 = 37,
+    BN_BACKEND_HANDLE_MOE_EXPERT_DOWN_SCALE = 38,
+    BN_BACKEND_HANDLE_FFN_GATE_REFERENCE = 39,
+    BN_BACKEND_HANDLE_FFN_UP_REFERENCE = 40,
 } BnBackendHandleRole;
 
 typedef struct {
@@ -63,6 +73,8 @@ typedef struct {
 BnBackendModel *bn_backend_model_create(void);
 void bn_backend_model_free(BnBackendModel *backend);
 BnGPUBackend *bn_backend_model_gpu(const BnBackendModel *backend);
+BnGPUBackend *bn_backend_model_gpu_for_cpu_operations(
+    const BnBackendModel *backend);
 void bn_backend_model_bind_gpu(BnBackendModel *backend, BnGPUBackend *gpu);
 void bn_backend_model_release_gpu(BnBackendModel *backend);
 void bn_backend_model_set_gpu_disabled(BnBackendModel *backend, int disabled);

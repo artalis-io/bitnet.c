@@ -207,20 +207,14 @@ void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
 
     // Allocate slab (32-byte aligned)
     size_t slab_size = (size_t)n_slots * entry_bytes;
-#if defined(__APPLE__) || defined(__linux__)
-    if (posix_memalign((void **)&c->slab, 32, slab_size) != 0) {
-        free(c);
-        return NULL;
-    }
-#else
-    c->slab = (uint8_t *)malloc(slab_size);
+    c->slab = (uint8_t *)bn_platform_aligned_alloc(32, slab_size);
     if (!c->slab) { free(c); return NULL; }
-#endif
 
     c->entries = (BnMoECacheEntry *)calloc((size_t)n_slots, sizeof(BnMoECacheEntry));
     c->hash_table = (int *)malloc((size_t)hs * sizeof(int));
     if (!c->entries || !c->hash_table) {
-        free(c->slab); free(c->entries); free(c->hash_table); free(c);
+        bn_platform_aligned_free(c->slab);
+        free(c->entries); free(c->hash_table); free(c);
         return NULL;
     }
 
@@ -255,13 +249,17 @@ void bn_moe_cache_free(void *cache) {
 #if !defined(__EMSCRIPTEN__)
     if (!cache) return;
     BnMoECache *c = (BnMoECache *)cache;
-    free(c->slab);
+    bn_platform_aligned_free(c->slab);
     free(c->entries);
     free(c->hash_table);
     free(c);
 #else
     (void)cache;
 #endif
+}
+
+int bn_moe_cache_capacity_internal(const BnMoECache *c) {
+    return c ? c->n_slots : 0;
 }
 
 void bn_moe_cache_print_stats(const BnMoEState *ms) {
@@ -338,6 +336,11 @@ int bn_moe_cache_test(void) {
     // Create a small cache: 4 slots, entry_bytes = 64
     BnMoECache *c = (BnMoECache *)bn_moe_cache_create(4 * 64, 32, 16, 16);
     if (!c) return -1;
+    if (bn_moe_cache_capacity_internal(c) != 4 ||
+        bn_moe_cache_capacity_internal(NULL) != 0) {
+        bn_moe_cache_free(c);
+        return -1;
+    }
 
     // T1: Insert 4 entries (fills free list)
     uint8_t *s0 = moe_cache_insert(c, 0, 10);
@@ -379,6 +382,10 @@ int bn_moe_cache_test(void) {
     bn_moe_cache_free(c);
     c = (BnMoECache *)bn_moe_cache_create(8 * 64, 32, 16, 16);
     if (!c) return -1;
+    if (bn_moe_cache_capacity_internal(c) != 8) {
+        bn_moe_cache_free(c);
+        return -1;
+    }
     for (int i = 0; i < 8; i++)
         moe_cache_insert(c, 0, i);
     // All 8 should be present

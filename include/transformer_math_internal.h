@@ -12,5 +12,6 @@
 void bn_transformer_softmax(float *x, int size);
 void bn_transformer_softmax_scalar(float *x, int size);
 void bn_transformer_softmax_neon(float *x, int size);
+float bn_transformer_fast_exp_scalar(float x);
 
 #endif // BN_TRANSFORMER_MATH_INTERNAL_H

@@ -105,7 +105,7 @@ Architecture ownership rules:
 
 - `--pread` — force pread for MoE expert loading (lower RSS)
 - `--cache-mb N` — expert LRU cache budget in MB (default 4096, pread only)
-- `--madvise` — madvise-guided mmap (experimental)
+- `--madvise` — use madvise-guided mmap for MoE expert prefetch
 - `--draft <path>` — draft model for speculative decoding (greedy, same tokenizer)
 - `--draft-k N` — draft tokens per iteration (default 5)
 - `--flash` — flash attention (online softmax)

@@ -27,6 +27,7 @@ extern "C" {
 #define BN_I2S_SUBROW_SIZE   32          // elements per sub-row
 #define BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT 1u
 #define BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT 8u
+#define BN_QUANT_GPU_MATVEC_FLAG_BLOCK_Q8_ACTIVATION 128u
 
 // TQ1_0: base-3 ternary packing, 256 weights per block
 // qs packs 240 values (5 per byte in base-3), qh packs remaining 16 (4 per byte)
@@ -222,6 +223,7 @@ typedef enum {
     BN_PREPARED_WEIGHT_Q8_0_F32_SCALES = 2,
     BN_PREPARED_WEIGHT_Q4_K_SCALES = 3,
     BN_PREPARED_WEIGHT_Q6_K_EXPANDED = 4,
+    BN_PREPARED_WEIGHT_Q8_0_REPACK = 5,
 } BnPreparedWeightKind;
 
 // Backend/runtime-prepared layout for a quantized weight tensor.
@@ -288,6 +290,11 @@ typedef enum {
     BN_QUANT_CAP_CPU_FUSED_KQUANT_GATEUP_SILU = 1u << 31,
 } BnQuantCapability;
 
+#define BN_QUANT_CAP_MOE_DIRECT_ROUTED_DOWN (UINT64_C(1) << 32)
+#define BN_QUANT_CAP_GPU_NATIVE_QUANT_SPLIT (UINT64_C(1) << 33)
+#define BN_QUANT_CAP_MOE_ROUTED_LOWBIT_BLOCK32 (UINT64_C(1) << 34)
+#define BN_QUANT_CAP_GPU_REFERENCE_PREPARED_ACCUMULATION (UINT64_C(1) << 35)
+
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,
                                 int8_t *x_q_buf, BnThreadPool *pool);
 typedef void (*BnQuantMatmulFn)(float *out, const BnQWeight *W, const float *X,
@@ -300,13 +307,13 @@ typedef struct {
     BnQuantLayout layout;
     int block_elems;
     size_t bytes_per_block;
-    uint32_t caps;
+    uint64_t caps;
     BnQuantMatvecFn matvec;
     BnQuantMatmulFn matmul;
 } BnQuantFormatOps;
 
 const BnQuantFormatOps *bn_quant_format_ops(int type);
-int      bn_quant_format_has_cap(int type, uint32_t cap);
+int      bn_quant_format_has_cap(int type, uint64_t cap);
 int      bn_quant_format_supported(int type);
 int      bn_quant_format_uses_embedded_scale(int type);
 int      bn_quant_format_has_cpu_matvec(int type);
@@ -342,19 +349,26 @@ int      bn_quant_q6_logits_refine_q8k_row(const BnQWeight *W,
                                             const int16_t *x_bsums,
                                             int row,
                                             float *out);
-uint32_t bn_quant_format_gpu_split_cap(int type);
 int      bn_quant_format_can_gpu_split(int type);
 int      bn_quant_format_gpu_requires_reference_silu(int type);
 int      bn_quant_format_gpu_prefers_gateup_split(int type);
-uint32_t bn_quant_format_gpu_fused_gateup_silu_cap(int type);
 int      bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(int type);
 int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                             int act_type);
 uint32_t bn_quant_format_gpu_matvec_kquant_dot_flag(int type, int enabled);
+uint32_t bn_quant_format_gpu_matvec_native_quant_flag(int type, int enabled);
+uint32_t bn_quant_format_gpu_matvec_block_q8_activation_flag(int type,
+                                                             int enabled);
 uint32_t bn_quant_format_gpu_matvec_reference_kquant_flag(int type,
                                                           int enabled);
 int      bn_quant_format_supports_direct_native_quant_matvec(int type);
 int      bn_quant_format_supports_specialized_native_quant_matvec(int type);
+int      bn_quant_format_supports_reference_prepared_accumulation(int type);
+int      bn_quant_format_prefers_specialized_native_quant_matvec(int type,
+                                                                  int cols);
+int      bn_quant_format_prefers_tall_specialized_native_quant_matvec(
+             int type, int rows, int cols);
+int      bn_quant_format_supports_native_quant_split(int type);
 int      bn_quant_format_dense_f32_type(void);
 int      bn_quant_format_gpu_float_buffer_type(void);
 int      bn_quant_format_is_f32(int type);
@@ -404,7 +418,8 @@ int      bn_quant_format_supports_moe_asymmetric_kquant_down_route(
     int down_type,
     int allow_asymmetric_kquant_down);
 int      bn_quant_format_supports_moe_routed_kquant_gateup(int gate_type,
-                                                           int up_type);
+                                                            int up_type);
+int      bn_quant_format_supports_moe_direct_routed_down(int type);
 int      bn_quant_format_supports_cpu_fused_kquant_gateup_silu(int gate_type,
                                                                int up_type);
 int      bn_quant_format_same_quant_format_pair_stackable(int left_type,
@@ -415,6 +430,9 @@ int      bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
 int      bn_quant_format_supports_moe_native_quant_route(int gate_type,
                                                          int up_type,
                                                          int down_type);
+int      bn_quant_format_supports_moe_routed_lowbit_block32(int gate_type,
+                                                            int up_type,
+                                                            int down_type);
 BnQuantMatvecFn bn_quant_format_matvec(int type);
 BnQuantMatmulFn bn_quant_format_matmul(int type);
 size_t   bn_quant_format_data_size(int type, int rows, int cols);

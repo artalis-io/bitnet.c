@@ -3,7 +3,7 @@ using namespace metal;
 
 // Q4_0 REPACKED matvec — float4 vectorized, 32 rows/tile, 8 threads/row
 //
-// GPU buffer layout: [f32 scales: n_blocks][nibble u32s: n_blocks * 4]
+// GPU buffer layout: [f16 scales: n_blocks, u32 aligned][nibble u32s: n_blocks * 4]
 //
 // 8 threads per row, each processes blocks_per_row/8 blocks.
 // Each block: 8 dot(float4) operations instead of 32 scalar multiply-adds.
@@ -52,6 +52,7 @@ kernel void q4_matvec(device const uint  *weights [[buffer(0)]],
 
     uint blocks_per_row = cols >> 5;
     uint total_blocks = rows * blocks_per_row;
+    uint scale_words = (total_blocks + 1) >> 1;
     uint x_base = token * cols;
 
     float acc = 0.0f;
@@ -61,9 +62,9 @@ kernel void q4_matvec(device const uint  *weights [[buffer(0)]],
 
         for (uint b = row_lane; b < blocks_per_row; b += 8) {
             uint block_idx = row_block_base + b;
-            float s = as_type<float>(weights[block_idx]);
+            float s = float(((device const half *)weights)[block_idx]);
 
-            uint nib_base = total_blocks + block_idx * 4;
+            uint nib_base = scale_words + block_idx * 4;
             uint w0 = weights[nib_base];
             uint w1 = weights[nib_base + 1];
             uint w2 = weights[nib_base + 2];

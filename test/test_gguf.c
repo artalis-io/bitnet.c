@@ -218,6 +218,26 @@ static void test_open_shards(void) {
     assert(data1[0] == 5.0f && data1[3] == 8.0f);
 
     bn_gguf_free(f);
+
+    f = bn_gguf_open_file_resident(path1);
+    assert(f != NULL);
+    assert(f->n_shards == 2);
+    assert(f->owned_maps != NULL);
+    assert(f->owned_maps[0].is_mmap == 0);
+    assert(f->owned_maps[1].is_mmap == 0);
+    long page_value = sysconf(_SC_PAGESIZE);
+    size_t page = page_value > 0 ? (size_t)page_value : 4096u;
+    assert((uintptr_t)f->owned_maps[0].data % page == 0);
+    assert((uintptr_t)f->owned_maps[1].data % page == 0);
+    t0 = bn_gguf_find_tensor(f, "shard0.weight");
+    t1 = bn_gguf_find_tensor(f, "shard1.weight");
+    assert(t0 >= 0 && t1 >= 0);
+    data0 = (float *)bn_gguf_tensor_data(f, t0);
+    data1 = (float *)bn_gguf_tensor_data(f, t1);
+    assert(data0[0] == 1.0f && data0[3] == 4.0f);
+    assert(data1[0] == 5.0f && data1[3] == 8.0f);
+    bn_gguf_free(f);
+
     unlink(path1);
     unlink(path2);
     printf("PASSED\n");

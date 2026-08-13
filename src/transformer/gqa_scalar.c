@@ -1,5 +1,63 @@
 #include "transformer_gqa_internal.h"
 
+static float gqa_scalar_dot_ggml_order(const float *x,
+                                       const float *y,
+                                       int n) {
+    float sums[4][4] = {{0.0f}};
+    int i = 0;
+    int np = n & ~15;
+    for (; i < np; i += 16) {
+        for (int group = 0; group < 4; group++) {
+            for (int lane = 0; lane < 4; lane++) {
+                int d = i + group * 4 + lane;
+                sums[group][lane] = fmaf(x[d], y[d], sums[group][lane]);
+            }
+        }
+    }
+    float lanes[4];
+    for (int lane = 0; lane < 4; lane++)
+        lanes[lane] = (sums[0][lane] + sums[2][lane]) +
+                      (sums[1][lane] + sums[3][lane]);
+    float out = (lanes[0] + lanes[1]) + (lanes[2] + lanes[3]);
+    for (; i < n; i++)
+        out = fmaf(x[i], y[i], out);
+    return out;
+}
+
+static void gqa_scalar_combine_small_kv_ggml_order(
+    float *out,
+    const float *att,
+    const float *value_cache,
+    size_t loff,
+    int start,
+    int n_kv,
+    int seq_len,
+    int kv_dim,
+    int kv_head_offset,
+    int head_size) {
+    for (int d = 0; d < head_size; d++) {
+        float sums[4][4] = {{0.0f}};
+        for (int group = 0; group < 4; group++) {
+            for (int lane = 0; lane < 4; lane++) {
+                int i = group * 4 + lane;
+                if (i >= n_kv)
+                    break;
+                int t = (start + i) % seq_len;
+                sums[group][lane] = fmaf(
+                    att[i],
+                    value_cache[loff + (size_t)t * kv_dim +
+                                kv_head_offset + d],
+                    0.0f);
+            }
+        }
+        float lanes[4];
+        for (int lane = 0; lane < 4; lane++)
+            lanes[lane] = (sums[0][lane] + sums[2][lane]) +
+                          (sums[1][lane] + sums[3][lane]);
+        out[d] = (lanes[0] + lanes[1]) + (lanes[2] + lanes[3]);
+    }
+}
+
 void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
     BnGQACtx *g = (BnGQACtx *)ctx;
     BnRunState *s = g->s;
@@ -30,22 +88,19 @@ void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
             } else {
                 k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
             }
-            float lane[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            int d = 0;
-            for (; d + 3 < head_size; d += 4) {
-                lane[0] = fmaf(q_h[d + 0], k_t[d + 0], lane[0]);
-                lane[1] = fmaf(q_h[d + 1], k_t[d + 1], lane[1]);
-                lane[2] = fmaf(q_h[d + 2], k_t[d + 2], lane[2]);
-                lane[3] = fmaf(q_h[d + 3], k_t[d + 3], lane[3]);
-            }
-            float score = (lane[0] + lane[1]) + (lane[2] + lane[3]);
-            for (; d < head_size; d++) score = fmaf(q_h[d], k_t[d], score);
-            att[i] = score * attn_scale;
+            att[i] = gqa_scalar_dot_ggml_order(q_h, k_t, head_size) *
+                     attn_scale;
         }
 
         bn_transformer_softmax(att, n_kv);
 
         float *xb_h = s->xb + h * head_size;
+        if (!kv_cache_uses_fp16_rows && n_kv <= 16) {
+            gqa_scalar_combine_small_kv_ggml_order(
+                xb_h, att, s->value_cache, loff, start, n_kv, seq_len,
+                kv_dim, kv_h * head_size, head_size);
+            continue;
+        }
         memset(xb_h, 0, head_size * sizeof(float));
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
@@ -127,17 +182,20 @@ void bn_transformer_flash_gqa_scalar_range(void *ctx, int h_start, int h_end) {
                 }
 
                 float old_max = running_max;
+                float max_scale = 1.0f;
+                float weight = 1.0f;
                 if (score > old_max) {
-                    float rescale = expf(old_max - score);
                     running_max = score;
-                    running_sum *= rescale;
-                    for (int d = 0; d < head_size; d++) out_buf[d] *= rescale;
+                    max_scale = expf(old_max - running_max);
+                    for (int d = 0; d < head_size; d++)
+                        out_buf[d] *= max_scale;
+                } else {
+                    weight = expf(score - running_max);
                 }
 
-                float w = expf(score - running_max);
-                running_sum += w;
                 for (int d = 0; d < head_size; d++)
-                    out_buf[d] = fmaf(w, v_t[d], out_buf[d]);
+                    out_buf[d] = fmaf(weight, v_t[d], out_buf[d]);
+                running_sum = running_sum * max_scale + weight;
             }
         }
 

@@ -12,7 +12,7 @@ using namespace metal;
 // Dispatch: (n_heads, 1, 1)
 //
 // p0 = n_heads, p1 = head_size, p2 = n_kv, p3 = kv_mul
-// p4 = kv_dim, p5 = seq_len, p6 = loff, p7 = inv_sqrt_hs (bitcast)
+// p4 = kv_cache_stride, p5 = seq_len, p6 = loff, p7 = inv_sqrt_hs (bitcast)
 
 constant uint MAX_FLASH_KV = 1024;
 
@@ -24,7 +24,7 @@ kernel void flash_attn(device const float *q           [[buffer(0)]],
                        uint3 wid [[threadgroup_position_in_grid]],
                        uint3 lid [[thread_position_in_threadgroup]]) {
     uint n_heads = p[0], head_size = p[1], n_kv = p[2], kv_mul = p[3];
-    uint kv_dim = p[4], loff = p[6];
+    uint kv_cache_stride = p[4], loff = p[6];
     float scale = as_type<float>(p[7]);
 
     threadgroup float scores[MAX_FLASH_KV];
@@ -41,7 +41,7 @@ kernel void flash_attn(device const float *q           [[buffer(0)]],
     uint q_base = h * head_size;
 
     for (uint t = simd_id; t < n_kv; t += 8) {
-        uint kv_base = loff + t * kv_dim + kv_h * head_size;
+        uint kv_base = loff + t * kv_cache_stride + kv_h * head_size;
         float partial = 0.0f;
         for (uint d = lane; d < head_size; d += 32)
             partial += q[q_base + d] * key_cache[kv_base + d];
@@ -92,7 +92,7 @@ kernel void flash_attn(device const float *q           [[buffer(0)]],
     for (uint d = tid; d < head_size; d += 256) {
         float acc = 0.0f;
         for (uint t = 0; t < n_kv; t++) {
-            uint v_base = loff + t * kv_dim + kv_h * head_size;
+            uint v_base = loff + t * kv_cache_stride + kv_h * head_size;
             acc += scores[t] * value_cache[v_base + d];
         }
         xb[out_base + d] = acc * inv_sum;

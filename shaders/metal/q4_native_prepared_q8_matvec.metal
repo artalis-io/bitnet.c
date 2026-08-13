@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Q4_0 repacked matvec using prepared Q8 activation blocks.
+// Q4_0 f16-scale repacked matvec using prepared Q8 activation blocks.
 
 #define TILE_ROWS 16u
 
@@ -48,6 +48,7 @@ kernel void q4_native_prepared_q8_matvec(
 
     uint blocks_per_row = cols >> 5;
     uint total_blocks = rows * blocks_per_row;
+    uint scale_words = (total_blocks + 1) >> 1;
     uint x_base = token * cols;
     uint scale_base = token * blocks_per_row;
 
@@ -57,9 +58,9 @@ kernel void q4_native_prepared_q8_matvec(
         uint row_block_base = global_row * blocks_per_row;
         for (uint b = row_lane; b < blocks_per_row; b += 8) {
             uint block_idx = row_block_base + b;
-            float d = as_type<float>(weights[block_idx]);
+            float d = float(((device const half *)weights)[block_idx]);
             float dx = x_scales[scale_base + b];
-            uint nib_base = total_blocks + block_idx * 4;
+            uint nib_base = scale_words + block_idx * 4;
             device const char4 *xqb = (device const char4 *)(x_q + x_base + b * 32);
             float idot = q4_q8_dot(weights[nib_base], weights[nib_base + 1],
                                    weights[nib_base + 2], weights[nib_base + 3],
@@ -73,6 +74,56 @@ kernel void q4_native_prepared_q8_matvec(
     acc += simd_shuffle_xor(acc, 4);
 
     if (row_lane == 0 && global_row < rows) {
+        uint bias_offset = p[4];
+        if (bias_offset > 0)
+            acc += as_type<float>(weights[bias_offset + global_row]);
+        out[out_offset + token * rows + global_row] = acc;
+    }
+}
+
+kernel void q4_native_prepared_q8_matvec_reference(
+    device const uint  *weights  [[buffer(0)]],
+    device const char  *x_q      [[buffer(1)]],
+    device const float *x_scales [[buffer(2)]],
+    device float       *out      [[buffer(3)]],
+    constant uint      *p        [[buffer(4)]],
+    uint3 wid [[threadgroup_position_in_grid]],
+    uint3 lid [[thread_position_in_threadgroup]])
+{
+    uint rows = p[0], cols = p[1], extra = p[3], out_offset = p[5];
+    constexpr uint reference_tile_rows = 128u;
+    uint tile_start = (extra > 0)
+        ? (wid.x + wid.y * extra) * reference_tile_rows
+        : wid.x * reference_tile_rows;
+    uint token = (extra > 0) ? 0 : wid.y;
+    uint local_row = lid.x;
+    if (local_row >= reference_tile_rows)
+        return;
+    uint global_row = tile_start + local_row;
+    uint blocks_per_row = cols >> 5;
+    uint total_blocks = rows * blocks_per_row;
+    uint scale_words = (total_blocks + 1) >> 1;
+    uint x_base = token * cols;
+    uint scale_base = token * blocks_per_row;
+    uint row_block_base = global_row * blocks_per_row;
+    float acc = 0.0f;
+
+    if (global_row < rows) {
+        for (uint b = 0; b < blocks_per_row; b++) {
+            uint block_idx = row_block_base + b;
+            float d = float(((device const half *)weights)[block_idx]);
+            float block_scale = d * x_scales[scale_base + b];
+            uint nib_base = scale_words + block_idx * 4u;
+            device const char4 *xqb =
+                (device const char4 *)(x_q + x_base + b * 32u);
+            float idot = q4_q8_dot(
+                weights[nib_base], weights[nib_base + 1u],
+                weights[nib_base + 2u], weights[nib_base + 3u], xqb);
+            acc = fma(block_scale, idot, acc);
+        }
+    }
+
+    if (global_row < rows) {
         uint bias_offset = p[4];
         if (bias_offset > 0)
             acc += as_type<float>(weights[bias_offset + global_row]);

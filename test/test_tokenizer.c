@@ -145,6 +145,8 @@ static void test_tokenizer_init(void) {
     assert(t.vocab_size == 10);
     assert(t.bos_id == 0);
     assert(t.eos_id == 1);
+    assert(bn_tokenizer_is_eog(&t, t.eos_id));
+    assert(!bn_tokenizer_is_eog(&t, 2));
     assert(strcmp(t.vocab[0], "<bos>") == 0);
     assert(strcmp(t.vocab[9], "hello") == 0);
 

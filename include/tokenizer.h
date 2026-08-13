@@ -5,6 +5,7 @@
 
 #define BN_BPE_UNICODE_OFFSET  0x100    // non-printable bytes → U+0100..U+0143
 #define BN_BPE_UNICODE_END     0x143
+#define BN_TOKENIZER_MAX_EOG   16
 
 typedef struct {
     char  **vocab;
@@ -12,6 +13,8 @@ typedef struct {
     int     vocab_size;
     int     bos_id, eos_id, eot_id;
     int     im_start_id, im_end_id; // ChatML tokens (-1 if absent)
+    int     eog_ids[BN_TOKENIZER_MAX_EOG];
+    int     n_eog;
     int     add_bos;                // whether to prepend BOS (from GGUF metadata)
     int     chatml;                 // 1 if model uses ChatML template
     int     metaspace;              // 1 for tokenizers that encode spaces as U+2581
@@ -26,5 +29,6 @@ int         bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_
                              int *tokens, int max_tokens);
 const char *bn_tokenizer_decode(const BnTokenizer *t, int token);
 int         bn_tokenizer_lookup(const BnTokenizer *t, const char *str);
+int         bn_tokenizer_is_eog(const BnTokenizer *t, int token);
 
 #endif // BN_TOKENIZER_H

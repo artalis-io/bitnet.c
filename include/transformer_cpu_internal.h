@@ -6,15 +6,18 @@
 #include "session.h"
 #include "transformer_plan_internal.h"
 
-void bn_transformer_cpu_residual_add(float *x, const float *r, int dim);
-void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
+void bn_transformer_cpu_residual_add(const BnCPURuntimePolicy *runtime,
+                                     float *x, const float *r, int dim);
+void bn_transformer_cpu_apply_ffn_activation(const BnCPURuntimePolicy *runtime,
+                                             BnRunState *s,
                                              const BnFFNPlan *ffn_plan,
                                              int hidden_dim,
                                              int already_activated);
 void bn_transformer_cpu_forward_ssm_block(BnModel *m,
                                           BnSession *sess,
                                           BnLayerWeights *lw,
-                                          int layer);
+                                          int layer,
+                                          int pos);
 void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                                           BnSession *sess,
                                           BnLayerWeights *lw,

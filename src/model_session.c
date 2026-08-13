@@ -134,12 +134,9 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     if (bn_model_session_policy_uses_moe(c) && c->n_layers > 0) {
         size_t moe_expert_buf_size = 0;
         if (w && w->layers) {
-            BnMoEExpertMap *em0 = &w->layers[0].moe.expert_map;
-            moe_expert_buf_size = em0->expert_gate_bytes;
-            if (em0->expert_up_bytes > moe_expert_buf_size)
-                moe_expert_buf_size = em0->expert_up_bytes;
-            if (em0->expert_down_bytes > moe_expert_buf_size)
-                moe_expert_buf_size = em0->expert_down_bytes;
+            BnMoEProjectionBufferLayout layout =
+                bn_moe_projection_buffer_layout(c, w);
+            moe_expert_buf_size = layout.max_bytes;
         }
 
         size_t tmp = 0;
@@ -241,12 +238,12 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     return arena_size;
 }
 
-static void alloc_moe_pread_bufs(BnMoEState *ms, const BnWeights *w, SHArena *arena) {
-    if (!ms || !w || !w->layers) return;
-    BnMoEExpertMap *em0 = &w->layers[0].moe.expert_map;
-    size_t buf_size = em0->expert_gate_bytes;
-    if (em0->expert_up_bytes > buf_size) buf_size = em0->expert_up_bytes;
-    if (em0->expert_down_bytes > buf_size) buf_size = em0->expert_down_bytes;
+static void alloc_moe_pread_bufs(BnMoEState *ms, const BnConfig *c,
+                                 const BnWeights *w, SHArena *arena) {
+    if (!ms || !c || !w || !w->layers) return;
+    BnMoEProjectionBufferLayout layout =
+        bn_moe_projection_buffer_layout(c, w);
+    size_t buf_size = layout.max_bytes;
 
     ms->buf       = (uint8_t *)sh_arena_alloc(arena, buf_size);
     ms->buf_size  = buf_size;
@@ -423,7 +420,7 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         ms->expert_hb      = (float *)sh_arena_calloc(arena, route_policy.expert_hidden_dim, sizeof(float));
         ms->expert_hb2     = (float *)sh_arena_calloc(arena, route_policy.expert_hidden_dim, sizeof(float));
 
-        alloc_moe_pread_bufs(ms, w, arena);
+    alloc_moe_pread_bufs(ms, c, w, arena);
 
         if (!ms->router_logits || !ms->expert_out || !ms->expert_weights ||
             !ms->expert_indices || !ms->expert_hb || !ms->expert_hb2)

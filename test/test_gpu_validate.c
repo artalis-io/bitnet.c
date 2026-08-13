@@ -939,7 +939,7 @@ static int run_forward_bench(BnGPUBackend *gpu) {
     }
 
     if (bn_model_upload_weights(&gpu_model, gpu) != 0 ||
-        gpu->init_activations(gpu->ctx, &gpu_model.config) != 0) {
+        bn_model_init_gpu_activations(&gpu_model, gpu) != 0) {
         printf("  SKIP (gpu upload/init failed)\n\n");
         goto cleanup;
     }

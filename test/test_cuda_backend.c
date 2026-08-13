@@ -31,6 +31,31 @@ static uint32_t f32_bits(float x) {
     return bits;
 }
 
+static int init_test_activations(BnGPUBackend *gpu, const BnConfig *cfg) {
+    int rope_count = cfg->head_size / 2;
+    float rope[256];
+    assert(rope_count <= (int)(sizeof(rope) / sizeof(rope[0])));
+    for (int i = 0; i < rope_count; i++)
+        rope[i] = powf(cfg->rope_theta, -2.0f * (float)i /
+                                       (float)cfg->head_size);
+    BnGPUActivationPlan plan = {
+        .dim = cfg->dim,
+        .n_layers = cfg->n_layers,
+        .seq_len = cfg->seq_len,
+        .kv_dim = cfg->kv_dim,
+        .n_heads = cfg->n_heads,
+        .head_size = cfg->head_size,
+        .vocab_size = cfg->vocab_size,
+        .kv_f16 = cfg->kv_f16,
+        .attention_layer_count = cfg->n_layers,
+        .xb2_elements = cfg->dim,
+        .hb_elements = cfg->hidden_dim,
+        .rope_frequencies = rope,
+        .rope_frequency_count = rope_count,
+    };
+    return bn_gpu_backend_init_activations(gpu, &plan);
+}
+
 static void run_per_head_rmsnorm_case(BnGPUBackend *gpu) {
     BnConfig cfg = {0};
     cfg.dim = 8;
@@ -44,7 +69,7 @@ static void run_per_head_rmsnorm_case(BnGPUBackend *gpu) {
     cfg.head_size = 4;
     cfg.kv_dim = 8;
     cfg.kv_mul = 1;
-    assert(gpu->init_activations(gpu->ctx, &cfg) == 0);
+    assert(init_test_activations(gpu, &cfg) == 0);
 
     float in[8] = { 1.0f, -2.0f, 3.0f, -4.0f, 2.0f, 1.0f, -1.0f, 0.5f };
     float weight[4] = { 1.0f, 0.5f, 1.5f, -2.0f };
@@ -92,7 +117,7 @@ static void run_gated_q_utility_case(BnGPUBackend *gpu) {
     cfg.head_size = 4;
     cfg.kv_dim = 8;
     cfg.kv_mul = 1;
-    assert(gpu->init_activations(gpu->ctx, &cfg) == 0);
+    assert(init_test_activations(gpu, &cfg) == 0);
 
     float qkv[16] = {
         1.0f, 2.0f, 3.0f, 4.0f, -1.0f, 0.0f, 1.0f, 2.0f,
@@ -165,7 +190,7 @@ int main(void) {
     cfg.head_size = 4;
     cfg.kv_dim = 4;
     cfg.kv_mul = 1;
-    assert(gpu->init_activations(gpu->ctx, &cfg) == 0);
+    assert(init_test_activations(gpu, &cfg) == 0);
     {
         float in[4] = { 1.0f, -2.0f, 3.0f, -4.0f };
         float out[4] = { 0 };

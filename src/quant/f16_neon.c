@@ -16,12 +16,16 @@ void bn_quant_f16_neon_range(void *ctx, int row_start, int row_end) {
 
         int col = 0;
         for (; col + 15 < cols; col += 16) {
-            float tmp[16];
-            for (int i = 0; i < 16; i++) tmp[i] = bn_fp16_to_fp32(w[col + i]);
-            acc0 = vmlaq_f32(acc0, vld1q_f32(tmp), vld1q_f32(x + col));
-            acc1 = vmlaq_f32(acc1, vld1q_f32(tmp + 4), vld1q_f32(x + col + 4));
-            acc2 = vmlaq_f32(acc2, vld1q_f32(tmp + 8), vld1q_f32(x + col + 8));
-            acc3 = vmlaq_f32(acc3, vld1q_f32(tmp + 12), vld1q_f32(x + col + 12));
+            float16x8_t wh0 = vld1q_f16((const float16_t *)(w + col));
+            float16x8_t wh1 = vld1q_f16((const float16_t *)(w + col + 8));
+            float32x4_t w0 = vcvt_f32_f16(vget_low_f16(wh0));
+            float32x4_t w1 = vcvt_f32_f16(vget_high_f16(wh0));
+            float32x4_t w2 = vcvt_f32_f16(vget_low_f16(wh1));
+            float32x4_t w3 = vcvt_f32_f16(vget_high_f16(wh1));
+            acc0 = vmlaq_f32(acc0, w0, vld1q_f32(x + col));
+            acc1 = vmlaq_f32(acc1, w1, vld1q_f32(x + col + 4));
+            acc2 = vmlaq_f32(acc2, w2, vld1q_f32(x + col + 8));
+            acc3 = vmlaq_f32(acc3, w3, vld1q_f32(x + col + 12));
         }
 
         float32x4_t s = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));

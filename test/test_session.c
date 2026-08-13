@@ -3,6 +3,7 @@
 #include "model.h"
 #include "model_internal.h"
 #include "backend_session.h"
+#include "backend_model.h"
 #include "gpu_backend.h"
 #include "../src/gpu_shader_ir_internal.h"
 #include "turboquant.h"
@@ -26,6 +27,14 @@ static void init_test_config(BnConfig *c) {
     c->kv_mul = 1;
     c->rope_theta = 10000.0f;
     c->norm_eps = 1e-5f;
+}
+
+static int reset_activation_calls;
+
+static int mock_reset_activations(void *ctx) {
+    (void)ctx;
+    reset_activation_calls++;
+    return 0;
 }
 
 // Test: create and free two sessions from the same model
@@ -135,6 +144,26 @@ static void test_session_reset(void) {
     }
 
     bn_session_free(s, NULL);
+    printf("PASSED\n");
+}
+
+static void test_session_reset_resets_backend_activations(void) {
+    printf("test_session_reset_resets_backend_activations... ");
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    init_test_config(&model.config);
+    assert(bn_model_ensure_backend(&model) == 0);
+    BnGPUBackend gpu = {0};
+    gpu.reset_activations = mock_reset_activations;
+    bn_backend_model_bind_gpu(bn_model_backend(&model), &gpu);
+    BnSession *session = bn_session_create(&model, NULL);
+    assert(session != NULL);
+    reset_activation_calls = 0;
+    bn_session_reset(session, &model);
+    assert(reset_activation_calls == 1);
+    bn_session_free(session, NULL);
+    bn_backend_model_bind_gpu(bn_model_backend(&model), NULL);
+    bn_model_free(&model);
     printf("PASSED\n");
 }
 
@@ -393,6 +422,7 @@ int main(void) {
     test_session_create_free();
     test_session_kv_isolation();
     test_session_reset();
+    test_session_reset_resets_backend_activations();
     test_session_pos_tracking();
     test_multiple_sessions();
     test_session_shared_expert_hidden_buffers();

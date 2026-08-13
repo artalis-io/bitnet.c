@@ -62,6 +62,16 @@ static int vocab_lookup(const BnTokenizer *t, const char *str) {
     return -1;
 }
 
+static void tokenizer_add_eog(BnTokenizer *t, int token) {
+    if (!t || token < 0)
+        return;
+    for (int i = 0; i < t->n_eog; i++)
+        if (t->eog_ids[i] == token)
+            return;
+    if (t->n_eog < BN_TOKENIZER_MAX_EOG)
+        t->eog_ids[t->n_eog++] = token;
+}
+
 int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     memset(t, 0, sizeof(BnTokenizer));
 
@@ -163,6 +173,26 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     t->im_end_id   = vocab_lookup(t, "<|im_end|>");
     t->chatml = (t->im_start_id >= 0 && t->im_end_id >= 0) ? 1 : 0;
 
+    tokenizer_add_eog(t, t->eos_id);
+    tokenizer_add_eog(t, t->eot_id);
+    tokenizer_add_eog(t, t->im_end_id);
+    static const char *const eog_spellings[] = {
+        "<|endoftext|>", "<|eot_id|>", "<|im_end|>", "<turn|>",
+        "<|tool_response|>", "<|fim_pad|>", "<|repo_name|>",
+        "<|file_sep|>",
+    };
+    for (size_t i = 0; i < sizeof(eog_spellings) / sizeof(eog_spellings[0]); i++)
+        tokenizer_add_eog(t, vocab_lookup(t, eog_spellings[i]));
+
+    return 0;
+}
+
+int bn_tokenizer_is_eog(const BnTokenizer *t, int token) {
+    if (!t)
+        return 0;
+    for (int i = 0; i < t->n_eog; i++)
+        if (t->eog_ids[i] == token)
+            return 1;
     return 0;
 }
 

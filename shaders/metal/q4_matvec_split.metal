@@ -2,7 +2,7 @@
 using namespace metal;
 
 // Q4_0 repacked split matvec for stacked projection buffers.
-// Buffer layout: [f32 scales: n_blocks][nibble u32s: n_blocks * 4][optional f32 bias].
+// Buffer layout: [f16 scales: n_blocks, u32 aligned][nibble u32s: n_blocks * 4][optional f32 bias].
 
 #define UQ4(w, sh) float4( \
     float(((w) >> (sh))        & 0xF), \
@@ -48,14 +48,15 @@ kernel void q4_matvec_split(device const uint  *weights [[buffer(0)]],
 
     uint blocks_per_row = cols >> 5;
     uint total_blocks = rows * blocks_per_row;
+    uint scale_words = (total_blocks + 1) >> 1;
     float acc = 0.0f;
 
     if (global_row < rows) {
         uint row_block_base = global_row * blocks_per_row;
         for (uint b = row_lane; b < blocks_per_row; b += 8) {
             uint block_idx = row_block_base + b;
-            float s = as_type<float>(weights[block_idx]);
-            uint nib_base = total_blocks + block_idx * 4;
+            float s = float(((device const half *)weights)[block_idx]);
+            uint nib_base = scale_words + block_idx * 4;
             uint w0 = weights[nib_base];
             uint w1 = weights[nib_base + 1];
             uint w2 = weights[nib_base + 2];

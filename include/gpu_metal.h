@@ -12,6 +12,8 @@
 // shader_dir: path to directory containing *.metal files (NULL = "shaders/metal/").
 // Returns NULL if no Metal device is available or initialization fails.
 BnGPUBackend *bn_gpu_metal_create(const char *shader_dir);
+BnGPUBackend *bn_gpu_metal_create_with_policy(
+    const char *shader_dir, const BnBackendRuntimePolicy *policy);
 
 // Destroy the Metal GPU backend and release all device resources.
 // Safe to call with NULL.
@@ -21,6 +23,7 @@ void bn_gpu_metal_destroy(BnGPUBackend *gpu);
 // Eliminates per-expert buffer allocation overhead.
 // size_mb: slab size in MB (0 = disabled). Returns 0 on success.
 int bn_gpu_metal_init_slab(BnGPUBackend *gpu, size_t size_mb);
+size_t bn_gpu_metal_recommended_slab_mb(const BnGPUBackend *gpu);
 
 // Set mmap range for zero-copy weight upload (Phase 5).
 // Pointers within [base, base+size) will use newBufferWithBytesNoCopy

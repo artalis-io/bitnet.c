@@ -3,57 +3,58 @@
 #include "backend_quant.h"
 #include "model_internal.h"
 
-#include <stdlib.h>
 #include <string.h>
 
-static int cpu_env_enabled(const char *name, const char *compat_name) {
-    return getenv(name) != NULL ||
-           (compat_name != NULL && getenv(compat_name) != NULL);
+int bn_transformer_cpu_prepared_qweights_enabled(
+    const BnCPURuntimePolicy *runtime) {
+    return !runtime || runtime->prepared_qweights;
 }
 
-static int cpu_env_enabled3(const char *name,
-                            const char *compat_name,
-                            const char *compat_name2) {
-    return cpu_env_enabled(name, compat_name) ||
-           (compat_name2 != NULL && getenv(compat_name2) != NULL);
+int bn_transformer_cpu_reference_math_requested(
+    const BnCPURuntimePolicy *runtime) {
+    return runtime && runtime->reference_math;
 }
 
-static int cpu_reference_dot_env_enabled(void) {
-    return cpu_env_enabled("BN_CPU_REFERENCE_DOT", "BN_CPU_LLAMA_DOT");
+const char *bn_transformer_cpu_debug_dump_path(
+    const BnCPURuntimePolicy *runtime) {
+    return runtime && runtime->debug_dump_path[0]
+        ? runtime->debug_dump_path : NULL;
 }
 
-static int cpu_reference_kquant_dot_env_enabled(void) {
-    return cpu_env_enabled3("BN_CPU_REFERENCE_BLOCK_QUANT_DOT",
-                            "BN_CPU_REFERENCE_Q4_DOT",
-                            "BN_CPU_LLAMA_Q4_DOT");
+int bn_transformer_cpu_debug_dump_pos_selected(
+    const BnCPURuntimePolicy *runtime, int pos) {
+    return !runtime || !runtime->debug_dump_pos_set ||
+           runtime->debug_dump_pos == pos;
 }
 
-int bn_transformer_cpu_prepared_qweights_enabled(void) {
-    return getenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS") == NULL;
+int bn_transformer_cpu_debug_dump_heads_enabled(
+    const BnCPURuntimePolicy *runtime) {
+    return runtime && runtime->debug_dump_heads;
 }
 
-const char *bn_transformer_cpu_debug_dump_path(void) {
-    const char *path = getenv("BN_DUMP_LAYER_INP");
-    return path && path[0] ? path : NULL;
+const char *bn_transformer_cpu_debug_binary_path(
+    const BnCPURuntimePolicy *runtime) {
+    return runtime && runtime->debug_binary_path[0]
+        ? runtime->debug_binary_path : NULL;
 }
 
-int bn_transformer_cpu_debug_dump_pos_selected(int pos) {
-    const char *pos_env = getenv("BN_DUMP_LAYER_POS");
-    return !pos_env || !pos_env[0] || atoi(pos_env) == pos;
+int bn_transformer_cpu_debug_binary_selected(
+    const BnCPURuntimePolicy *runtime, const char *tag, int layer) {
+    return runtime && tag && runtime->debug_binary_tag[0] &&
+           strcmp(tag, runtime->debug_binary_tag) == 0 &&
+           (!runtime->debug_binary_layer_set ||
+            runtime->debug_binary_layer == layer);
 }
 
-int bn_transformer_cpu_debug_dump_heads_enabled(void) {
-    const char *enabled = getenv("BN_DUMP_ALL_HEADS");
-    return enabled && enabled[0];
+int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(
+    const BnCPURuntimePolicy *runtime) {
+    return !runtime ||
+           (!runtime->reference_dot && !runtime->reference_kquant_dot);
 }
 
-int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(void) {
-    return !cpu_reference_dot_env_enabled() &&
-           !cpu_reference_kquant_dot_env_enabled();
-}
-
-int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type) {
-    return bn_transformer_cpu_fused_kquant_gateup_silu_allowed() &&
+int bn_transformer_cpu_can_fused_kquant_gateup_silu(
+    const BnCPURuntimePolicy *runtime, int gate_type, int up_type) {
+    return bn_transformer_cpu_fused_kquant_gateup_silu_allowed(runtime) &&
            bn_backend_quant_cpu_fused_kquant_gateup_silu(gate_type, up_type);
 }
 
@@ -139,6 +140,7 @@ int bn_transformer_cpu_route_prepared_kquant_triple_enabled(
 }
 
 int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
+    const BnCPURuntimePolicy *runtime,
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan,
     int dim,
@@ -150,7 +152,8 @@ int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
            bn_transformer_cpu_activation_uses_silu_path(
                ffn_plan->activation) &&
            dim % 32 == 0 &&
-           bn_transformer_cpu_can_fused_kquant_gateup_silu(gate_type, up_type);
+           bn_transformer_cpu_can_fused_kquant_gateup_silu(
+               runtime, gate_type, up_type);
 }
 
 int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
@@ -224,6 +227,7 @@ uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
 
 BnTransformerCPUMatvecResourcePolicy
 bn_transformer_cpu_matvec_resource_policy(
+    const BnCPURuntimePolicy *runtime,
     const BnConfig *c,
     const BnBackendModel *backend,
     const BnQWeight *weight) {
@@ -233,7 +237,7 @@ bn_transformer_cpu_matvec_resource_policy(
     policy.valid = 1;
     policy.task_flags =
         bn_transformer_cpu_float_kquant_fallback_task_flags(c);
-    if (bn_transformer_cpu_prepared_qweights_enabled())
+    if (bn_transformer_cpu_prepared_qweights_enabled(runtime))
         policy.prepared =
             bn_backend_model_prepared_qweight(backend, weight);
     policy.gpu_buffer = bn_backend_model_qweight_buf(backend, weight);

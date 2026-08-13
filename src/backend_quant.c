@@ -3,43 +3,6 @@
 #include <math.h>
 #include <stdlib.h>
 
-static int backend_quant_env_top_n(const char *name, int min_value) {
-    const char *env = getenv(name);
-    if (!env)
-        return 0;
-    int top_n = atoi(env);
-    if (top_n < min_value)
-        return 0;
-    return top_n > 128 ? 128 : top_n;
-}
-
-static int backend_quant_compat_env_top_n(const char *name,
-                                          const char *compat_name,
-                                          int min_value) {
-    int top_n = backend_quant_env_top_n(name, min_value);
-    return top_n > 0 ? top_n : backend_quant_env_top_n(compat_name,
-                                                       min_value);
-}
-
-int bn_backend_quant_cpu_tied_kquant_refine_top(void) {
-    if (getenv("BN_CPU_TIED_KQUANT_REFINE_TOP") ||
-        getenv("BN_CPU_TIED_Q6K_REFINE_TOP"))
-        return backend_quant_compat_env_top_n(
-            "BN_CPU_TIED_KQUANT_REFINE_TOP",
-            "BN_CPU_TIED_Q6K_REFINE_TOP", 1);
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
-    !defined(BN_FORCE_SCALAR)
-    return 8;
-#else
-    return 0;
-#endif
-}
-
-int bn_backend_quant_cpu_tied_kquant_hybrid_top(void) {
-    return backend_quant_compat_env_top_n("BN_CPU_TIED_KQUANT_HYBRID_TOP",
-                                          "BN_CPU_TIED_Q6K_HYBRID_TOP", 2);
-}
-
 void bn_backend_quant_prepare_kquant_activation(const float *x,
                                                 int8_t *quantized,
                                                 float *scales,

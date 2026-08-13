@@ -2,6 +2,8 @@
 #include "../src/gpu_graph_lowering_internal.h"
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static void test_graph_values_and_aliases(void) {
     printf("test_graph_values_and_aliases... ");
@@ -226,12 +228,14 @@ static void test_graph_lower_simple_ops_to_shader(void) {
     int activated = bn_gpu_value_graph_add_activation(
         &graph, added, BN_GPU_IR_INVALID_VALUE, BN_GPU_IR_ACTIVATION_RELU2, 1,
         "relu2");
+    graph.ops[graph.n_ops - 1].flags = BN_GPU_OP_FLAG_REFERENCE_SILU;
     graph.ops[graph.n_ops - 1].aux1 = 32;
     int matvec = bn_gpu_value_graph_add_matvec(
         &graph, activated, matvec_w, 256, 128, 1, 12, "matvec");
     int fused = bn_gpu_value_graph_add_fused_gateup(
         &graph, activated, fused_w, 256, 256, 128,
         BN_GPU_IR_ACTIVATION_SILU, "fused");
+    graph.ops[graph.n_ops - 1].flags = BN_GPU_OP_FLAG_REFERENCE_SILU;
     int logits = bn_gpu_value_graph_add_logits(
         &graph, activated, logits_w, 32000, 128, "logits");
 
@@ -291,6 +295,7 @@ static void test_graph_lower_simple_ops_to_shader(void) {
     assert(ops[3].buf_in == BN_GPU_VALUE_HB);
     assert(ops[3].buf_out == -1);
     assert(ops[3].buf_aux == -1);
+    assert(ops[3].flags == BN_GPU_OP_FLAG_REFERENCE_SILU);
     assert(ops[3].p[0] == 128);
     assert(ops[3].p[1] == 32);
 
@@ -313,6 +318,7 @@ static void test_graph_lower_simple_ops_to_shader(void) {
     assert(ops[5].W_buf == (void *)0x4000);
     assert(ops[5].buf_in == BN_GPU_VALUE_HB);
     assert(ops[5].buf_out == BN_GPU_VALUE_HB2);
+    assert(ops[5].flags == BN_GPU_OP_FLAG_REFERENCE_SILU);
     assert(ops[5].rows == 256);
     assert(ops[5].cols == 128);
     assert(ops[5].p[0] == 512);
@@ -452,6 +458,9 @@ static void test_graph_lower_attention_to_shader(void) {
     assert(rope >= 0);
     assert(flash >= 0);
     assert(combine >= 0);
+    graph.ops[2].flags |= BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
+    graph.ops[3].flags |= BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
+    graph.ops[4].flags |= BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
 
     BnGPUIRLoweringValue values[8] = {0};
     for (int i = 0; i < 8; i++)
@@ -495,6 +504,7 @@ static void test_graph_lower_attention_to_shader(void) {
     assert(ops[2].buf_in == BN_GPU_VALUE_Q);
     assert(ops[2].p[2] == 6);
     assert(ops[2].p[6] == 128);
+    assert(ops[2].flags & BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER);
 
     assert(ops[3].op_kind == BN_GPU_OP_ATTENTION);
     assert(ops[3].op_code == BN_GPU_CODE_SOFTMAX);
@@ -502,6 +512,7 @@ static void test_graph_lower_attention_to_shader(void) {
     assert(ops[3].p[0] == 8);
     assert(ops[3].p[1] == 6);
     assert(ops[3].p[2] == 1024);
+    assert(ops[3].flags & BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER);
 
     assert(ops[4].op_kind == BN_GPU_OP_ATTENTION);
     assert(ops[4].op_code == BN_GPU_CODE_GQA_COMBINE);
@@ -511,8 +522,87 @@ static void test_graph_lower_attention_to_shader(void) {
     assert(ops[4].p[1] == 16);
     assert(ops[4].p[6] == 128);
     assert(ops[4].p[7] == 0);
+    assert(ops[4].flags & BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER);
 
     bn_gpu_value_graph_free(&graph);
+    printf("PASSED\n");
+}
+
+static int lower_repeated_attention_blocks(BnGPUOp *out,
+                                           int n_blocks,
+                                           int chunk_blocks) {
+    BnGPUValueGraph graph;
+    bn_gpu_value_graph_init(&graph);
+    BnGPUIRLoweringValue *values = calloc(
+        (size_t)n_blocks * 4, sizeof(*values));
+    int out_count = 0;
+    int block = 0;
+    if (!values)
+        return -1;
+
+    while (block < n_blocks) {
+        int end = chunk_blocks > 0 && block + chunk_blocks < n_blocks
+            ? block + chunk_blocks : n_blocks;
+        for (; block < end; block++) {
+            int q = bn_gpu_value_graph_add_value(
+                &graph, BN_GPU_IR_VALUE_TRANSIENT, 0, 1, 128,
+                BN_GPU_IR_VALUE_READABLE | BN_GPU_IR_VALUE_WRITABLE, "q");
+            int scores = bn_gpu_value_graph_add_attention_scores(
+                &graph, q, 8, 16, 6, 2, 64, 1024,
+                (uint32_t)(block * 1024), 0x3f000000u, "scores");
+            int probs = bn_gpu_value_graph_add_softmax(
+                &graph, scores, 8, 6, 1024, "softmax");
+            int combine = bn_gpu_value_graph_add_attention_combine(
+                &graph, probs, 8, 16, 6, 2, 64, 1024,
+                (uint32_t)(block * 1024), "combine");
+            if (q < 0 || scores < 0 || probs < 0 || combine < 0) {
+                free(values);
+                bn_gpu_value_graph_free(&graph);
+                return -1;
+            }
+            graph.ops[graph.n_ops - 3].flags |=
+                BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
+            graph.ops[graph.n_ops - 2].flags |=
+                BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
+            graph.ops[graph.n_ops - 1].flags |=
+                BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
+            values[q].shader_slot = BN_GPU_VALUE_Q;
+            values[scores].shader_slot = BN_GPU_VALUE_ATT;
+            values[probs].shader_slot = BN_GPU_VALUE_ATT;
+            values[combine].shader_slot = BN_GPU_VALUE_XB;
+        }
+
+        BnGPUIRLoweringMap map = { values, graph.n_values };
+        int lowered = 0;
+        if (bn_gpu_value_graph_lower_to_shader(
+                &graph, &map, out + out_count,
+                n_blocks * 3 - out_count, &lowered, 0) != 0) {
+            free(values);
+            bn_gpu_value_graph_free(&graph);
+            return -1;
+        }
+        out_count += lowered;
+        bn_gpu_value_graph_clear(&graph);
+        memset(values, 0, (size_t)n_blocks * 4 * sizeof(*values));
+    }
+
+    free(values);
+    bn_gpu_value_graph_free(&graph);
+    return out_count;
+}
+
+static void test_long_graph_split_lowering_equivalence(void) {
+    printf("test_long_graph_split_lowering_equivalence... ");
+    enum { N_BLOCKS = 200, N_OPS = N_BLOCKS * 3 };
+    BnGPUOp *full = calloc(N_OPS, sizeof(*full));
+    BnGPUOp *split = calloc(N_OPS, sizeof(*split));
+    assert(full != NULL);
+    assert(split != NULL);
+    assert(lower_repeated_attention_blocks(full, N_BLOCKS, 0) == N_OPS);
+    assert(lower_repeated_attention_blocks(split, N_BLOCKS, 190) == N_OPS);
+    assert(memcmp(full, split, sizeof(*full) * N_OPS) == 0);
+    free(full);
+    free(split);
     printf("PASSED\n");
 }
 
@@ -700,6 +790,7 @@ int main(void) {
     test_graph_lowering_failures();
     test_graph_lower_split_matvec_to_shader();
     test_graph_lower_attention_to_shader();
+    test_long_graph_split_lowering_equivalence();
     test_graph_lower_ssm_to_shader();
     test_graph_lower_utility_to_shader();
     printf("PASSED\n");

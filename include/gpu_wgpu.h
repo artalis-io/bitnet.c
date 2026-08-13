@@ -12,6 +12,8 @@
 // shader_dir: path to directory containing *.wgsl files (NULL = use embedded shaders).
 // Returns NULL if no GPU is available or initialization fails.
 BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir);
+BnGPUBackend *bn_gpu_wgpu_create_with_policy(
+    const char *shader_dir, const BnBackendRuntimePolicy *policy);
 
 // Destroy the wgpu-native WebGPU backend and release all device resources.
 // Safe to call with NULL.

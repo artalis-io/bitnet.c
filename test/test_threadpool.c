@@ -145,6 +145,50 @@ static void test_num_threads(void) {
     printf("PASSED\n");
 }
 
+static void test_poll_policy(void) {
+    printf("test_poll_policy... ");
+
+    BnThreadPool *pool = bn_tp_create(2);
+    assert(pool != NULL);
+    int arr[2048];
+    memset(arr, 0, sizeof(arr));
+    BnTPTask task = { add_one, arr, 2048 };
+
+    bn_tp_set_poll_iters(pool, 0, 0);
+    bn_tp_dispatch(pool, &task, 1);
+    bn_tp_set_poll_iters(pool, 50000, 50000);
+    bn_tp_dispatch(pool, &task, 1);
+    bn_tp_set_cpu_decode_policy(pool);
+    bn_tp_dispatch(pool, &task, 1);
+
+    for (int i = 0; i < 2048; i++)
+        assert(arr[i] == 3);
+    bn_tp_free(pool);
+
+    printf("PASSED\n");
+}
+
+static void test_runtime_policy_snapshot(void) {
+    printf("test_runtime_policy_snapshot... ");
+
+    setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
+    setenv("BN_DUMP_LAYER_INP", "/tmp/bn-policy-before", 1);
+    BnThreadPool *pool = bn_tp_create(1);
+    assert(pool != NULL);
+    const BnCPURuntimePolicy *policy = bn_tp_cpu_policy(pool);
+    assert(policy && !policy->prepared_qweights);
+    assert(strcmp(policy->debug_dump_path, "/tmp/bn-policy-before") == 0);
+
+    unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
+    setenv("BN_DUMP_LAYER_INP", "/tmp/bn-policy-after", 1);
+    assert(!policy->prepared_qweights);
+    assert(strcmp(policy->debug_dump_path, "/tmp/bn-policy-before") == 0);
+
+    bn_tp_free(pool);
+    unsetenv("BN_DUMP_LAYER_INP");
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== ThreadPool Tests ===\n");
     test_serial_dispatch();
@@ -152,6 +196,8 @@ int main(void) {
     test_multi_task_dispatch();
     test_rapid_dispatch();
     test_num_threads();
+    test_poll_policy();
+    test_runtime_policy_snapshot();
     printf("All threadpool tests passed!\n");
     return 0;
 }

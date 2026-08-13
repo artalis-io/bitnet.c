@@ -164,7 +164,8 @@ Key transformer files:
 
 ## Runtime Notes
 
-- MoE I/O modes are mmap, `--pread --cache-mb N`, and experimental `--madvise`.
+- MoE I/O modes are mmap, `--pread --cache-mb N`, and explicit
+  `--madvise`-guided mmap.
 - `--maxseq` is important on GPU and large-context models because KV allocation
   follows the selected sequence cap.
 - `--kv16` halves KV cache storage.

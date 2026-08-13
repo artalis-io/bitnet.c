@@ -39,8 +39,9 @@ void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales,
             x_scales[b] = 0.0f;
             continue;
         }
-        float inv_scale = 127.0f / amax;
-        x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(amax / 127.0f));
+        float scale = amax / 127.0f;
+        float inv_scale = 1.0f / scale;
+        x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(scale));
         for (int i = 0; i < 32; i++) {
             int v = (int)lrintf(xb[i] * inv_scale);
             if (v < -127) v = -127;

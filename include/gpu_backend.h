@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "runtime_policy.h"
 
 typedef enum {
     BN_GPU_BACKEND_UNKNOWN = 0,
@@ -25,6 +26,38 @@ typedef struct {
     int use_gateup_split;
 } BnGPUMoEPrefillExpert;
 
+// Backend-neutral description of request-local activation resources. Model and
+// runtime planning populate this value; GPU implementations must not inspect
+// BnConfig or other model-owned structures.
+typedef struct {
+    int dim;
+    int n_layers;
+    int seq_len;
+    int kv_dim;
+    int n_heads;
+    int head_size;
+    int vocab_size;
+    int per_layer_input_dim;
+    int kv_f16;
+    int attention_layer_count;
+    int ssm_layer_count;
+    int uses_hybrid_ssm;
+    int uses_hybrid_moe;
+    int uses_moe;
+    int xb2_elements;
+    int hb_elements;
+    int moe_total_experts;
+    int moe_active_experts;
+    int moe_expert_hidden_dim;
+    int ssm_time_step_rank;
+    int ssm_state_size;
+    int ssm_inner_size;
+    int ssm_group_count;
+    int ssm_conv_kernel;
+    const float *rope_frequencies;
+    int rope_frequency_count;
+} BnGPUActivationPlan;
+
 // GPU compute backend vtable. The caller (e.g., Hull) fills this in
 // with their GPU API. bitnet.c calls it for matvec dispatch.
 // All function pointers may be NULL (graceful fallback to CPU SIMD).
@@ -43,6 +76,18 @@ struct BnGPUBackend {
     // caches. Optional; callers use this for memory-sensitive resident caches.
     void *(*buffer_create_quant_only)(void *ctx, const void *data, size_t size,
                                       int type, int rows, int cols);
+    // Wrap immutable host-backed weight storage without copying. Optional;
+    // callers must keep data alive for the lifetime of the returned handle.
+    void *(*buffer_create_borrowed)(void *ctx, const void *data, size_t size,
+                                    int type, int rows, int cols);
+    // Wrap immutable host storage in a backend-native layout that can be
+    // consumed by ordinary matvec graph operations. Optional.
+    void *(*buffer_create_native_matvec_borrowed)(
+        void *ctx, const void *data, size_t size, int type, int rows, int cols);
+    int (*native_matvec_borrowed_supported)(
+        void *ctx, size_t size, int type, int rows, int cols);
+    size_t (*buffer_cache_charge)(
+        void *ctx, size_t size, int type, int rows, int cols);
     // Upload K-quant weight data and request an FP32 auxiliary cache when the
     // backend can fit it. Optional; callers use this for paths that are faster
     // with resident dequantized weights.
@@ -413,10 +458,14 @@ struct BnGPUBackend {
     int (*execute)(void *ctx, const void *ops, int n_ops,
                    int readback_buf, float *out_host, int out_len);
 
-    // Initialize GPU-resident activation buffers for a given model config.
+    // Initialize GPU-resident activation buffers from a backend-neutral plan.
     // Must be called after weight upload, before execute().
     // Returns 0 on success.
-    int (*init_activations)(void *ctx, const void *config);  // config is BnConfig*
+    int (*init_activations)(void *ctx, const BnGPUActivationPlan *plan);
+
+    // Clear request-local mutable activation state while retaining allocated
+    // backend buffers and immutable uploaded model data. Optional.
+    int (*reset_activations)(void *ctx);
 
     // Free GPU-resident activation buffers.
     void (*free_activations)(void *ctx);
@@ -450,14 +499,27 @@ struct BnGPUBackend {
     // Return free/total device memory in bytes. Optional.
     int (*memory_info)(void *ctx, size_t *free_bytes, size_t *total_bytes);
 
+    // Prepare backend-owned memory and runtime state used by CPU-orchestrated
+    // operations. Optional and idempotent.
+    int (*prepare_cpu_operations)(void *ctx);
+
+    // Select the backend's prepared native-quant weight layout before model
+    // buffers are uploaded. Optional; the setting is backend-instance local.
+    void (*configure_prepared_native_quant)(void *ctx, int enabled);
+
     void *ctx;  // opaque backend context
 
     // Capability flags (set by backend, checked by transformer)
     uint32_t caps;
 
+    // Maximum expert count supported by the backend's GPU router. 0 means
+    // the backend does not impose a shape limit beyond its capability bit.
+    int max_moe_route_experts;
+
     // Concrete backend identity for planning/debugging. Future backends should
     // set this instead of relying on capability inference alone.
     BnGPUBackendKind kind;
+    BnBackendRuntimePolicy runtime_policy;
 
     // Maximum storage-buffer binding size in bytes. 0 = unknown; callers
     // should use a conservative fallback when deciding whether to bind a
@@ -465,9 +527,21 @@ struct BnGPUBackend {
     size_t max_storage_binding_size;
 };
 
+int bn_gpu_backend_capture_runtime_policy(BnGPUBackend *gpu);
+int bn_gpu_backend_runtime_policy_init(BnBackendRuntimePolicy *policy);
+int bn_gpu_backend_capture_runtime_policy_from(
+    BnGPUBackend *gpu, const BnBackendRuntimePolicy *policy);
+void bn_gpu_backend_release_runtime_policy(BnGPUBackend *gpu);
+
 static inline int bn_gpu_backend_can_create_buffer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_create;
+}
+
+static inline void bn_gpu_backend_configure_prepared_native_quant(
+    BnGPUBackend *gpu, int enabled) {
+    if (gpu && gpu->configure_prepared_native_quant)
+        gpu->configure_prepared_native_quant(gpu->ctx, enabled);
 }
 
 static inline BnGPUBackendKind bn_gpu_backend_kind(
@@ -490,6 +564,31 @@ static inline int bn_gpu_backend_is_webgpu(const BnGPUBackend *gpu) {
 static inline int bn_gpu_backend_can_create_quant_only_buffer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_create_quant_only;
+}
+
+static inline int bn_gpu_backend_can_create_borrowed_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_borrowed;
+}
+
+static inline int bn_gpu_backend_can_create_native_matvec_borrowed_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_native_matvec_borrowed;
+}
+
+static inline int bn_gpu_backend_native_matvec_borrowed_supported(
+    const BnGPUBackend *gpu, size_t size, int type, int rows, int cols) {
+    return gpu && gpu->buffer_create_native_matvec_borrowed &&
+           gpu->native_matvec_borrowed_supported &&
+           gpu->native_matvec_borrowed_supported(
+               gpu->ctx, size, type, rows, cols);
+}
+
+static inline size_t bn_gpu_backend_buffer_cache_charge(
+    const BnGPUBackend *gpu, size_t size, int type, int rows, int cols) {
+    if (gpu && gpu->buffer_cache_charge)
+        return gpu->buffer_cache_charge(gpu->ctx, size, type, rows, cols);
+    return size;
 }
 
 static inline int bn_gpu_backend_can_create_kquant_f32_cache_buffer(
@@ -667,6 +766,12 @@ static inline int bn_gpu_backend_can_query_memory(
     return gpu && gpu->memory_info;
 }
 
+static inline int bn_gpu_backend_prepare_cpu_operations(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prepare_cpu_operations
+        ? gpu->prepare_cpu_operations(gpu->ctx) : 0;
+}
+
 static inline int bn_gpu_backend_has_cap(const BnGPUBackend *gpu,
                                          uint32_t cap) {
     return gpu && ((gpu->caps & cap) != 0);
@@ -675,6 +780,13 @@ static inline int bn_gpu_backend_has_cap(const BnGPUBackend *gpu,
 static inline size_t bn_gpu_backend_max_storage_binding_size(
     const BnGPUBackend *gpu) {
     return gpu ? gpu->max_storage_binding_size : 0;
+}
+
+static inline int bn_gpu_backend_moe_route_shape_supported(
+    const BnGPUBackend *gpu, int n_experts) {
+    return gpu && n_experts > 0 &&
+           (gpu->max_moe_route_experts <= 0 ||
+            n_experts <= gpu->max_moe_route_experts);
 }
 
 static inline void *bn_gpu_backend_create_buffer(BnGPUBackend *gpu,
@@ -698,6 +810,27 @@ static inline void *bn_gpu_backend_create_quant_only_buffer(BnGPUBackend *gpu,
         return NULL;
     return gpu->buffer_create_quant_only(gpu->ctx, data, size, type, rows,
                                          cols);
+}
+
+static inline void *bn_gpu_backend_create_borrowed_buffer(
+    BnGPUBackend *gpu,
+    const void *data,
+    size_t size,
+    int type,
+    int rows,
+    int cols) {
+    if (!bn_gpu_backend_can_create_borrowed_buffer(gpu))
+        return NULL;
+    return gpu->buffer_create_borrowed(gpu->ctx, data, size, type, rows, cols);
+}
+
+static inline void *bn_gpu_backend_create_native_matvec_borrowed_buffer(
+    BnGPUBackend *gpu, const void *data, size_t size,
+    int type, int rows, int cols) {
+    if (!bn_gpu_backend_can_create_native_matvec_borrowed_buffer(gpu))
+        return NULL;
+    return gpu->buffer_create_native_matvec_borrowed(
+        gpu->ctx, data, size, type, rows, cols);
 }
 
 static inline void *bn_gpu_backend_create_kquant_f32_cache_buffer(
@@ -1401,10 +1534,15 @@ static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,
 }
 
 static inline int bn_gpu_backend_init_activations(const BnGPUBackend *gpu,
-                                                  const void *config) {
+                                                  const BnGPUActivationPlan *plan) {
     if (!bn_gpu_backend_can_init_activations(gpu))
         return -1;
-    return gpu->init_activations(gpu->ctx, config);
+    return gpu->init_activations(gpu->ctx, plan);
+}
+
+static inline int bn_gpu_backend_reset_activations(const BnGPUBackend *gpu) {
+    return gpu && gpu->reset_activations
+        ? gpu->reset_activations(gpu->ctx) : 0;
 }
 
 static inline void bn_gpu_backend_free_activations(const BnGPUBackend *gpu) {
@@ -1492,5 +1630,25 @@ static inline void bn_gpu_backend_destroy_buffer(BnGPUBackend *gpu,
 #define BN_GPU_CAP_DEINTERLEAVED_KQUANT_FUSED_GATEUP_SILU (1u << 9) // deinterleaved K-quant fused gate/up SiLU shader available
 #define BN_GPU_CAP_LAYERWISE_ROPE (1u << 10) // backend can vary RoPE frequency policy per layer
 #define BN_GPU_CAP_MOE_ROUTED_FFN (1u << 11) // resident decode route + routed FFN graph ops
+#define BN_GPU_CAP_BORROWED_WEIGHT_BUFFERS (1u << 12) // weight handles may borrow immutable host-mapped storage
+#define BN_GPU_CAP_MOE_ROUTED_KQUANT_DOWN_CACHE (1u << 13) // routed K-quant down cache strategy available
+#define BN_GPU_CAP_MOE_ROUTED_NATIVE_QUANT (1u << 14) // native-quant routed FFN strategy available
+#define BN_GPU_CAP_DECODE_GRAPH_CACHE (1u << 15) // lowered decode op streams may be replayed
+#define BN_GPU_CAP_LARGE_GRAPH_NATIVE (1u << 16) // large dense/hybrid graph execution available
+#define BN_GPU_CAP_SSM_GRAPH (1u << 17) // state-space graph operations available
+#define BN_GPU_CAP_PER_LAYER_INPUT_GRAPH (1u << 18) // per-layer input adapter graph composition available
+#define BN_GPU_CAP_REFERENCE_ATTENTION (1u << 19) // shared-value attention preserves reference trajectory semantics
+#define BN_GPU_CAP_REFERENCE_ATTENTION_FALLBACK (1u << 20) // backend supports reference-attention CPU handoff
+#define BN_GPU_CAP_PREPARED_NATIVE_QUANT (1u << 21) // backend supports prepared weights with block-quantized activations
+#define BN_GPU_CAP_MOE_EXPERT_GRAPH (1u << 22) // CPU-routed selected-expert graph execution available
+#define BN_GPU_CAP_HYBRID_SSM_MOE_GRAPH (1u << 23) // combined SSM + routed-MoE graph is coherent
+#define BN_GPU_CAP_MOE_ROUTED_LOWBIT_BLOCK32 (1u << 24) // routed block32 low-bit FFN kernels available
+#define BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32 (1u << 25) // dense residual low-bit FFN graph available
+#define BN_GPU_CAP_REFERENCE_RECURRENT (1u << 26) // recurrent graph preserves reference trajectory semantics
+#define BN_GPU_CAP_PREPARED_NATIVE_QUANT_ATTENTION (1u << 27) // prepared native-quant attention projections are coherent
+#define BN_GPU_CAP_PREPARED_NATIVE_QUANT_PER_LAYER_FFN (1u << 28) // prepared native-quant FFN gate/up is coherent with per-layer input composition
+#define BN_GPU_CAP_PREPARED_NATIVE_QUANT_PER_LAYER_FFN_DOWN (1u << 29) // prepared native-quant FFN down is coherent with per-layer input composition
+#define BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH (1u << 30) // ordinary attention graph preserves reference trajectory semantics
+#define BN_GPU_CAP_REFERENCE_ATTENTION_TOKEN_FALLBACK (1u << 31) // reference attention requires whole-token CPU orchestration
 
 #endif // BN_GPU_BACKEND_H

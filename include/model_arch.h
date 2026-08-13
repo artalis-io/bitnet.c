@@ -6,8 +6,6 @@
 #include <stddef.h>
 
 #define BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE               (1u << 0)
-#define BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK           (1u << 1)
-#define BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM               (1u << 2)
 #define BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK     (1u << 3)
 #define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU                 (1u << 4)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER            (1u << 5)
@@ -19,15 +17,16 @@
 #define BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY              (1u << 11)
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK (1u << 12)
 #define BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK   (1u << 13)
-#define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION        (1u << 14)
+#define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ATTENTION            (1u << 14)
 #define BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT            (1u << 15)
 #define BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH          (1u << 16)
-#define BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT           (1u << 17)
-#define BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE    (1u << 18)
+#define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION  (1u << 17)
 #define BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION       (1u << 19)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION           (1u << 20)
 #define BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK              (1u << 21)
 #define BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS                (1u << 22)
+#define BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION                (1u << 23)
+#define BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT                (1u << 24)
 
 typedef struct {
     const char *name;
@@ -109,7 +108,6 @@ int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
                                         int layer,
                                         BnModelTensorRole role);
 void bn_model_arch_apply_config(BnConfig *c, const BnModelArchOps *ops);
-int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c);
 int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c);
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);
@@ -126,13 +124,11 @@ int bn_model_arch_uses_ffn_post_norm(const BnConfig *c);
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c);
 int bn_model_arch_has_ffn_gate(const BnConfig *c);
 int bn_model_arch_config_activation(const BnConfig *c);
-int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_model_arch_uses_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_dense_attention_only(const BnConfig *c);
 int bn_model_arch_uses_large_dense_shape(const BnConfig *c);
-int bn_model_arch_uses_large_gpu_graph_fallback_shape(const BnConfig *c);
 int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer);
 int bn_model_arch_uses_swa_rope(const BnConfig *c, int layer_head_size);
 int bn_model_arch_rope_dims_for_head(const BnConfig *c,
@@ -145,13 +141,26 @@ int bn_model_arch_rope_uses_base_frequency(const BnConfig *c,
 void bn_model_arch_init_rope_frequencies(const BnConfig *c,
                                          float *freqs,
                                          int capacity_pairs);
+void bn_model_arch_init_rope_frequencies_for_theta(float theta,
+                                                   int rope_dims,
+                                                   float *freqs,
+                                                   int capacity_pairs);
+void bn_model_arch_init_rope_angles_for_theta(float theta,
+                                              int rope_dims,
+                                              int position,
+                                              float *angles,
+                                              int capacity_pairs);
 int bn_model_arch_per_layer_embedding_dim(const BnConfig *c);
 int bn_model_arch_allows_small_dense_prefill_decode_fallback(
     const BnConfig *c);
 int bn_model_arch_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c);
-int bn_model_arch_moe_prefers_reference_gpu_attention(const BnConfig *c);
+int bn_model_arch_moe_requires_reference_attention(const BnConfig *c);
+int bn_model_arch_requires_reference_attention(const BnConfig *c);
+int bn_model_arch_requires_reference_recurrent(const BnConfig *c);
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
+int bn_model_arch_moe_uses_reference_router_accumulation(
+    const BnConfig *c);
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c);
 int bn_model_arch_uses_moe(const BnConfig *c);
 int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix);
@@ -189,12 +198,7 @@ int bn_model_arch_loads_extra_ffn_post_norms(const BnConfig *c);
 int bn_model_arch_loads_moe_aux_weights(const BnConfig *c);
 int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c);
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model);
-int bn_model_arch_allows_small_dense_native_quant(const BnConfig *c);
-int bn_model_arch_small_dense_native_quant_to_layer(const BnConfig *c);
-int bn_model_arch_allows_small_dense_native_logit_refine(const BnConfig *c);
-int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c);
 int bn_model_arch_uses_small_dense_shape(const BnConfig *c);
-int bn_model_arch_uses_small_dense_native_quant_shape(const BnConfig *c);
 int bn_model_arch_dense_batch_prefill_shape_allowed(
     const BnConfig *c,
     int supports_large_dense_batch_prefill);

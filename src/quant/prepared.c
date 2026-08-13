@@ -23,6 +23,16 @@ size_t bn_quant_prepared_qweight_size(const BnQWeight *w,
     }
 #endif
 
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    if (w->type == BN_GGUF_TENSOR_Q8_0) {
+        if (w->rows % 4 != 0 || (w->cols & 31) != 0) return 0;
+        size_t n_blocks = (size_t)w->rows * (w->cols / 32);
+        if (kind) *kind = BN_PREPARED_WEIGHT_Q8_0_REPACK;
+        return n_blocks * 32 + SH_ARENA_ALIGN +
+               n_blocks * sizeof(uint16_t) + SH_ARENA_ALIGN;
+    }
+#endif
+
 #ifdef __wasm_relaxed_simd__
     if (w->type == BN_GGUF_TENSOR_Q8_0) {
         if ((w->cols & 31) != 0) return 0;
@@ -32,7 +42,8 @@ size_t bn_quant_prepared_qweight_size(const BnQWeight *w,
     }
 #endif
 
-#if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
+#if defined(__AVX2__) || \
+    (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
     if (w->type == BN_GGUF_TENSOR_Q4_K) {
         int n_blocks_per_row = w->cols / BN_QK_K;
         if (n_blocks_per_row <= 0) return 0;
@@ -133,6 +144,44 @@ static int prepare_q8_0(BnPreparedWeight *prepared, const BnQWeight *w,
     const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)w->data;
     for (size_t i = 0; i < n_blocks; i++)
         prepared->f32_scales[i] = bn_fp16_to_fp32(blocks[i].d);
+    return 0;
+#else
+    (void)prepared;
+    (void)w;
+    (void)arena;
+    return -1;
+#endif
+}
+
+static int prepare_q8_0_repack(BnPreparedWeight *prepared,
+                               const BnQWeight *w,
+                               SHArena *arena) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    if (w->type != BN_GGUF_TENSOR_Q8_0 || !w->data ||
+        w->rows % 4 != 0 || (w->cols & 31) != 0)
+        return -1;
+    int n_blocks_per_row = w->cols / 32;
+    size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
+    prepared->kind = BN_PREPARED_WEIGHT_Q8_0_REPACK;
+    prepared->qs = (uint8_t *)sh_arena_alloc(arena, n_blocks * 32);
+    prepared->scales = (uint16_t *)sh_arena_alloc(
+        arena, n_blocks * sizeof(uint16_t));
+    if (!prepared->qs || !prepared->scales) return -1;
+
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)w->data;
+    for (int g = 0; g < w->rows / 4; g++) {
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            size_t gb = (size_t)g * n_blocks_per_row + b;
+            for (int r = 0; r < 4; r++) {
+                const BnBlockQ8_0 *src =
+                    &blocks[(size_t)(g * 4 + r) * n_blocks_per_row + b];
+                prepared->scales[gb * 4 + r] = src->d;
+                for (int chunk = 0; chunk < 8; chunk++)
+                    memcpy(prepared->qs + gb * 128 + chunk * 16 + r * 4,
+                           src->qs + chunk * 4, 4);
+            }
+        }
+    }
     return 0;
 #else
     (void)prepared;
@@ -265,7 +314,8 @@ static int prepare_q4_k(BnPreparedWeight *prepared, const BnQWeight *w,
 
 static int prepare_q6_k(BnPreparedWeight *prepared, const BnQWeight *w,
                         SHArena *arena) {
-#if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
+#if defined(__AVX2__) || \
+    (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
     if (w->type != BN_GGUF_TENSOR_Q6_K || !w->data) return -1;
     int n_blocks_per_row = w->cols / BN_QK_K;
     int large_projection =
@@ -324,6 +374,8 @@ int bn_quant_prepare_qweight(BnPreparedWeight *prepared, const BnQWeight *w,
             return prepare_q4_0(prepared, w, arena);
         case BN_PREPARED_WEIGHT_Q8_0_F32_SCALES:
             return prepare_q8_0(prepared, w, arena);
+        case BN_PREPARED_WEIGHT_Q8_0_REPACK:
+            return prepare_q8_0_repack(prepared, w, arena);
         case BN_PREPARED_WEIGHT_Q4_K_SCALES:
             return prepare_q4_k(prepared, w, arena);
         case BN_PREPARED_WEIGHT_Q6_K_EXPANDED:

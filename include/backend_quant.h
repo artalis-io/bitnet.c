@@ -17,7 +17,20 @@ typedef enum {
 } BnBackendQuantDenseGraphRequirement;
 
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
-    return bn_quant_format_gpu_split_cap(type);
+    switch (type) {
+        case BN_GGUF_TENSOR_Q4_0:
+            return BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q5_0:
+            return BN_GPU_CAP_MIDBIT_BLOCK32_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q4_K:
+            return BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q5_K:
+            return BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q8_0:
+            return BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT;
+        default:
+            return 0;
+    }
 }
 
 static inline int bn_backend_quant_can_gpu_split(int type) {
@@ -281,6 +294,10 @@ static inline int bn_backend_quant_moe_routed_kquant_gateup(int gate_type,
                                                              up_type);
 }
 
+static inline int bn_backend_quant_moe_direct_routed_down(int type) {
+    return bn_quant_format_supports_moe_direct_routed_down(type);
+}
+
 static inline int bn_backend_quant_cpu_fused_kquant_gateup_silu(int gate_type,
                                                                 int up_type) {
     return bn_quant_format_supports_cpu_fused_kquant_gateup_silu(gate_type,
@@ -329,6 +346,12 @@ static inline int bn_backend_quant_moe_routed_native_quant(int gate_type,
                                                    down_type);
 }
 
+static inline int bn_backend_quant_moe_routed_lowbit_block32(
+    int gate_type, int up_type, int down_type) {
+    return bn_quant_format_supports_moe_routed_lowbit_block32(
+        gate_type, up_type, down_type);
+}
+
 static inline int bn_backend_quant_moe_resident_routed_ffn_supported(
     int gate_type,
     int up_type,
@@ -336,7 +359,9 @@ static inline int bn_backend_quant_moe_resident_routed_ffn_supported(
     return bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
                                                          down_type) ||
            bn_backend_quant_moe_routed_native_quant(gate_type, up_type,
-                                                    down_type);
+                                                    down_type) ||
+           bn_backend_quant_moe_routed_lowbit_block32(gate_type, up_type,
+                                                       down_type);
 }
 
 static inline int bn_backend_quant_moe_routed_op_uses_native_quant(int type) {
@@ -627,8 +652,6 @@ static inline int bn_backend_quant_supports_kquant_logits_refine(int type) {
     return bn_quant_format_supports_kquant_logits_refine(type);
 }
 
-int bn_backend_quant_cpu_tied_kquant_refine_top(void);
-int bn_backend_quant_cpu_tied_kquant_hybrid_top(void);
 
 static inline int bn_backend_quant_logits_kquant_f32_cache_supported(int type) {
     return bn_quant_format_logits_kquant_f32_cache_supported(type);
@@ -768,6 +791,24 @@ static inline int bn_backend_quant_supports_specialized_native_quant_matvec(int 
     return bn_quant_format_supports_specialized_native_quant_matvec(type);
 }
 
+static inline int
+bn_backend_quant_supports_reference_prepared_accumulation(int type) {
+    return bn_quant_format_supports_reference_prepared_accumulation(type);
+}
+
+static inline int bn_backend_quant_prefers_specialized_native_quant_matvec(
+    int type, int cols) {
+    return bn_quant_format_prefers_specialized_native_quant_matvec(type,
+                                                                    cols);
+}
+
+static inline int
+bn_backend_quant_prefers_tall_specialized_native_quant_matvec(
+    int type, int rows, int cols) {
+    return bn_quant_format_prefers_tall_specialized_native_quant_matvec(
+        type, rows, cols);
+}
+
 static inline int bn_backend_quant_gpu_matvec_supported(int type) {
     return bn_quant_format_gpu_matvec_supported(type);
 }
@@ -791,7 +832,18 @@ bn_backend_quant_supports_requested_down_kquant_quant_matmul(int type) {
 }
 
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
-    return bn_quant_format_gpu_fused_gateup_silu_cap(type);
+    switch (type) {
+        case BN_GGUF_TENSOR_Q4_0:
+            return BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q5_0:
+            return BN_GPU_CAP_MIDBIT_BLOCK32_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q8_0:
+            return BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q5_K:
+            return BN_GPU_CAP_DEINTERLEAVED_KQUANT_FUSED_GATEUP_SILU;
+        default:
+            return 0;
+    }
 }
 
 static inline int bn_backend_quant_gpu_fused_gateup_requires_backend_opt_in(
@@ -809,6 +861,18 @@ static inline uint32_t bn_backend_quant_gpu_matvec_kquant_dot_flag(
     int enabled) {
     return bn_quant_format_gpu_matvec_kquant_dot_flag(type, enabled);
 }
+
+static inline uint32_t bn_backend_quant_gpu_matvec_native_quant_flag(
+    int type,
+    int enabled) {
+    return bn_quant_format_gpu_matvec_native_quant_flag(type, enabled);
+}
+
+static inline uint32_t
+bn_backend_quant_gpu_matvec_block_q8_activation_flag(int type, int enabled) {
+    return bn_quant_format_gpu_matvec_block_q8_activation_flag(type, enabled);
+}
+
 
 static inline uint32_t bn_backend_quant_gpu_matvec_reference_kquant_flag(
     int type,

@@ -10,6 +10,8 @@ typedef struct {
     float (*dot_row)(const float *row, const float *x, int dim);
     int (*dot4_rows)(float *out, const float *router_w, const float *x,
                      int dim, int start_expert);
+    double (*softmax_exp)(float *out, const float *logits, int n,
+                          float max_logit);
     void (*swiglu_silu)(float *hb, const float *gate, const float *up,
                         int n, int uses_reference_silu);
     void (*weighted_add)(float *dst, const float *src, float weight, int n);
@@ -46,12 +48,16 @@ static void moe_rmsnorm_scalar(float *out, const float *x, const float *w,
 }
 #endif
 
-#if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2
-static float moe_dot_row_scalar(const float *row, const float *x, int dim) {
+float bn_moe_dot_row_reference(const float *row, const float *x, int dim) {
     float sum = 0.0f;
     for (int d = 0; d < dim; d++)
         sum += row[d] * x[d];
     return sum;
+}
+
+#if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2
+static float moe_dot_row_scalar(const float *row, const float *x, int dim) {
+    return bn_moe_dot_row_reference(row, x, dim);
 }
 #endif
 
@@ -106,6 +112,40 @@ static int moe_dot4_rows_scalar(float *out, const float *router_w,
     return 0;
 }
 
+#if !BN_TRANSFORMER_CPU_HAS_NEON
+static double moe_softmax_exp_scalar(float *out, const float *logits, int n,
+                                     float max_logit) {
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) {
+        float value = expf(logits[i] - max_logit);
+        out[i] = value;
+        sum += (double)value;
+    }
+    return sum;
+}
+#endif
+
+#if BN_TRANSFORMER_CPU_HAS_NEON
+static double moe_softmax_exp_neon(float *out, const float *logits, int n,
+                                   float max_logit) {
+    double sum = 0.0;
+    float32x4_t maxv = vdupq_n_f32(max_logit);
+    int i = 0;
+    for (; i + 3 < n; i += 4) {
+        float32x4_t value = bn_neon_fast_exp_f32(
+            vsubq_f32(vld1q_f32(logits + i), maxv));
+        vst1q_f32(out + i, value);
+        sum += (double)vaddvq_f32(value);
+    }
+    for (; i < n; i++) {
+        float value = expf(logits[i] - max_logit);
+        out[i] = value;
+        sum += (double)value;
+    }
+    return sum;
+}
+#endif
+
 #if BN_TRANSFORMER_CPU_HAS_AVX2
 static int moe_dot4_rows_avx2(float *out, const float *router_w,
                               const float *x, int dim, int start_expert) {
@@ -149,14 +189,36 @@ static int moe_dot4_rows_avx2(float *out, const float *router_w,
 }
 #endif
 
+#if !BN_TRANSFORMER_CPU_HAS_NEON
 static void moe_swiglu_silu_scalar(float *hb, const float *gate,
-                                   const float *up, int n, int uses_reference_silu) {
+                                   const float *up, int n,
+                                   int uses_reference_silu) {
     (void)uses_reference_silu;
     for (int i = 0; i < n; i++) {
         float g = gate[i];
         hb[i] = (g / (1.0f + expf(-g))) * up[i];
     }
 }
+#endif
+
+#if BN_TRANSFORMER_CPU_HAS_NEON
+static void moe_swiglu_silu_neon(float *hb, const float *gate,
+                                 const float *up, int n,
+                                 int uses_reference_silu) {
+    (void)uses_reference_silu;
+    int i = 0;
+    for (; i + 3 < n; i += 4) {
+        float32x4_t g = vld1q_f32(gate + i);
+        float32x4_t u = vld1q_f32(up + i);
+        vst1q_f32(hb + i,
+                  vmulq_f32(bn_neon_fast_silu_f32(g), u));
+    }
+    for (; i < n; i++) {
+        float32x4_t g = vdupq_n_f32(gate[i]);
+        hb[i] = vgetq_lane_f32(bn_neon_fast_silu_f32(g), 0) * up[i];
+    }
+}
+#endif
 
 #if BN_TRANSFORMER_CPU_HAS_AVX2
 static void moe_swiglu_silu_avx2(float *hb, const float *gate,
@@ -193,8 +255,8 @@ static void moe_weighted_add_neon(float *dst, const float *src,
     float32x4_t wv = vdupq_n_f32(weight);
     for (; i + 3 < n; i += 4) {
         float32x4_t acc = vld1q_f32(dst + i);
-        float32x4_t val = vmulq_f32(wv, vld1q_f32(src + i));
-        vst1q_f32(dst + i, vaddq_f32(acc, val));
+        vst1q_f32(dst + i,
+                  vfmaq_f32(acc, wv, vld1q_f32(src + i)));
     }
     for (; i < n; i++)
         dst[i] += weight * src[i];
@@ -251,7 +313,8 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_rmsnorm_neon,
         moe_dot_row_neon,
         moe_dot4_rows_scalar,
-        moe_swiglu_silu_scalar,
+        moe_softmax_exp_neon,
+        moe_swiglu_silu_neon,
         moe_weighted_add_neon,
         moe_residual_add_neon,
         0,
@@ -262,6 +325,7 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_rmsnorm_avx2,
         moe_dot_row_avx2,
         moe_dot4_rows_avx2,
+        moe_softmax_exp_scalar,
         moe_swiglu_silu_avx2,
         moe_weighted_add_avx2,
         moe_residual_add_avx2,
@@ -273,6 +337,7 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_rmsnorm_wasm,
         moe_dot_row_scalar,
         moe_dot4_rows_scalar,
+        moe_softmax_exp_scalar,
         moe_swiglu_silu_scalar,
         moe_weighted_add_scalar,
         moe_residual_add_scalar,
@@ -284,6 +349,7 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_rmsnorm_scalar,
         moe_dot_row_scalar,
         moe_dot4_rows_scalar,
+        moe_softmax_exp_scalar,
         moe_swiglu_silu_scalar,
         moe_weighted_add_scalar,
         moe_residual_add_scalar,
@@ -305,6 +371,11 @@ float bn_moe_dot_row(const float *row, const float *x, int dim) {
 int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
                      int dim, int start_expert) {
     return bn_moe_cpu_ops()->dot4_rows(out, router_w, x, dim, start_expert);
+}
+
+double bn_moe_softmax_exp(float *out, const float *logits, int n,
+                          float max_logit) {
+    return bn_moe_cpu_ops()->softmax_exp(out, logits, n, max_logit);
 }
 
 void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
@@ -336,6 +407,15 @@ void bn_moe_quant_matvec(float *out,
                          int8_t *quantized_buf,
                          BnThreadPool *pool) {
     bn_quant_matvec(out, W, x, quantized_buf, pool);
+}
+
+void bn_moe_quant_matvec_prepared(float *out,
+                                  const BnQWeight *W,
+                                  const BnPreparedWeight *prepared,
+                                  const float *x,
+                                  int8_t *quantized_buf,
+                                  BnThreadPool *pool) {
+    bn_quant_matvec_prepared(out, W, prepared, x, quantized_buf, pool);
 }
 
 void bn_moe_quant_matvec_batch(const BnMatvecTask *tasks,

@@ -12,7 +12,7 @@ kernel void gqa_combine(device const float *att         [[buffer(0)]],
     uint h = wid.x;
     uint tid = lid.x;
     uint n_heads = p[0], head_size = p[1], n_kv = p[2], kv_mul = p[3];
-    uint kv_dim = p[4], seq_len = p[5], loff = p[6];
+    uint kv_cache_stride = p[4], seq_len = p[5], loff = p[6];
 
     if (h >= n_heads) return;
 
@@ -23,7 +23,7 @@ kernel void gqa_combine(device const float *att         [[buffer(0)]],
         float acc = 0.0f;
         float comp = 0.0f;
         for (uint i = 0; i < n_kv; i++) {
-            uint v_base = loff + i * kv_dim + kv_h * head_size;
+            uint v_base = loff + i * kv_cache_stride + kv_h * head_size;
             float y = att[h * seq_len + i] * value_cache[v_base + d] - comp;
             float t = acc + y;
             comp = (t - acc) - y;

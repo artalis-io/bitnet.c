@@ -1,6 +1,7 @@
 #include "model.h"
 #include "session_internal.h"
 #include "backend_session.h"
+#include "gpu_backend.h"
 #include "model_internal.h"
 #include "turboquant.h"
 #include "sh_log.h"
@@ -167,4 +168,5 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
 
     s->pos = 0;
     s->gpu_kv_direct_valid = 0;
+    (void)bn_gpu_backend_reset_activations(bn_model_gpu(model));
 }

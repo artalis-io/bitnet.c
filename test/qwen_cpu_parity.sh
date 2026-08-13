@@ -9,8 +9,14 @@ NEON_BIN=${BITNET_NEON:-./bitnet}
 SCALAR_BIN=${BITNET_SCALAR:-./bitnet_scalar}
 AVX2_BIN=${BITNET_AVX2:-./bitnet_avx2}
 AVX512_BIN=${BITNET_AVX512:-./bitnet_avx512}
-BACKENDS=${QWEN_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512}}
+case "$(uname -m)" in
+    arm64|aarch64) DEFAULT_BACKENDS=neon,scalar ;;
+    x86_64|amd64) DEFAULT_BACKENDS=scalar,avx2,avx512 ;;
+    *) DEFAULT_BACKENDS=scalar ;;
+esac
+BACKENDS=${QWEN_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-$DEFAULT_BACKENDS}}
 CASES=${QWEN_CPU_PARITY_CASES:-all}
+SPARSE_CACHE_MB=${QWEN_CPU_PARITY_CACHE_MB:-2048}
 
 fail=0
 ran=0
@@ -59,7 +65,7 @@ run_backend() {
     echo "RUN $backend $name: $model (-n $tokens)"
     ran=$((ran + 1))
     if ! BITNET="$bitnet" "$COMPARE" "$model" -n "$tokens" --strict -t 1 \
-        --llama-cache-k f32 --llama-cache-v f32 "$@"; then
+        --llama-cache-k f32 --llama-cache-v f32 --llama-flash-off "$@"; then
         fail=1
     fi
 }
@@ -142,19 +148,19 @@ esac
 validate_backends
 
 run_case "qwen25" "Qwen 2.5 dense" "BN_MODEL_QWEN25" \
-    "*qwen2.5*.gguf" 1 16 --flash
+    "*qwen2.5*.gguf" 3 16
 run_case "qwen3_dense" "Qwen 3 dense" "BN_MODEL_QWEN3_DENSE" \
-    "*qwen3-[0-9.]*b-q*.gguf" 5 16 --llama-flash-off
+    "*qwen3-[0-9.]*b-q*.gguf" 5 16
 run_case "qwen3_moe" "Qwen 3 sparse MoE" "BN_MODEL_QWEN3_MOE" \
-    "*qwen3-*a3b*.gguf" 1 5
+    "*qwen3-*a3b*.gguf" 3 5 --pread --cache-mb "$SPARSE_CACHE_MB"
 run_case "qwen35_dense" "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" \
     "*qwen3*5*9b-q*.gguf" 5 16
 run_case "qwen35_moe" "Qwen 3.5 sparse MoE" "BN_MODEL_QWEN35_MOE" \
-    "*qwen3.5*35b*a3b*.gguf" 1 5
+    "*qwen3.5*35b*a3b*.gguf" 3 5 --pread --cache-mb "$SPARSE_CACHE_MB"
 run_case "qwen36_dense" "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" \
-    "*qwen3.6*27b*.gguf" 1 5
+    "*qwen3.6*27b*.gguf" 3 5
 run_case "qwen36_moe" "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" \
-    "*qwen3.6*35b*a3b*.gguf" 1 5
+    "*qwen3.6*35b*a3b*.gguf" 3 5 --pread --cache-mb "$SPARSE_CACHE_MB"
 
 if [[ "$REQUIRE_MODELS" == "1" && "$missing" -ne 0 ]]; then
     echo "Qwen CPU parity FAILED: $missing required model case(s) missing"

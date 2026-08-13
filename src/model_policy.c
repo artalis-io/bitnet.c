@@ -1,5 +1,4 @@
 #include "model_internal.h"
-#include "backend_quant.h"
 #include "model_arch.h"
 #include "quant.h"
 
@@ -118,11 +117,11 @@ size_t bn_model_load_policy_weight_embedded_tensor_scale_offset(int type,
 }
 
 int bn_model_load_policy_tied_logits_uses_quant_path(int type) {
-    return bn_backend_quant_tied_logits_uses_quant_path(type);
+    return bn_quant_format_tied_logits_uses_quant_path(type);
 }
 
 int bn_model_load_policy_logits_i8_cache_supported(int type) {
-    return bn_backend_quant_logits_i8_cache_supported(type);
+    return bn_quant_format_supports_logits_i8_cache(type);
 }
 
 void bn_model_load_policy_prepare_logits_i8_cache(const uint16_t *src,
@@ -134,12 +133,12 @@ void bn_model_load_policy_prepare_logits_i8_cache(const uint16_t *src,
 }
 
 int bn_model_load_policy_shared_expert_gate_uses_dense_float(int type) {
-    return bn_backend_quant_uses_dense_float(type);
+    return bn_quant_format_is_f32(type);
 }
 
 int bn_model_load_policy_can_convert_shared_expert_gate_to_dense_float(
     int type) {
-    return bn_backend_quant_can_convert_dense_to_float(type);
+    return bn_quant_format_can_convert_dense_to_f32(type);
 }
 
 int bn_model_load_policy_convert_shared_expert_gate_to_dense_float(
@@ -147,11 +146,11 @@ int bn_model_load_policy_convert_shared_expert_gate_to_dense_float(
     const void *src,
     float *dst,
     int n) {
-    return bn_backend_quant_convert_dense_to_float(type, src, dst, n);
+    return bn_quant_format_convert_dense_to_f32(type, src, dst, n);
 }
 
 int bn_model_load_policy_dense_float_weight_type(void) {
-    return bn_backend_quant_dense_float_type();
+    return bn_quant_format_dense_f32_type();
 }
 
 int bn_model_prompt_cache_attention_layer_count(const BnConfig *config) {
@@ -189,6 +188,25 @@ int bn_model_session_policy_per_layer_embedding_dim(
     return bn_model_arch_per_layer_embedding_dim(config);
 }
 
+void bn_model_transformer_policy_init_rope_frequencies_for_theta(
+    float theta,
+    int rope_dims,
+    float *freqs,
+    int capacity_pairs) {
+    bn_model_arch_init_rope_frequencies_for_theta(
+        theta, rope_dims, freqs, capacity_pairs);
+}
+
+void bn_model_transformer_policy_init_rope_angles_for_theta(
+    float theta,
+    int rope_dims,
+    int position,
+    float *angles,
+    int capacity_pairs) {
+    bn_model_arch_init_rope_angles_for_theta(
+        theta, rope_dims, position, angles, capacity_pairs);
+}
+
 void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
                                                    float *freqs,
                                                    int capacity_pairs) {
@@ -217,9 +235,21 @@ int bn_model_moe_policy_uses_scaled_router_input(
     return bn_model_arch_moe_uses_scaled_router_input(config);
 }
 
+int bn_model_moe_policy_uses_reference_router_accumulation(
+    const BnConfig *config) {
+    return bn_model_arch_moe_uses_reference_router_accumulation(config);
+}
+
 int bn_model_moe_policy_uses_dense_residual_branch(
     const BnConfig *config) {
     return bn_model_arch_moe_uses_dense_residual_branch(config);
+}
+
+int bn_model_backend_policy_ffn_sub_norm_elements(const BnConfig *config) {
+    if (!config)
+        return 0;
+    return bn_model_arch_moe_uses_dense_residual_branch(config)
+        ? config->dim : config->hidden_dim;
 }
 
 int bn_model_moe_policy_uses_reference_silu(const BnConfig *config) {
@@ -357,34 +387,9 @@ int bn_model_transformer_policy_uses_large_dense_shape(
     return bn_model_arch_uses_large_dense_shape(config);
 }
 
-int bn_model_transformer_policy_uses_large_gpu_graph_fallback_shape(
-    const BnConfig *config) {
-    return bn_model_arch_uses_large_gpu_graph_fallback_shape(config);
-}
-
-int bn_model_transformer_policy_uses_small_dense_native_quant_shape(
-    const BnConfig *config) {
-    return bn_model_arch_uses_small_dense_native_quant_shape(config);
-}
-
-int bn_model_transformer_policy_allows_small_dense_native_quant(
-    const BnConfig *config) {
-    return bn_model_arch_allows_small_dense_native_quant(config);
-}
-
-int bn_model_transformer_policy_small_dense_native_quant_to_layer(
-    const BnConfig *config) {
-    return bn_model_arch_small_dense_native_quant_to_layer(config);
-}
-
 int bn_model_transformer_policy_allows_small_dense_prefill_decode_fallback(
     const BnConfig *config) {
     return bn_model_arch_allows_small_dense_prefill_decode_fallback(config);
-}
-
-int bn_model_transformer_policy_small_dense_prefill_min_tokens(
-    const BnConfig *config) {
-    return bn_model_arch_small_dense_prefill_min_tokens(config);
 }
 
 int bn_model_transformer_policy_dense_batch_prefill_shape_allowed(
@@ -408,14 +413,24 @@ int bn_model_transformer_policy_moe_logits_mmvq_argmax_shape_allowed(
                                                               logits_cols);
 }
 
-int bn_model_transformer_policy_allows_small_dense_native_logit_refine(
+int bn_model_transformer_policy_moe_requires_reference_attention(
     const BnConfig *config) {
-    return bn_model_arch_allows_small_dense_native_logit_refine(config);
+    return bn_model_arch_moe_requires_reference_attention(config);
 }
 
-int bn_model_transformer_policy_moe_prefers_reference_gpu_attention(
+int bn_model_transformer_policy_requires_reference_attention(
     const BnConfig *config) {
-    return bn_model_arch_moe_prefers_reference_gpu_attention(config);
+    return bn_model_arch_requires_reference_attention(config);
+}
+
+int bn_model_transformer_policy_requires_reference_recurrent(
+    const BnConfig *config) {
+    return bn_model_arch_requires_reference_recurrent(config);
+}
+
+int bn_model_backend_policy_requires_stable_per_layer_input_layout(
+    const BnConfig *config) {
+    return bn_model_arch_uses_per_layer_embedding(config);
 }
 
 float bn_model_transformer_policy_norm_epsilon(const BnConfig *config) {
@@ -530,11 +545,6 @@ int bn_model_transformer_policy_rope_uses_base_frequency(
     return bn_model_arch_rope_uses_base_frequency(config, layer_head_size);
 }
 
-int bn_model_transformer_policy_uses_reference_hybrid_ssm(
-    const BnConfig *config) {
-    return bn_model_arch_uses_reference_hybrid_ssm(config);
-}
-
 int bn_model_transformer_policy_prefill_uses_reference_activation(
     const BnConfig *config) {
     return bn_model_arch_prefill_uses_reference_activation(config);
@@ -545,33 +555,32 @@ int bn_model_transformer_policy_ffn_uses_reference_activation(
     return bn_model_arch_ffn_uses_reference_activation(config);
 }
 
-int bn_model_gpu_policy_attention_layer_count(const BnConfig *config) {
+int bn_model_activation_plan_attention_layer_count(const BnConfig *config) {
     return bn_model_arch_attention_layer_count(config);
 }
 
-int bn_model_gpu_policy_ssm_layer_count(const BnConfig *config) {
+int bn_model_activation_plan_ssm_layer_count(const BnConfig *config) {
     return bn_model_arch_ssm_layer_count(config);
 }
 
-int bn_model_gpu_policy_uses_hybrid_ssm(const BnConfig *config) {
+int bn_model_activation_plan_uses_hybrid_ssm(const BnConfig *config) {
     return bn_model_arch_uses_hybrid_ssm(config);
 }
 
-int bn_model_gpu_policy_uses_hybrid_moe(const BnConfig *config) {
+int bn_model_activation_plan_uses_hybrid_moe(const BnConfig *config) {
     return bn_model_arch_uses_hybrid_moe(config);
 }
 
-int bn_model_gpu_policy_uses_moe(const BnConfig *config) {
+int bn_model_activation_plan_uses_moe(const BnConfig *config) {
     return bn_model_arch_uses_moe(config);
 }
 
-int bn_model_gpu_policy_rope_dims_for_head(const BnConfig *config,
-                                           int layer_head_size) {
+int bn_model_activation_plan_rope_dims_for_head(const BnConfig *config,
+                                                int layer_head_size) {
     return bn_model_arch_rope_dims_for_head(config, layer_head_size);
 }
 
-void bn_model_gpu_policy_init_rope_frequencies(const BnConfig *config,
-                                               float *freqs,
-                                               int capacity_pairs) {
+void bn_model_activation_plan_init_rope_frequencies(
+    const BnConfig *config, float *freqs, int capacity_pairs) {
     bn_model_arch_init_rope_frequencies(config, freqs, capacity_pairs);
 }

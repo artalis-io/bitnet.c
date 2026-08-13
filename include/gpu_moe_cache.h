@@ -32,7 +32,7 @@ typedef struct {
 // entry_bytes: gate_bytes + up_bytes + down_bytes per expert.
 // Returns NULL if budget is 0 or allocation fails.
 BnGPUMoECache *bn_gpu_moe_cache_create(size_t budget_bytes, size_t entry_bytes,
-                                         BnGPUBackend *gpu);
+                                       int max_entries, BnGPUBackend *gpu);
 
 // Lookup cached GPU buffers for (layer, expert_idx).
 // On hit: promotes to MRU, sets *gate_out/*up_out/*down_out, returns 1.

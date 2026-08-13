@@ -18,12 +18,65 @@ static inline float gqa_neon_dot_ggml_order(const float *x,
         sum2 = vfmaq_f32(sum2, vld1q_f32(x + i + 8),  vld1q_f32(y + i + 8));
         sum3 = vfmaq_f32(sum3, vld1q_f32(x + i + 12), vld1q_f32(y + i + 12));
     }
-    float32x4_t sum = vaddq_f32(vaddq_f32(sum0, sum1),
-                                vaddq_f32(sum2, sum3));
+    float32x4_t sum = vaddq_f32(vaddq_f32(sum0, sum2),
+                                vaddq_f32(sum1, sum3));
     float out = vaddvq_f32(sum);
     for (; i < n; i++)
         out = fmaf(x[i], y[i], out);
     return out;
+}
+
+static void gqa_neon_combine_small_kv_ggml_order(
+    float *out,
+    const float *att,
+    const float *value_cache,
+    size_t loff,
+    int start,
+    int n_kv,
+    int seq_len,
+    int kv_dim,
+    int kv_head_offset,
+    int head_size) {
+    const float32x4_t zero = vdupq_n_f32(0.0f);
+    for (int d = 0; d < head_size; d += 4) {
+        float32x4_t weighted[4][4];
+        for (int group = 0; group < 4; group++) {
+            float weights[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float32x4_t rows[4] = { zero, zero, zero, zero };
+            for (int lane = 0; lane < 4; lane++) {
+                int i = group * 4 + lane;
+                if (i >= n_kv)
+                    break;
+                int t = (start + i) % seq_len;
+                weights[lane] = att[i];
+                rows[lane] = vld1q_f32(
+                    value_cache + loff + (size_t)t * kv_dim +
+                    kv_head_offset + d);
+            }
+
+            float32x4x2_t t01 = vtrnq_f32(rows[0], rows[1]);
+            float32x4x2_t t23 = vtrnq_f32(rows[2], rows[3]);
+            float32x4_t values[4] = {
+                vcombine_f32(vget_low_f32(t01.val[0]),
+                             vget_low_f32(t23.val[0])),
+                vcombine_f32(vget_low_f32(t01.val[1]),
+                             vget_low_f32(t23.val[1])),
+                vcombine_f32(vget_high_f32(t01.val[0]),
+                             vget_high_f32(t23.val[0])),
+                vcombine_f32(vget_high_f32(t01.val[1]),
+                             vget_high_f32(t23.val[1])),
+            };
+            float32x4_t w = vld1q_f32(weights);
+            for (int lane = 0; lane < 4; lane++)
+                weighted[group][lane] = vmulq_f32(w, values[lane]);
+        }
+        for (int lane = 0; lane < 4; lane++) {
+            float32x4_t sum = vaddq_f32(
+                vaddq_f32(weighted[0][lane], weighted[2][lane]),
+                vaddq_f32(weighted[1][lane], weighted[3][lane]));
+            out[d + lane] = vaddvq_f32(sum);
+        }
+    }
 }
 
 void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
@@ -64,6 +117,12 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
         bn_transformer_softmax(att, n_kv);
 
         float *xb_h = s->xb + h * head_size;
+        if (!kv_cache_uses_fp16_rows && n_kv <= 16) {
+            gqa_neon_combine_small_kv_ggml_order(
+                xb_h, att, s->value_cache, loff, start, n_kv, seq_len,
+                kv_dim, kv_h * head_size, head_size);
+            continue;
+        }
         memset(xb_h, 0, head_size * sizeof(float));
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
@@ -166,20 +225,22 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
                 __builtin_prefetch(v_t, 0, 0);
 
                 float old_max = running_max;
+                float max_scale = 1.0f;
+                float weight = 1.0f;
                 if (score > old_max) {
-                    float rescale = expf(old_max - score);
                     running_max = score;
-                    running_sum *= rescale;
-                    float32x4_t rs = vdupq_n_f32(rescale);
+                    max_scale = expf(old_max - running_max);
+                    float32x4_t rs = vdupq_n_f32(max_scale);
                     for (int d = 0; d < head_size; d += 4)
                         vst1q_f32(out_buf + d, vmulq_f32(vld1q_f32(out_buf + d), rs));
+                } else {
+                    weight = expf(score - running_max);
                 }
 
-                float w = expf(score - running_max);
-                running_sum += w;
-                float32x4_t wv = vdupq_n_f32(w);
+                float32x4_t wv = vdupq_n_f32(weight);
                 for (int d = 0; d < head_size; d += 4)
                     vst1q_f32(out_buf + d, vmlaq_f32(vld1q_f32(out_buf + d), wv, vld1q_f32(v_t + d)));
+                running_sum = running_sum * max_scale + weight;
             }
         }
 

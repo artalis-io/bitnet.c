@@ -105,10 +105,12 @@ static int cache_evict(BnGPUMoECache *c) {
 // --- Public API ---
 
 BnGPUMoECache *bn_gpu_moe_cache_create(size_t budget_bytes, size_t entry_bytes,
-                                         BnGPUBackend *gpu) {
+                                       int max_entries, BnGPUBackend *gpu) {
     if (!gpu || budget_bytes == 0 || entry_bytes == 0) return NULL;
 
     int n_slots = (int)(budget_bytes / entry_bytes);
+    if (max_entries > 0 && n_slots > max_entries)
+        n_slots = max_entries;
     if (n_slots < 1) return NULL;
 
     unsigned hash_size = 1;

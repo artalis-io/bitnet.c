@@ -133,10 +133,6 @@ void bn_model_arch_apply_config(BnConfig *c, const BnModelArchOps *ops) {
         c->policy_flags = ops ? ops->policy_flags : 0;
 }
 
-int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK) != 0);
-}
-
 int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c) {
     return c && ((c->policy_flags &
                   BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK) != 0);
@@ -205,12 +201,6 @@ int bn_model_arch_config_activation(const BnConfig *c) {
     return c ? c->act_type : BN_MODEL_ACTIVATION_SILU;
 }
 
-int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c) {
-    return c && ((c->policy_flags &
-                  BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM) != 0) &&
-           c->full_attn_interval > 0;
-}
-
 int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c) {
     return c && c->full_attn_interval > 0;
 }
@@ -236,21 +226,16 @@ int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c) {
            bn_model_arch_uses_large_dense_shape(c);
 }
 
-int bn_model_arch_uses_large_gpu_graph_fallback_shape(const BnConfig *c) {
-    return c &&
-           c->dim >= 4096 &&
-           (bn_model_arch_requires_large_gpu_graph_fallback(c) ||
-            c->full_attn_interval > 0 ||
-            bn_model_arch_uses_moe(c));
-}
-
 static int model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
     if (!c || ((c->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT) == 0))
         return 0;
     if (c->per_layer_input_dim > 0)
         return 1;
-    if (c->n_experts > 0 && c->n_layers == 30)
-        return layer == 5 || layer == 23 || layer == 29;
+    if (c->n_experts > 0 && layer >= 0 &&
+        layer < c->n_layers &&
+        layer < (int)(sizeof(c->sliding_window_pattern) /
+                      sizeof(c->sliding_window_pattern[0])))
+        return !c->sliding_window_pattern[layer];
     return 0;
 }
 
@@ -306,15 +291,49 @@ void bn_model_arch_init_rope_frequencies(const BnConfig *c,
     int half_rope = rope_dims / 2;
     if (half_rope > capacity_pairs)
         half_rope = capacity_pairs;
-    for (int i = 0; i < half_rope; i++)
-        freqs[i] = 1.0f / powf(c->rope_theta,
-                               (float)(2 * i) / (float)rope_dims);
+    bn_model_arch_init_rope_frequencies_for_theta(
+        c->rope_theta, rope_dims, freqs, half_rope);
     if (c->rope_text_dims > 0) {
         int text_pairs = c->rope_text_dims / 2;
         if (text_pairs < 0)
             text_pairs = 0;
         for (int i = text_pairs; i < half_rope; i++)
             freqs[i] = 0.0f;
+    }
+}
+
+void bn_model_arch_init_rope_frequencies_for_theta(float theta,
+                                                   int rope_dims,
+                                                   float *freqs,
+                                                   int capacity_pairs) {
+    if (!freqs || rope_dims <= 0 || capacity_pairs <= 0)
+        return;
+    int half_rope = rope_dims / 2;
+    if (half_rope > capacity_pairs)
+        half_rope = capacity_pairs;
+    float freq = 1.0f;
+    float freq_scale = powf(theta, -2.0f / (float)rope_dims);
+    for (int i = 0; i < half_rope; i++) {
+        freqs[i] = freq;
+        freq *= freq_scale;
+    }
+}
+
+void bn_model_arch_init_rope_angles_for_theta(float theta,
+                                              int rope_dims,
+                                              int position,
+                                              float *angles,
+                                              int capacity_pairs) {
+    if (!angles || rope_dims <= 0 || capacity_pairs <= 0)
+        return;
+    int half_rope = rope_dims / 2;
+    if (half_rope > capacity_pairs)
+        half_rope = capacity_pairs;
+    float angle = (float)position;
+    float theta_scale = powf(theta, -2.0f / (float)rope_dims);
+    for (int i = 0; i < half_rope; i++) {
+        angles[i] = angle;
+        angle *= theta_scale;
     }
 }
 
@@ -342,13 +361,29 @@ int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c) {
                   BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK) != 0);
 }
 
-int bn_model_arch_moe_prefers_reference_gpu_attention(const BnConfig *c) {
+int bn_model_arch_moe_requires_reference_attention(const BnConfig *c) {
     return c && ((c->policy_flags &
-                  BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION) != 0);
+                  BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ATTENTION) != 0);
+}
+
+int bn_model_arch_requires_reference_attention(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION) != 0);
+}
+
+int bn_model_arch_requires_reference_recurrent(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT) != 0);
 }
 
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT) != 0);
+}
+
+int bn_model_arch_moe_uses_reference_router_accumulation(
+    const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION) != 0);
 }
 
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c) {
@@ -584,11 +619,6 @@ int bn_model_arch_uses_small_dense_shape(const BnConfig *c) {
            c->dim <= 2560;
 }
 
-int bn_model_arch_uses_small_dense_native_quant_shape(const BnConfig *c) {
-    return bn_model_arch_uses_small_dense_shape(c) &&
-           c->dim > 1024;
-}
-
 int bn_model_arch_dense_batch_prefill_shape_allowed(
     const BnConfig *c,
     int supports_large_dense_batch_prefill) {
@@ -607,28 +637,6 @@ int bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(const BnConfig *c,
                                                        int logits_cols) {
     return bn_model_arch_uses_moe(c) &&
            logits_cols == 1536;
-}
-
-int bn_model_arch_allows_small_dense_native_quant(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT) != 0) &&
-           bn_model_arch_uses_small_dense_shape(c);
-}
-
-int bn_model_arch_small_dense_native_quant_to_layer(const BnConfig *c) {
-    if (!c || c->n_layers <= 33)
-        return -1;
-    return c->n_layers - 33 - 1;
-}
-
-int bn_model_arch_allows_small_dense_native_logit_refine(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE) != 0) &&
-           bn_model_arch_allows_small_dense_native_quant(c);
-}
-
-int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c) {
-    if (!bn_model_arch_allows_small_dense_native_logit_refine(c))
-        return 0;
-    return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION) ? 7 : 2;
 }
 
 int bn_model_arch_prefill_uses_reference_activation(const BnConfig *c) {
@@ -849,14 +857,15 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         {
             "gemma4",
             BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |
-            BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK |
             BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY |
             BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT |
             BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM |
             BN_MODEL_ARCH_POLICY_FFN_POST_NORM |
             BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE |
+            BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT |
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION |
             BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH,
             0,
             bn_model_arch_match_gemma4,
@@ -869,12 +878,9 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen3",
-            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
             BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION |
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
             0,
@@ -888,11 +894,10 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen35",
-            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
+            BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION |
+            BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION |
             BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS,
             0,
@@ -906,16 +911,12 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen2",
-            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
             BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
-            BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK,
             BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU |
             BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK |
-            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION |
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ATTENTION |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK,
             bn_model_arch_match_qwen2,
@@ -928,11 +929,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen",
-            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
             0,
             bn_model_arch_match_qwen,

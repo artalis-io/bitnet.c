@@ -19,6 +19,10 @@ static inline float bn_fast_silu(float x) {
     return x / (1.0f + bn_fast_exp(-x));
 }
 
+static inline float bn_reference_silu(float x) {
+    return x / (1.0f + exp(-x));
+}
+
 // SiLU gated activation: gate[i] = silu(gate[i]) * up[i]
 // Dispatch: (ceil(dim/256), 1, 1)
 kernel void silu_gate(device float       *gate [[buffer(0)]],
@@ -30,5 +34,8 @@ kernel void silu_gate(device float       *gate [[buffer(0)]],
     uint dim = p[0];
     if (gid >= dim) return;
     float g = gate[gid];
-    gate[gid] = bn_fast_silu(g) * up[gid];
+    float activated = (p[1] & 4u) != 0u
+        ? bn_reference_silu(g)
+        : bn_fast_silu(g);
+    gate[gid] = activated * up[gid];
 }

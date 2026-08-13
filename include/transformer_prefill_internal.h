@@ -400,9 +400,11 @@ typedef struct {
 } BnTransformerPrefillFFNBatchCallPolicy;
 
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
-int bn_transformer_prefill_profile_enabled(void);
-int bn_transformer_prefill_hybrid_batch_allowed(void);
-int bn_transformer_prefill_requires_token_attention(void);
+int bn_transformer_prefill_profile_enabled(const BnCPURuntimePolicy *runtime);
+int bn_transformer_prefill_hybrid_batch_allowed(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_prefill_requires_token_attention(
+    const BnCPURuntimePolicy *runtime);
 BnTransformerPrefillLayerKindPolicy
 bn_transformer_prefill_layer_kind_policy(const BnLayerWeights *lw);
 BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
@@ -436,6 +438,7 @@ bn_transformer_prefill_quant_matmul_dispatch_policy_for(
     int all_gpu_buffers_available);
 BnTransformerPrefillQuantMatmulResourcePolicy
 bn_transformer_prefill_quant_matmul_resource_policy(
+    const BnCPURuntimePolicy *runtime,
     const BnBackendModel *backend,
     const BnQWeight *const *weights,
     int n_tasks,
@@ -519,8 +522,9 @@ int bn_transformer_prefill_moe_chain_applicable(
 int bn_transformer_prefill_small_dense_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c);
-int bn_transformer_prefill_moe_enabled(void);
-int bn_transformer_prefill_large_hybrid_disabled(void);
+int bn_transformer_prefill_moe_enabled(const BnGPUBackend *gpu);
+int bn_transformer_prefill_large_hybrid_disabled(
+    const BnGPUBackend *gpu);
 BnTransformerPrefillDecodeFallbackPolicy
 bn_transformer_prefill_decode_fallback_policy(
     BnTransformerPrefillSequencePolicy sequence,
@@ -549,7 +553,8 @@ bn_transformer_prefill_hybrid_model_chain_policy(
 int bn_transformer_prefill_hybrid_chain_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
-int bn_transformer_prefill_hybrid_chain_debug_enabled(void);
+int bn_transformer_prefill_hybrid_chain_debug_enabled(
+    const BnGPUBackend *gpu);
 BnTransformerPrefillAttentionModePolicy
 bn_transformer_prefill_attention_mode_policy(
     int tq_state_available,
@@ -599,7 +604,7 @@ bn_transformer_prefill_dense_layer_chain_policy(
 int bn_transformer_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
-int bn_transformer_prefill_dense_chain_enabled(void);
+int bn_transformer_prefill_dense_chain_enabled(const BnGPUBackend *gpu);
 int bn_transformer_prefill_dense_layer_gpu_available(
     const BnGPUBackend *gpu,
     int backend_available,
@@ -648,7 +653,7 @@ int bn_transformer_prefill_ssm_dense_chain_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int n_tokens);
-int bn_transformer_prefill_ssm_run_chain_enabled(void);
+int bn_transformer_prefill_ssm_run_chain_enabled(const BnGPUBackend *gpu);
 int bn_transformer_prefill_moe_ffn_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -678,8 +683,10 @@ int bn_transformer_prefill_moe_layer_chain_available(
 int bn_transformer_prefill_moe_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
-int bn_transformer_prefill_moe_chain_debug_enabled(void);
-int bn_transformer_prefill_ssm_ffn_fuse_allowed(void);
+int bn_transformer_prefill_moe_chain_debug_enabled(
+    const BnGPUBackend *gpu);
+int bn_transformer_prefill_ssm_ffn_fuse_allowed(
+    const BnGPUBackend *gpu);
 BnTransformerPrefillSSMFFNFusePolicy
 bn_transformer_prefill_ssm_ffn_fuse_policy(
     int fuse_requested,
@@ -695,6 +702,7 @@ bn_transformer_prefill_ssm_ffn_fuse_policy(
 BnTransformerPrefillSSMStateUploadPolicy
 bn_transformer_prefill_ssm_state_upload_policy(
     const BnConfig *c,
+    const BnGPUBackend *gpu,
     int gpu_attached);
 BnTransformerPrefillEntryPolicy
 bn_transformer_prefill_entry_policy(
@@ -735,8 +743,9 @@ bn_transformer_prefill_raw_attention_policy(
     int has_attn_sub_norm,
     int uses_post_norm,
     int has_attn_post_norm);
-int bn_transformer_prefill_attention_min_tokens(void);
-int bn_transformer_prefill_attention_enabled(void);
+int bn_transformer_prefill_attention_min_tokens(
+    const BnGPUBackend *gpu);
+int bn_transformer_prefill_attention_enabled(const BnGPUBackend *gpu);
 int bn_transformer_prefill_raw_attention_gpu_available(
     const BnGPUBackend *gpu);
 int bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
@@ -825,16 +834,12 @@ int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
     int second_type,
     int third_type);
 bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops);
 bn_tp_fn bn_transformer_prefill_ssm_l2norm_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops);
 bn_tp_fn bn_transformer_prefill_ssm_delta_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops);
 bn_tp_fn bn_transformer_prefill_ssm_gate_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops);
 int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
                                                     int right_type);

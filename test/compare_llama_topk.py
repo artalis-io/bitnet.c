@@ -5,11 +5,15 @@ Start a matching llama-server first, for example:
   llama-server -m model.gguf -ngl 99 -fa on -c 512 -np 1 --host 127.0.0.1 --port 8027
 
 With --benchmark, the default --min-throughput-ratio is 1.0.
+Benchmarks reject a one-minute system load above one runnable task per logical
+CPU unless --allow-busy-system is supplied.
 Use --check-output-tokens to also require exact generated token ID parity.
 """
 
 import argparse
 import json
+import math
+import os
 import re
 import statistics
 import subprocess
@@ -34,6 +38,12 @@ def parse_args():
     p.add_argument("model")
     p.add_argument("--bitnet", default="./bitnet",
                    help="bitnet executable to compare")
+    p.add_argument("--bitnet-runtime", choices=("native", "scalar", "neon", "metal"),
+                   help="runtime axis implemented by the BitNet executable")
+    p.add_argument("--llama-runtime", choices=("native", "scalar", "neon", "metal"),
+                   help="runtime axis implemented by the llama.cpp executable")
+    p.add_argument("--llama-bench-bin", default="llama-bench",
+                   help="matching llama-bench executable")
     p.add_argument("--prompt", action="append", dest="prompts")
     p.add_argument("--prompt-token-ids", action="append", dest="prompt_token_ids",
                    help="comma-separated prompt token IDs; may be repeated")
@@ -111,6 +121,16 @@ def parse_args():
     p.add_argument("--benchmark", action="store_true")
     p.add_argument("--bench-tokens", type=int, default=128)
     p.add_argument("--bench-runs", type=int, default=1)
+    p.add_argument("--bench-warmup-runs", type=int, default=1)
+    p.add_argument("--bitnet-bench-warmup-tokens", type=int, default=0,
+                   help="untimed in-process decode warmup for each bitnet run")
+    p.add_argument("--bitnet-prefault-moe", action="store_true",
+                   help="prefault mapped MoE weights before each bitnet run")
+    p.add_argument("--max-load-per-cpu", type=float, default=1.0,
+                   help="reject benchmarks when one-minute load divided by "
+                        "logical CPUs exceeds this value")
+    p.add_argument("--allow-busy-system", action="store_true",
+                   help="run benchmarks even when the host load check fails")
     p.add_argument("--llama-throughput", choices=("server", "bench"),
                    default="server")
     p.add_argument("--min-throughput-ratio", type=float, default=1.0)
@@ -178,6 +198,24 @@ def append_bitnet_common_args(cmd, args):
         cmd.append("--metal-disable-specialized-native-quant")
     if args.metal_native_quant_prepared:
         cmd.append("--metal-native-quant-prepared")
+    if args.bitnet_bench_warmup_tokens > 0:
+        cmd += ["--bench-warmup-tokens",
+                str(args.bitnet_bench_warmup_tokens)]
+    if args.bitnet_prefault_moe:
+        cmd.append("--prefault-moe")
+
+
+def validate_bitnet_process(proc, args):
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr)
+    if args.metal:
+        if "[bn:gpu:metal] device:" not in proc.stderr:
+            raise RuntimeError(
+                "BitNet Metal runtime was requested but did not activate; "
+                "rejecting CPU fallback as a runtime-axis mismatch")
+        if "falling back to CPU" in proc.stderr:
+            raise RuntimeError(
+                "BitNet Metal runtime fell back to CPU; rejecting mixed-axis result")
 
 
 def run_bitnet_topk(args, prompt):
@@ -196,8 +234,7 @@ def run_bitnet_topk(args, prompt):
 
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr)
+    validate_bitnet_process(proc, args)
     rows = []
     for line in proc.stderr.splitlines():
         m = re.match(
@@ -209,6 +246,15 @@ def run_bitnet_topk(args, prompt):
     if len(rows) < args.top_k:
         raise RuntimeError(f"bitnet top-logit dump incomplete for prompt {prompt_label(prompt)}")
     rows.sort()
+    scores = [row[2] for row in rows[:args.top_k]]
+    if not all(math.isfinite(score) for score in scores):
+        raise RuntimeError(
+            f"bitnet top-logit dump contains non-finite scores for prompt "
+            f"{prompt_label(prompt)}")
+    if all(score == 0.0 for score in scores):
+        raise RuntimeError(
+            f"bitnet top-logit dump is uniformly zero for prompt "
+            f"{prompt_label(prompt)}; retry without concurrent model memory pressure")
     return rows
 
 
@@ -226,8 +272,7 @@ def run_bitnet_tokens(args, prompt):
     append_bitnet_common_args(cmd, args)
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr)
+    validate_bitnet_process(proc, args)
     return [int(m.group(1))
             for m in re.finditer(r"(?:^|\s)token_id=(\d+)", proc.stderr)]
 
@@ -334,54 +379,40 @@ def run_bitnet_bench(args, prompt):
         args.bitnet, args.model, "-n", str(args.bench_tokens),
         "--quiet", "--temp", "0", "--repeat-penalty", "1",
         "--maxseq", str(args.maxseq),
+        "--benchmark-runs", str(args.bench_runs),
+        "--benchmark-warmup-runs", str(args.bench_warmup_runs),
     ]
     append_bitnet_prompt(cmd, prompt)
-    if args.metal:
-        cmd.append("--metal")
-    if args.flash:
-        cmd.append("--flash")
-    if args.small_dense_native_quant_tail is not None:
-        cmd += ["--small-dense-native-quant-tail",
-                str(args.small_dense_native_quant_tail)]
-    if args.small_dense_native_quant_attn_only:
-        cmd.append("--small-dense-native-quant-attn-only")
-    if args.small_dense_native_quant_ffn_only:
-        cmd.append("--small-dense-native-quant-ffn-only")
-    if args.small_dense_native_quant_disable_gateup:
-        cmd.append("--small-dense-native-quant-disable-gateup")
-    if args.small_dense_native_quant_disable_ffn_down:
-        cmd.append("--small-dense-native-quant-disable-ffn-down")
-    if args.gpu_flash_min_kv is not None:
-        cmd += ["--gpu-flash-min-kv", str(args.gpu_flash_min_kv)]
-    if args.gpu_max_storage_binding_mb is not None:
-        cmd += ["--gpu-max-storage-binding-mb",
-                str(args.gpu_max_storage_binding_mb)]
-    if args.metal_disable_barriers:
-        cmd.append("--metal-disable-barriers")
-    if args.metal_disable_small_dense_native_quant:
-        cmd.append("--metal-disable-small-dense-native-quant")
-    if args.metal_specialized_native_quant:
-        cmd.append("--metal-specialized-native-quant")
-    if args.metal_disable_specialized_native_quant:
-        cmd.append("--metal-disable-specialized-native-quant")
-    if args.metal_native_quant_prepared:
-        cmd.append("--metal-native-quant-prepared")
+    append_bitnet_common_args(cmd, args)
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr)
-    m = re.search(r"tok/s=([0-9.]+)", proc.stderr)
-    if not m:
+    validate_bitnet_process(proc, args)
+    matches = re.findall(
+        r"Benchmark sample.*?tokens=(-?[0-9]+).*?tok/s=([0-9.]+)",
+        proc.stderr)
+    if len(matches) != args.bench_runs:
         raise RuntimeError("bitnet throughput not found")
-    return float(m.group(1))
+    samples = []
+    for token_count, throughput in matches:
+        if int(token_count) != args.bench_tokens:
+            raise RuntimeError(
+                "bitnet benchmark generation failed or stopped early: "
+                f"expected {args.bench_tokens} tokens, got {token_count}")
+        samples.append(float(throughput))
+    return samples
 
 
 def run_llama_bench(args):
     cmd = [
-        "llama-bench", "-m", args.model, "-n", str(args.bench_tokens),
+        args.llama_bench_bin, "-m", args.model, "-n", str(args.bench_tokens),
         "-p", "0", "-fa", "on" if args.flash else "off",
+        "-r", str(args.bench_runs),
     ]
     cmd += ["-ngl", "99" if args.llama_metal else "0"]
+    if args.threads is not None:
+        cmd += ["-t", str(args.threads)]
+    if not args.llama_metal:
+        cmd += ["-dev", "none"]
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, check=False)
     if proc.returncode != 0:
@@ -421,6 +452,43 @@ def run_llama_server_bench(args, prompt):
     return float(tps)
 
 
+def benchmark_host_is_idle(args):
+    if args.allow_busy_system or not hasattr(os, "getloadavg"):
+        return True
+    cpu_count = os.cpu_count() or 1
+    load_one = os.getloadavg()[0]
+    load_per_cpu = load_one / cpu_count
+    if load_per_cpu <= args.max_load_per_cpu:
+        return True
+    print(
+        f"benchmark host busy: load1={load_one:.2f} cpus={cpu_count} "
+        f"load_per_cpu={load_per_cpu:.2f} "
+        f"limit={args.max_load_per_cpu:.2f}; "
+        "use --allow-busy-system to override",
+        file=sys.stderr,
+    )
+    return False
+
+
+def benchmark_runtime_axes_match(args):
+    bitnet_runtime = args.bitnet_runtime
+    if bitnet_runtime is None:
+        bitnet_runtime = "metal" if args.metal else (
+            "scalar" if "scalar" in os.path.basename(args.bitnet) else "native")
+    llama_runtime = args.llama_runtime
+    if llama_runtime is None:
+        llama_runtime = "metal" if args.llama_metal else "native"
+    if bitnet_runtime == llama_runtime:
+        return True
+    print(
+        f"benchmark runtime-axis mismatch: bitnet={bitnet_runtime} "
+        f"llama={llama_runtime}; provide matching --bitnet-runtime, "
+        "--llama-runtime, and --llama-bench-bin values",
+        file=sys.stderr,
+    )
+    return False
+
+
 def main():
     args = parse_args()
     prompts = []
@@ -446,6 +514,20 @@ def main():
         return 2
     if args.bench_runs < 1:
         print("--bench-runs must be positive", file=sys.stderr)
+        return 2
+    if args.bench_warmup_runs < 0:
+        print("--bench-warmup-runs must be non-negative", file=sys.stderr)
+        return 2
+    if args.bitnet_bench_warmup_tokens < 0:
+        print("--bitnet-bench-warmup-tokens must be non-negative",
+              file=sys.stderr)
+        return 2
+    if args.max_load_per_cpu <= 0.0:
+        print("--max-load-per-cpu must be positive", file=sys.stderr)
+        return 2
+    if args.benchmark and not benchmark_host_is_idle(args):
+        return 2
+    if args.benchmark and not benchmark_runtime_axes_match(args):
         return 2
 
     print("Top-logit coherence: bitnet.c vs llama.cpp")
@@ -523,12 +605,14 @@ def main():
               f"across {token_prompts} prompts")
 
     if args.benchmark:
-        bitnet_samples = [run_bitnet_bench(args, prompts[0])
-                          for _ in range(args.bench_runs)]
+        # Each CLI retains its model mapping for all repetitions. This matters
+        # for sparse models whose mapped expert weights exceed free host memory.
+        bitnet_samples = run_bitnet_bench(args, prompts[0])
         if args.llama_throughput == "bench":
-            llama_samples = [run_llama_bench(args)
-                             for _ in range(args.bench_runs)]
+            llama_samples = [run_llama_bench(args)]
         else:
+            for _ in range(args.bench_warmup_runs):
+                run_llama_server_bench(args, prompts[0])
             llama_samples = [run_llama_server_bench(args, prompts[0])
                              for _ in range(args.bench_runs)]
         bitnet_tps = statistics.median(bitnet_samples)

@@ -21,6 +21,8 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
     policy.uses_reference_silu = policy.uses_dense_residual_branch
         ? -1
         : bn_model_moe_policy_uses_reference_silu(c);
+    policy.uses_reference_ffn_activation =
+        bn_model_transformer_policy_ffn_uses_reference_activation(c);
     policy.activation = bn_model_moe_policy_activation(c);
     policy.norm_eps = bn_model_moe_policy_norm_epsilon(c);
     return policy;
@@ -50,7 +52,31 @@ BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c) {
         bn_model_moe_policy_normalizes_topk_route_weights(c);
     policy.expert_weights_scale =
         bn_model_moe_policy_expert_weights_scale(c);
+    policy.uses_reference_router_accumulation =
+        bn_model_moe_policy_uses_reference_router_accumulation(c);
     return policy;
+}
+
+BnMoEProjectionBufferLayout
+bn_moe_projection_buffer_layout(const BnConfig *c, const BnWeights *w) {
+    BnMoEProjectionBufferLayout layout = {0};
+    if (!c || !w || !w->layers || c->n_layers <= 0)
+        return layout;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnMoEExpertMap *em = &w->layers[l].moe.expert_map;
+        if (em->expert_gate_bytes > layout.gate_bytes)
+            layout.gate_bytes = em->expert_gate_bytes;
+        if (em->expert_up_bytes > layout.up_bytes)
+            layout.up_bytes = em->expert_up_bytes;
+        if (em->expert_down_bytes > layout.down_bytes)
+            layout.down_bytes = em->expert_down_bytes;
+    }
+    layout.max_bytes = layout.gate_bytes;
+    if (layout.up_bytes > layout.max_bytes)
+        layout.max_bytes = layout.up_bytes;
+    if (layout.down_bytes > layout.max_bytes)
+        layout.max_bytes = layout.down_bytes;
+    return layout;
 }
 
 BnMoEAllActiveTwoRouteResourcePolicy
@@ -69,6 +95,14 @@ bn_moe_all_active_two_route_resource_policy(const BnConfig *c) {
 
 int bn_moe_policy_uses_expert_weights(const BnConfig *c) {
     return bn_model_moe_policy_uses_expert_weights(c);
+}
+
+float bn_moe_expert_weight_scale(const BnLayerWeights *lw,
+                                 int expert_idx) {
+    if (!lw || !lw->moe.expert_down_scale || expert_idx < 0)
+        return 1.0f;
+    float scale = lw->moe.expert_down_scale[expert_idx];
+    return scale != 0.0f ? scale : 1.0f;
 }
 
 int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c) {

@@ -57,6 +57,7 @@ typedef enum {
     BN_GPU_CODE_WEIGHTED_ADD_SIGMOID,
     BN_GPU_CODE_MOE_ROUTE_TOPK,
     BN_GPU_CODE_MOE_ROUTED_FFN,
+    BN_GPU_CODE_GELU_GATE,
 } BnGPUOpCode;
 
 // A single backend shader command in the lowered forward pass.
@@ -80,6 +81,10 @@ typedef struct BnGPUOp {
 #define BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM 2u
 #define BN_GPU_OP_FLAG_REFERENCE_SILU 4u
 #define BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT 8u
+#define BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER 16u
+#define BN_GPU_OP_FLAG_REFERENCE_ACTIVATION 32u
+#define BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION 64u
+#define BN_GPU_OP_FLAG_MATVEC_BLOCK_Q8_ACTIVATION 128u
 
 static inline int bn_gpu_op_code_is_matvec(int code) {
     return code == BN_GPU_CODE_MATVEC;
@@ -139,6 +144,7 @@ static inline BnGPUOpKind bn_gpu_op_kind_from_code(int code) {
             return BN_GPU_OP_ATTENTION;
         case BN_GPU_CODE_SILU_GATE:
         case BN_GPU_CODE_RELU2_GATE:
+        case BN_GPU_CODE_GELU_GATE:
         case BN_GPU_CODE_SIGMOID_GATE:
         case BN_GPU_CODE_SILU_ACT:
         case BN_GPU_CODE_RELU2_ACT:

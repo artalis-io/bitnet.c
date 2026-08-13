@@ -28,10 +28,14 @@ void bn_quant_q6k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
                     for (int i = 0; i < 16; i++) {
                         int l = l0 + i;
                         uint8_t h = qh[l];
-                        int q1 = (int)((ql[l]      & 0x0f) | ((h & 0x03) << 4)) - 32;
-                        int q2 = (int)((ql[l + 32] & 0x0f) | (((h >> 2) & 0x03) << 4)) - 32;
-                        int q3 = (int)((ql[l]      >> 4)   | (((h >> 4) & 0x03) << 4)) - 32;
-                        int q4 = (int)((ql[l + 32] >> 4)   | (((h >> 6) & 0x03) << 4)) - 32;
+                        int q1 = (int)((ql[l] & 0x0f) |
+                                       ((h & 0x03) << 4)) - 32;
+                        int q2 = (int)((ql[l + 32] & 0x0f) |
+                                       (((h >> 2) & 0x03) << 4)) - 32;
+                        int q3 = (int)((ql[l] >> 4) |
+                                       (((h >> 4) & 0x03) << 4)) - 32;
+                        int q4 = (int)((ql[l + 32] >> 4) |
+                                       (((h >> 6) & 0x03) << 4)) - 32;
                         sum1 += q1 * (int32_t)xb[l];
                         sum2 += q2 * (int32_t)xb[l + 32];
                         sum3 += q3 * (int32_t)xb[l + 64];
@@ -43,7 +47,6 @@ void bn_quant_q6k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
                          (float)sc[is + 4] * (float)sum3 +
                          (float)sc[is + 6] * (float)sum4);
                 }
-
                 xb += 128;
                 ql += 64;
                 qh += 32;
@@ -51,6 +54,73 @@ void bn_quant_q6k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
             }
         }
         c->out[row] = row_sum;
+    }
+}
+
+void bn_quant_q6k_scalar_sdot_4row_range(void *ctx,
+                                         int group_start,
+                                         int group_end) {
+    BnKQuantSdotCtx *c = (BnKQuantSdotCtx *)ctx;
+    int cols = c->W->cols;
+    int rows = c->W->rows;
+    int n_blocks_per_row = cols / BN_QK_K;
+    const BnBlockQ6K *blocks = (const BnBlockQ6K *)c->W->data;
+
+    for (int group = group_start; group < group_end; group++) {
+        int row0 = group * 4;
+        int row_count = rows - row0 < 4 ? rows - row0 : 4;
+        float sums[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const int8_t *xb = c->x_q + b * BN_QK_K;
+            float dx = c->x_d[b];
+
+            for (int r = 0; r < row_count; r++) {
+                const BnBlockQ6K *blk =
+                    &blocks[(size_t)(row0 + r) * n_blocks_per_row + b];
+                const uint8_t *ql = blk->ql;
+                const uint8_t *qh = blk->qh;
+                const int8_t *sc = blk->scales;
+                int32_t total = 0;
+                for (int chunk = 0; chunk < 2; chunk++) {
+                    for (int is = 0; is < 2; is++) {
+                        int l0 = is * 16;
+                        int32_t sum1 = 0;
+                        int32_t sum2 = 0;
+                        int32_t sum3 = 0;
+                        int32_t sum4 = 0;
+                        for (int i = 0; i < 16; i++) {
+                            int l = l0 + i;
+                            uint8_t h = qh[l];
+                            int q1 = (int)((ql[l] & 0x0f) |
+                                           ((h & 0x03) << 4)) - 32;
+                            int q2 = (int)((ql[l + 32] & 0x0f) |
+                                           (((h >> 2) & 0x03) << 4)) - 32;
+                            int q3 = (int)((ql[l] >> 4) |
+                                           (((h >> 4) & 0x03) << 4)) - 32;
+                            int q4 = (int)((ql[l + 32] >> 4) |
+                                           (((h >> 6) & 0x03) << 4)) - 32;
+                            int xoff = chunk * 128 + l;
+                            sum1 += q1 * (int32_t)xb[xoff];
+                            sum2 += q2 * (int32_t)xb[xoff + 32];
+                            sum3 += q3 * (int32_t)xb[xoff + 64];
+                            sum4 += q4 * (int32_t)xb[xoff + 96];
+                        }
+                        total += (int32_t)sc[is + 0] * sum1 +
+                                 (int32_t)sc[is + 2] * sum2 +
+                                 (int32_t)sc[is + 4] * sum3 +
+                                 (int32_t)sc[is + 6] * sum4;
+                    }
+                    ql += 64;
+                    qh += 32;
+                    sc += 8;
+                }
+                sums[r] += bn_fp16_to_fp32(blk->d) * dx * (float)total;
+            }
+        }
+
+        for (int r = 0; r < row_count; r++)
+            c->out[row0 + r] = sums[r];
     }
 }
 

@@ -47,6 +47,8 @@ static inline int bn_gpu_ir_activation_op_code(const BnGPUIROp *op) {
             return has_aux ? BN_GPU_CODE_RELU2_GATE : BN_GPU_CODE_RELU2_ACT;
         case BN_GPU_IR_ACTIVATION_SIGMOID:
             return has_aux ? BN_GPU_CODE_SIGMOID_GATE : BN_GPU_CODE_UNKNOWN;
+        case BN_GPU_IR_ACTIVATION_GELU:
+            return has_aux ? BN_GPU_CODE_GELU_GATE : BN_GPU_CODE_UNKNOWN;
         default:
             return BN_GPU_CODE_UNKNOWN;
     }
@@ -170,6 +172,7 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             shader_op->buf_in = in0;
             shader_op->buf_out = -1;
             shader_op->buf_aux = (ir_op->n_inputs > 1) ? in1 : -1;
+            shader_op->flags = ir_op->flags;
             shader_op->p[0] = (uint32_t)bn_gpu_ir_op_element_count(ir_op);
             shader_op->p[1] = (uint32_t)ir_op->aux1;
             return 0;
@@ -186,13 +189,17 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             shader_op->buf_in = in0;
             shader_op->buf_out = out0;
             shader_op->buf_aux = -1;
+            shader_op->flags = ir_op->flags;
             shader_op->rows = ir_op->rows;
             shader_op->cols = ir_op->cols;
             shader_op->p[0] = (uint32_t)ir_op->rows;
             shader_op->p[1] = (uint32_t)ir_op->cols;
             shader_op->p[2] = (uint32_t)(ir_op->aux0 > 0 ? ir_op->aux0 : 1);
             shader_op->p[5] = (uint32_t)ir_op->aux1;
-            shader_op->p[6] = ir_op->flags & 1u;
+            shader_op->p[6] =
+                (ir_op->flags &
+                 (BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT |
+                  BN_GPU_OP_FLAG_MATVEC_BLOCK_Q8_ACTIVATION)) != 0;
             return 0;
         }
         case BN_GPU_IR_OP_MATVEC_SPLIT: {
@@ -280,6 +287,8 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             shader_op->buf_in = in0;
             shader_op->buf_out = -1;
             shader_op->buf_aux = -1;
+            if (ir_op->flags & BN_GPU_IR_OP_FLAG_REFERENCE_ORDER)
+                shader_op->flags |= BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER;
             memcpy(shader_op->p, ir_op->params, sizeof(shader_op->p));
             return 0;
         case BN_GPU_IR_OP_SOFTMAX:
@@ -288,16 +297,21 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             shader_op->buf_in = -1;
             shader_op->buf_out = -1;
             shader_op->buf_aux = -1;
+            if (ir_op->flags & BN_GPU_IR_OP_FLAG_REFERENCE_ORDER)
+                shader_op->flags |= BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER;
             memcpy(shader_op->p, ir_op->params, sizeof(shader_op->p));
             return 0;
         case BN_GPU_IR_OP_ATTENTION_COMBINE:
-            if (ir_op->flags & 1u) {
+            if (ir_op->flags & BN_GPU_IR_OP_FLAG_FLASH_ATTENTION) {
                 if (in0 < 0 || out0 < 0) return -1;
                 shader_op->op_kind = BN_GPU_OP_ATTENTION;
                 shader_op->op_code = BN_GPU_CODE_FLASH_ATTN;
                 shader_op->buf_in = in0;
                 shader_op->buf_out = out0;
                 shader_op->buf_aux = -1;
+                if (ir_op->flags & BN_GPU_IR_OP_FLAG_REFERENCE_ORDER)
+                    shader_op->flags |=
+                        BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER;
             } else {
                 if (out0 < 0) return -1;
                 shader_op->op_kind = BN_GPU_OP_ATTENTION;
@@ -305,6 +319,9 @@ static inline int bn_gpu_ir_lower_one_to_shader(
                 shader_op->buf_in = -1;
                 shader_op->buf_out = out0;
                 shader_op->buf_aux = -1;
+                if (ir_op->flags & BN_GPU_IR_OP_FLAG_REFERENCE_ORDER)
+                    shader_op->flags |=
+                        BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER;
             }
             memcpy(shader_op->p, ir_op->params, sizeof(shader_op->p));
             return 0;
@@ -398,10 +415,15 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             shader_op->buf_out = out0;
             shader_op->rows = ir_op->rows;
             shader_op->cols = ir_op->cols;
+            shader_op->flags = ir_op->flags;
             shader_op->p[0] = (uint32_t)ir_op->rows;
             shader_op->p[1] = (uint32_t)ir_op->cols;
             shader_op->p[2] = 1;
             shader_op->p[3] = (tgs > 65535u) ? 65535u : 0u;
+            shader_op->p[6] =
+                (ir_op->flags &
+                 (BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT |
+                  BN_GPU_OP_FLAG_MATVEC_BLOCK_Q8_ACTIVATION)) != 0;
             return 0;
         }
         default:

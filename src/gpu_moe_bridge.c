@@ -30,9 +30,18 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
                                           int type,
                                           int rows,
                                           int cols,
+                                          int allow_borrowed,
                                           int allow_aux_cache) {
     if (!gpu || !data || size == 0)
         return NULL;
+    if (allow_borrowed &&
+        bn_gpu_backend_can_create_native_matvec_borrowed_buffer(gpu)) {
+        void *borrowed =
+            bn_gpu_backend_create_native_matvec_borrowed_buffer(
+                gpu, data, size, type, rows, cols);
+        if (borrowed)
+            return borrowed;
+    }
     if (bn_gpu_backend_can_create_quant_only_buffer(gpu) &&
         bn_transformer_gpu_moe_quant_only_without_aux_cache(
             gpu, type, allow_aux_cache)) {
@@ -75,6 +84,22 @@ static void *gpu_moe_create_gateup_split_buffer(BnGPUBackend *gpu,
     return out;
 }
 
+static int gpu_moe_use_gateup_split(BnGPUBackend *gpu,
+                                    const BnMoEExpertMap *em) {
+    int split_op_code = bn_transformer_gpu_matvec_split_op_code(em->gate_type);
+    int use_split = bn_transformer_gpu_moe_gateup_split_enabled(
+        gpu, bn_transformer_gpu_moe_gateup_split_supported(
+                 gpu, em, split_op_code));
+    if (bn_gpu_backend_native_matvec_borrowed_supported(
+            gpu, em->expert_gate_bytes, em->gate_type,
+            em->gate_rows, em->gate_cols) &&
+        bn_gpu_backend_native_matvec_borrowed_supported(
+            gpu, em->expert_up_bytes, em->up_type,
+            em->up_rows, em->up_cols))
+        use_split = 0;
+    return use_split;
+}
+
 static int gpu_moe_track_temporary(BnGPUMoETemporaryBuffers *temporaries,
                                    void *buffer) {
     if (!temporaries || !buffer)
@@ -100,12 +125,11 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     if (!gpu_moe_backend_can_upload_expert_buffers(gpu) || !ms) return -1;
 
     const BnMoEExpertMap *em = &lw->moe.expert_map;
+    const BnMoEIO *io = bn_model_moe_io_const(m);
     BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
     int split_op_code = bn_transformer_gpu_matvec_split_op_code(
         em->gate_type);
-    int use_split = bn_transformer_gpu_moe_gateup_split_enabled(
-        gpu, bn_transformer_gpu_moe_gateup_split_supported(
-                 gpu, em, split_op_code));
+    int use_split = gpu_moe_use_gateup_split(gpu, em);
 
     memset(out, 0, sizeof(*out));
     out->use_gateup_split = use_split;
@@ -130,11 +154,13 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     } else {
         out->gate = gpu_moe_create_expert_buffer(
             gpu, gate_data, em->expert_gate_bytes, em->gate_type,
-            em->gate_rows, em->gate_cols, 0);
+            em->gate_rows, em->gate_cols,
+            bn_moe_mmap_base_for_proj(io, em, 0) != NULL, 0);
         if (!out->gate) return -1;
         out->up = gpu_moe_create_expert_buffer(
             gpu, up_data, em->expert_up_bytes, em->up_type,
-            em->up_rows, em->up_cols, 0);
+            em->up_rows, em->up_cols,
+            bn_moe_mmap_base_for_proj(io, em, 1) != NULL, 0);
         if (!out->up) {
             gpu_moe_destroy_partial(gpu, out->gate, NULL, NULL);
             memset(out, 0, sizeof(*out));
@@ -151,7 +177,8 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     }
     out->down = gpu_moe_create_expert_buffer(
         gpu, down_data, em->expert_down_bytes, em->down_type,
-        em->down_rows, em->down_cols, 0);
+        em->down_rows, em->down_cols,
+        bn_moe_mmap_base_for_proj(io, em, 2) != NULL, 0);
     if (!out->down) {
         gpu_moe_destroy_partial(gpu, out->gate, out->up, NULL);
         memset(out, 0, sizeof(*out));
@@ -202,7 +229,8 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
         if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, eidx,
                                          temporaries, &expert->buffers) != 0)
             return -1;
-        expert->weight = ms->expert_weights[k];
+        expert->weight = ms->expert_weights[k] *
+                         bn_moe_expert_weight_scale(lw, eidx);
         out->n_experts++;
     }
     return 0;
@@ -276,11 +304,8 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
         if (!layer_kind.uses_moe)
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
-        int split_op_code = bn_transformer_gpu_matvec_split_op_code(
-            em->gate_type);
-        int use_split = bn_transformer_gpu_moe_gateup_split_enabled(
-            gpu, bn_transformer_gpu_moe_gateup_split_supported(
-                     gpu, em, split_op_code));
+        const BnMoEIO *io = bn_model_moe_io_const(m);
+        int use_split = gpu_moe_use_gateup_split(gpu, em);
 
         for (int expert_idx = 0; expert_idx < route_policy.total_experts;
              expert_idx++) {
@@ -308,14 +333,17 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
             } else {
                 gate_gpu = gpu_moe_create_expert_buffer(
                     gpu, gate_data, em->expert_gate_bytes,
-                    em->gate_type, em->gate_rows, em->gate_cols, 1);
+                    em->gate_type, em->gate_rows, em->gate_cols,
+                    bn_moe_mmap_base_for_proj(io, em, 0) != NULL, 1);
                 up_gpu = gpu_moe_create_expert_buffer(
                     gpu, up_data, em->expert_up_bytes,
-                    em->up_type, em->up_rows, em->up_cols, 1);
+                    em->up_type, em->up_rows, em->up_cols,
+                    bn_moe_mmap_base_for_proj(io, em, 1) != NULL, 1);
             }
             down_gpu = gpu_moe_create_expert_buffer(
                 gpu, down_data, em->expert_down_bytes,
-                em->down_type, em->down_rows, em->down_cols, 1);
+                em->down_type, em->down_rows, em->down_cols,
+                bn_moe_mmap_base_for_proj(io, em, 2) != NULL, 1);
             if (!gate_gpu || (!use_split && !up_gpu) || !down_gpu) {
                 gpu_moe_destroy_partial(gpu, gate_gpu, up_gpu, down_gpu);
                 free(temp_state.buf);

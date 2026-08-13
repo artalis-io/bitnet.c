@@ -1,6 +1,56 @@
 #include "moe_internal.h"
 #include "model_internal.h"
 #include "gpu_moe_bridge.h"
+#include "backend_model.h"
+#include "gpu_backend.h"
+#include "gpu_policy.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+static int moe_try_gpu_resident_routed(BnModel *m, BnSession *sess,
+                                       BnLayerWeights *lw, int layer) {
+    const BnBackendModel *backend = bn_model_backend(m);
+    BnGPUBackend *gpu =
+        bn_backend_model_gpu_for_cpu_operations(backend);
+    BnMoEState *ms = sess ? sess->moe_state : NULL;
+    BnMoERoutePolicy route = bn_moe_route_policy(m ? &m->config : NULL);
+    BnMoEExecutionPolicy execution =
+        bn_moe_execution_policy(m ? &m->config : NULL);
+    if (!m || !sess || !lw || !gpu || !backend || !ms ||
+        !bn_gpu_backend_can_moe_routed_ffn_batch(gpu) ||
+        route.active_experts <= 0 || route.active_experts > BN_MAX_MOE_K)
+        return -1;
+    void *gate = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    void *up = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    void *down = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    if (!gate || !up || !down)
+        return -1;
+    float adjusted_weights[BN_MAX_MOE_K];
+    for (int k = 0; k < route.active_experts; k++) {
+        int expert = ms->expert_indices[k];
+        if (expert < 0 || expert >= route.total_experts)
+            return -1;
+        adjusted_weights[k] = ms->expert_weights[k] *
+                              bn_moe_expert_weight_scale(lw, expert);
+    }
+    const BnMoEExpertMap *map = &lw->moe.expert_map;
+    int rc = bn_gpu_backend_moe_routed_ffn_batch(
+        gpu, ms->expert_out, gate, up, down, ms->expert_indices,
+        adjusted_weights, sess->state.xb, 1, m->config.dim,
+        route.expert_hidden_dim, route.total_experts, route.active_experts,
+        map->gate_type, map->up_type, map->down_type,
+        execution.activation);
+    if (rc != 0 && bn_gpu_policy_debug_fallback_enabled(gpu))
+        fprintf(stderr,
+                "[gpu:fallback] resident routed MoE callback rejected "
+                "layer=%d gate=%d up=%d down=%d act=%d\n",
+                layer, map->gate_type, map->up_type, map->down_type,
+                execution.activation);
+    return rc;
+}
 
 static const void *moe_mmap_expert_proj(const BnMoEIO *io,
                                         const BnMoEExpertMap *map,
@@ -68,7 +118,8 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     t0 = bn_moe_time_ms();
     bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
                   route_policy.expert_hidden_dim,
-                  exec_policy.uses_reference_silu);
+                  exec_policy.uses_reference_silu,
+                  exec_policy.uses_reference_ffn_activation);
     ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
@@ -90,34 +141,44 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     return 0;
 }
 
-static float moe_expert_weight_scale(const BnLayerWeights *lw, int expert_idx) {
-    if (!lw || !lw->moe.expert_down_scale || expert_idx < 0)
-        return 1.0f;
-    float scale = lw->moe.expert_down_scale[expert_idx];
-    return scale != 0.0f ? scale : 1.0f;
-}
-
 static void moe_dense_residual_branch(BnModel *m, BnSession *sess,
                                       BnLayerWeights *lw,
-                                      const BnMoEExecutionPolicy *policy) {
+                                      const BnMoEExecutionPolicy *policy,
+                                      BnMoEObserveFn observe,
+                                      void *observe_ctx) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
     BnMoEState *ms = sess->moe_state;
     if (!lw->ffn.ffn_gate.data || !lw->ffn.ffn_up.data || !lw->ffn.ffn_down.data)
         return;
+    const BnBackendModel *backend = bn_model_backend(m);
+    const BnPreparedWeight *gate_prepared =
+        bn_backend_model_prepared_qweight(backend, &lw->ffn.ffn_gate);
+    const BnPreparedWeight *up_prepared =
+        bn_backend_model_prepared_qweight(backend, &lw->ffn.ffn_up);
+    const BnPreparedWeight *down_prepared =
+        bn_backend_model_prepared_qweight(backend, &lw->ffn.ffn_down);
     bn_moe_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, c->dim,
                    policy->norm_eps);
+    if (observe)
+        observe(observe_ctx, BN_MOE_OBSERVE_DENSE_INPUT, s->xb, c->dim);
     BnMatvecTask gu[2] = {
-        { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
-        { s->hb2, &lw->ffn.ffn_up,   NULL, 0 },
+        { s->hb,  &lw->ffn.ffn_gate, gate_prepared, 0 },
+        { s->hb2, &lw->ffn.ffn_up,   up_prepared, 0 },
     };
     bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
-    bn_moe_swiglu(s->hb, s->hb, s->hb2, c->hidden_dim, -1);
-    bn_moe_quant_matvec(s->xb2, &lw->ffn.ffn_down, s->hb, s->x_q,
-                        bn_model_pool(m));
+    bn_moe_swiglu(s->hb, s->hb, s->hb2, c->hidden_dim, -1,
+                  policy->uses_reference_ffn_activation);
+    if (observe)
+        observe(observe_ctx, BN_MOE_OBSERVE_DENSE_ACTIVATION,
+                s->hb, c->hidden_dim);
+    bn_moe_quant_matvec_prepared(s->xb2, &lw->ffn.ffn_down, down_prepared,
+                                 s->hb, s->x_q, bn_model_pool(m));
     if (lw->norm.ffn_post_norm_1)
         bn_moe_rmsnorm(s->xb2, s->xb2, lw->norm.ffn_post_norm_1, c->dim,
                        policy->norm_eps);
+    if (observe)
+        observe(observe_ctx, BN_MOE_OBSERVE_DENSE_OUTPUT, s->xb2, c->dim);
     bn_moe_weighted_add(ms->expert_out, s->xb2, 1.0f, c->dim);
 }
 
@@ -131,8 +192,9 @@ static void moe_rmsnorm_unit(float *out, const float *x, int size, float eps) {
 }
 
 // Full MoE FFN block
-void bn_moe_forward(struct BnModel *m, BnSession *sess,
-                    struct BnLayerWeights *lw, int l) {
+void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
+                             struct BnLayerWeights *lw, int l,
+                             BnMoEObserveFn observe, void *observe_ctx) {
 #if defined(__EMSCRIPTEN__)
     (void)l;
 #endif
@@ -156,6 +218,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     if (exec_policy.uses_dense_residual_branch && lw->norm.ffn_sub_norm)
         ffn_norm = lw->norm.ffn_sub_norm;
     bn_moe_rmsnorm(s->xb, s->x, ffn_norm, dim, exec_policy.norm_eps);
+    if (observe)
+        observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_INPUT, s->xb, dim);
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
     // 2. Route: select top-K experts (SIMD + threaded)
@@ -172,7 +236,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     bn_moe_route(ms, router_x, lw->moe.router_weight, dim,
                  route_policy.total_experts, K,
                  route_policy.norm_topk_prob,
-                 route_policy.expert_weights_scale, bn_model_pool(m));
+                 route_policy.expert_weights_scale,
+                 route_policy.uses_reference_router_accumulation,
+                 bn_model_pool(m));
     ms->stats.route_time_ms += bn_moe_time_ms() - t0;
 
     // 3. Zero output accumulator
@@ -181,8 +247,11 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     // 4. Expert FFN compute
     double t_compute = bn_moe_time_ms();
     int shared_gu_ready = 0;
+    int used_resident_routed =
+        moe_try_gpu_resident_routed(m, sess, lw, l) == 0;
 
-    if (bn_moe_io_has_mmap(bn_model_moe_io(m)) && K <= BN_MAX_MOE_K) {
+    if (!used_resident_routed &&
+        bn_moe_io_has_mmap(bn_model_moe_io(m)) && K <= BN_MAX_MOE_K) {
         // --- Cross-expert batched dispatch (mmap path) ---
         int valid_k = 0;
         int valid_indices[BN_MAX_MOE_K];
@@ -217,7 +286,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 continue;
             valid_indices[valid_k] = eidx;
             valid_weights[valid_k] = ms->expert_weights[k] *
-                                     moe_expert_weight_scale(lw, eidx);
+                                     bn_moe_expert_weight_scale(lw, eidx);
             valid_k++;
         }
 
@@ -251,7 +320,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->expert_hb_batch[k],
                     ms->expert_hb_batch[k],
                     ms->expert_hb2_batch[k],
-                    exec_policy.uses_reference_silu
+                    exec_policy.uses_reference_silu,
+                    exec_policy.uses_reference_ffn_activation
                 };
                 swiglu_tasks[k] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[k], moe_hidden };
             }
@@ -314,27 +384,13 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         }
     }
 #if !defined(__EMSCRIPTEN__)
-    else if (bn_model_moe_io(m)->fd >= 0 && !bn_moe_io_has_mmap(bn_model_moe_io(m))) {
+    else if (!used_resident_routed && bn_model_moe_io(m)->fd >= 0 &&
+             !bn_moe_io_has_mmap(bn_model_moe_io(m))) {
         // --- Pipelined pread path with LRU cache ---
         BnMoEPrefetch *pf_gu = (BnMoEPrefetch *)bn_model_moe_io(m)->prefetch;
         BnMoEPrefetch *pf_dn = (BnMoEPrefetch *)bn_model_moe_io(m)->prefetch_down;
         BnMoECache *cache = (BnMoECache *)bn_model_moe_io(m)->cache;
         const BnMoEExpertMap *map = &lw->moe.expert_map;
-
-        // Sort expert indices ascending (insertion sort, K is small)
-        // to enable read coalescing on cache misses
-        for (int i = 1; i < K; i++) {
-            int idx = ms->expert_indices[i];
-            float w = ms->expert_weights[i];
-            int j = i - 1;
-            while (j >= 0 && ms->expert_indices[j] > idx) {
-                ms->expert_indices[j + 1] = ms->expert_indices[j];
-                ms->expert_weights[j + 1] = ms->expert_weights[j];
-                j--;
-            }
-            ms->expert_indices[j + 1] = idx;
-            ms->expert_weights[j + 1] = w;
-        }
 
         // --- Two-phase: separate cache hits from misses ---
         int n_hits = 0, n_misses = 0;
@@ -350,7 +406,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 const uint8_t *cached = bn_moe_cache_lookup_internal(cache, l, eidx);
                 if (cached) {
                     hit_weights[n_hits] = ms->expert_weights[k] *
-                                          moe_expert_weight_scale(lw, eidx);
+                                          bn_moe_expert_weight_scale(lw, eidx);
                     hit_ptrs[n_hits] = cached;
                     n_hits++;
                     ms->stats.cache_hits++;
@@ -360,7 +416,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             }
             miss_indices[n_misses] = eidx;
             miss_weights[n_misses] = ms->expert_weights[k] *
-                                     moe_expert_weight_scale(lw, eidx);
+                                     bn_moe_expert_weight_scale(lw, eidx);
             n_misses++;
         }
 
@@ -417,7 +473,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->expert_hb_batch[h],
                     ms->expert_hb_batch[h],
                     ms->expert_hb2_batch[h],
-                    exec_policy.uses_reference_silu
+                    exec_policy.uses_reference_silu,
+                    exec_policy.uses_reference_ffn_activation
                 };
                 swiglu_tasks[h] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[h], moe_hidden };
             }
@@ -445,8 +502,105 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
         }
 
-        // Phase 2: Process cache misses with I/O overlap
-        for (int mi = 0; mi < n_misses; mi++) {
+        // With distinct cache slots, pipeline miss N+1 I/O across miss N
+        // compute. Small or disabled caches retain the sequential path below.
+        int pipeline_misses = n_misses > 0 && miss_io_started && cache &&
+            pf_gu && pf_dn &&
+            bn_moe_cache_capacity_internal(cache) >= n_misses;
+        if (pipeline_misses) {
+            uint8_t *g_dst[BN_MAX_MOE_K], *u_dst[BN_MAX_MOE_K];
+            uint8_t *d_dst[BN_MAX_MOE_K];
+            size_t g_off[BN_MAX_MOE_K], g_sz[BN_MAX_MOE_K];
+            size_t u_off[BN_MAX_MOE_K], u_sz[BN_MAX_MOE_K];
+            size_t d_off[BN_MAX_MOE_K], d_sz[BN_MAX_MOE_K];
+
+            g_dst[0] = miss_g_dst;
+            u_dst[0] = miss_u_dst;
+            d_dst[0] = miss_d_dst;
+            g_off[0] = miss_g_off;
+            g_sz[0] = miss_g_sz;
+            u_off[0] = miss_u_off;
+            u_sz[0] = miss_u_sz;
+            d_off[0] = miss_d_off;
+            d_sz[0] = miss_d_sz;
+            for (int mi = 1; mi < n_misses; mi++) {
+                int eidx = miss_indices[mi];
+                bn_moe_proj_info(map, eidx, 0, &g_off[mi], &g_sz[mi]);
+                bn_moe_proj_info(map, eidx, 1, &u_off[mi], &u_sz[mi]);
+                bn_moe_proj_info(map, eidx, 2, &d_off[mi], &d_sz[mi]);
+                uint8_t *slot =
+                    bn_moe_cache_insert_internal(cache, l, eidx);
+                g_dst[mi] = slot;
+                u_dst[mi] = slot + bn_moe_cache_gate_bytes(cache);
+                d_dst[mi] = u_dst[mi] + bn_moe_cache_up_bytes(cache);
+            }
+
+            for (int mi = 0; mi < n_misses; mi++) {
+                double tw = bn_moe_time_ms();
+                int gu_ok = bn_moe_prefetch_wait_internal(pf_gu);
+                ms->stats.prefetch_wait_ms += bn_moe_time_ms() - tw;
+                bn_moe_prefetch_collect_stats(pf_gu, &ms->stats);
+                if (!gu_ok) {
+                    if (pread(bn_model_moe_io(m)->fd, g_dst[mi], g_sz[mi],
+                              (off_t)g_off[mi]) != (ssize_t)g_sz[mi])
+                        SH_LOG_ERROR("Fallback gate pread failed");
+                    if (pread(bn_model_moe_io(m)->fd, u_dst[mi], u_sz[mi],
+                              (off_t)u_off[mi]) != (ssize_t)u_sz[mi])
+                        SH_LOG_ERROR("Fallback up pread failed");
+                }
+                if (mi + 1 < n_misses)
+                    bn_moe_prefetch_start2_internal(
+                        pf_gu, g_dst[mi + 1], g_sz[mi + 1],
+                        (off_t)g_off[mi + 1], u_dst[mi + 1], u_sz[mi + 1],
+                        (off_t)u_off[mi + 1]);
+
+                t0 = bn_moe_time_ms();
+                BnQWeight wgate, wup;
+                bn_moe_expert_projection_weight(&wgate, g_dst[mi], map, 0);
+                bn_moe_expert_projection_weight(&wup, u_dst[mi], map, 1);
+                BnMatvecTask gu[2] = {
+                    { ms->expert_hb, &wgate, NULL, gateup_flags },
+                    { ms->expert_hb2, &wup, NULL, gateup_flags },
+                };
+                bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q,
+                                          bn_model_pool(m));
+                ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+
+                t0 = bn_moe_time_ms();
+                bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
+                              moe_hidden, exec_policy.uses_reference_silu,
+                              exec_policy.uses_reference_ffn_activation);
+                ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
+
+                tw = bn_moe_time_ms();
+                int dn_ok = bn_moe_prefetch_wait_internal(pf_dn);
+                ms->stats.prefetch_wait_ms += bn_moe_time_ms() - tw;
+                bn_moe_prefetch_collect_stats(pf_dn, &ms->stats);
+                if (!dn_ok &&
+                    pread(bn_model_moe_io(m)->fd, d_dst[mi], d_sz[mi],
+                          (off_t)d_off[mi]) != (ssize_t)d_sz[mi])
+                    SH_LOG_ERROR("Fallback down pread failed");
+                if (mi + 1 < n_misses)
+                    bn_moe_prefetch_start1_internal(
+                        pf_dn, d_dst[mi + 1], d_sz[mi + 1],
+                        (off_t)d_off[mi + 1]);
+
+                t0 = bn_moe_time_ms();
+                BnQWeight wdown;
+                bn_moe_expert_projection_weight(&wdown, d_dst[mi], map, 2);
+                bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
+                                    bn_model_pool(m));
+                ms->stats.down_time_ms += bn_moe_time_ms() - t0;
+
+                t0 = bn_moe_time_ms();
+                bn_moe_weighted_add(ms->expert_out, s->xb2,
+                                    miss_weights[mi], dim);
+                ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
+            }
+        }
+
+        // Phase 2 fallback: process cache misses sequentially.
+        for (int mi = 0; !pipeline_misses && mi < n_misses; mi++) {
             int eidx = miss_indices[mi];
             float weight = miss_weights[mi];
             const uint8_t *gate_ptr, *up_ptr, *down_ptr;
@@ -539,7 +693,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             // SwiGLU
             t0 = bn_moe_time_ms();
             bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                          moe_hidden, exec_policy.uses_reference_silu);
+                          moe_hidden, exec_policy.uses_reference_silu,
+                          exec_policy.uses_reference_ffn_activation);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Wait for down I/O
@@ -575,12 +730,12 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         #undef COLLECT_PF_STATS
     }
 #endif
-    else {
+    else if (!used_resident_routed) {
         // --- Serial fallback (mmap K > BN_MAX_MOE_K or EMSCRIPTEN) ---
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
             float weight = ms->expert_weights[k] *
-                           moe_expert_weight_scale(lw, eidx);
+                           bn_moe_expert_weight_scale(lw, eidx);
             if (eidx < 0) continue;
             if (moe_try_gpu_serial_expert(m, sess, lw, l, eidx, weight) == 0)
                 continue;
@@ -609,7 +764,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             // SwiGLU activation
             t0 = bn_moe_time_ms();
             bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                          moe_hidden, exec_policy.uses_reference_silu);
+                          moe_hidden, exec_policy.uses_reference_silu,
+                          exec_policy.uses_reference_ffn_activation);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Down projection
@@ -648,7 +804,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                                           s->x_q, bn_model_pool(m));
         }
         bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden,
-                      exec_policy.uses_reference_silu);
+                      exec_policy.uses_reference_silu,
+                      exec_policy.uses_reference_ffn_activation);
         const BnQWeight *shared_down =
             bn_moe_shared_expert_down_weight(lw);
         if (shared_down)
@@ -661,23 +818,42 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     }
     ms->stats.shared_time_ms += bn_moe_time_ms() - t0;
 
+    if (observe)
+        observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_OUTPUT,
+                ms->expert_out, dim);
+
     if (exec_policy.uses_dense_residual_branch) {
         if (lw->norm.ffn_post_norm_2)
             bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
                            lw->norm.ffn_post_norm_2, dim,
                            exec_policy.norm_eps);
-        moe_dense_residual_branch(m, sess, lw, &exec_policy);
+        if (observe)
+            observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_POST_NORM,
+                    ms->expert_out, dim);
+        moe_dense_residual_branch(m, sess, lw, &exec_policy,
+                                  observe, observe_ctx);
+        if (observe)
+            observe(observe_ctx, BN_MOE_OBSERVE_COMBINED_OUTPUT,
+                    ms->expert_out, dim);
         if (lw->norm.ffn_post_norm)
             bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
                            lw->norm.ffn_post_norm, dim,
                            exec_policy.norm_eps);
     }
 
+    if (observe)
+        observe(observe_ctx, BN_MOE_OBSERVE_FINAL_OUTPUT,
+                ms->expert_out, dim);
+
     ms->stats.compute_time_ms += bn_moe_time_ms() - t_compute;
 
     // 6. Copy result to xb for residual add by caller
     memcpy(s->xb, ms->expert_out, dim * sizeof(float));
 
-    // 7. Residual add
     bn_moe_residual_add(s->x, s->xb, dim);
+}
+
+void bn_moe_forward(struct BnModel *m, BnSession *sess,
+                    struct BnLayerWeights *lw, int l) {
+    bn_moe_forward_observed(m, sess, lw, l, NULL, NULL);
 }

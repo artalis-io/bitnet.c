@@ -115,7 +115,9 @@ static const char *backend_name(int webgpu, int metal, int cuda) {
     if (webgpu) return "WebGPU";
     if (metal) return "Metal";
     if (cuda) return "CUDA";
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#if defined(BN_FORCE_SCALAR)
+    return "Scalar";
+#elif defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
     return "ARM NEON + SDOT";
 #elif defined(__ARM_NEON)
     return "ARM NEON";
@@ -718,7 +720,11 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen, int random_gen) {
     // Warmup + timed generation
     double t_start = 0;
     for (int i = 0; i < total; i++) {
-        if (i == warmup) t_start = bn_platform_time_ms();
+        if (i == warmup) {
+            if (s->moe_state)
+                bn_moe_reset_stats(s->moe_state);
+            t_start = bn_platform_time_ms();
+        }
         ok = random_gen
             ? (bn_transformer_forward_no_logits(m, s, next, i + 1) == 0)
             : ((logits = bn_transformer_forward(m, s, next, i + 1)) != NULL);
@@ -740,6 +746,8 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen, int random_gen) {
 
     printf("\nThroughput: %.1f tok/s  (%d tokens in %.0f ms, %d warmup%s)\n",
            toks_per_sec, n_gen, elapsed, warmup, random_gen ? ", random next-token" : "");
+    if (s->moe_state)
+        bn_moe_print_stats(s->moe_state, n_gen);
 
     if (!random_gen)
         bn_sampler_free(&sampler);
@@ -747,7 +755,7 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen, int random_gen) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--prefill-toks N] [--prefill-iters N] [--prefill-no-logits] [--kv16] [--flash] [--random-gen] [--q4-expand] [--webgpu] [--metal] [--metal-enable-q6-q8k] [--metal-disable-q4-q8] [--q4-q8-disable-gateup] [--q4-q8-disable-ffn-down] [--shader-dir DIR]\n", argv[0]);
+        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--prefill-toks N] [--prefill-iters N] [--prefill-no-logits] [--kv16] [--flash] [--random-gen] [--madvise] [--q4-expand] [--webgpu] [--metal] [--metal-enable-q6-q8k] [--metal-disable-q4-q8] [--q4-q8-disable-gateup] [--q4-q8-disable-ffn-down] [--shader-dir DIR]\n", argv[0]);
         return 1;
     }
 
@@ -761,6 +769,7 @@ int main(int argc, char **argv) {
     int kv_f16 = 0;
     int flash_attn = 0;
     int random_gen = 0;
+    int madvise_moe = 0;
     int use_webgpu = 0;
     int use_metal = 0;
     int use_cuda = 0;
@@ -792,6 +801,8 @@ int main(int argc, char **argv) {
             flash_attn = 1;
         else if (strcmp(argv[i], "--random-gen") == 0)
             random_gen = 1;
+        else if (strcmp(argv[i], "--madvise") == 0)
+            madvise_moe = 1;
         else if (strcmp(argv[i], "--q4-expand") == 0)
             bench_q4_expand_enabled = 1;
         else if (strcmp(argv[i], "--webgpu") == 0)
@@ -897,6 +908,8 @@ int main(int argc, char **argv) {
             bn_model_set_moe_mmap_base(&model, mf->data);
         if (gf->n_shards <= 1 && mf && mf->fd >= 0)
             bn_model_set_moe_fd(&model, mf->fd);
+        if (madvise_moe)
+            bn_model_set_moe_madvise(&model, 1);
     }
 
 #ifdef BN_ENABLE_WEBGPU
@@ -1062,6 +1075,8 @@ int main(int argc, char **argv) {
     BnThreadPool *pool = NULL;
     if (n_threads > 1)
         pool = bn_tp_create(n_threads - 1);
+    if (!bn_model_gpu(&model))
+        bn_tp_set_cpu_decode_policy(pool);
 
     // Allocate input buffers large enough for the widest loaded projection.
     // Some hybrid/Gemma-family layers have projection input widths that differ
@@ -1114,6 +1129,13 @@ int main(int argc, char **argv) {
     // Benchmark layer 0 weight matrices
     BnLayerWeights *L = &model.weights.layers[0];
     BnGPUBackend *active_gpu = use_webgpu ? gpu : (use_metal ? metal_gpu : cuda_gpu);
+    if (getenv("BN_BENCH_MOE_LAYOUT") && L->moe.router_weight) {
+        const BnMoEExpertMap *em = &L->moe.expert_map;
+        printf("MoE      | gate=%s up=%s down=%s | hidden=%d experts=%d active=%d\n",
+               type_name(em->gate_type), type_name(em->up_type),
+               type_name(em->down_type), em->gate_rows,
+               model.config.n_experts, model.config.n_experts_active);
+    }
 
     BenchTarget targets[] = {
         { "wq",   &L->attn.wq },

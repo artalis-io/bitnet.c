@@ -13,6 +13,7 @@ static void prepared_stats_add(BnBackendLayoutPreparedStats *dst,
                                const BnBackendLayoutPreparedStats *src) {
     if (!dst || !src) return;
     dst->lowbit_repack_bytes += src->lowbit_repack_bytes;
+    dst->q8_repack_bytes += src->q8_repack_bytes;
     dst->kquant_scale_table_bytes += src->kquant_scale_table_bytes;
     dst->expanded_kquant_weight_bytes += src->expanded_kquant_weight_bytes;
     dst->f32_scale_table_bytes += src->f32_scale_table_bytes;
@@ -25,6 +26,9 @@ static void prepared_stats_add_bytes(BnBackendLayoutPreparedStats *stats,
     switch (kind) {
         case BN_PREPARED_WEIGHT_Q4_0_REPACK:
             stats->lowbit_repack_bytes += bytes;
+            break;
+        case BN_PREPARED_WEIGHT_Q8_0_REPACK:
+            stats->q8_repack_bytes += bytes;
             break;
         case BN_PREPARED_WEIGHT_Q4_K_SCALES:
             stats->kquant_scale_table_bytes += bytes;
@@ -317,7 +321,8 @@ size_t bn_backend_layout_prepared_qweights_size(const BnConfig *config,
     prepared_qweight_size_one(&weights->output_weight, stats);
     prepared_qweight_size_one(&weights->tied_embedding_weight, stats);
 
-    return stats->lowbit_repack_bytes + stats->kquant_scale_table_bytes +
+    return stats->lowbit_repack_bytes + stats->q8_repack_bytes +
+           stats->kquant_scale_table_bytes +
            stats->expanded_kquant_weight_bytes +
            stats->f32_scale_table_bytes;
 }

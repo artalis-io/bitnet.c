@@ -1,71 +1,38 @@
 #include "quant_dispatch_internal.h"
-#include <stdlib.h>
-
-static int quant_env_enabled(const char *name, const char *compat_name) {
-    return getenv(name) != NULL ||
-           (compat_name != NULL && getenv(compat_name) != NULL);
-}
-
-static int quant_env_enabled3(const char *name,
-                              const char *compat_name,
-                              const char *compat_name2) {
-    return quant_env_enabled(name, compat_name) ||
-           (compat_name2 != NULL && getenv(compat_name2) != NULL);
-}
-
-static const char *quant_env_value(const char *name,
-                                   const char *compat_name) {
-    const char *v = getenv(name);
-    return v ? v : (compat_name ? getenv(compat_name) : NULL);
-}
-
-static int reference_dot_env_enabled(void) {
-    return quant_env_enabled("BN_CPU_REFERENCE_DOT", "BN_CPU_LLAMA_DOT");
-}
-
-static int reference_q4_dot_env_enabled(void) {
-    return quant_env_enabled3("BN_CPU_REFERENCE_BLOCK_QUANT_DOT",
-                              "BN_CPU_REFERENCE_Q4_DOT",
-                              "BN_CPU_LLAMA_Q4_DOT");
-}
-
-static int reference_q6_dot_env_enabled(void) {
-    return quant_env_enabled3("BN_CPU_REFERENCE_KQUANT_DOT",
-                              "BN_CPU_REFERENCE_Q6_DOT",
-                              "BN_CPU_LLAMA_Q6_DOT");
-}
-
-static int q4_dot_default_enabled(void) {
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
-    !defined(BN_FORCE_SCALAR)
+static int q4_dot_default_enabled(const BnQuantRuntimePolicy *policy) {
+    if (policy && policy->disable_q4_dot)
+        return 0;
+#if defined(BN_FORCE_SCALAR) || \
+    (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
     return 1;
 #else
     return 0;
 #endif
 }
 
-static int q6_dot_default_enabled(void) {
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD) && \
-    !defined(BN_FORCE_SCALAR)
+static int q6_dot_default_enabled(const BnQuantRuntimePolicy *policy) {
+    if (policy && policy->disable_q6_dot)
+        return 0;
+#if defined(BN_FORCE_SCALAR) || \
+    (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
     return 1;
 #else
     return 0;
 #endif
 }
 
-int bn_quant_policy_avx512_q5k_vnni_enabled(int rows) {
-    const char *v = quant_env_value("BN_AVX512_KQUANT_VNNI",
-                                    "BN_AVX512_Q5K_VNNI");
-    if (v)
-        return v[0] != '\0' && v[0] != '0';
+int bn_quant_policy_avx512_q5k_vnni_enabled(
+    const BnQuantRuntimePolicy *policy, int rows) {
+    if (policy && policy->avx512_kquant_vnni >= 0)
+        return policy->avx512_kquant_vnni;
     return rows >= 4096;
 }
 
 int bn_quant_policy_avx2_kquant_float_for_tasks(
+    const BnQuantRuntimePolicy *policy,
     const BnMatvecTask *tasks,
     int n_tasks) {
-    const char *v = getenv("BN_AVX2_KQUANT_FLOAT");
-    if (v && v[0] != '\0' && v[0] != '0')
+    if (policy && policy->avx2_kquant_float)
         return 1;
     for (int i = 0; i < n_tasks; i++) {
         if (tasks[i].flags & BN_MATVEC_TASK_FORCE_FLOAT_KQUANT)
@@ -74,29 +41,34 @@ int bn_quant_policy_avx2_kquant_float_for_tasks(
     return 0;
 }
 
-int bn_quant_policy_reference_q4_dot_enabled(uint32_t flags) {
-    return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
-           (q4_dot_default_enabled() ||
+int bn_quant_policy_reference_q4_dot_enabled(
+    const BnQuantRuntimePolicy *policy, uint32_t flags) {
+    return !(policy && policy->disable_q4_dot) &&
+           !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
+           (q4_dot_default_enabled(policy) ||
             (flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
-            reference_dot_env_enabled() ||
-            reference_q4_dot_env_enabled());
+            (policy && (policy->reference_dot ||
+                        policy->reference_q4_dot)));
 }
 
-int bn_quant_policy_reference_q6_dot_enabled(uint32_t flags) {
+int bn_quant_policy_reference_q6_dot_enabled(
+    const BnQuantRuntimePolicy *policy, uint32_t flags) {
     return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
-           (q6_dot_default_enabled() ||
+           (q6_dot_default_enabled(policy) ||
             (flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
-            reference_dot_env_enabled() ||
-            reference_q4_dot_env_enabled() ||
-            reference_q6_dot_env_enabled());
+            (policy && (policy->reference_dot || policy->reference_q4_dot ||
+                        policy->reference_q6_dot)));
 }
 
 int bn_quant_policy_batch_reference_q4_dot_enabled(
+    const BnQuantRuntimePolicy *policy,
     const BnMatvecTask *tasks,
     int n_tasks) {
-    int reference_dot = reference_dot_env_enabled() ||
-                        reference_q4_dot_env_enabled() ||
-                        q4_dot_default_enabled();
+    if (policy && policy->disable_q4_dot)
+        return 0;
+    int reference_dot = (policy && (policy->reference_dot ||
+                                    policy->reference_q4_dot)) ||
+                        q4_dot_default_enabled(policy);
     for (int t = 0; t < n_tasks; t++)
         reference_dot = reference_dot ||
                         ((tasks[t].flags &
@@ -107,14 +79,19 @@ int bn_quant_policy_batch_reference_q4_dot_enabled(
     return reference_dot;
 }
 
-int bn_quant_policy_wasm_q4_canonical4_enabled(void) {
-    return quant_env_enabled("BN_WASM_BLOCK_QUANT_CANONICAL4",
-                             "BN_WASM_Q4_CANONICAL4");
+int bn_quant_policy_q4_scalar_dot_requested(
+    const BnQuantRuntimePolicy *policy) {
+    return policy && policy->q4_scalar_dot;
 }
 
-int bn_quant_policy_q8_0_matmul_batch_enabled(void) {
-    return !quant_env_enabled("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH",
-                              "BN_DISABLE_Q8_0_MATMUL_BATCH");
+int bn_quant_policy_wasm_q4_canonical4_enabled(
+    const BnQuantRuntimePolicy *policy) {
+    return policy && policy->wasm_q4_canonical4;
+}
+
+int bn_quant_policy_q8_0_matmul_batch_enabled(
+    const BnQuantRuntimePolicy *policy) {
+    return !(policy && policy->disable_native_quant_matmul_batch);
 }
 
 int bn_quant_format_is_q4k(int type) {
@@ -175,7 +152,32 @@ int bn_quant_format_supports_direct_native_quant_matvec(int type) {
 }
 
 int bn_quant_format_supports_specialized_native_quant_matvec(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return type == BN_GGUF_TENSOR_Q4_K || type == BN_GGUF_TENSOR_Q5_K ||
+           type == BN_GGUF_TENSOR_Q6_K;
+}
+
+int bn_quant_format_supports_reference_prepared_accumulation(int type) {
+    return bn_quant_format_has_cap(
+        type, BN_QUANT_CAP_GPU_REFERENCE_PREPARED_ACCUMULATION);
+}
+
+int bn_quant_format_prefers_specialized_native_quant_matvec(int type,
+                                                             int cols) {
+    if (!bn_quant_format_supports_specialized_native_quant_matvec(type))
+        return 0;
+    (void)cols;
+    return 1;
+}
+
+int bn_quant_format_prefers_tall_specialized_native_quant_matvec(
+    int type, int rows, int cols) {
+    return type == BN_GGUF_TENSOR_Q6_K && rows >= 65536 && cols > 0 &&
+           (cols % 256) == 0;
+}
+
+int bn_quant_format_supports_native_quant_split(int type) {
+    return bn_quant_format_has_cap(type,
+                                   BN_QUANT_CAP_GPU_NATIVE_QUANT_SPLIT);
 }
 
 int bn_quant_format_gpu_matvec_supported(int type) {

@@ -9,6 +9,7 @@ typedef struct BnGPUBackend BnGPUBackend;
 typedef struct BnModelRuntime BnModelRuntime;
 typedef struct BnModelIO BnModelIO;
 typedef struct BnModelBackendState BnModelBackendState;
+typedef struct BnCPURuntimePolicy BnCPURuntimePolicy;
 
 typedef struct BnModel {
     BnConfig config;
@@ -22,10 +23,12 @@ int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int k
 void bn_model_free(BnModel *m);
 void bn_model_embed_token(const BnModel *m, float *out, int token);
 int bn_model_uses_moe(const BnModel *model);
+const BnCPURuntimePolicy *bn_model_cpu_runtime_policy(const BnModel *model);
 
 // Upload all model weights to backend-owned GPU buffers.
 // Returns 0 on success. On failure, releases partially uploaded buffers.
 int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu);
+int bn_model_init_gpu_activations(const BnModel *model, BnGPUBackend *gpu);
 
 // Release all GPU weight buffers. Safe to call if gpu is NULL.
 void bn_model_release_gpu(BnModel *model);

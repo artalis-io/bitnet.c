@@ -14,6 +14,12 @@ Important variables:
 - mmap versus pread and page-cache state for MoE models
 - `--maxseq`, KV mode, and whether prefill is enabled
 
+Parity ratios require the same runtime axis on both sides. In particular, a
+`bitnet_scalar` result cannot be divided by a native Apple llama.cpp result,
+because that llama.cpp build uses NEON. The comparator rejects this combination.
+Use matching `--bitnet-runtime scalar --llama-runtime scalar` labels together
+with `--llama-bench-bin` pointing at an actual scalar llama.cpp build.
+
 ## Reproducible Gates
 
 ```bash
@@ -64,11 +70,16 @@ Qwen2.5 top-logit prompts:
 
 | Engine | tok/s |
 |---|---:|
-| bitnet.c Metal | 96.55 |
-| llama.cpp Metal `-fa on -np 1` | 117.71 |
+| bitnet.c Metal | 53.41 |
+| llama.cpp Metal `-fa on -np 1` | 58.33 |
 
-Ratio: 0.820. Top-1 matched `8/8` prompts and mean top-10 overlap was `9.62`.
+Ratio: 0.916. Top-1 matched `8/8` prompts and mean top-10 overlap was `9.62`.
 This is good coherence evidence, but it is not yet throughput parity.
+
+These August 2026 medians supersede the older absolute numbers below. The
+large change in both engines' absolute throughput reinforces that acceptance
+must use the same-run ratio rather than comparing results from different
+llama.cpp builds or machine states.
 
 Follow-up checks:
 
@@ -204,9 +215,45 @@ MoE models are strongly affected by page-cache state and expert locality.
 - `--pread --cache-mb N` lowers RSS and can be preferable for serving larger
   sparse models.
 - No-cache pread is a memory-saving fallback and is normally slower.
+- Do not collect sparse samples by launching a new process for every sample.
+  On hosts where the mapped model is a substantial fraction of RAM, alternating
+  large BitNet and llama.cpp processes measures eviction order more than kernel
+  throughput. `compare_llama_topk.py --benchmark --bench-runs N` now runs all
+  BitNet repetitions under one model load and passes `-r N` to one
+  `llama-bench` process. BitNet resets `BnSession` and sampler history between
+  repetitions while retaining immutable model and backend-resident state.
+- Use `--bench-warmup-runs N` for full unreported requests before measured
+  samples. `--bitnet-bench-warmup-tokens N` instead advances within every
+  request before its timed interval; these controls answer different questions
+  and should be recorded separately.
 
 When comparing against llama.cpp, record whether llama.cpp is actually CPU-only
 or whether it routes some work to Metal/GPU even when a CPU-looking flag is used.
+
+### ARM Native CPU Checkpoint
+
+The following M1 Max samples use the native ARM/NEON runtime on both sides,
+eight threads, one loaded model per engine, one full BitNet warmup request, and
+two or three measured repetitions. Token counts differ because the 18-22 GB
+models require shorter runs on this 32 GB host.
+
+| Model | Shape | tg | BitNet tok/s | llama.cpp tok/s | Ratio |
+|---|---|---:|---:|---:|---:|
+| Qwen2.5 3B Q4_0 | dense | 32 | 55.19 | 47.68 | 1.158 |
+| Qwen3 0.6B Q8_0 | dense | 4 | 182.82 | 107.57 | 1.700 |
+| Qwen3 30B-A3B Q4_K_M | sparse | 16 | 29.68 | 9.18 | 3.233 |
+| Qwen3.5 9B Q4_K_M | dense | 16 | 16.12 | 11.54 | 1.397 |
+| Qwen3.5 35B-A3B Q4_K_M | sparse | 8 | 37.13 | 3.84 | 9.669 |
+| Qwen3.6 27B Q4_K_XL | dense | 8 | 4.00 | 3.36 | 1.190 |
+| Qwen3.6 35B-A3B Q4_K_M | sparse | 8 | 36.72 | 4.44 | 8.271 |
+| Gemma4 E4B Q4_0 | dense | 16 | 32.09 | 25.09 | 1.279 |
+| Gemma4 26B Q4_0 | sparse | 8 | 22.68 | 0.49 | 46.276 |
+
+The large sparse ratios include warmed mmap expert locality and should not be
+generalized to cold-start serving. The Gemma4 llama.cpp result is especially
+slow and needs confirmation on a longer run before it is used as an acceptance
+claim. No scalar ratio is reported: a matching scalar llama.cpp executable is
+not installed on this machine.
 
 ## GPU Notes
 
@@ -221,6 +268,16 @@ Current caveats:
 - Unsupported SSM or MoE blocks can fall back to CPU.
 - Oversized bindings can force CPU logits fallback on constrained adapters.
 - Native-layout Q4_0 and broader low-bit GPU kernels remain optimization work.
+
+For tall Q6_K output projections, Metal now selects the quant-owned Q8_K
+activation path by backend shape policy (`rows >= 65536`) without enabling the
+same arithmetic for ordinary layer projections. On the M1 Max Qwen2.5 3B
+fixture, an adjacent warmed `tg64` comparison measured 46.54--48.00 tok/s with
+the promoted path versus 42.69--45.51 tok/s with
+`BN_METAL_DISABLE_SPECIALIZED_NATIVE_QUANT=1`. The strict Metal-to-Metal gate
+matched all 8 generated IDs. The adjacent llama.cpp Metal control remained
+faster at 58.16 +/- 0.57 tok/s, so this is a measured reduction of the open gap,
+not Metal throughput completion.
 
 ## Historical Context
 

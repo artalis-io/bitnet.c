@@ -1,5 +1,6 @@
 #include "quant_ctx.h"
 #include <arm_neon.h>
+#include <math.h>
 #include <string.h>
 
 static inline float q4k_fp16_to_f32(uint16_t h) {
@@ -57,16 +58,19 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
             // Min correction via bsums (integer):
             // For each sub-block j (8 total), mins[j] maps to bsums[2j] + bsums[2j+1]
             // (each sub-block = 32 elements = 2 bsum groups of 16)
-            uint8_t mins[8];
-            memcpy(mins, &m_lo, 4);
-            memcpy(mins + 4, &m_hi, 4);
+            uint32x2_t mins_u32 = vdup_n_u32(0);
+            mins_u32 = vset_lane_u32(m_lo, mins_u32, 0);
+            mins_u32 = vset_lane_u32(m_hi, mins_u32, 1);
+            const int16x8_t mins = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_u32(mins_u32)));
+            const int16x8_t bsum_pairs = vpaddq_s16(
+                vld1q_s16(bsums), vld1q_s16(bsums + 8));
+            const int32x4_t min_prod = vaddq_s32(
+                vmull_s16(vget_low_s16(mins), vget_low_s16(bsum_pairs)),
+                vmull_s16(vget_high_s16(mins), vget_high_s16(bsum_pairs)));
+            const int32_t bsum_corr = vaddvq_s32(min_prod);
 
-            int32_t bsum_corr = 0;
-            for (int j = 0; j < 8; j++)
-                bsum_corr += (int32_t)mins[j] * ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
-
-            // Integer accumulation: keep lane sums vectorized and reduce once.
-            int32x4_t acc = zero;
+            int32_t block_sumi = 0;
             for (int j = 0; j < BN_QK_K; j += 64) {
                 int sub = j / 32;
 
@@ -79,8 +83,8 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
 
                 int32x4_t p0 = vdotq_s32(zero, lo0, vld1q_s8(xb + j));
                 int32x4_t p1 = vdotq_s32(zero, lo1, vld1q_s8(xb + j + 16));
-                acc = vmlaq_n_s32(acc, p0, (int32_t)sc[sub]);
-                acc = vmlaq_n_s32(acc, p1, (int32_t)sc[sub]);
+                int32_t sumi = (vaddvq_s32(p0) + vaddvq_s32(p1)) *
+                               (int32_t)sc[sub];
 
                 // High nibbles (sub-block 'sub+1'): unsigned 0..15
                 int8x16_t hi0 = vreinterpretq_s8_u8(vshrq_n_u8(raw0, 4));
@@ -88,15 +92,17 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
 
                 p0 = vdotq_s32(zero, hi0, vld1q_s8(xb + j + 32));
                 p1 = vdotq_s32(zero, hi1, vld1q_s8(xb + j + 48));
-                acc = vmlaq_n_s32(acc, p0, (int32_t)sc[sub + 1]);
-                acc = vmlaq_n_s32(acc, p1, (int32_t)sc[sub + 1]);
+                sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) *
+                        (int32_t)sc[sub + 1];
+
+                block_sumi += sumi;
 
                 qs += 32;
             }
-            int32_t sumi = vaddvq_s32(acc);
-
-            // Single float conversion per super-block
-            row_sum += dx * (d * (float)sumi - dmin * (float)bsum_corr);
+            float dd = dx * d;
+            float ddmin = dx * dmin;
+            row_sum -= ddmin * (float)bsum_corr;
+            row_sum += dd * (float)block_sumi;
         }
         c->out[row] = row_sum;
     }
@@ -136,9 +142,11 @@ void bn_quant_q4k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
             utmp[1] = (utmp[2] & kmask2) | (((utmp[0] >> 6) & kmask3) << 4);
             utmp[0] &= kmask1;
             const uint8_t *sc = (const uint8_t *)utmp;
-            uint8_t mins[8];
-            memcpy(mins, &m_lo_w, 4);
-            memcpy(mins + 4, &m_hi_w, 4);
+            uint32x2_t mins_u32 = vdup_n_u32(0);
+            mins_u32 = vset_lane_u32(m_lo_w, mins_u32, 0);
+            mins_u32 = vset_lane_u32(m_hi_w, mins_u32, 1);
+            const int16x8_t mins = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_u32(mins_u32)));
 
             // Pre-load and unpack weight nibbles (stays in L1 across tokens)
             int8x16_t w_lo0[4], w_lo1[4], w_hi0[4], w_hi1[4];
@@ -161,9 +169,12 @@ void bn_quant_q4k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                 float dx = c->x_d[(size_t)t * n_bpr + b];
                 const int16_t *bsums = c->x_bsums + ((size_t)t * n_bpr + b) * 16;
 
-                int32_t bsum_corr = 0;
-                for (int j = 0; j < 8; j++)
-                    bsum_corr += (int32_t)mins[j] * ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
+                const int16x8_t bsum_pairs = vpaddq_s16(
+                    vld1q_s16(bsums), vld1q_s16(bsums + 8));
+                const int32x4_t min_prod = vaddq_s32(
+                    vmull_s16(vget_low_s16(mins), vget_low_s16(bsum_pairs)),
+                    vmull_s16(vget_high_s16(mins), vget_high_s16(bsum_pairs)));
+                const int32_t bsum_corr = vaddvq_s32(min_prod);
 
                 int32_t sumi = 0;
                 for (int p = 0; p < 4; p++) {
@@ -177,7 +188,11 @@ void bn_quant_q4k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                     sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) * (int32_t)sc[sub + 1];
                 }
 
-                c->out[(size_t)t * rows + row] += dx * (d * (float)sumi - dmin * (float)bsum_corr);
+                float dd = dx * d;
+                float ddmin = dx * dmin;
+                c->out[(size_t)t * rows + row] -=
+                    ddmin * (float)bsum_corr;
+                c->out[(size_t)t * rows + row] += dd * (float)sumi;
             }
         }
     }

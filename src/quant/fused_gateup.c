@@ -14,7 +14,6 @@
 #endif
 
 #define BN_MAX_SCALE_BLOCKS 8192
-
 int bn_quant_q4_gate_up_silu(float *out,
                              const BnQWeight *gate,
                              const BnPreparedWeight *gate_prepared,
@@ -34,6 +33,8 @@ int bn_quant_q4_gate_up_silu(float *out,
     if (n_blocks <= 0 || n_blocks > BN_MAX_SCALE_BLOCKS) return -1;
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    if (bn_quant_policy_q4_scalar_dot_requested(bn_tp_quant_policy(pool)))
+        return -1;
     if (!gate_prepared || !gate_prepared->scales ||
         !up_prepared || !up_prepared->scales)
         return -1;
@@ -50,7 +51,8 @@ int bn_quant_q4_gate_up_silu(float *out,
     bn_tp_dispatch(pool, &task, 1);
     return 0;
 #elif defined(__wasm_relaxed_simd__)
-    int use_canonical4 = bn_quant_policy_wasm_q4_canonical4_enabled();
+    int use_canonical4 = bn_quant_policy_wasm_q4_canonical4_enabled(
+        bn_tp_quant_policy(pool));
     if (!use_canonical4 &&
         (!gate_prepared || !gate_prepared->qs ||
          !up_prepared || !up_prepared->qs))

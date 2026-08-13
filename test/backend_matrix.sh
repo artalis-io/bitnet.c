@@ -55,6 +55,48 @@ require_file "include/gpu_metal.h"
 require_file "src/gpu_wgpu.c"
 require_file "src/gpu_metal.m"
 
+if grep -Ein '"(qwen|gemma|mistral|deepseek|phi)[0-9_.-]*"|((BN_)?MODEL_)?ARCH_(QWEN|GEMMA|MISTRAL|DEEPSEEK|PHI)' \
+    include/quant.h \
+    include/backend_quant.h \
+    include/gpu_backend.h \
+    src/quant/*.c \
+    src/gpu_cuda.cu \
+    src/gpu_metal.m \
+    src/gpu_wgpu.c \
+    shaders/*.wgsl \
+    shaders/metal/*.metal >/dev/null 2>&1; then
+    echo "Quant kernels and platform runtimes must not dispatch on model-family names"
+    fail=1
+fi
+
+if grep -n 'getenv(' src/gpu_metal.m src/gpu_wgpu.c src/gpu_cuda.cu \
+        >/dev/null 2>&1; then
+    echo "Platform runtimes must consume runtime policy helpers, not environment state"
+    fail=1
+fi
+
+if grep -Ein 'gpu_(metal|wgpu|cuda)|BN_ENABLE_(METAL|WEBGPU|CUDA)|MTL[A-Z]|wgpu|cuda' \
+        include/quant.h include/backend_quant.h src/quant/*.c \
+        >/dev/null 2>&1; then
+    echo "Quant ownership must not depend on a platform runtime"
+    fail=1
+fi
+
+if grep -Ein '#[[:space:]]*include[[:space:]]+"(model|model_arch|gpu_policy)\.h"' \
+        include/quant.h include/backend_quant.h src/quant/*.c \
+        >/dev/null 2>&1; then
+    echo "Quant ownership must not depend on model or runtime policy axes"
+    fail=1
+fi
+
+if ! grep -q 'bn_quant_format_supports_native_quant_split(op->type)' \
+        src/gpu_metal.m ||
+   grep -n 'op->type == BN_GGUF_TENSOR_Q4_K' src/gpu_metal.m |
+        grep -q 'native_split'; then
+    echo "Metal native-quant split selection must consume quant capability"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_SHADER_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "GPU emit must use BN_GPU_CODE_* and backend lowering, not BN_GPU_SHADER_*"
     fail=1
@@ -354,10 +396,17 @@ if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
     fail=1
 fi
 
-if ! grep -n 'CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512' Makefile >/dev/null 2>&1 ||
-   ! grep -n 'CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512' test/qwen_cpu_parity.sh >/dev/null 2>&1 ||
-   ! grep -n 'CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512' test/gemma4_cpu_parity.sh >/dev/null 2>&1; then
-    echo "CPU parity defaults must cover scalar/NEON/AVX2/AVX512 backends"
+if ! grep -n 'DEFAULT_BACKENDS=neon,scalar' test/qwen_cpu_parity.sh >/dev/null 2>&1 ||
+   ! grep -n 'DEFAULT_BACKENDS=scalar,avx2,avx512' test/qwen_cpu_parity.sh >/dev/null 2>&1 ||
+   ! grep -n 'DEFAULT_BACKENDS=neon,scalar' test/gemma4_cpu_parity.sh >/dev/null 2>&1 ||
+   ! grep -n 'DEFAULT_BACKENDS=scalar,avx2,avx512' test/gemma4_cpu_parity.sh >/dev/null 2>&1; then
+    echo "CPU parity defaults must cover the complete host CPU backend matrix"
+    fail=1
+fi
+
+if ! grep -n 'CPU_PARITY_BACKENDS:-}' Makefile >/dev/null 2>&1 ||
+   ! grep -n 'selected=",neon,scalar,avx2,avx512,"' Makefile >/dev/null 2>&1; then
+    echo "CPU parity backend builds must honor explicit selections before using the full default"
     fail=1
 fi
 
@@ -553,6 +602,11 @@ do
         fail=1
     fi
 done
+
+if grep -n 'native_quant\|NATIVE_QUANT' include/model_arch.h src/model_arch.c src/model_policy.c >/dev/null 2>&1; then
+    echo "Model architecture must not own backend native-quant policy"
+    fail=1
+fi
 
 if rg -n 'BN_GGUF_TENSOR_|bn_quant_format_|bn_backend_quant_is_' \
     src/transformer \
@@ -1622,14 +1676,14 @@ if grep -n 'BN_CPU_TIED_\(KQUANT\|Q6K\)_REFINE_TOP\|BN_CPU_TIED_\(KQUANT\|Q6K\)_
     fail=1
 fi
 
-if ! grep -n 'BN_CPU_TIED_KQUANT_REFINE_TOP\|BN_CPU_TIED_KQUANT_HYBRID_TOP' src/backend_quant.c >/dev/null 2>&1; then
-    echo "K-quant tied-logits top-N policy must live in src/backend_quant.c"
+if ! grep -n 'BN_CPU_TIED_KQUANT_REFINE_TOP\|BN_CPU_TIED_KQUANT_HYBRID_TOP' src/threadpool.c >/dev/null 2>&1; then
+    echo "K-quant tied-logits top-N policy must be captured by runtime creation"
     fail=1
 fi
 
-if ! grep -n 'BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS' src/transformer/logits_policy.c >/dev/null 2>&1 ||
-   ! grep -n 'BN_CPU_NATIVE_TIED_LOGITS' src/transformer/logits_policy.c >/dev/null 2>&1; then
-    echo "CPU tied-logits env policy must expose behavior-named native quant env and preserve compatibility in src/transformer/logits_policy.c"
+if ! grep -n 'BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS' src/threadpool.c >/dev/null 2>&1 ||
+   ! grep -n 'BN_CPU_NATIVE_TIED_LOGITS' src/threadpool.c >/dev/null 2>&1; then
+    echo "CPU tied-logits compatibility aliases must be captured by runtime creation"
     fail=1
 fi
 
@@ -2066,8 +2120,15 @@ if grep -n '!gpu || !gpu->matmul_batch ||' src/transformer/prefill.c >/dev/null 
     fail=1
 fi
 
-if ! grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS\|BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_REFERENCE_DOT\|BN_CPU_REFERENCE_BLOCK_QUANT_DOT\|BN_CPU_REFERENCE_Q4_DOT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu_policy.c >/dev/null 2>&1; then
-    echo "CPU env compatibility policy must live in src/transformer/cpu_policy.c"
+if ! grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS\|BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_REFERENCE_DOT\|BN_CPU_REFERENCE_BLOCK_QUANT_DOT\|BN_CPU_REFERENCE_Q4_DOT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/threadpool.c >/dev/null 2>&1; then
+    echo "CPU env compatibility aliases must be captured by runtime creation"
+    fail=1
+fi
+
+if grep -n '\bgetenv\b' src/transformer/cpu_policy.c \
+        src/transformer/logits_policy.c src/transformer/prefill_policy.c \
+        src/backend_quant.c >/dev/null 2>&1; then
+    echo "CPU computational policy must consume an immutable runtime snapshot"
     fail=1
 fi
 
@@ -2081,8 +2142,8 @@ if grep -n 'BN_MATVEC_TASK_LLAMA_DOT' include/quant.h src test/test_*.c >/dev/nu
     fail=1
 fi
 
-if ! grep -n 'BN_AVX512_KQUANT_VNNI\|BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_REFERENCE_DOT\|BN_CPU_REFERENCE_BLOCK_QUANT_DOT\|BN_CPU_REFERENCE_Q4_DOT\|BN_CPU_REFERENCE_KQUANT_DOT\|BN_CPU_REFERENCE_Q6_DOT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT\|BN_CPU_LLAMA_Q6_DOT\|BN_WASM_BLOCK_QUANT_CANONICAL4\|BN_WASM_Q4_CANONICAL4\|BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH\|BN_DISABLE_Q8_0_MATMUL_BATCH' src/quant/policy.c >/dev/null 2>&1; then
-    echo "quant env compatibility policy must live in src/quant/policy.c"
+if ! grep -n 'BN_AVX512_KQUANT_VNNI\|BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_REFERENCE_DOT\|BN_CPU_REFERENCE_BLOCK_QUANT_DOT\|BN_CPU_REFERENCE_Q4_DOT\|BN_CPU_REFERENCE_KQUANT_DOT\|BN_CPU_REFERENCE_Q6_DOT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT\|BN_CPU_LLAMA_Q6_DOT\|BN_WASM_BLOCK_QUANT_CANONICAL4\|BN_WASM_Q4_CANONICAL4\|BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH\|BN_DISABLE_Q8_0_MATMUL_BATCH' src/threadpool.c >/dev/null 2>&1; then
+    echo "quant env compatibility aliases must be captured by runtime creation"
     fail=1
 fi
 
@@ -2334,6 +2395,97 @@ fi
 
 if grep -n 'BITNET_ARGS+=(--metal-\(enable\|disable\)-q6-q8k\|cmd.append("--metal-\(enable\|disable\)-q6-q8k' test/compare_llama.sh test/compare_llama_topk.py >/dev/null 2>&1; then
     echo "llama parity helpers must forward behavior-named specialized native-quant flags"
+    fail=1
+fi
+
+if ! sed -n '/def run_bitnet_bench/,/def run_llama_bench/p' \
+        test/compare_llama_topk.py | \
+        grep -q 'append_bitnet_common_args(cmd, args)' ||
+   ! sed -n '/def append_bitnet_common_args/,/def validate_bitnet_process/p' \
+        test/compare_llama_topk.py | \
+        grep -q 'cmd += \["-t", str(args.threads)\]'; then
+    echo "llama comparison must apply the requested thread count to bitnet benchmarks"
+    fail=1
+fi
+
+if ! grep -q -- '"--benchmark-runs"' test/compare_llama_topk.py ||
+   ! grep -q -- '"--benchmark-warmup-runs"' test/compare_llama_topk.py ||
+   ! grep -q 'retains its model mapping for all repetitions' \
+        test/compare_llama_topk.py ||
+   ! grep -q 'bn_session_reset(session, &model)' src/main.c; then
+    echo "llama comparison benchmarks must repeat with one loaded model"
+    fail=1
+fi
+
+if ! grep -q 'def benchmark_host_is_idle' test/compare_llama_topk.py ||
+   ! grep -q 'args.benchmark and not benchmark_host_is_idle(args)' \
+        test/compare_llama_topk.py ||
+   ! grep -q -- '--allow-busy-system' test/compare_llama_topk.py; then
+    echo "llama comparison benchmarks must reject contaminated host load"
+    fail=1
+fi
+
+if ! grep -q 'def benchmark_runtime_axes_match' test/compare_llama_topk.py ||
+   ! grep -q 'benchmark runtime-axis mismatch' test/compare_llama_topk.py ||
+   ! grep -q -- '--llama-bench-bin' test/compare_llama_topk.py; then
+    echo "llama comparison benchmarks must reject runtime-axis mixing"
+    fail=1
+fi
+
+if ! grep -q 'def validate_bitnet_process' test/compare_llama_topk.py ||
+   ! grep -q '\[bn:gpu:metal\] device:' test/compare_llama_topk.py ||
+   ! grep -q 'rejecting CPU fallback as a runtime-axis mismatch' \
+        test/compare_llama_topk.py ||
+   ! grep -q 'int(token_count) != args.bench_tokens' \
+        test/compare_llama_topk.py; then
+    echo "llama comparison must verify runtime activation and complete samples"
+    fail=1
+fi
+
+if ! grep -q -- '"--bench-warmup-tokens"' test/compare_llama_topk.py ||
+   ! grep -q 'benchmark_warmup_tokens' src/main.c; then
+    echo "bitnet benchmarks must support untimed in-process decode warmup"
+    fail=1
+fi
+
+if ! grep -q 'bitnet_prefault_moe' test/compare_llama_topk.py ||
+   ! grep -q 'cmd.append("--prefault-moe")' test/compare_llama_topk.py; then
+    echo "sparse bitnet benchmarks must expose explicit mmap prefaulting"
+    fail=1
+fi
+
+if sed -n '/^llama_generated_ids_csv()/,/^}/p' test/compare_llama.sh |
+        grep -q 'LLAMA_PROBE_EXTRA_BUFTS' ||
+   ! sed -n '/^llama_generated_ids_csv()/,/^}/p' test/compare_llama.sh |
+        grep -q -- '--no-observer' ||
+   ! grep -q 'LLAMA_PROBE_FLASH' test/compare_llama.sh; then
+    echo "Strict llama token oracle must match requested runtime placement and flags"
+    fail=1
+fi
+
+if ! grep -q 'llama_vocab_is_eog(vocab, next)' test/llama_layer_probe.cpp ||
+   ! awk '/llama_vocab_is_eog\(vocab, next\)/{eog=NR} /llama_token_id=%d/{emit=NR} END{exit !(eog && emit && eog < emit)}' \
+        test/llama_layer_probe.cpp; then
+    echo "Strict llama token oracle must stop before emitting the EOG token"
+    fail=1
+fi
+
+if ! grep -q 'token_count_mismatches == 0' test/compare_llama.sh ||
+   ! grep -q 'total_bitnet_token_ids == total_llama_token_ids' \
+        test/compare_llama.sh ||
+   grep -q 'expected_token_ids=.*N_TOKENS' test/compare_llama.sh; then
+    echo "Strict token parity must compare equal emitted lengths and allow matched early EOG"
+    fail=1
+fi
+
+if grep -n 'ms->expert_indices\[j + 1\]' src/moe_execute.c \
+        >/dev/null 2>&1; then
+    echo "Pread MoE execution must preserve router rank accumulation order"
+    fail=1
+fi
+
+if grep -n 'run_case .*--flash' test/qwen_cpu_parity.sh >/dev/null 2>&1; then
+    echo "Qwen CPU parity cases must not select runtime flash policy by model"
     fail=1
 fi
 
@@ -2738,7 +2890,7 @@ if awk '/^int bn_gpu_policy_cuda_fuse_bias_enabled/{flag=1} /^int bn_gpu_policy_
     fail=1
 fi
 
-if awk '/^int bn_gpu_policy_cuda_prefill_moe_layer_disabled/{flag=1} /^static int env_positive_int_or_default/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
+if awk '/^int bn_gpu_policy_cuda_prefill_moe_layer_disabled/{flag=1} /^static int env_int_or_default/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
     echo "src/gpu_policy.c public prefill/SSM/shared policy helpers must compose local env policy helpers"
     fail=1
 fi
@@ -3112,13 +3264,13 @@ if grep -n 'can_use_cuda_moe_routed_ffn\|bn_gpu_policy_cuda_moe_routed_ffn_enabl
     fail=1
 fi
 
-if grep -n 'bn_moe_policy_layer_has_router\|bn_moe_policy_supports_resident_routed_ffn_layout\|bn_gpu_policy_moe_resident_routed_ffn_quant_eligible' src/model_gpu.c >/dev/null 2>&1; then
-    echo "src/model_gpu.c must compose MoE upload decisions through GPU MoE layer policy helpers"
+if grep -nE '#include "model(_internal)?\.h"|BnConfig|BnLayerWeights|BnMoEExpertMap|bn_model_|bn_moe_' src/gpu_policy.c include/gpu_policy.h >/dev/null 2>&1; then
+    echo "GPU policy must consume neutral model/MoE decisions, not model anatomy"
     fail=1
 fi
 
-if grep -n 'bn_moe_policy_layer_has_router' src/main.c >/dev/null 2>&1; then
-    echo "src/main.c must use GPU MoE layer policy helpers for GPU cache diagnostics"
+if ! grep -n 'bn_moe_policy_layer_has_router' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must derive model/MoE cache diagnostics outside GPU policy"
     fail=1
 fi
 
@@ -3329,6 +3481,28 @@ if awk '/^int bn_transformer_gpu_validate_forward/{flag=1} /^int bn_transformer_
     fail=1
 fi
 
+if grep -n 'GPU_GRAPH\|gpu_graph\|gpu graph' include/model_arch.h src/model_arch.c \
+    src/model_policy.c >/dev/null 2>&1; then
+    echo "Model architecture policy must not own runtime GPU graph decisions"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_validate_forward/{flag=1} /^int bn_transformer_gpu_validate_model_forward/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c |
+    grep -n 'large.*\(hybrid\|moe\)\|\(hybrid\|moe\).*large' >/dev/null 2>&1; then
+    echo "Large dense graph capability must not gate hybrid or MoE topology"
+    fail=1
+fi
+
+if { awk '/^int bn_gpu_policy_backend_resident_moe_ffn_supported/{flag=1} /^int bn_gpu_policy_backend_weighted_add_sigmoid_supported/{flag=0} flag{print}' \
+         src/gpu_policy.c;
+     awk '/^int bn_gpu_policy_backend_moe_route_topk_supported/{flag=1} /^int bn_gpu_policy_metal_routed_moe_decode_enabled/{flag=0} flag{print}' \
+         src/gpu_policy.c; } |
+    grep -n 'bn_gpu_backend_is_\|BN_METAL_\|BN_CUDA_' >/dev/null 2>&1; then
+    echo "Generic resident MoE policy must consume capabilities, not identify platforms"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_gpu_hybrid_prefill_chain_applicable/{flag=1} /^int bn_transformer_gpu_prefill_direct_kv_allowed/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_hybrid_ssm\|bn_model_arch_uses_non_hybrid_moe\|bn_model_arch_uses_moe\|bn_model_arch_uses_large_dense_hybrid_ssm\|bn_model_config_uses_hybrid_ssm\|bn_model_config_uses_non_hybrid_moe\|bn_model_config_uses_moe\|bn_model_config_uses_large_dense_hybrid_ssm' >/dev/null 2>&1; then
     echo "GPU prefill chain policy must use GPU behavior policy helpers"
     fail=1
@@ -3514,8 +3688,8 @@ if grep -n 'full_attn_interval\|n_ssm = c->n_layers - n_attn' src/gpu_wgpu.c src
     fail=1
 fi
 
-if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_asymmetric_kquant_down_route\|bn_quant_format_supports_moe_native_quant_route' src/model_gpu.c >/dev/null 2>&1; then
-    echo "src/model_gpu.c must use GPU policy helpers for GPU upload quant-format policy"
+if grep -n 'bn_quant_format_supports_moe_asymmetric_kquant_down_route\|bn_quant_format_supports_moe_native_quant_route' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use neutral placement helpers for composite GPU upload policy"
     fail=1
 fi
 
@@ -3529,6 +3703,15 @@ if grep -n 'gpu->memory_info\|gpu->init_activations\|gpu->free_activations' src/
     fail=1
 fi
 
+for backend in WebGPU Metal; do
+    if ! grep -q "${backend} activation initialization failed, falling back to CPU" src/main.c ||
+       ! sed -n "/\/\/ ${backend} backend (optional)/,/^#else/p" src/main.c |
+            grep -q 'bn_model_release_gpu(&model)'; then
+        echo "src/main.c must detach failed ${backend} activation state before CPU fallback"
+        fail=1
+    fi
+done
+
 if grep -n 'gpu->kind' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must use GPU backend helpers for backend identity"
     fail=1
@@ -3539,7 +3722,7 @@ if grep -n 'gpu->buffer_create_f16_cache\|gpu->buffer_create_kquant_f32_cache\|g
     fail=1
 fi
 
-if grep -n '#include "quant.h"\|bn_qweight_data_size' src/model_gpu.c src/transformer/gpu_policy.c >/dev/null 2>&1; then
+if grep -n 'bn_qweight_data_size' src/model_gpu.c src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "model GPU upload and transformer GPU policy must use backend layout qweight sizing helpers"
     fail=1
 fi
@@ -3559,7 +3742,7 @@ if grep -n '#include "quant.h"\|bn_quant_' src/model_embed.c >/dev/null 2>&1; th
     fail=1
 fi
 
-if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE\|BN_CUDA_DISABLE_MOE_ROUTED_FFN\|BN_GPU_MOE_DISABLE_AUTO_RESIDENT\|BN_GPU_MOE_CACHE_RESERVE_MB\|BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE\|BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE\|BN_METAL_ENABLE_MMAP_ZERO_COPY\|BN_GPU_BACKEND_CUDA\|bn_quant_format_cuda_moe_down_cublas_cache_supported\|bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes' src/main.c >/dev/null 2>&1; then
+if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE\|BN_CUDA_DISABLE_MOE_ROUTED_FFN\|BN_GPU_MOE_DISABLE_AUTO_RESIDENT\|BN_GPU_MOE_CACHE_RESERVE_MB\|BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE\|BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE\|BN_GPU_ENABLE_MMAP_ZERO_COPY\|BN_GPU_BACKEND_CUDA\|bn_quant_format_cuda_moe_down_cublas_cache_supported\|bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use GPU policy helpers for GPU cache/env policy"
     fail=1
 fi
@@ -3629,7 +3812,7 @@ if rg -n 'static int model_embed_scales_token_embedding' src/model_embed.c >/dev
     fail=1
 fi
 
-if grep -n 'general\.architecture\|context_length\|bn_gguf_get_u32' src/main.c >/dev/null 2>&1; then
+if grep -n 'general\.architecture\|bn_gguf_get_u32' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use model_arch/GPU policy helpers for arch-prefixed GGUF sequence metadata"
     fail=1
 fi
@@ -3674,8 +3857,8 @@ if grep -n 'BN_PREFILL_PROFILE\|BN_PREFILL_ALLOW_HYBRID_BATCH\|BN_PREFILL_FORCE_
     fail=1
 fi
 
-if ! grep -n 'BN_PREFILL_PROFILE\|BN_PREFILL_ALLOW_HYBRID_BATCH\|BN_PREFILL_FORCE_TOKEN_ATTN' src/transformer/prefill_policy.c >/dev/null 2>&1; then
-    echo "Prefill env compatibility policy must live in src/transformer/prefill_policy.c"
+if ! grep -n 'BN_PREFILL_PROFILE\|BN_PREFILL_ALLOW_HYBRID_BATCH\|BN_PREFILL_FORCE_TOKEN_ATTN' src/threadpool.c >/dev/null 2>&1; then
+    echo "Prefill env compatibility aliases must be captured by runtime creation"
     fail=1
 fi
 
@@ -3790,7 +3973,7 @@ if awk '/^void bn_transformer_gpu_emit_context_dense_ffn/{flag=1} /^void bn_tran
     fail=1
 fi
 
-if awk '/^int bn_transformer_gpu_debug_compare_ffn_down/{flag=1} /^static void debug_compare_vec/{flag=0} flag{print}' \
+if awk '/^int bn_transformer_gpu_debug_compare_ffn_down/{flag=1} /^int bn_transformer_gpu_debug_compare_ffn_state/{flag=0} flag{print}' \
     src/transformer/gpu_fallback.c | grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.\(type\|rows\|cols\)' >/dev/null 2>&1; then
     echo "GPU fallback debug compare must use resolved projection layout metadata"
     fail=1
@@ -5500,6 +5683,190 @@ do
         fail=1
     fi
 done
+
+if ! grep -q 'out1\[out1_offset + global_row - split\]' shaders/metal/q4k_matvec_split.metal ||
+   ! grep -q 'out0\[out0_offset + global_row\]' shaders/metal/q4k_matvec_split.metal; then
+    echo "Metal Q4_K split matvec must honor generic graph output offsets"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_backend_is_metal' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must compose backend capabilities, not identify Metal"
+    fail=1
+fi
+
+if ! grep -A180 'if (moe_route\.gpu_routed_ffn)' src/transformer/gpu.c |
+   grep -q 'moe_activation\.uses_dense_residual_branch' ||
+   ! grep -A180 'if (moe_route\.gpu_routed_ffn)' src/transformer/gpu.c |
+   grep -q 'bn_transformer_gpu_fallback_moe_dense_residual_branch'; then
+    echo "Direct routed MoE must compose the model-policy dense residual branch"
+    fail=1
+fi
+
+if grep -n 'use_attention_native_quant[[:space:]]*=[[:space:]]*q_gated' \
+    src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "Model gated-Q anatomy must not select a quant/runtime path"
+    fail=1
+fi
+
+if ! grep -q 'kernel void moe_route_logits' shaders/metal/moe_route_topk.metal ||
+   ! grep -q 'for (uint d = lid; d < dim; d += 256)' shaders/metal/moe_route_topk.metal; then
+    echo "Metal MoE routing must use cooperative contiguous row reads"
+    fail=1
+fi
+
+if ! grep -q 'threadgroup float group_scores\[8\]' shaders/metal/moe_route_topk.metal ||
+   ! grep -q 'simd_shuffle_down(best_score, offset)' shaders/metal/moe_route_topk.metal; then
+    echo "Metal MoE top-k must use deterministic parallel reduction"
+    fail=1
+fi
+
+if grep -A4 'bn_gpu_policy_backend_large_graph_native_enabled' src/gpu_policy.c |
+   grep -q 'BN_GPU_CAP_MOE_ROUTED_FFN'; then
+    echo "Routed MoE capability must not imply unrelated large-graph support"
+    fail=1
+fi
+
+scalar_label_line=$(grep -n 'defined(BN_FORCE_SCALAR)' bench/bench_kernels.c |
+    head -n 1 | cut -d: -f1)
+arm_label_line=$(grep -n 'defined(__ARM_NEON).*defined(__ARM_FEATURE_DOTPROD)' \
+    bench/bench_kernels.c | head -n 1 | cut -d: -f1)
+if [ -z "$scalar_label_line" ] || [ -z "$arm_label_line" ] ||
+   [ "$scalar_label_line" -ge "$arm_label_line" ]; then
+    echo "Scalar benchmark selection must override host ISA labels"
+    fail=1
+fi
+
+if ! grep -q 'max_moe_route_experts = BN_METAL_MAX_MOE_ROUTE_EXPERTS' src/gpu_metal.m ||
+   ! grep -q 'bn_gpu_backend_moe_route_shape_supported' src/transformer/gpu_policy.c; then
+    echo "Routed MoE backend shape limits must be composed through capabilities"
+    fail=1
+fi
+
+if awk '/int bn_transformer_gpu_fallback_cpu_attention\(/{flag=1} /^}/{if(flag){print; flag=0}} flag{print}' \
+       src/transformer/gpu_fallback.c |
+   grep -A2 'attn_sub_norm' | grep -q 'shape\.q_dim'; then
+    echo "Reference attention handoff must apply sub-norm at model width"
+    fail=1
+fi
+
+if ! grep -q 'op->p\[6\] = (uint32_t)down_expert_stride' \
+        src/transformer/gpu_emit.c ||
+   [ "$(grep -c 'down + expert \* expert_stride + row \* row_bytes' \
+        shaders/metal/moe_q4k_q6k_routed.metal)" -ne 4 ]; then
+    echo "Metal routed MoE down kernels must consume the backend layout stride"
+    fail=1
+fi
+
+if ! grep -q 'float2 q6k_lane_dot32_pair' \
+        shaders/metal/moe_q4k_q6k_routed.metal ||
+   ! grep -q 'bn_backend_quant_uses_down_kquant(down->type) ? 16u : 32u' \
+        src/gpu_metal.m; then
+    echo "Metal routed down row grouping must follow quant behavior capability"
+    fail=1
+fi
+
+if ! grep -q 'uint row = state_base + vi \* hk' shaders/metal/ssm_delta.metal ||
+   ! grep -q 'for (uint vi = lid.x; vi < hv; vi += 256)' shaders/metal/ssm_delta.metal ||
+   grep -q 'state_base + ki \* hv + vi' shaders/metal/ssm_delta.metal; then
+    echo "Metal SSM recurrence must use the shared transposed S[v][k] state layout"
+    fail=1
+fi
+
+if grep -q 'threadgroup_barrier' shaders/metal/ssm_delta.metal; then
+    echo "Metal row-owned SSM recurrence must not retain obsolete phase barriers"
+    fail=1
+fi
+
+if ! awk '/^static void metal_encode_specialized_native_quant/{flag=1} /^static void metal_encode_routed_q8k_quant/{flag=0} flag{print}' \
+        src/gpu_metal.m | grep -q 'memoryBarrierWithResources:bufs count:3'; then
+    echo "Metal specialized native quantization must synchronize all Q8_K outputs"
+    fail=1
+fi
+
+if awk '/^void bn_transformer_gpu_emit_context_ssm/{flag=1} /^static void emit_context_moe_parts/{flag=0} flag{print}' \
+       src/transformer/gpu_emit.c |
+   grep -A8 'bn_transformer_gpu_emit_context_matvec(' |
+   grep -q 'bn_transformer_gpu_matvec_kquant_dot_flags'; then
+    echo "SSM quant flags must use the flags API, never the output-offset axis"
+    fail=1
+fi
+
+if ! grep -q 'max(sqrt(norms\[0\]), eps)' shaders/metal/ssm_l2norm.metal ||
+   ! grep -q 'u_eps, 0, 0, 0, 0' src/transformer/gpu_emit.c; then
+    echo "Metal SSM L2 normalization must consume the declared model epsilon semantics"
+    fail=1
+fi
+
+if ! grep -q 'uint tile_start = wid.x \* 64;' \
+        shaders/metal/q4_fused_gateup_silu.metal ||
+   ! awk '/uint32_t tile_rows =/{flag=1} /BnMetalBuf \*grid_wbuf/{flag=0} flag{print}' \
+       src/gpu_metal.m |
+       grep -q 'pipeline == ctx->fwd_pipelines\[BN_GPU_SHADER_FUSED_GATEUP_SILU\]' ||
+   ! awk '/int native_quant_tile =/{flag=1} /switch \(shader\)/{flag=0} flag{print}' \
+       src/gpu_metal.m |
+       grep -q 'tile_rows = 16'; then
+    echo "Metal Q4 fused gate/up shader/runtime tile geometry must remain aligned"
+    fail=1
+fi
+
+if grep -nE 'bn_gpu_policy_large_hybrid_(attention_enabled|cpu_attention_safe_enabled|cpu_attention_safe_disabled|cpu_attention_safe_forced|prefill_enabled|prefill_chain_enabled|prefill_disabled|argmax_enabled)\(void\)' \
+        include/gpu_policy.h src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Large-hybrid runtime controls must receive backend identity"
+    fail=1
+fi
+
+if grep -nE 'bn_gpu_policy_(prefill_dense_chain_enabled|prefill_hybrid_chain_enabled|prefill_attention_enabled|prefill_ssm_run_chain_enabled|prefill_ssm_ffn_fuse_allowed|prefill_moe_chain_debug_enabled|prefill_hybrid_chain_debug_enabled|moe_prefill_enabled|moe_cache_prefill_enabled|moe_prefill_shared_fuse_enabled|moe_route_batch_enabled|moe_route_batch_debug_enabled|duplicate_moe_cache_enabled|prefill_direct_kv_disabled|prefill_direct_kv_with_cpu_fallback_enabled|prefill_attention_min_tokens_configured|moe_prefill_min_tokens_configured|small_dense_prefill_disabled)\(void\)' \
+        include/gpu_policy.h src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Backend-specific prefill controls must receive backend identity"
+    fail=1
+fi
+
+if grep -nE 'bn_gpu_policy_(moe_shared_cpu_fallback_enabled|moe_gateup_split_enabled)\(int ' \
+        include/gpu_policy.h src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Backend-specific MoE controls must receive backend identity"
+    fail=1
+fi
+
+if grep -nE 'bn_gpu_policy_(prefill_attention_min_tokens_or_default|moe_prefill_min_tokens_or_default)\(int default_tokens\)' \
+        include/gpu_policy.h src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Backend-specific prefill thresholds must receive backend identity"
+    fail=1
+fi
+
+if ! grep -q 'plan->xb2_elements' src/gpu_metal.m ||
+   ! grep -q 'plan->xb2_elements' src/gpu_wgpu.c ||
+   ! grep -q 'plan->xb2_elements' src/gpu_cuda.cu; then
+    echo "GPU runtimes must consume activation-plan XB2 sizing"
+    fail=1
+fi
+
+if grep -nE '#include "model(_internal)?\.h"|BnConfig' \
+        src/gpu_metal.m src/gpu_wgpu.c src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "GPU backend implementations must not depend on model configuration"
+    fail=1
+fi
+
+if grep -n '#include "backend_quant.h"' src/model_policy.c >/dev/null 2>&1; then
+    echo "Model policy must query intrinsic quant properties directly"
+    fail=1
+fi
+
+if grep -n '\bgetenv\b' src/quant/*.c >/dev/null 2>&1; then
+    echo "Quant execution policy must consume an immutable runtime snapshot"
+    fail=1
+fi
+
+if grep -nE 'MOE_REFERENCE_GPU|moe_prefers_reference_gpu' \
+        include/model_arch.h src/model_arch.c src/model_policy.c >/dev/null 2>&1; then
+    echo "Model architecture policy must describe numerical contracts without GPU placement"
+    fail=1
+fi
+
+if grep -nE '__APPLE__|__linux__|posix_memalign' src/moe_cache.c >/dev/null 2>&1; then
+    echo "MoE cache allocation must use the platform abstraction"
+    fail=1
+fi
 
 if [ "$fail" -ne 0 ]; then
     echo "Backend matrix FAILED"

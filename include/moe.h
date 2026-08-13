@@ -28,7 +28,9 @@ int bn_moe_load_expert_map(BnGGUFFile *f,
 // Writes to ms->expert_indices and ms->expert_weights.
 void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
                   int dim, int n_experts, int k, int norm_topk_prob,
-                  float expert_weights_scale, struct BnThreadPool *pool);
+                  float expert_weights_scale,
+                  int uses_reference_router_accumulation,
+                  struct BnThreadPool *pool);
 
 // Full MoE FFN block: route -> load -> compute -> combine.
 // Reads from s->x (after norm), writes result to s->xb for residual add.

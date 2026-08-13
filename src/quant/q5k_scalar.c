@@ -66,7 +66,9 @@ void bn_quant_q5k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
             for (int i = 0; i < BN_QK_K; i++)
                 sumi += (int32_t)qw[i] * (int32_t)xb[i];
 
-            row_sum += dx * (d * (float)sumi - dmin * (float)bsum_corr);
+            float dd = dx * d;
+            float ddmin = dx * dmin;
+            row_sum += dd * (float)sumi - ddmin * (float)bsum_corr;
         }
         c->out[row] = row_sum;
     }
@@ -249,8 +251,10 @@ void bn_quant_q5k_scalar_sdot_matmul_range(void *ctx,
                     for (int i = 0; i < BN_QK_K; i++)
                         sumi += (int32_t)qw[i] * (int32_t)xb[i];
 
-                    sums[ti] += dx * (d * (float)sumi -
-                                       dmin * (float)bsum_corr);
+                    float dd = dx * d;
+                    float ddmin = dx * dmin;
+                    sums[ti] += dd * (float)sumi -
+                                ddmin * (float)bsum_corr;
                 }
             }
 

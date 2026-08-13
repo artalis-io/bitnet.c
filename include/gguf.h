@@ -119,6 +119,7 @@ typedef struct BnGGUFFile {
 
 BnGGUFFile *bn_gguf_open(const uint8_t *buf, size_t size);
 BnGGUFFile *bn_gguf_open_file(const char *path);
+BnGGUFFile *bn_gguf_open_file_resident(const char *path);
 void        bn_gguf_free(BnGGUFFile *f);
 int         bn_gguf_find_key(BnGGUFFile *f, const char *key);
 uint32_t    bn_gguf_get_u32(BnGGUFFile *f, const char *key);

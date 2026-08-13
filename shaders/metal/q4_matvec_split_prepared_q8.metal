@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Q4_0 repacked split matvec using prepared Q8 activation blocks.
+// Q4_0 f16-scale repacked split matvec using prepared Q8 activation blocks.
 
 #define TILE_ROWS 16u
 
@@ -51,15 +51,16 @@ kernel void q4_matvec_split_prepared_q8(
 
     uint blocks_per_row = cols >> 5;
     uint total_blocks = rows * blocks_per_row;
+    uint scale_words = (total_blocks + 1) >> 1;
     float acc = 0.0f;
 
     if (global_row < rows) {
         uint row_block_base = global_row * blocks_per_row;
         for (uint b = row_lane; b < blocks_per_row; b += 8) {
             uint block_idx = row_block_base + b;
-            float d = as_type<float>(weights[block_idx]);
+            float d = float(((device const half *)weights)[block_idx]);
             float dx = x_scales[b];
-            uint nib_base = total_blocks + block_idx * 4;
+            uint nib_base = scale_words + block_idx * 4;
             device const char4 *xqb = (device const char4 *)(x_q + b * 32);
             float idot = q4_q8_dot(weights[nib_base], weights[nib_base + 1],
                                    weights[nib_base + 2], weights[nib_base + 3],

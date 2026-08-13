@@ -11,9 +11,33 @@
 
 #include <math.h>
 
+#if BN_TRANSFORMER_CPU_HAS_NEON
+static void cpu_residual_add_reference(float *x, const float *r, int dim) {
+    for (int i = 0; i < dim; i++)
+        x[i] += r[i];
+}
+#endif
+
+static float cpu_reference_gelu(float x) {
+    if (x <= -10.0f)
+        return 0.0f;
+    if (x >= 10.0f)
+        return x;
+    float rounded_x = bn_fp16_to_fp32(bn_fp32_to_fp16(x));
+    float inner = 0.7978845608028654f * rounded_x *
+                  (1.0f + 0.044715f * rounded_x * rounded_x);
+    float gelu = 0.5f * rounded_x * (1.0f + tanhf(inner));
+    return bn_fp16_to_fp32(bn_fp32_to_fp16(gelu));
+}
+
 #if !BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_apply_sigmoid_gate_scalar(float *x, const float *gate,
                                           int size);
+#endif
+#if BN_TRANSFORMER_CPU_HAS_NEON || BN_TRANSFORMER_CPU_HAS_AVX2
+static void cpu_apply_ffn_reference_activation(BnRunState *s,
+                                               const BnFFNPlan *ffn_plan,
+                                               int hidden_dim);
 #endif
 static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
                                         int head_size, int rope_dims,
@@ -47,6 +71,11 @@ static void cpu_apply_ffn_activation_wasm(BnRunState *s,
 
 int bn_transformer_cpu_has_native_quant_activation(void) {
     return BN_TRANSFORMER_CPU_HAS_NATIVE_QUANT_ACTIVATION;
+}
+
+int bn_transformer_cpu_weight_uses_native_quant_activation(
+    const BnQWeight *weight) {
+    return weight && bn_backend_quant_uses_native_quant(weight->type);
 }
 
 void bn_transformer_cpu_prepare_kquant_activation(const float *x,
@@ -228,31 +257,13 @@ static void cpu_residual_add_scalar(float *x, const float *r, int dim) {
 
 #if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2 && \
     !BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
-static float cpu_fast_exp_scalar(float x) {
-    const float log2e = 1.4426950409f;
-    const float ln2 = 0.6931471806f;
-    if (x < -87.3f) x = -87.3f;
-    if (x > 88.7f) x = 88.7f;
-    float nf = floorf(fmaf(x, log2e, 0.5f));
-    int ni = (int)nf;
-    float r = fmaf(-nf, ln2, x);
-    float poly = fmaf(0.04166664f, r, 0.16666667f);
-    poly = fmaf(poly, r, 0.49999994f);
-    poly = fmaf(poly, r, 1.0f);
-    poly = fmaf(poly, r, 1.0f);
-    union {
-        uint32_t u;
-        float f;
-    } e2n = { (uint32_t)(ni + 127) << 23 };
-    return poly * e2n.f;
-}
-
 static float cpu_fast_silu_scalar(float x) {
-    return x / (1.0f + cpu_fast_exp_scalar(-x));
+    return x / (1.0f + bn_transformer_fast_exp_scalar(-x));
 }
 
 static float cpu_fast_tanh_scalar(float x) {
-    return 2.0f / (1.0f + cpu_fast_exp_scalar(-2.0f * x)) - 1.0f;
+    return 2.0f / (1.0f + bn_transformer_fast_exp_scalar(-2.0f * x)) -
+           1.0f;
 }
 
 static float cpu_fast_gelu_scalar(float x) {
@@ -328,6 +339,27 @@ static void cpu_apply_rope_heads_avx2(float *buf, int n_heads,
 }
 #endif
 
+#if BN_TRANSFORMER_CPU_HAS_NEON || BN_TRANSFORMER_CPU_HAS_AVX2
+static void cpu_apply_ffn_reference_activation(BnRunState *s,
+                                               const BnFFNPlan *ffn_plan,
+                                               int hidden_dim) {
+    for (int i = 0; i < hidden_dim; i++) {
+        float x = s->hb[i];
+        float value;
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
+            float positive = x > 0.0f ? x : 0.0f;
+            value = positive * positive;
+        } else if (bn_transformer_cpu_activation_is_gelu(
+                       ffn_plan->activation)) {
+            value = cpu_reference_gelu(x);
+        } else {
+            value = x / (1.0f + expf(-x));
+        }
+        s->hb[i] = ffn_plan->has_gate ? value * s->hb2[i] : value;
+    }
+}
+#endif
+
 #if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2 && \
     !BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static void cpu_apply_ffn_activation_scalar(BnRunState *s,
@@ -344,9 +376,7 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
                 float x = s->hb[i];
                 float g;
                 if (ffn_plan->reference_activation)
-                    g = 0.5f * x *
-                        (1.0f + tanhf(0.7978845608028654f * x *
-                                      (1.0f + 0.044715f * x * x)));
+                    g = cpu_reference_gelu(x);
                 else
                     g = cpu_fast_gelu_scalar(x);
                 s->hb[i] = g * s->hb2[i];
@@ -370,9 +400,7 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
             for (int i = 0; i < hidden_dim; i++) {
                 float x = s->hb[i];
                 if (ffn_plan->reference_activation)
-                    s->hb[i] = 0.5f * x *
-                               (1.0f + tanhf(0.7978845608028654f * x *
-                                             (1.0f + 0.044715f * x * x)));
+                    s->hb[i] = cpu_reference_gelu(x);
                 else
                     s->hb[i] = cpu_fast_gelu_scalar(x);
             }
@@ -393,6 +421,10 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
 static void cpu_apply_ffn_activation_neon(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
+    if (ffn_plan->reference_activation) {
+        cpu_apply_ffn_reference_activation(s, ffn_plan, hidden_dim);
+        return;
+    }
     if (ffn_plan->has_gate) {
         if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             float32x4_t zero = vdupq_n_f32(0);
@@ -407,11 +439,6 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
                 float32x4_t u = vld1q_f32(s->hb2 + i);
                 vst1q_f32(s->hb + i,
                           vmulq_f32(bn_neon_fast_gelu_f32(g), u));
-            }
-        } else if (ffn_plan->reference_activation) {
-            for (int i = 0; i < hidden_dim; i++) {
-                float g = s->hb[i];
-                s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
             }
         } else {
             for (int i = 0; i < hidden_dim; i += 4) {
@@ -432,11 +459,6 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
                 float32x4_t v = vld1q_f32(s->hb + i);
                 vst1q_f32(s->hb + i, bn_neon_fast_gelu_f32(v));
             }
-        } else if (ffn_plan->reference_activation) {
-            for (int i = 0; i < hidden_dim; i++) {
-                float v = s->hb[i];
-                s->hb[i] = v / (1.0f + expf(-v));
-            }
         } else {
             for (int i = 0; i < hidden_dim; i += 4) {
                 float32x4_t v = vld1q_f32(s->hb + i);
@@ -451,6 +473,10 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
 static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
+    if (ffn_plan->reference_activation) {
+        cpu_apply_ffn_reference_activation(s, ffn_plan, hidden_dim);
+        return;
+    }
     if (ffn_plan->has_gate) {
         if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             __m256 zero = _mm256_setzero_ps();
@@ -548,7 +574,7 @@ static void cpu_apply_ffn_activation_wasm(BnRunState *s,
 #if BN_TRANSFORMER_CPU_HAS_NEON
 static const BnCPUBackendOps BN_CPU_BACKEND = {
     .name = "neon",
-    .rmsnorm = bn_transformer_rmsnorm_neon,
+    .rmsnorm = bn_transformer_rmsnorm_scalar,
     .gqa = bn_transformer_gqa_neon_range,
     .flash_gqa = bn_transformer_flash_gqa_neon_range,
     .batched_attn_naive = bn_transformer_batched_attn_naive_neon_range,
@@ -652,35 +678,48 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
 };
 #endif
 
-const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void) {
+const BnCPUBackendOps *bn_transformer_cpu_backend_ops(
+    const BnCPURuntimePolicy *runtime) {
+#if BN_TRANSFORMER_CPU_HAS_NEON
+    static const BnCPUBackendOps reference = {
+        .name = "neon-quant-reference-math",
+        .rmsnorm = bn_transformer_rmsnorm_scalar,
+        .gqa = bn_transformer_gqa_scalar_range,
+        .flash_gqa = bn_transformer_flash_gqa_scalar_range,
+        .batched_attn_naive = bn_transformer_batched_attn_naive_scalar_range,
+        .batched_attn_flash = bn_transformer_batched_attn_flash_scalar_range,
+        .batched_attn_flash_pair = NULL,
+        .residual_add = cpu_residual_add_reference,
+        .ssm_conv_silu = bn_transformer_ssm_conv_silu_neon_range,
+        .ssm_l2norm = bn_transformer_ssm_l2norm_neon_range,
+        .ssm_delta = bn_transformer_ssm_delta_neon_range,
+        .ssm_gate = bn_transformer_ssm_gate_neon_range,
+        .apply_ffn_activation = cpu_apply_ffn_reference_activation,
+        .apply_sigmoid_gate = cpu_apply_sigmoid_gate_scalar,
+        .apply_rope_heads = cpu_apply_rope_heads_scalar,
+        .supports_prepared_kquant = 0,
+        .supports_float_kquant_prefill = 0,
+        .rmsnorm_prepared_kquant = NULL,
+    };
+    if (bn_transformer_cpu_reference_math_requested(runtime))
+        return &reference;
+#endif
     return &BN_CPU_BACKEND;
 }
 
-bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnConfig *c,
-                                             const BnCPUBackendOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_conv_silu_scalar_range;
+bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnCPUBackendOps *ops) {
     return ops ? ops->ssm_conv_silu : BN_CPU_BACKEND.ssm_conv_silu;
 }
 
-bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnConfig *c,
-                                          const BnCPUBackendOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_l2norm_scalar_range;
+bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnCPUBackendOps *ops) {
     return ops ? ops->ssm_l2norm : BN_CPU_BACKEND.ssm_l2norm;
 }
 
-bn_tp_fn bn_transformer_cpu_ssm_delta_op(const BnConfig *c,
-                                         const BnCPUBackendOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_delta_scalar_range;
+bn_tp_fn bn_transformer_cpu_ssm_delta_op(const BnCPUBackendOps *ops) {
     return ops ? ops->ssm_delta : BN_CPU_BACKEND.ssm_delta;
 }
 
-bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnConfig *c,
-                                        const BnCPUBackendOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_gate_scalar_range;
+bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnCPUBackendOps *ops) {
     return ops ? ops->ssm_gate : BN_CPU_BACKEND.ssm_gate;
 }
 

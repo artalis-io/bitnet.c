@@ -35,7 +35,11 @@
 #define BN_GPU_SHADER_Q5K_MATVEC_SPLIT 28
 #define BN_GPU_SHADER_SILU_ACT         29
 #define BN_GPU_SHADER_RELU2_ACT        30
-#define BN_GPU_SHADER_COUNT             31
+#define BN_GPU_SHADER_GELU_GATE         31
+#define BN_GPU_SHADER_WEIGHTED_ADD_SIGMOID 32
+#define BN_GPU_SHADER_MOE_ROUTE_TOPK    33
+#define BN_GPU_SHADER_MOE_ROUTED_FFN    34
+#define BN_GPU_SHADER_COUNT             35
 
 // Current backend activation slots are identity-lowered from graph values.
 #define BN_GPU_BUF_X           BN_GPU_VALUE_X
@@ -61,10 +65,12 @@
 #define BN_GPU_BUF_SSM_ALPHA      BN_GPU_VALUE_SSM_ALPHA
 #define BN_GPU_BUF_SSM_BETA       BN_GPU_VALUE_SSM_BETA
 #define BN_GPU_BUF_SSM_V          BN_GPU_VALUE_SSM_V
+#define BN_GPU_BUF_PER_LAYER_INPUT BN_GPU_VALUE_PER_LAYER_INPUT
 #define BN_GPU_BUF_COUNT          BN_GPU_VALUE_COUNT
 
 #define BN_GPU_DEBUG_BUF_NATIVE_QUANT_ACT    -100
 #define BN_GPU_DEBUG_BUF_NATIVE_QUANT_SCALE  -101
+#define BN_GPU_DEBUG_BUF_NATIVE_QUANT_BLOCK_SUM -102
 
 static inline int bn_gpu_shader_from_op_code(int code) {
     switch (code) {
@@ -81,6 +87,12 @@ static inline int bn_gpu_shader_from_op_code(int code) {
         case BN_GPU_CODE_BIAS_ADD: return BN_GPU_SHADER_BIAS_ADD;
         case BN_GPU_CODE_RESIDUAL_RMSNORM: return BN_GPU_SHADER_RESIDUAL_RMSNORM;
         case BN_GPU_CODE_WEIGHTED_ADD: return BN_GPU_SHADER_WEIGHTED_ADD;
+        case BN_GPU_CODE_WEIGHTED_ADD_SIGMOID:
+            return BN_GPU_SHADER_WEIGHTED_ADD_SIGMOID;
+        case BN_GPU_CODE_MOE_ROUTE_TOPK:
+            return BN_GPU_SHADER_MOE_ROUTE_TOPK;
+        case BN_GPU_CODE_MOE_ROUTED_FFN:
+            return BN_GPU_SHADER_MOE_ROUTED_FFN;
         case BN_GPU_CODE_SSM_CONV_SILU: return BN_GPU_SHADER_SSM_CONV_SILU;
         case BN_GPU_CODE_SSM_L2NORM: return BN_GPU_SHADER_SSM_L2NORM;
         case BN_GPU_CODE_SSM_ALPHA_BETA: return BN_GPU_SHADER_SSM_ALPHA_BETA;
@@ -99,6 +111,7 @@ static inline int bn_gpu_shader_from_op_code(int code) {
         case BN_GPU_CODE_Q5K_MATVEC_SPLIT: return BN_GPU_SHADER_Q5K_MATVEC_SPLIT;
         case BN_GPU_CODE_SILU_ACT: return BN_GPU_SHADER_SILU_ACT;
         case BN_GPU_CODE_RELU2_ACT: return BN_GPU_SHADER_RELU2_ACT;
+        case BN_GPU_CODE_GELU_GATE: return BN_GPU_SHADER_GELU_GATE;
         default: return -1;
     }
 }
@@ -158,13 +171,26 @@ static inline int bn_gpu_shader_access_masks(const BnGPUOp *op,
             break;
         case BN_GPU_SHADER_SILU_GATE:
         case BN_GPU_SHADER_RELU2_GATE:
+        case BN_GPU_SHADER_GELU_GATE:
         case BN_GPU_SHADER_RESIDUAL_ADD:
         case BN_GPU_SHADER_WEIGHTED_ADD:
+        case BN_GPU_SHADER_WEIGHTED_ADD_SIGMOID:
         case BN_GPU_SHADER_SSM_GATE:
         case BN_GPU_SHADER_SIGMOID_GATE:
             r = bn_gpu_shader_buf_bit(op->buf_in) |
                 bn_gpu_shader_buf_bit(op->buf_aux);
             w = bn_gpu_shader_buf_bit(op->buf_in);
+            break;
+        case BN_GPU_SHADER_MOE_ROUTE_TOPK:
+            r = bn_gpu_shader_buf_bit(op->buf_in);
+            w = bn_gpu_shader_buf_bit(op->buf_aux) |
+                bn_gpu_shader_buf_bit(op->buf_out);
+            break;
+        case BN_GPU_SHADER_MOE_ROUTED_FFN:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux);
+            w = bn_gpu_shader_buf_bit((int)op->p[4]) |
+                bn_gpu_shader_buf_bit(op->buf_out);
             break;
         case BN_GPU_SHADER_BIAS_ADD:
         case BN_GPU_SHADER_PER_HEAD_RMSNORM:

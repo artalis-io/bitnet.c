@@ -88,13 +88,30 @@ typedef struct {
     uint32_t task_flags;
 } BnTransformerCPUMatvecResourcePolicy;
 
-const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
-int bn_transformer_cpu_prepared_qweights_enabled(void);
-const char *bn_transformer_cpu_debug_dump_path(void);
-int bn_transformer_cpu_debug_dump_pos_selected(int pos);
-int bn_transformer_cpu_debug_dump_heads_enabled(void);
-int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(void);
-int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type);
+const BnCPUBackendOps *bn_transformer_cpu_backend_ops(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_cpu_reference_math_requested(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_cpu_prepared_qweights_enabled(
+    const BnCPURuntimePolicy *runtime);
+const char *bn_transformer_cpu_debug_dump_path(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_cpu_debug_dump_pos_selected(
+    const BnCPURuntimePolicy *runtime, int pos);
+int bn_transformer_cpu_debug_dump_heads_enabled(
+    const BnCPURuntimePolicy *runtime);
+void bn_transformer_cpu_debug_dump_values(const BnCPURuntimePolicy *runtime,
+                                          const float *values, int count,
+                                          const char *tag, int layer,
+                                          int pos);
+const char *bn_transformer_cpu_debug_binary_path(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_cpu_debug_binary_selected(
+    const BnCPURuntimePolicy *runtime, const char *tag, int layer);
+int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(
+    const BnCPURuntimePolicy *runtime);
+int bn_transformer_cpu_can_fused_kquant_gateup_silu(
+    const BnCPURuntimePolicy *runtime, int gate_type, int up_type);
 int bn_transformer_cpu_can_prepared_kquant_pair(const BnCPUBackendOps *ops,
                                        int left_type,
                                        int right_type);
@@ -130,6 +147,7 @@ int bn_transformer_cpu_route_prepared_kquant_triple_enabled(
     int second_type,
     int third_type);
 int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
+    const BnCPURuntimePolicy *runtime,
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan,
     int dim,
@@ -156,6 +174,7 @@ uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
     const BnConfig *c);
 BnTransformerCPUMatvecResourcePolicy
 bn_transformer_cpu_matvec_resource_policy(
+    const BnCPURuntimePolicy *runtime,
     const BnConfig *c,
     const BnBackendModel *backend,
     const BnQWeight *weight);
@@ -168,16 +187,14 @@ bn_transformer_cpu_ffn_post_norm_policy(int uses_ffn_post_norm,
 BnTransformerCPULayerOutputScalePolicy
 bn_transformer_cpu_layer_output_scale_policy(int uses_layer_output_scale,
                                              int has_layer_output_scale);
-bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnConfig *c,
-                                             const BnCPUBackendOps *ops);
-bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnConfig *c,
-                                          const BnCPUBackendOps *ops);
-bn_tp_fn bn_transformer_cpu_ssm_delta_op(const BnConfig *c,
-                                         const BnCPUBackendOps *ops);
-bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnConfig *c,
-                                        const BnCPUBackendOps *ops);
+bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnCPUBackendOps *ops);
+bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnCPUBackendOps *ops);
+bn_tp_fn bn_transformer_cpu_ssm_delta_op(const BnCPUBackendOps *ops);
+bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnCPUBackendOps *ops);
 int bn_transformer_cpu_backend_supports_float_kquant_prefill(void);
 int bn_transformer_cpu_has_native_quant_activation(void);
+int bn_transformer_cpu_weight_uses_native_quant_activation(
+    const BnQWeight *weight);
 void bn_transformer_cpu_prepare_kquant_activation(const float *x,
                                                   int8_t *quantized,
                                                   float *scales,

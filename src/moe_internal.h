@@ -31,12 +31,14 @@ typedef struct {
     const float *gate;
     const float *up;
     int uses_reference_silu;
+    int uses_reference_ffn_activation;
 } BnSwiGLUCtx;
 
 typedef struct {
     int uses_scaled_router_input;
     int uses_dense_residual_branch;
     int uses_reference_silu;
+    int uses_reference_ffn_activation;
     int activation;
     float norm_eps;
 } BnMoEExecutionPolicy;
@@ -52,6 +54,7 @@ typedef struct {
     int expert_hidden_dim;
     int norm_topk_prob;
     float expert_weights_scale;
+    int uses_reference_router_accumulation;
 } BnMoERoutePolicy;
 
 typedef struct {
@@ -89,6 +92,13 @@ typedef struct {
     int down_rows;
     int down_cols;
 } BnMoERoutedExpertProjectionLayout;
+
+typedef struct {
+    size_t gate_bytes;
+    size_t up_bytes;
+    size_t down_bytes;
+    size_t max_bytes;
+} BnMoEProjectionBufferLayout;
 
 typedef struct {
     int can_batch;
@@ -145,9 +155,36 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
 int bn_moe_policy_uses_reference_silu(const BnConfig *c);
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c);
 BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c);
+
+typedef enum {
+    BN_MOE_OBSERVE_ROUTED_INPUT,
+    BN_MOE_OBSERVE_ROUTED_OUTPUT,
+    BN_MOE_OBSERVE_ROUTED_POST_NORM,
+    BN_MOE_OBSERVE_DENSE_INPUT,
+    BN_MOE_OBSERVE_DENSE_ACTIVATION,
+    BN_MOE_OBSERVE_DENSE_OUTPUT,
+    BN_MOE_OBSERVE_COMBINED_OUTPUT,
+    BN_MOE_OBSERVE_FINAL_OUTPUT,
+} BnMoEObservePoint;
+
+typedef void (*BnMoEObserveFn)(void *ctx,
+                               BnMoEObservePoint point,
+                               const float *values,
+                               int n_values);
+
+void bn_moe_forward_observed(struct BnModel *m,
+                             BnSession *sess,
+                             struct BnLayerWeights *lw,
+                             int layer,
+                             BnMoEObserveFn observe,
+                             void *observe_ctx);
+BnMoEProjectionBufferLayout
+bn_moe_projection_buffer_layout(const BnConfig *c, const BnWeights *w);
 BnMoEAllActiveTwoRouteResourcePolicy
 bn_moe_all_active_two_route_resource_policy(const BnConfig *c);
 int bn_moe_policy_uses_expert_weights(const BnConfig *c);
+float bn_moe_expert_weight_scale(const BnLayerWeights *lw,
+                                 int expert_idx);
 int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c);
 int bn_moe_policy_uses_all_active_two_expert_route(const BnConfig *c,
                                                    int dim);
@@ -218,6 +255,12 @@ void bn_moe_quant_matvec(float *out,
                          const float *x,
                          int8_t *quantized_buf,
                          BnThreadPool *pool);
+void bn_moe_quant_matvec_prepared(float *out,
+                                  const BnQWeight *W,
+                                  const BnPreparedWeight *prepared,
+                                  const float *x,
+                                  int8_t *quantized_buf,
+                                  BnThreadPool *pool);
 void bn_moe_quant_matvec_batch(const BnMatvecTask *tasks,
                                int n_tasks,
                                const float *x,
@@ -249,16 +292,20 @@ void bn_moe_quant_matvec_down_gpu_buffer(float *out,
                                          BnGPUBackend *gpu);
 void bn_moe_swiglu_range(void *ctx, int start, int end);
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
-                   int uses_reference_silu);
+                   int uses_reference_silu,
+                   int uses_reference_ffn_activation);
 double bn_moe_time_ms(void);
 void bn_moe_rmsnorm(float *out, const float *x, const float *w,
                     int size, float eps);
 float bn_moe_dot_row(const float *row, const float *x, int dim);
+float bn_moe_dot_row_reference(const float *row, const float *x, int dim);
 float bn_moe_shared_expert_gate_weight(const BnLayerWeights *lw,
                                        const float *x,
                                        int dim);
 int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
                      int dim, int start_expert);
+double bn_moe_softmax_exp(float *out, const float *logits, int n,
+                          float max_logit);
 void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
                         int n, int uses_reference_silu);
 int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
@@ -268,6 +315,7 @@ void bn_moe_residual_add(float *x, const float *r, int n);
 
 const uint8_t *bn_moe_cache_lookup_internal(BnMoECache *c, int layer, int expert_idx);
 uint8_t *bn_moe_cache_insert_internal(BnMoECache *c, int layer, int expert_idx);
+int bn_moe_cache_capacity_internal(const BnMoECache *c);
 size_t bn_moe_cache_gate_bytes(const BnMoECache *c);
 size_t bn_moe_cache_up_bytes(const BnMoECache *c);
 

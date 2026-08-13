@@ -34,6 +34,7 @@ typedef enum {
     BN_GPU_VALUE_SSM_ALPHA,
     BN_GPU_VALUE_SSM_BETA,
     BN_GPU_VALUE_SSM_V,
+    BN_GPU_VALUE_PER_LAYER_INPUT,
     BN_GPU_VALUE_COUNT,
 } BnGPUValueSlot;
 
@@ -53,6 +54,9 @@ typedef enum {
     BN_GPU_IR_VALUE_ALIAS = 1u << 2,
     BN_GPU_IR_VALUE_EXTERNAL = 1u << 3,
 } BnGPUIRValueFlags;
+
+#define BN_GPU_IR_OP_FLAG_FLASH_ATTENTION 1u
+#define BN_GPU_IR_OP_FLAG_REFERENCE_ORDER 2u
 
 typedef enum {
     BN_GPU_IR_OP_UNKNOWN = 0,
@@ -78,6 +82,7 @@ typedef enum {
     BN_GPU_IR_ACTIVATION_SILU,
     BN_GPU_IR_ACTIVATION_RELU2,
     BN_GPU_IR_ACTIVATION_SIGMOID,
+    BN_GPU_IR_ACTIVATION_GELU,
 } BnGPUIRActivationKind;
 
 typedef enum {
@@ -554,7 +559,7 @@ static inline int bn_gpu_value_graph_add_flash_attention(
     int head_size,
     int n_kv,
     int kv_mul,
-    int kv_dim,
+    int kv_cache_stride,
     int seq_len,
     uint32_t loff,
     uint32_t inv_sqrt_hs,
@@ -571,12 +576,12 @@ static inline int bn_gpu_value_graph_add_flash_attention(
     if (!op) return BN_GPU_IR_INVALID_VALUE;
     bn_gpu_ir_op_add_input(op, q_value);
     bn_gpu_ir_op_add_output(op, output);
-    op->flags = 1u;
+    op->flags = BN_GPU_IR_OP_FLAG_FLASH_ATTENTION;
     op->params[0] = (uint32_t)n_heads;
     op->params[1] = (uint32_t)head_size;
     op->params[2] = (uint32_t)n_kv;
     op->params[3] = (uint32_t)kv_mul;
-    op->params[4] = (uint32_t)kv_dim;
+    op->params[4] = (uint32_t)kv_cache_stride;
     op->params[5] = (uint32_t)seq_len;
     op->params[6] = loff;
     op->params[7] = inv_sqrt_hs;
@@ -590,7 +595,7 @@ static inline int bn_gpu_value_graph_add_attention_scores(
     int head_size,
     int n_kv,
     int kv_mul,
-    int kv_dim,
+    int kv_cache_stride,
     int seq_len,
     uint32_t loff,
     uint32_t inv_sqrt_hs,
@@ -611,7 +616,7 @@ static inline int bn_gpu_value_graph_add_attention_scores(
     op->params[1] = (uint32_t)head_size;
     op->params[2] = (uint32_t)n_kv;
     op->params[3] = (uint32_t)kv_mul;
-    op->params[4] = (uint32_t)kv_dim;
+    op->params[4] = (uint32_t)kv_cache_stride;
     op->params[5] = (uint32_t)seq_len;
     op->params[6] = loff;
     op->params[7] = inv_sqrt_hs;
@@ -647,7 +652,7 @@ static inline int bn_gpu_value_graph_add_attention_combine(
     int head_size,
     int n_kv,
     int kv_mul,
-    int kv_dim,
+    int kv_cache_stride,
     int seq_len,
     uint32_t loff,
     const char *name) {
@@ -667,7 +672,7 @@ static inline int bn_gpu_value_graph_add_attention_combine(
     op->params[1] = (uint32_t)head_size;
     op->params[2] = (uint32_t)n_kv;
     op->params[3] = (uint32_t)kv_mul;
-    op->params[4] = (uint32_t)kv_dim;
+    op->params[4] = (uint32_t)kv_cache_stride;
     op->params[5] = (uint32_t)seq_len;
     op->params[6] = loff;
     return output;

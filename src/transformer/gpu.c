@@ -1,4 +1,6 @@
 #include "gpu_internal.h"
+#include "transformer_kv_internal.h"
+#include "transformer_logits_internal.h"
 #include <math.h>
 #include <string.h>
 
@@ -27,6 +29,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             &policy, m, token, pos, &reject_reason) != 0)
         return bn_transformer_gpu_reject_forward(&emit, reject_reason);
     BnGPUBackend *gpu = policy.gpu;
+    emit.gpu = gpu;
 
     int dim = c->dim;
     int kv_cache_stride = c->kv_dim;
@@ -34,8 +37,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_moe_execution_policy(c);
     BnTransformerGPUMoEActivationPolicy moe_activation =
         bn_transformer_gpu_moe_activation_policy(c);
-    int max_rope_dims = bn_transformer_rope_dims_for_head(
-        c, bn_transformer_attention_head_size(c, NULL));
+    int max_head_size = bn_transformer_attention_head_size(c, NULL);
+    int max_rope_dims = bn_transformer_rope_dims_for_head(c, max_head_size);
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerShapePlan shape;
         bn_transformer_plan_layer_shape(&shape, c, &w->layers[l], l,
@@ -44,16 +47,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             continue;
         int layer_rope_dims =
             bn_transformer_rope_dims_for_head(c, shape.head_size);
+        if (shape.head_size > max_head_size)
+            max_head_size = shape.head_size;
         if (layer_rope_dims > max_rope_dims)
             max_rope_dims = layer_rope_dims;
     }
     int half_rope = max_rope_dims / 2;
     float rope_cos[half_rope], rope_sin[half_rope];
-    for (int i = 0; i < half_rope; i++) {
-        float angle = pos * s->rope_freq[i];
-        rope_cos[i] = cosf(angle);
-        rope_sin[i] = sinf(angle);
-    }
     int cache_pos = pos % c->seq_len;
     int compare_attention_layer = -1;
     int compare_attention_pos = -1;
@@ -65,14 +65,17 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int compare_ffn_down_pos = -1;
     int compare_ffn_state_layer = -1;
     int compare_ffn_state_pos = -1;
+    int compare_ssm_layer = -1;
+    int compare_ssm_pos = -1;
     BnTransformerGPUCPUFallbackPolicy cpu_fallback =
-        bn_transformer_gpu_cpu_fallback_policy();
+        bn_transformer_gpu_cpu_fallback_policy(gpu);
     BnTransformerGPUSmallDenseNativeQuantLayerPolicy small_dense_native_quant =
-        bn_transformer_gpu_small_dense_native_quant_layer_policy(c);
+        bn_transformer_gpu_small_dense_native_quant_layer_policy_for_backend(
+            gpu, c);
     BnTransformerGPUComparePolicy compare_policy =
-        bn_transformer_gpu_compare_policy();
+        bn_transformer_gpu_compare_policy(gpu);
     BnTransformerGPUMoERouteLayerPolicy moe_route_layer =
-        bn_transformer_gpu_moe_route_layer_policy();
+        bn_transformer_gpu_moe_route_layer_policy(gpu);
     compare_attention_layer = compare_policy.attention_layer;
     compare_attention_pos = compare_policy.attention_pos;
     compare_gqa_layer = compare_policy.gqa_layer;
@@ -83,15 +86,21 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     compare_ffn_down_pos = compare_policy.ffn_down_pos;
     compare_ffn_state_layer = compare_policy.ffn_state_layer;
     compare_ffn_state_pos = compare_policy.ffn_state_pos;
+    compare_ssm_layer = compare_policy.ssm_layer;
+    compare_ssm_pos = compare_policy.ssm_pos;
     cpu_fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
         cpu_fallback, gpu, c, w);
+    if (cpu_fallback.attn_layer < 0 && cpu_fallback.attn_from_layer < 0 &&
+        bn_transformer_gpu_reference_attention_no_logits_cpu_fallback_enabled(
+            gpu, c, emit_logits))
+        cpu_fallback.attn_from_layer = 0;
     BnTransformerGPUDecodeEntryPolicy decode_entry =
         bn_transformer_gpu_decode_entry_policy(
             gpu, c, w, argmax_token != NULL);
-    if (decode_entry.block_argmax)
+    if (decode_entry.block_argmax || decode_entry.block_forward)
         return NULL;
 
-    if (bn_transformer_gpu_stage_token_input(gpu, m, token) != 0)
+    if (bn_transformer_gpu_stage_token_input(gpu, m, sess, token) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "write token embedding failed");
 
@@ -179,16 +188,23 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             max_ops * 4, max_ops) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph reserve failed");
+    emit.gpu = gpu;
 
     // ---- Initial RMSNorm: x -> xb (using layer 0 attn_norm) ----
     if (bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
-            &emit, policy.initial_norm,
-            dim, u_eps) != 0)
+            &emit, policy.initial_norm, dim, u_eps) != 0) {
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph rmsnorm emit failed");
+    }
 
     for (int l = 0; l < c->n_layers; l++) {
+        if (bn_transformer_gpu_debug_dump_layer_input(
+                bn_model_cpu_runtime_policy(m), &emit,
+                gpu, l, pos, dim) != 0)
+            return bn_transformer_gpu_reject_forward(
+                &emit, "gpu layer-input dump failed");
         BnLayerWeights *lw = &w->layers[l];
+        emit.rope_freq_offset = l * (max_head_size / 2);
         BnTransformerGPULayerResources gpu_layer_res;
         if (bn_transformer_gpu_resolve_model_layer_resources(
                 &gpu_layer_res, m, lw, l, output_norm) != 0)
@@ -202,35 +218,66 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         BnTransformerGPUDenseFFNResources layer_ffn_res = {0};
         BnTransformerGPULayerKindPolicy layer_kind =
             bn_transformer_gpu_layer_kind_policy(lw);
-        if (!layer_kind.uses_moe) {
-            bn_transformer_plan_ffn_resources(
-                &layer_ffn_plan, c, lw, gpu,
-                &gpu_layer_res.dense_ffn, l, 1);
-            layer_ffn_plan_valid = 1;
-            layer_ffn_res = gpu_layer_res.dense_ffn;
-        }
+        bn_transformer_plan_ffn_resources(
+            &layer_ffn_plan, c, lw, gpu,
+            &gpu_layer_res.dense_ffn, l, 1);
+        layer_ffn_plan_valid = 1;
+        layer_ffn_res = gpu_layer_res.dense_ffn;
         BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy small_dense_native_quant_use =
             bn_transformer_gpu_small_dense_native_quant_layer_use_policy(
                 gpu, c, &small_dense_native_quant, l,
                 small_dense_native_quant_decode.small_dense_native_quant_default,
                 small_dense_native_quant_decode.small_dense_native_quant_to_layer);
-
         // ---- SSM layer ----
         if (!is_attn) {
             BnTransformerGPUSSMFallbackPolicy ssm_fallback =
                 bn_transformer_gpu_ssm_fallback_policy(gpu);
             if (ssm_fallback.use_cpu) {
-                void *nn = gpu_layer_res.next_norm;
-                if (bn_transformer_gpu_fallback_ssm_layer(
-                        &emit, gpu, m, sess, lw, l, dim, u_eps, nn) != 0)
+                int layer_end = l + 1;
+                while (!layer_kind.uses_moe && layer_end < c->n_layers) {
+                    BnLayerShapePlan next_shape;
+                    bn_transformer_plan_layer_shape(
+                        &next_shape, c, &w->layers[layer_end], layer_end,
+                        policy.has_tq);
+                    BnTransformerGPULayerKindPolicy next_kind =
+                        bn_transformer_gpu_layer_kind_policy(
+                            &w->layers[layer_end]);
+                    if (next_shape.is_attn || next_kind.uses_moe)
+                        break;
+                    layer_end++;
+                }
+                BnTransformerGPULayerResources final_layer_res;
+                if (bn_transformer_gpu_resolve_model_layer_resources(
+                        &final_layer_res, m, &w->layers[layer_end - 1],
+                        layer_end - 1, output_norm) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu ssm fallback range resource resolution failed");
+                void *nn = final_layer_res.next_norm;
+                if (bn_transformer_gpu_fallback_ssm_layers(
+                        &emit, gpu, m, sess, l, layer_end, dim, u_eps, nn) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu ssm cpu fallback failed");
+                l = layer_end - 1;
                 continue;
             }
 
+            int compare_ssm = compare_ssm_layer == l &&
+                (compare_ssm_pos < 0 || compare_ssm_pos == pos);
+            if (compare_ssm &&
+                bn_transformer_gpu_debug_snapshot_ssm_state(
+                    &emit, gpu, m, sess, dim) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu ssm pre-compare snapshot failed");
             BnTransformerGPUSSMResources ssm_res = gpu_layer_res.ssm;
             bn_transformer_gpu_emit_context_ssm(
-                &emit, c, lw, &plan, &ssm_res, dim, u_eps);
+                &emit, c, lw, &plan, &ssm_res, dim, u_eps,
+                small_dense_native_quant_use.use_layer, compare_ssm);
+            if (compare_ssm &&
+                bn_transformer_gpu_debug_compare_ssm(
+                    &emit, gpu, m, sess, lw, &ssm_res,
+                    l, pos, dim) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu ssm compare failed");
 
             // SSM layer's FFN (dense or MoE) — same as attention layer below
             goto ffn_block;
@@ -243,7 +290,31 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int layer_kv_dim = plan.kv_dim;
         int layer_rope_dims =
             bn_transformer_rope_dims_for_head(c, layer_head_size);
+        int layer_half_rope = layer_rope_dims / 2;
+        float layer_theta =
+            bn_transformer_rope_theta_for_head(c, layer_head_size);
+        for (int i = 0; i < layer_half_rope; i++) {
+            float freq = 1.0f /
+                powf(layer_theta,
+                     (float)(2 * i) / (float)layer_rope_dims);
+            if (bn_transformer_uses_per_layer_embedding(c) &&
+                bn_transformer_rope_uses_base_frequency(
+                    c, layer_head_size) &&
+                w->rope_freqs) {
+                if (bn_transformer_divides_rope_freqs(c, l))
+                    freq /= w->rope_freqs[i];
+                else
+                    freq *= w->rope_freqs[i];
+            }
+            float angle = (float)pos * freq;
+            rope_cos[i] = cosf(angle);
+            rope_sin[i] = sinf(angle);
+        }
         size_t loff = (size_t)attn_idx * c->seq_len * kv_cache_stride;
+        int kv_read_idx =
+            bn_transformer_attention_kv_read_index(c, lw, l);
+        size_t read_loff =
+            (size_t)kv_read_idx * c->seq_len * kv_cache_stride;
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
         if (bn_transformer_gpu_cpu_fallback_layer_selected(
                 l, cpu_fallback.layer, cpu_fallback.from_layer)) {
@@ -271,8 +342,26 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu missing-qweight cpu-layer fallback failed");
             continue;
         }
-        if (bn_transformer_gpu_cpu_fallback_layer_selected(
-                l, cpu_fallback.attn_layer, cpu_fallback.attn_from_layer)) {
+        int cpu_attention_selected =
+            bn_transformer_gpu_cpu_fallback_layer_selected(
+                l, cpu_fallback.attn_layer, cpu_fallback.attn_from_layer);
+        int cpu_ffn_selected =
+            bn_transformer_gpu_cpu_fallback_layer_selected(
+                l, cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer);
+        if (!cpu_ffn_selected &&
+            bn_transformer_gpu_dense_residual_moe_requires_cpu_ffn(
+                gpu, c, &lw->moe.expert_map))
+            cpu_ffn_selected = 1;
+        if (cpu_attention_selected && cpu_ffn_selected) {
+            if (bn_transformer_gpu_fallback_cpu_layer(
+                    &emit, gpu, m, sess, l, pos, cache_pos, layer_rope_dims,
+                    rope_cos, rope_sin, dim, u_eps,
+                    gpu_layer_res.next_norm) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu composed cpu-layer fallback failed");
+            continue;
+        }
+        if (cpu_attention_selected) {
             void *ffn_norm = attn_res.ffn_norm;
             if (bn_transformer_gpu_fallback_cpu_attention(
                     &emit, gpu, m, sess, lw, l, pos, cache_pos,
@@ -295,6 +384,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 &emit, c, lw, &plan, &qkv_res, pos, layer_rope_dims,
                 kv_cache_off, u_eps,
                 small_dense_native_quant_use.use_attention);
+            int reference_uses_float_kquant =
+                !small_dense_native_quant_use.use_attention;
             if (!emit_logits && l + 1 == c->n_layers) {
                 continue;
             }
@@ -302,40 +393,45 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 (compare_qkv_pos < 0 || compare_qkv_pos == pos)) {
                 if (bn_transformer_gpu_debug_compare_qkv(
                         &emit, gpu, m, sess, lw, l, pos, kv_cache_off,
-                        dim, layer_q_dim, layer_kv_dim) != 0)
+                        dim, layer_q_dim, layer_kv_dim,
+                        qkv_res.k_bias != NULL ||
+                            bn_transformer_kv_requires_gpu_cache_write_staging(c),
+                        reference_uses_float_kquant) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu qkv compare failed");
             }
             if (compare_gqa) {
                 bn_transformer_gpu_emit_context_attention_gqa(
                     &emit, c, lw, &attn_res, &plan, pos, layer_rope_dims,
-                    n_kv, loff,
-                    kv_cache_off, has_moe);
+                    n_kv, read_loff,
+                    kv_cache_off, kv_cache_stride, has_moe);
                 if (bn_transformer_gpu_debug_compare_gqa(
                         &emit, gpu, m, sess, lw, l, pos, cache_pos,
-                        layer_rope_dims, rope_cos, rope_sin, dim) != 0)
+                        layer_rope_dims, rope_cos, rope_sin, dim,
+                        reference_uses_float_kquant) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu gqa compare failed");
                 bn_transformer_gpu_emit_context_attention_finish(
                     &emit, c, lw, &attn_res, dim, layer_q_dim,
                     layer_head_size, u_eps,
+                    bn_transformer_attention_uses_post_norm_layer(c, lw),
                     small_dense_native_quant_use.use_attention);
             } else {
                 bn_transformer_gpu_emit_context_attention(
                     &emit, c, lw, &attn_res, &plan, pos, dim,
-                    layer_rope_dims, n_kv, loff,
-                    kv_cache_off, has_moe, u_eps,
+                    layer_rope_dims, n_kv, read_loff,
+                    kv_cache_off, kv_cache_stride, has_moe, u_eps,
                     small_dense_native_quant_use.use_attention);
             }
             if (compare_attention) {
                 if (bn_transformer_gpu_debug_compare_attention(
                         &emit, gpu, m, sess, lw, l, pos, cache_pos,
-                        layer_rope_dims, rope_cos, rope_sin, dim) != 0)
+                        layer_rope_dims, rope_cos, rope_sin, dim,
+                        reference_uses_float_kquant) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu attention compare failed");
             }
         }
-
         // ---- FFN (MoE or dense) ----
         ffn_block:;
         if (layer_kind.uses_moe) {
@@ -365,6 +461,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     moe_decode_res.router, moe_decode_res.router_diff,
                     moe_decode_res.gate_all, moe_decode_res.up_all,
                     moe_decode_res.down_all);
+            moe_dispatch.decode_route.router_scale =
+                moe_decode_res.router_scale;
+            moe_dispatch.decode_route.expert_down_scale =
+                moe_decode_res.expert_down_scale;
             if (moe_dispatch.direct_route.enabled) {
                 if (bn_transformer_gpu_resolve_all_active_two_moe_resources(
                         &moe_res, expert_emit, m, sess, lw, l,
@@ -376,7 +476,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     gpu_layer_res.moe_shared;
                 bn_transformer_gpu_emit_context_moe(
                     &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
-                    moe_activation.uses_reference_silu);
+                    moe_activation.uses_reference_silu,
+                    moe_activation.uses_reference_ffn_activation);
                 if (moe_temporaries.n_buffers > 0) {
                     if (bn_transformer_gpu_flush_and_release_moe_temporaries(
                             &emit, gpu, m, &moe_temporaries) != 0)
@@ -394,7 +495,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             if (moe_route.gpu_routed_ffn) {
                 BnTransformerGPUMoEDebugPolicy moe_debug =
                     bn_transformer_gpu_moe_decode_debug_policy(
-                        c, w, l, pos);
+                        gpu, c, w, l, pos);
                 BnTransformerGPURoutedMoEDebugState moe_debug_state;
                 int moe_debug_setup_rc =
                     bn_transformer_gpu_prepare_routed_moe_debug_state(
@@ -443,7 +544,15 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         route_policy.expert_hidden_dim,
                         route_policy.total_experts,
                         route_policy.active_experts,
-                        moe_activation.uses_reference_silu, l) != 0) {
+                        moe_activation.activation,
+                        moe_activation.uses_reference_silu,
+                        lw->moe.expert_map.gate_stride
+                            ? lw->moe.expert_map.gate_stride
+                            : lw->moe.expert_map.expert_gate_bytes,
+                        lw->moe.expert_map.down_stride
+                            ? lw->moe.expert_map.down_stride
+                            : lw->moe.expert_map.expert_down_bytes,
+                        l) != 0) {
                     bn_transformer_gpu_discard_routed_moe_debug_state(
                         &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
@@ -460,7 +569,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 BnTransformerGPUMoEPartsComparison moe_parts_comparison;
                 if (bn_transformer_gpu_prepare_routed_moe_parts_comparison(
                         &moe_parts_comparison, &emit, gpu, m, sess, lw,
-                        &moe_debug, l, pos, dim) != 0) {
+                        &moe_debug, sess->state.xb, l, pos, dim) != 0) {
                     bn_transformer_gpu_discard_routed_moe_debug_state(
                         &moe_debug_state);
                     return bn_transformer_gpu_reject_forward(
@@ -469,7 +578,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 BnTransformerGPUMoESharedCPUFallbackPolicy
                     shared_cpu_fallback =
                         bn_transformer_gpu_moe_shared_cpu_fallback_policy(
-                            c, lw);
+                            gpu, c, lw);
                 if (shared_cpu_fallback.enabled) {
                     int shared_fallback_rc =
                         bn_transformer_gpu_fallback_shared_expert_residual(
@@ -484,9 +593,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                 ? "gpu shared moe cpu fallback upload failed"
                                 : "gpu shared moe cpu fallback failed");
                     }
-                    bn_transformer_gpu_emit_context_residual_rmsnorm(
-                        &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
-                        BN_GPU_VALUE_XB, dim, u_eps, next_norm);
+                    if (!moe_activation.uses_dense_residual_branch)
+                        bn_transformer_gpu_emit_context_residual_rmsnorm(
+                            &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
+                            BN_GPU_VALUE_XB, dim, u_eps, next_norm);
                 } else if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
                     BnTransformerGPUMoESharedResources moe_shared =
                         gpu_layer_res.moe_shared;
@@ -494,13 +604,55 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &lw->moe.expert_map, NULL, 1,
                         route_policy.expert_hidden_dim, 1
                     };
-                    bn_transformer_gpu_emit_context_moe(
-                        &emit, &shared_only, &moe_shared, lw, dim, u_eps,
-                        next_norm, moe_activation.uses_reference_silu);
-                } else {
+                    if (moe_activation.uses_dense_residual_branch)
+                        bn_transformer_gpu_emit_context_moe_routed(
+                            &emit, &shared_only, &moe_shared, lw, dim,
+                            moe_activation.uses_reference_silu,
+                            moe_activation.uses_reference_ffn_activation);
+                    else
+                        bn_transformer_gpu_emit_context_moe(
+                            &emit, &shared_only, &moe_shared, lw, dim, u_eps,
+                            next_norm, moe_activation.uses_reference_silu,
+                            moe_activation.uses_reference_ffn_activation);
+                } else if (!moe_activation.uses_dense_residual_branch) {
                     bn_transformer_gpu_emit_context_residual_rmsnorm(
                         &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
                         BN_GPU_VALUE_XB, dim, u_eps, next_norm);
+                }
+                if (moe_activation.uses_dense_residual_branch) {
+                    int dense_residual_rc =
+                        bn_gpu_backend_has_cap(
+                            gpu,
+                            BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32)
+                        ? bn_transformer_gpu_emit_context_dense_residual_moe(
+                            &emit, c, lw, &layer_ffn_plan, &layer_ffn_res,
+                            dim, u_eps, next_norm,
+                            small_dense_native_quant_use.use_ffn,
+                            small_dense_native_quant_use.use_ffn_down)
+                        : bn_transformer_gpu_fallback_moe_dense_residual_branch(
+                            &emit, gpu, m, sess, lw, dim);
+                    if (dense_residual_rc != 0) {
+                        bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                            &moe_parts_comparison);
+                        bn_transformer_gpu_discard_routed_moe_debug_state(
+                            &moe_debug_state);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit,
+                            dense_residual_rc == -2
+                                ? "gpu direct routed moe dense residual down missing"
+                            : dense_residual_rc == -3
+                                ? "gpu direct routed moe dense residual post-norm-1 missing"
+                            : dense_residual_rc == -4
+                                ? "gpu direct routed moe dense residual post-norm-2 missing"
+                            : dense_residual_rc == -5
+                                ? "gpu direct routed moe dense residual final post-norm missing"
+                                : "gpu direct routed moe dense residual graph failed");
+                    }
+                    if (!bn_gpu_backend_has_cap(
+                            gpu,
+                            BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32))
+                        bn_transformer_gpu_emit_context_moe_finish(
+                            &emit, dim, u_eps, next_norm);
                 }
                 int moe_debug_complete_rc =
                     bn_transformer_gpu_complete_routed_moe_debug_state(
@@ -512,11 +664,33 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &emit, moe_debug_complete_rc == -1
                             ? "gpu routed moe compare readback failed"
                             : "gpu routed moe cpu override apply failed");
+                int routed_per_dim =
+                    bn_transformer_per_layer_embedding_dim(c);
+                if (routed_per_dim > 0 &&
+                    bn_transformer_gpu_emit_context_per_layer_input(
+                        &emit, lw, &gpu_layer_res.per_layer_input, l, dim,
+                        routed_per_dim, u_eps, next_norm,
+                        layer_ffn_plan.use_layer_output_scale,
+                        layer_ffn_plan.use_layer_output_scale
+                            ? lw->norm.layer_output_scale[0] : 1.0f,
+                        small_dense_native_quant_use.use_ffn) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit,
+                        "gpu routed moe per-layer input adapter failed");
+                if (routed_per_dim <= 0 &&
+                    layer_ffn_plan.use_layer_output_scale &&
+                    bn_transformer_gpu_emit_context_scale(
+                        &emit, BN_GPU_VALUE_X, dim,
+                        lw->norm.layer_output_scale[0]) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu routed moe layer output scale failed");
                 continue;
             }
             BnTransformerGPUMoEDebugPolicy moe_debug =
                 bn_transformer_gpu_moe_debug_policy(
-                    0, bn_transformer_gpu_moe_compare_layer_selected(l, pos));
+                    gpu, 0,
+                    bn_transformer_gpu_moe_compare_layer_selected(
+                        gpu, l, pos));
             BnTransformerGPUMoERouteResolution route_resolution;
             const char *route_reason = NULL;
             if (bn_transformer_gpu_resolve_moe_route(
@@ -528,7 +702,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             BnTransformerGPUMoELayerComparison moe_comparison;
             if (bn_transformer_gpu_prepare_moe_layer_comparison(
                     &moe_comparison, gpu, m, sess, lw,
-                    &moe_debug, dim) != 0)
+                    &moe_debug, l, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu moe compare setup failed");
             if (bn_transformer_gpu_resolve_profiled_routed_moe_resources(
@@ -544,11 +718,196 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu moe resource resolution failed");
             }
+            if (bn_transformer_gpu_debug_compare_cached_moe_gate_up(
+                    gpu, m, sess, lw, &moe_res, &moe_debug,
+                    l, pos, dim) != 0) {
+                bn_transformer_gpu_discard_moe_layer_comparison(
+                    &moe_comparison);
+                bn_transformer_gpu_release_moe_temporaries(
+                    m, &moe_temporaries);
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu cached moe gate/up compare failed");
+            }
             BnTransformerGPUMoESharedResources moe_shared =
                 gpu_layer_res.moe_shared;
-            bn_transformer_gpu_emit_context_moe(
-                &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
-                moe_activation.uses_reference_silu);
+            BnTransformerGPUMoESharedCPUFallbackPolicy shared_cpu_fallback =
+                bn_transformer_gpu_moe_shared_cpu_fallback_policy(
+                    gpu, c, lw);
+            int shared_gate_needs_cpu_fallback =
+                bn_transformer_gpu_shared_expert_gate_available(
+                    lw, &moe_shared) &&
+                 (shared_cpu_fallback.enabled ||
+                  !bn_transformer_gpu_weighted_add_sigmoid_supported(gpu));
+            if (moe_activation.uses_dense_residual_branch &&
+                !moe_debug.compare_parts) {
+                bn_transformer_gpu_emit_context_moe_routed(
+                    &emit, &moe_res, &moe_shared, lw, dim,
+                    moe_activation.uses_reference_silu,
+                    moe_activation.uses_reference_ffn_activation);
+                int dense_residual_rc =
+                    bn_gpu_backend_has_cap(
+                        gpu, BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32)
+                    ? bn_transformer_gpu_emit_context_dense_residual_moe(
+                        &emit, c, lw, &layer_ffn_plan, &layer_ffn_res,
+                        dim, u_eps, next_norm,
+                        small_dense_native_quant_use.use_ffn,
+                        small_dense_native_quant_use.use_ffn_down)
+                    : bn_transformer_gpu_fallback_moe_dense_residual_branch(
+                        &emit, gpu, m, sess, lw, dim);
+                if (dense_residual_rc != 0) {
+                    bn_transformer_gpu_discard_moe_layer_comparison(
+                        &moe_comparison);
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, dense_residual_rc == -2
+                            ? "gpu moe dense residual down missing"
+                        : dense_residual_rc == -3
+                            ? "gpu moe dense residual post-norm-1 missing"
+                        : dense_residual_rc == -4
+                            ? "gpu moe dense residual post-norm-2 missing"
+                        : dense_residual_rc == -5
+                            ? "gpu moe dense residual final post-norm missing"
+                            : "gpu moe dense residual graph failed");
+                }
+                if (!bn_gpu_backend_has_cap(
+                        gpu, BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32))
+                    bn_transformer_gpu_emit_context_moe_finish(
+                        &emit, dim, u_eps, next_norm);
+            } else if (moe_debug.compare_parts) {
+                for (int k = 0; k < moe_res.n_experts; k++) {
+                    BnGPUMoEResources one = moe_res;
+                    one.experts = &moe_res.experts[k];
+                    one.n_experts = 1;
+                    one.preserve_output = k > 0;
+                    bn_transformer_gpu_emit_context_moe_routed(
+                        &emit, &one, &moe_shared, lw, dim,
+                        moe_activation.uses_reference_silu,
+                        moe_activation.uses_reference_ffn_activation);
+                    if (bn_transformer_gpu_debug_compare_cached_moe_expert(
+                            &emit, gpu, m, sess, lw,
+                            moe_comparison.input_state,
+                            k, l, pos, dim) != 0) {
+                        bn_transformer_gpu_discard_moe_layer_comparison(
+                            &moe_comparison);
+                        bn_transformer_gpu_release_moe_temporaries(
+                            m, &moe_temporaries);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit, "gpu cached moe expert compare failed");
+                    }
+                }
+                BnTransformerGPUMoEPartsComparison parts_comparison;
+                if (bn_transformer_gpu_prepare_routed_moe_parts_comparison(
+                        &parts_comparison, &emit, gpu, m, sess, lw,
+                        &moe_debug, moe_comparison.input_state,
+                        l, pos, dim) != 0) {
+                    bn_transformer_gpu_discard_moe_layer_comparison(
+                        &moe_comparison);
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu cached moe parts compare failed");
+                }
+                bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                    &parts_comparison);
+                if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
+                    int shared_fallback_rc =
+                        bn_transformer_gpu_fallback_shared_expert_residual_from_input(
+                            &emit, gpu, m, sess, lw,
+                            moe_comparison.input_state, dim);
+                    if (shared_fallback_rc != 0) {
+                        bn_transformer_gpu_discard_moe_layer_comparison(
+                            &moe_comparison);
+                        bn_transformer_gpu_release_moe_temporaries(
+                            m, &moe_temporaries);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit, "gpu shared moe compare fallback failed");
+                    }
+                }
+                bn_transformer_gpu_emit_context_moe_finish(
+                    &emit, dim, u_eps, next_norm);
+            } else if (shared_gate_needs_cpu_fallback) {
+                bn_transformer_gpu_emit_context_moe_routed(
+                    &emit, &moe_res, &moe_shared, lw, dim,
+                    moe_activation.uses_reference_silu,
+                    moe_activation.uses_reference_ffn_activation);
+                BnTransformerGPUMoEPartsComparison parts_comparison;
+                if (bn_transformer_gpu_prepare_routed_moe_parts_comparison(
+                        &parts_comparison, &emit, gpu, m, sess, lw,
+                        &moe_debug, moe_comparison.input_state,
+                        l, pos, dim) != 0) {
+                    bn_transformer_gpu_discard_moe_layer_comparison(
+                        &moe_comparison);
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu cached moe parts compare failed");
+                }
+                bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                    &parts_comparison);
+                int shared_fallback_rc =
+                    bn_transformer_gpu_fallback_shared_expert_residual_from_input(
+                        &emit, gpu, m, sess, lw, sess->state.xb, dim);
+                if (shared_fallback_rc != 0) {
+                    bn_transformer_gpu_discard_moe_layer_comparison(
+                        &moe_comparison);
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, shared_fallback_rc == -2
+                            ? "gpu shared moe cpu fallback upload failed"
+                            : "gpu shared moe cpu fallback failed");
+                }
+                bn_transformer_gpu_emit_context_moe_finish(
+                    &emit, dim, u_eps, next_norm);
+            } else {
+                bn_transformer_gpu_emit_context_moe(
+                    &emit, &moe_res, &moe_shared, lw, dim, u_eps,
+                    next_norm, moe_activation.uses_reference_silu,
+                    moe_activation.uses_reference_ffn_activation);
+                BnTransformerGPUMoEPartsComparison parts_comparison;
+                if (bn_transformer_gpu_prepare_routed_moe_parts_comparison(
+                        &parts_comparison, &emit, gpu, m, sess, lw,
+                        &moe_debug, moe_comparison.input_state,
+                        l, pos, dim) != 0) {
+                    bn_transformer_gpu_discard_moe_layer_comparison(
+                        &moe_comparison);
+                    bn_transformer_gpu_release_moe_temporaries(
+                        m, &moe_temporaries);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu cached moe parts compare failed");
+                }
+                bn_transformer_gpu_discard_routed_moe_parts_comparison(
+                    &parts_comparison);
+            }
+            int moe_per_dim = bn_transformer_per_layer_embedding_dim(c);
+            if (moe_per_dim > 0 &&
+                bn_transformer_gpu_emit_context_per_layer_input(
+                    &emit, lw, &gpu_layer_res.per_layer_input, l, dim,
+                    moe_per_dim, u_eps, next_norm,
+                    layer_ffn_plan.use_layer_output_scale,
+                    layer_ffn_plan.use_layer_output_scale
+                        ? lw->norm.layer_output_scale[0] : 1.0f,
+                    small_dense_native_quant_use.use_ffn) != 0) {
+                bn_transformer_gpu_discard_moe_layer_comparison(
+                    &moe_comparison);
+                bn_transformer_gpu_release_moe_temporaries(
+                    m, &moe_temporaries);
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu moe per-layer input adapter failed");
+            }
+            if (moe_per_dim <= 0 &&
+                layer_ffn_plan.use_layer_output_scale &&
+                bn_transformer_gpu_emit_context_scale(
+                    &emit, BN_GPU_VALUE_X, dim,
+                    lw->norm.layer_output_scale[0]) != 0) {
+                bn_transformer_gpu_discard_moe_layer_comparison(
+                    &moe_comparison);
+                bn_transformer_gpu_release_moe_temporaries(
+                    m, &moe_temporaries);
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu moe layer output scale failed");
+            }
             if (moe_temporaries.n_buffers > 0 || moe_comparison.enabled) {
                 if (bn_transformer_gpu_flush_and_release_moe_temporaries(
                         &emit, gpu, m, &moe_temporaries) != 0) {
@@ -574,10 +933,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         else
             bn_transformer_plan_ffn_resources(
                 &ffn_plan, c, lw, gpu, &gpu_layer_res.dense_ffn, l, 1);
+        int compare_ffn_state = compare_ffn_state_layer == l &&
+            (compare_ffn_state_pos < 0 || compare_ffn_state_pos == pos);
         if (bn_transformer_gpu_cpu_fallback_layer_selected(
                 l, cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer)) {
             if (bn_transformer_gpu_fallback_cpu_ffn(
-                    &emit, gpu, m, sess, lw, &ffn_plan, dim, u_eps,
+                    &emit, gpu, m, sess, lw, &ffn_plan, l, dim, u_eps,
                     next_norm) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu cpu-ffn fallback failed");
@@ -587,8 +948,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int ffn_down_input_buf = -1;
         int skip_ffn_down = bn_transformer_gpu_cpu_fallback_layer_selected(
             l, -1, cpu_fallback.ffn_down_from_layer);
-        int compare_ffn_state = compare_ffn_state_layer == l &&
-            (compare_ffn_state_pos < 0 || compare_ffn_state_pos == pos);
         if (compare_ffn_state) {
             if (bn_transformer_gpu_debug_snapshot_ffn_state(
                     &emit, gpu, sess, dim) != 0)
@@ -598,12 +957,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
             next_norm, skip_ffn_down, &ffn_down_input_buf,
-            small_dense_native_quant_use.use_ffn, small_dense_native_quant_use.use_ffn_down);
+            small_dense_native_quant_use.use_ffn,
+            small_dense_native_quant_use.use_ffn_down, 0);
         if (!skip_ffn_down &&
             compare_ffn_down_layer == l &&
             (compare_ffn_down_pos < 0 || compare_ffn_down_pos == pos)) {
             if (bn_transformer_gpu_debug_compare_ffn_down(
-                    &emit, gpu, m, sess, lw, l, pos, ffn_down_input_buf,
+                    &emit, gpu, m, sess, lw, &ffn_plan, l, pos,
+                    ffn_down_input_buf,
                     ffn_plan.hidden_dim, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu ffn-down compare failed");
@@ -620,11 +981,26 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         }
         if (skip_ffn_down) {
             if (bn_transformer_gpu_fallback_cpu_ffn_down(
-                    &emit, gpu, m, sess, lw, ffn_down_input_buf,
+                    &emit, gpu, m, sess, lw, &ffn_plan, ffn_down_input_buf,
                     ffn_plan.hidden_dim, dim, u_eps, next_norm) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu cpu-ffn-down fallback failed");
         }
+        int per_dim = bn_transformer_per_layer_embedding_dim(c);
+        if (per_dim > 0 &&
+            bn_transformer_gpu_emit_context_per_layer_input(
+                &emit, lw, &gpu_layer_res.per_layer_input, l, dim, per_dim,
+                u_eps, next_norm, ffn_plan.use_layer_output_scale,
+                ffn_plan.use_layer_output_scale
+                    ? lw->norm.layer_output_scale[0] : 1.0f,
+                small_dense_native_quant_use.use_ffn) != 0)
+            return bn_transformer_gpu_reject_forward(
+                &emit, "gpu per-layer input adapter emit failed");
+        if (per_dim > 0 && compare_ffn_state &&
+            bn_transformer_gpu_debug_compare_per_layer_state(
+                &emit, gpu, m, sess, lw, l, pos, dim) != 0)
+            return bn_transformer_gpu_reject_forward(
+                &emit, "gpu per-layer input adapter compare failed");
     }
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
@@ -714,6 +1090,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     bn_transformer_gpu_refine_output_logits(
         gpu, m, sess, logit_res, &logits_refine, dim,
         kquant_logits_refine_has_xb_snapshot);
+    bn_transformer_logits_apply_final_softcap(
+        s->logits, c->vocab_size,
+        bn_transformer_logits_final_softcap(c));
     bn_transformer_gpu_debug_compare_logits(
         gpu, m, sess, logit_res, pos, dim);
     bn_transformer_gpu_emit_context_free(&emit);

@@ -13,9 +13,7 @@ kernel void ssm_delta(device float       *state [[buffer(0)]],
                       constant uint      *p     [[buffer(7)]],
                       uint3 wid [[threadgroup_position_in_grid]],
                       uint3 lid [[thread_position_in_threadgroup]]) {
-    threadgroup float sk[512];
     uint hv_idx = wid.x;
-    uint tid = lid.x;
     uint hk = p[0], hv = p[1], num_k_heads = p[2];
     float q_scale = as_type<float>(p[3]);
     uint state_layer_off = p[4] / 4;
@@ -28,43 +26,53 @@ kernel void ssm_delta(device float       *state [[buffer(0)]],
     float decay = alpha[hv_idx];
     float b = beta[hv_idx];
 
-    // Step 1: Decay state
-    uint total = hk * hv;
-    for (uint i = tid; i < total; i += 256)
-        state[state_base + i] *= decay;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    // Step 2: sk[v] = sum_k S[k,v] * k[k] (Kahan compensated)
-    for (uint vi = tid; vi < hv; vi += 256) {
-        float sum = 0.0f, comp = 0.0f;
-        for (uint ki = 0; ki < hk; ki++) {
-            float y = state[state_base + ki * hv + vi] * k[k_off + hk_idx * hk + ki] - comp;
-            float t = sum + y;
-            comp = (t - sum) - y;
-            sum = t;
+    // State is stored transposed as S[v][k]. One thread owns a row so the
+    // float4 FMA and pairwise reduction order matches the ARM reference.
+    for (uint vi = lid.x; vi < hv; vi += 256) {
+        uint row = state_base + vi * hk;
+        uint k_base = k_off + hk_idx * hk;
+        uint q_base = q_off + hk_idx * hk;
+        float4 s_k4 = 0.0f;
+        uint ki = 0;
+        for (; ki + 4 <= hk; ki += 4) {
+            device float4 *state4 = (device float4 *)(state + row + ki);
+            device const float4 *k4 =
+                (device const float4 *)(k + k_base + ki);
+            float4 ls = *state4 * decay;
+            *state4 = ls;
+            s_k4 = fma(ls, *k4, s_k4);
         }
-        sk[vi] = sum;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    // Step 3: S += k outer (beta * (v - sk))
-    for (uint i = tid; i < total; i += 256) {
-        uint ki = i / hv;
-        uint vi2 = i % hv;
-        float kk = k[k_off + hk_idx * hk + ki];
-        state[state_base + i] += kk * b * (v[v_off + hv_idx * hv + vi2] - sk[vi2]);
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    // Step 4: out[v] = sum_k S[k,v] * q[k] * q_scale (Kahan compensated)
-    for (uint vi = tid; vi < hv; vi += 256) {
-        float sum = 0.0f, comp = 0.0f;
-        for (uint ki = 0; ki < hk; ki++) {
-            float y = state[state_base + ki * hv + vi] * q[q_off + hk_idx * hk + ki] - comp;
-            float t = sum + y;
-            comp = (t - sum) - y;
-            sum = t;
+        float2 s_k2 = s_k4.xy + s_k4.zw;
+        float s_k = s_k2.x + s_k2.y;
+        for (; ki < hk; ki++) {
+            state[row + ki] *= decay;
+            s_k += state[row + ki] * k[k_base + ki];
         }
-        out[hv_idx * hv + vi] = sum * q_scale;
+        float delta = (v[v_off + hv_idx * hv + vi] - s_k) * b;
+
+        float4 vdelta = delta;
+        for (ki = 0; ki + 4 <= hk; ki += 4) {
+            device float4 *state4 = (device float4 *)(state + row + ki);
+            device const float4 *k4 =
+                (device const float4 *)(k + k_base + ki);
+            float4 ls = fma(*k4, vdelta, *state4);
+            *state4 = ls;
+        }
+        for (; ki < hk; ki++)
+            state[row + ki] += k[k_base + ki] * delta;
+
+        float4 y4 = 0.0f;
+        for (ki = 0; ki + 4 <= hk; ki += 4) {
+            device const float4 *state4 =
+                (device const float4 *)(state + row + ki);
+            device const float4 *q4 =
+                (device const float4 *)(q + q_base + ki);
+            y4 = fma(*state4, *q4, y4);
+        }
+        float2 y2 = y4.xy + y4.zw;
+        float y = y2.x + y2.y;
+        for (; ki < hk; ki++)
+            y += state[row + ki] * q[q_base + ki];
+        out[hv_idx * hv + vi] = y * q_scale;
     }
 }

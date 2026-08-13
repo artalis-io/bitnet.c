@@ -10,6 +10,8 @@ extern "C" {
 #endif
 
 BnGPUBackend *bn_gpu_cuda_create(void);
+BnGPUBackend *bn_gpu_cuda_create_with_policy(
+    const BnBackendRuntimePolicy *policy);
 void bn_gpu_cuda_destroy(BnGPUBackend *gpu);
 
 #ifdef __cplusplus

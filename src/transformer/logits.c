@@ -116,7 +116,8 @@ static void logits_refine_tied_kquant_top(BnModel *m, BnRunState *s,
         !bn_transformer_logits_tied_kquant_refine_supported(W))
         return;
 
-    int refine_top = bn_transformer_logits_cpu_tied_kquant_refine_top();
+    int refine_top = bn_transformer_logits_cpu_tied_kquant_refine_top(
+        bn_tp_cpu_policy(bn_model_pool(m)));
     if (refine_top <= 0) return;
 
     int ids[128];
@@ -137,7 +138,8 @@ static void logits_hybrid_tied_kquant_top(BnModel *m, BnRunState *s,
         !bn_transformer_logits_tied_kquant_refine_supported(W))
         return;
 
-    int top_n = bn_transformer_logits_cpu_tied_kquant_hybrid_top();
+    int top_n = bn_transformer_logits_cpu_tied_kquant_hybrid_top(
+        bn_tp_cpu_policy(bn_model_pool(m)));
     if (top_n <= 0) return;
 
     int ids[128];
@@ -181,7 +183,8 @@ static void logits_refine_native_quant(const BnModel *m,
     if (!m || !bn_transformer_logits_native_quant_refine_enabled(
                   bn_model_gpu(m), &m->config, W))
         return;
-    int refine_top = bn_transformer_logits_native_quant_refine_top();
+    int refine_top =
+        bn_transformer_logits_native_quant_refine_top(bn_model_gpu(m));
     if (refine_top > 0)
         logits_refine_backend_top(s->logits, m->config.vocab_size, W, s->x,
                                   s->x_q, refine_top);
@@ -245,6 +248,9 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
 
     logits_rmsnorm_model(m, s->x, s->x, w->output_norm, dim,
                          exec_policy.norm_eps);
+    bn_transformer_cpu_debug_dump_values(
+        bn_tp_cpu_policy(bn_model_pool(m)), s->x, dim,
+        "bitnet_result_norm", -1, sess->pos);
 
     BnLogitsPlan plan;
     bn_transformer_plan_logits(&plan, c, w, bn_model_gpu(m),
@@ -264,7 +270,8 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     case BN_LOGITS_TIED_QUANT: {
         BnLogitsTiedQuantExecutionPolicy policy =
             bn_transformer_logits_tied_quant_execution_policy_for(
-                bn_model_gpu(m), &m->config, bn_model_backend(m),
+                bn_tp_cpu_policy(bn_model_pool(m)), bn_model_gpu(m),
+                &m->config, bn_model_backend(m),
                 &w->tied_embedding_weight);
         if (!policy.valid || !policy.dispatch.valid)
             return NULL;
@@ -306,14 +313,21 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     }
     }
 
-    {
-        float cap = exec_policy.final_softcap;
-        if (cap != 0.0f) {
-            float inv = 1.0f / cap;
-            for (int i = 0; i < c->vocab_size; i++)
-                s->logits[i] = tanhf(s->logits[i] * inv) * cap;
-        }
-    }
+    bn_transformer_logits_apply_final_softcap(
+        s->logits, c->vocab_size, exec_policy.final_softcap);
+    bn_transformer_cpu_debug_dump_values(
+        bn_tp_cpu_policy(bn_model_pool(m)), s->logits, c->vocab_size,
+        "bitnet_result_output", -1, sess->pos);
 
     return s->logits;
+}
+
+void bn_transformer_logits_apply_final_softcap(float *logits,
+                                               int vocab_size,
+                                               float softcap) {
+    if (!logits || vocab_size <= 0 || softcap == 0.0f)
+        return;
+    float inv = 1.0f / softcap;
+    for (int i = 0; i < vocab_size; i++)
+        logits[i] = tanhf(logits[i] * inv) * softcap;
 }

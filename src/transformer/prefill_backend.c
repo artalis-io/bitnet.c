@@ -10,10 +10,16 @@
 #include <math.h>
 #include <stddef.h>
 
-static float prefill_gelu(float x) {
-    return 0.5f * x *
-           (1.0f + tanhf(0.7978845608028654f * x *
-                         (1.0f + 0.044715f * x * x)));
+static float prefill_reference_gelu(float x) {
+    if (x <= -10.0f)
+        return 0.0f;
+    if (x >= 10.0f)
+        return x;
+    float rounded_x = bn_fp16_to_fp32(bn_fp32_to_fp16(x));
+    float inner = 0.7978845608028654f * rounded_x *
+                  (1.0f + 0.044715f * rounded_x * rounded_x);
+    float gelu = 0.5f * rounded_x * (1.0f + tanhf(inner));
+    return bn_fp16_to_fp32(bn_fp32_to_fp16(gelu));
 }
 
 static void prefill_ffn_activation_scalar_range(void *ctx, int start, int end) {
@@ -29,7 +35,13 @@ static void prefill_ffn_activation_scalar_range(void *ctx, int start, int end) {
             }
         } else if (bn_transformer_prefill_activation_is_gelu(c->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
-                float v = prefill_gelu(hb_t[i]);
+                float v = c->uses_reference_activation
+                              ? prefill_reference_gelu(hb_t[i])
+                              : 0.5f * hb_t[i] *
+                                    (1.0f + tanhf(
+                                        0.7978845608028654f * hb_t[i] *
+                                        (1.0f + 0.044715f * hb_t[i] *
+                                                    hb_t[i])));
                 hb_t[i] = hb2_t ? v * hb2_t[i] : v;
             }
         } else {
@@ -60,13 +72,11 @@ static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
             }
         } else if (bn_transformer_prefill_activation_is_gelu(c->activation) &&
                    c->uses_reference_activation) {
-            for (; i + 3 < hidden_dim; i += 4) {
-                float32x4_t v =
-                    bn_neon_fast_gelu_f32(vld1q_f32(hb_t + i));
-                if (hb2_t)
-                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
-                vst1q_f32(hb_t + i, v);
-            }
+            BnPrefillFFNActCtx reference = {
+                hb_t, hb2_t, hidden_dim, c->activation, 1
+            };
+            prefill_ffn_activation_scalar_range(&reference, 0, 1);
+            continue;
         } else if (bn_transformer_prefill_activation_uses_silu_path(c->activation) &&
                    c->uses_reference_activation) {
             for (; i + 3 < hidden_dim; i += 4) {
@@ -105,13 +115,11 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
             }
         } else if (bn_transformer_prefill_activation_is_gelu(c->activation) &&
                    c->uses_reference_activation) {
-            for (; i + 7 < hidden_dim; i += 8) {
-                __m256 v =
-                    bn_avx2_fast_gelu_ps(_mm256_loadu_ps(hb_t + i));
-                if (hb2_t)
-                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
-                _mm256_storeu_ps(hb_t + i, v);
-            }
+            BnPrefillFFNActCtx reference = {
+                hb_t, hb2_t, hidden_dim, c->activation, 1
+            };
+            prefill_ffn_activation_scalar_range(&reference, 0, 1);
+            continue;
         } else if (bn_transformer_prefill_activation_uses_silu_path(c->activation) &&
                    c->uses_reference_activation) {
             for (; i + 7 < hidden_dim; i += 8) {
@@ -281,33 +289,21 @@ void bn_transformer_prefill_quant_matvec_batch_prepared_kquant_input(
 }
 
 bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_conv_silu_scalar_range;
     return ops ? ops->ssm_conv_silu : BN_PREFILL_CPU_OPS.ssm_conv_silu;
 }
 
 bn_tp_fn bn_transformer_prefill_ssm_l2norm_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_l2norm_scalar_range;
     return ops ? ops->ssm_l2norm : BN_PREFILL_CPU_OPS.ssm_l2norm;
 }
 
 bn_tp_fn bn_transformer_prefill_ssm_delta_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_delta_scalar_range;
     return ops ? ops->ssm_delta : BN_PREFILL_CPU_OPS.ssm_delta;
 }
 
 bn_tp_fn bn_transformer_prefill_ssm_gate_op(
-    const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_ssm_uses_reference_ops(c))
-        return bn_transformer_ssm_gate_scalar_range;
     return ops ? ops->ssm_gate : BN_PREFILL_CPU_OPS.ssm_gate;
 }

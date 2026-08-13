@@ -60,7 +60,7 @@ Useful flags:
 |---|---|
 | `--pread` | Stream MoE expert weights with `pread` instead of relying on mmap. |
 | `--cache-mb N` | MoE expert LRU cache budget for pread mode. |
-| `--madvise` | Experimental mmap prefetch hints. |
+| `--madvise` | Use mmap prefetch hints for MoE experts. |
 | `--flash` | Use online-softmax attention where supported. |
 | `--kv16` | Store KV cache in FP16. |
 | `--kv-tq 2|3|4` | Use TurboQuant compressed KV cache. |

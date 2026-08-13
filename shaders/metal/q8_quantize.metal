@@ -20,7 +20,8 @@ kernel void q8_quantize(
 
     uint scale_idx = token * (cols >> 5) + block;
     if (lane == 0)
-        scales[scale_idx] = amax == 0.0f ? 0.0f : amax / 127.0f;
+        scales[scale_idx] = amax == 0.0f
+            ? 0.0f : float(half(amax / 127.0f));
 
     if (amax == 0.0f) {
         x_q[base + lane] = 0;

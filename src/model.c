@@ -49,6 +49,10 @@ BnThreadPool *bn_model_pool(const BnModel *model) {
     return (model && model->runtime) ? model->runtime->pool : NULL;
 }
 
+const BnCPURuntimePolicy *bn_model_cpu_runtime_policy(const BnModel *model) {
+    return bn_tp_cpu_policy(bn_model_pool(model));
+}
+
 void bn_model_set_thread_pool(BnModel *model, BnThreadPool *pool, int owned) {
     if (model_ensure_runtime(model) != 0) return;
     model->runtime->pool = pool;
@@ -1039,6 +1043,12 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f",
                                           (double)built_stats.lowbit_repack_bytes / (1024*1024));
                 SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
+            }
+            if (built_stats.q8_repack_bytes > 0) {
+                char q8_rp_mb[16];
+                snprintf(q8_rp_mb, sizeof(q8_rp_mb), "%.0f",
+                         (double)built_stats.q8_repack_bytes / (1024*1024));
+                SH_LOG_INFO("Q8_0 weights repacked", "MB", q8_rp_mb);
             }
             if (built_stats.kquant_scale_table_bytes > 0) {
                 char q4k_mb[16]; snprintf(q4k_mb, sizeof(q4k_mb), "%.0f",

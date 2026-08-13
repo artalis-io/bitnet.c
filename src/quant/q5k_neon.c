@@ -99,6 +99,8 @@ void bn_quant_q5k_neon_sdot_range(void *ctx, int row_start, int row_end) {
     const int16_t *x_bsums = c->x_bsums;
 
     const uint8x16_t mask_lo = vdupq_n_u8(0xF);
+    const uint8x16_t mask_one = vdupq_n_u8(1);
+    const uint8x16_t mask_two = vdupq_n_u8(2);
     const int32x4_t zero = vdupq_n_s32(0);
 
     const uint32_t kmask1 = 0x3f3f3f3f;
@@ -126,29 +128,33 @@ void bn_quant_q5k_neon_sdot_range(void *ctx, int row_start, int row_end) {
             utmp[0] &= kmask1;
             const uint8_t *sc = (const uint8_t *)utmp;
 
-            uint8_t mins[8];
-            memcpy(mins, &m_lo, 4);
-            memcpy(mins + 4, &m_hi, 4);
-
-            int32_t bsum_corr = 0;
-            for (int j = 0; j < 8; j++)
-                bsum_corr += (int32_t)mins[j] *
-                              ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
+            uint32x2_t mins_u32 = vdup_n_u32(0);
+            mins_u32 = vset_lane_u32(m_lo, mins_u32, 0);
+            mins_u32 = vset_lane_u32(m_hi, mins_u32, 1);
+            const int16x8_t mins = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_u32(mins_u32)));
+            const int16x8_t bsum_pairs = vpaddq_s16(
+                vld1q_s16(bsums), vld1q_s16(bsums + 8));
+            const int32x4_t min_prod = vaddq_s32(
+                vmull_s16(vget_low_s16(mins), vget_low_s16(bsum_pairs)),
+                vmull_s16(vget_high_s16(mins), vget_high_s16(bsum_pairs)));
+            const int32_t bsum_corr = vaddvq_s32(min_prod);
 
             int32x4_t acc = zero;
+            uint8x16_t qh0 = vld1q_u8(qh);
+            uint8x16_t qh1 = vld1q_u8(qh + 16);
             for (int j = 0; j < BN_QK_K; j += 64) {
                 int sub = j / 32;
-                int group = j / 64;
-                int bit_lo = group * 2;
-                int bit_hi = group * 2 + 1;
 
                 uint8x16_t raw0 = vld1q_u8(qs);
                 uint8x16_t raw1 = vld1q_u8(qs + 16);
 
-                uint8x16_t hb0 = q5k_extract_hb_neon(qh, 0,  bit_lo);
-                uint8x16_t hb1 = q5k_extract_hb_neon(qh, 16, bit_lo);
-                uint8x16_t hb2 = q5k_extract_hb_neon(qh, 0,  bit_hi);
-                uint8x16_t hb3 = q5k_extract_hb_neon(qh, 16, bit_hi);
+                uint8x16_t hb0 = vshlq_n_u8(vandq_u8(qh0, mask_one), 4);
+                uint8x16_t hb1 = vshlq_n_u8(vandq_u8(qh1, mask_one), 4);
+                uint8x16_t hb2 = vshlq_n_u8(vandq_u8(qh0, mask_two), 3);
+                uint8x16_t hb3 = vshlq_n_u8(vandq_u8(qh1, mask_two), 3);
+                qh0 = vshrq_n_u8(qh0, 2);
+                qh1 = vshrq_n_u8(qh1, 2);
 
                 int8x16_t w0 = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(raw0, mask_lo), hb0));
                 int8x16_t w1 = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(raw1, mask_lo), hb1));
@@ -168,7 +174,9 @@ void bn_quant_q5k_neon_sdot_range(void *ctx, int row_start, int row_end) {
             }
             int32_t sumi = vaddvq_s32(acc);
 
-            row_sum += dx * (d * (float)sumi - dmin * (float)bsum_corr);
+            float dd = dx * d;
+            float ddmin = dx * dmin;
+            row_sum += dd * (float)sumi - ddmin * (float)bsum_corr;
         }
         c->out[row] = row_sum;
     }
@@ -183,6 +191,8 @@ void bn_quant_q5k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
     const BnBlockQ5K *blocks = (const BnBlockQ5K *)c->W->data;
 
     const uint8x16_t mask_lo = vdupq_n_u8(0xF);
+    const uint8x16_t mask_one = vdupq_n_u8(1);
+    const uint8x16_t mask_two = vdupq_n_u8(2);
     const int32x4_t zero = vdupq_n_s32(0);
 
     const uint32_t kmask1 = 0x3f3f3f3f;
@@ -204,23 +214,27 @@ void bn_quant_q5k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
             utmp[0] &= kmask1;
             const uint8_t *sc = (const uint8_t *)utmp;
 
-            uint8_t mins[8];
-            memcpy(mins, &m_lo, 4);
-            memcpy(mins + 4, &m_hi, 4);
+            uint32x2_t mins_u32 = vdup_n_u32(0);
+            mins_u32 = vset_lane_u32(m_lo, mins_u32, 0);
+            mins_u32 = vset_lane_u32(m_hi, mins_u32, 1);
+            const int16x8_t mins = vreinterpretq_s16_u16(
+                vmovl_u8(vreinterpret_u8_u32(mins_u32)));
 
             int8x16_t w_lo0[4], w_lo1[4], w_hi0[4], w_hi1[4];
             {
                 const uint8_t *qs = blk->qs;
                 const uint8_t *qh = blk->qh;
+                uint8x16_t qh0 = vld1q_u8(qh);
+                uint8x16_t qh1 = vld1q_u8(qh + 16);
                 for (int p = 0; p < 4; p++) {
-                    int bit_lo = p * 2;
-                    int bit_hi = p * 2 + 1;
                     uint8x16_t raw0 = vld1q_u8(qs);
                     uint8x16_t raw1 = vld1q_u8(qs + 16);
-                    uint8x16_t hb0 = q5k_extract_hb_neon(qh, 0,  bit_lo);
-                    uint8x16_t hb1 = q5k_extract_hb_neon(qh, 16, bit_lo);
-                    uint8x16_t hb2 = q5k_extract_hb_neon(qh, 0,  bit_hi);
-                    uint8x16_t hb3 = q5k_extract_hb_neon(qh, 16, bit_hi);
+                    uint8x16_t hb0 = vshlq_n_u8(vandq_u8(qh0, mask_one), 4);
+                    uint8x16_t hb1 = vshlq_n_u8(vandq_u8(qh1, mask_one), 4);
+                    uint8x16_t hb2 = vshlq_n_u8(vandq_u8(qh0, mask_two), 3);
+                    uint8x16_t hb3 = vshlq_n_u8(vandq_u8(qh1, mask_two), 3);
+                    qh0 = vshrq_n_u8(qh0, 2);
+                    qh1 = vshrq_n_u8(qh1, 2);
                     w_lo0[p] = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(raw0, mask_lo), hb0));
                     w_lo1[p] = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(raw1, mask_lo), hb1));
                     w_hi0[p] = vreinterpretq_s8_u8(vorrq_u8(vshrq_n_u8(raw0, 4), hb2));
@@ -234,10 +248,12 @@ void bn_quant_q5k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                 float dx = c->x_d[(size_t)t * n_bpr + b];
                 const int16_t *bsums = c->x_bsums + ((size_t)t * n_bpr + b) * 16;
 
-                int32_t bsum_corr = 0;
-                for (int j = 0; j < 8; j++)
-                    bsum_corr += (int32_t)mins[j] *
-                                  ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
+                const int16x8_t bsum_pairs = vpaddq_s16(
+                    vld1q_s16(bsums), vld1q_s16(bsums + 8));
+                const int32x4_t min_prod = vaddq_s32(
+                    vmull_s16(vget_low_s16(mins), vget_low_s16(bsum_pairs)),
+                    vmull_s16(vget_high_s16(mins), vget_high_s16(bsum_pairs)));
+                const int32_t bsum_corr = vaddvq_s32(min_prod);
 
                 int32_t sumi = 0;
                 for (int p = 0; p < 4; p++) {

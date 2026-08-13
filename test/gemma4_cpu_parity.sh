@@ -9,7 +9,12 @@ NEON_BIN=${BITNET_NEON:-./bitnet}
 SCALAR_BIN=${BITNET_SCALAR:-./bitnet_scalar}
 AVX2_BIN=${BITNET_AVX2:-./bitnet_avx2}
 AVX512_BIN=${BITNET_AVX512:-./bitnet_avx512}
-BACKENDS=${GEMMA4_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512}}
+case "$(uname -m)" in
+    arm64|aarch64) DEFAULT_BACKENDS=neon,scalar ;;
+    x86_64|amd64) DEFAULT_BACKENDS=scalar,avx2,avx512 ;;
+    *) DEFAULT_BACKENDS=scalar ;;
+esac
+BACKENDS=${GEMMA4_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-$DEFAULT_BACKENDS}}
 CASES=${GEMMA4_CPU_PARITY_CASES:-all}
 MAXSEQ=${GEMMA4_CPU_PARITY_MAXSEQ:-512}
 
@@ -143,10 +148,10 @@ esac
 
 validate_backends
 
-run_case "gemma4_dense" "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" 1 5 \
+run_case "gemma4_dense" "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" 3 5 \
     "*gemma*4*e*b*q*.gguf" \
     "*gemma*4*31b*q*.gguf"
-run_case "gemma4_moe" "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" 1 5 \
+run_case "gemma4_moe" "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" 3 5 \
     "*gemma*4*26b*q*.gguf" \
     "*gemma*4*a4b*q*.gguf" \
     "*gemma*4*a4b*mxfp4*.gguf"

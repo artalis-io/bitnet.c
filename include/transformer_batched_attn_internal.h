@@ -7,6 +7,7 @@
 
 typedef struct {
     const BnConfig *c;
+    const BnCPURuntimePolicy *runtime;
     BnRunState *s;
 
     float *Q_buf;       // [n_tokens * wq_rows]

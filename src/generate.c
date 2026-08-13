@@ -156,8 +156,7 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
             next = bn_sampler_sample(sampler, logits);
         }
 
-        if (next == tok->eot_id || next == tok->eos_id ||
-            next == tok->im_end_id)
+        if (bn_tokenizer_is_eog(tok, next))
             break;
 
         // Ring buffer loop detection
@@ -219,7 +218,7 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
                 model, s, next, *pos,
                 sampler->recent_tokens, sampler->recent_len,
                 sampler->repeat_penalty, &gpu_next) == 0) {
-            if (bn_transformer_gpu_argmax_debug_enabled())
+            if (bn_transformer_gpu_argmax_debug_enabled(gpu))
                 fprintf(stderr, "[bn:gpu:argmax] step=%d token=%d next=%d\n",
                         i, next, gpu_next);
             have_gpu_next = 1;
@@ -260,7 +259,7 @@ int bn_generate_speculative(
         int k_actual = 0;
         for (int i = 0; i < draft_k && gen_count + i < max_tokens; i++) {
             int d = bn_sampler_sample(sampler, draft_logits);
-            if (d == tok->eot_id || d == tok->eos_id || d == tok->im_end_id)
+            if (bn_tokenizer_is_eog(tok, d))
                 break;
             draft_tokens[k_actual++] = d;
             draft_logits = bn_transformer_forward(draft, ds, d, *pos + k_actual - 1);
@@ -269,7 +268,7 @@ int bn_generate_speculative(
 
         if (k_actual == 0) {
             int t = bn_sampler_sample(sampler, target_logits);
-            if (t == tok->eot_id || t == tok->eos_id || t == tok->im_end_id)
+            if (bn_tokenizer_is_eog(tok, t))
                 break;
             bn_sampler_accept(sampler, t);
             const char *piece = bn_tokenizer_decode(tok, t);
@@ -322,8 +321,7 @@ int bn_generate_speculative(
         }
 
         if (corrected >= 0) {
-            if (corrected != tok->eot_id && corrected != tok->eos_id &&
-                corrected != tok->im_end_id) {
+            if (!bn_tokenizer_is_eog(tok, corrected)) {
                 bn_sampler_accept(sampler, corrected);
                 const char *piece = bn_tokenizer_decode(tok, corrected);
                 if (piece && cb && cb(piece, corrected, user_data)) goto done;
@@ -341,8 +339,7 @@ int bn_generate_speculative(
         } else {
             *pos += n_accepted;
             int bonus = bn_sampler_sample(sampler, target_logits);
-            if (bonus != tok->eot_id && bonus != tok->eos_id &&
-                bonus != tok->im_end_id) {
+            if (!bn_tokenizer_is_eog(tok, bonus)) {
                 bn_sampler_accept(sampler, bonus);
                 const char *piece = bn_tokenizer_decode(tok, bonus);
                 if (piece && cb && cb(piece, bonus, user_data)) goto done;
@@ -400,19 +397,30 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                 return NULL;
             BnTransformerPrefillSSMStateUploadPolicy ssm_policy =
                 bn_transformer_prefill_ssm_state_upload_policy(
-                    &model->config, gpu_attached);
+                    &model->config, bn_model_gpu(model), gpu_attached);
             if (ssm_policy.upload &&
                 bn_transformer_gpu_upload_ssm_state(model, s) != 0)
                 return NULL;
         }
     } else {
+        int exact_reference_prompt =
+            bn_transformer_gpu_reference_attention_no_logits_cpu_fallback_enabled(
+                bn_model_gpu(model), &model->config, 0);
         for (int i = 0; i < n_tokens; i++) {
-            if (i + 1 == n_tokens) {
+            if (i + 1 == n_tokens && !exact_reference_prompt) {
                 logits = bn_transformer_forward(model, s, tokens[i], pos0 + i);
             } else if (bn_transformer_forward_no_logits(
                            model, s, tokens[i], pos0 + i) != 0) {
                 return NULL;
             }
+        }
+        if (exact_reference_prompt) {
+            BnGPUBackend *gpu = bn_model_gpu(model);
+            if (bn_transformer_gpu_read_x(
+                    gpu, s->state.x,
+                    (size_t)model->config.dim * sizeof(float)) != 0)
+                return NULL;
+            logits = bn_transformer_forward_logits(model, s);
         }
     }
     return logits;
@@ -448,7 +456,7 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
         if (rc == 0) {
             BnTransformerPrefillSSMStateUploadPolicy ssm_policy =
                 bn_transformer_prefill_ssm_state_upload_policy(
-                    &model->config, gpu_attached);
+                    &model->config, bn_model_gpu(model), gpu_attached);
             if (ssm_policy.upload)
                 rc = bn_transformer_gpu_upload_ssm_state(model, s);
         }

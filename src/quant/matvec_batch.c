@@ -23,32 +23,6 @@
 #define BN_MAX_SCALE_BLOCKS 8192
 #define BN_MAX_BATCH 24
 
-#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
-static void batch_quant_x_to_q8_blocks_scalar(const float *x, int8_t *x_q,
-                                              float *x_scales, int n) {
-    int n_blocks = n / 32;
-    for (int b = 0; b < n_blocks; b++) {
-        const float *xb = x + b * 32;
-        int8_t *xqb = x_q + b * 32;
-        float amax = 0.0f;
-        for (int i = 0; i < 32; i++) {
-            float ax = xb[i] < 0.0f ? -xb[i] : xb[i];
-            if (ax > amax) amax = ax;
-        }
-        float d = bn_fp16_to_fp32(bn_fp32_to_fp16(amax / 127.0f));
-        float id = amax > 0.0f ? 127.0f / amax : 0.0f;
-        x_scales[b] = d;
-        for (int i = 0; i < 32; i++) {
-            float v = xb[i] * id;
-            int q = (int)(v >= 0.0f ? v + 0.5f : v - 0.5f);
-            if (q > 127) q = 127;
-            if (q < -127) q = -127;
-            xqb[i] = (int8_t)q;
-        }
-    }
-}
-#endif
-
 // --- Batch matvec ---
 // Runs multiple independent matvecs with a single dispatch.
 
@@ -101,7 +75,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
     if (all_q4 && n_tasks <= 4) {
         int reference_dot =
-            bn_quant_policy_batch_reference_q4_dot_enabled(tasks, n_tasks);
+            bn_quant_policy_batch_reference_q4_dot_enabled(
+                bn_tp_quant_policy(pool), tasks, n_tasks);
         if (reference_dot) {
             int n_blocks = cols / 32;
             if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
@@ -112,13 +87,22 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
             for (int t = 0; t < n_tasks; t++) {
                 ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf,
                                           x_scales, tasks[t].prepared };
-                void (*fn)(void *, int, int) =
-                    tasks[t].prepared &&
+                int scalar_dot = bn_quant_policy_q4_scalar_dot_requested(
+                    bn_tp_quant_policy(pool));
+                void (*fn)(void *, int, int) = scalar_dot
+                    ? bn_quant_q4_scalar_sdot_range
+                    : tasks[t].prepared &&
                             tasks[t].prepared->kind ==
                                 BN_PREPARED_WEIGHT_Q4_0_REPACK
                         ? bn_quant_q4_repacked_neon_sdot_range
                         : bn_quant_q4_neon_sdot_range;
-                tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
+                int n_items = scalar_dot ? tasks[t].W->rows :
+                    tasks[t].prepared &&
+                                      tasks[t].prepared->kind ==
+                                          BN_PREPARED_WEIGHT_Q4_0_REPACK
+                    ? tasks[t].W->rows
+                    : tasks[t].W->rows;
+                tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_items };
             }
             bn_tp_dispatch(pool, tp_tasks, n_tasks);
             return;
@@ -199,8 +183,9 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ8SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf,
                                       x_scales, tasks[t].prepared };
-            tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_range,
-                                      &ctxs[t], tasks[t].W->rows };
+            int n_groups = (tasks[t].W->rows + 3) / 4;
+            tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_4row_range,
+                                      &ctxs[t], n_groups };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -238,7 +223,9 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ4KSdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, q8k_d, q8k_bsums, tasks[t].prepared };
-            tp_tasks[t] = (BnTPTask){ bn_quant_q4k_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
+            tp_tasks[t] = (BnTPTask){
+                bn_quant_q4k_neon_sdot_range, &ctxs[t], tasks[t].W->rows
+            };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -383,7 +370,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     /* Q4_K / Q6_K batch: quantize x to Q8_K ONCE, reuse across all tasks.
      * Uses 4-row kernels for bandwidth amortization. */
     if (all_kquant && n_tasks <= BN_MAX_BATCH &&
-        !bn_quant_policy_avx2_kquant_float_for_tasks(tasks, n_tasks)) {
+        !bn_quant_policy_avx2_kquant_float_for_tasks(
+            bn_tp_quant_policy(pool), tasks, n_tasks)) {
         int n_bpr = cols / BN_QK_K;
         if (n_bpr >= 1 && n_bpr <= BN_MAX_SCALE_BLOCKS / 8) {
             float q8k_d[n_bpr];
@@ -454,7 +442,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales, tasks[t].prepared };
-            if (bn_quant_policy_wasm_q4_canonical4_enabled()) {
+            if (bn_quant_policy_wasm_q4_canonical4_enabled(
+                    bn_tp_quant_policy(pool))) {
                 int n_groups = (tasks[t].W->rows + 3) / 4;
                 tp_tasks[t] = (BnTPTask){ bn_quant_q4_wasm_sdot_4row_range, &ctxs[t], n_groups };
             } else if (tasks[t].prepared && tasks[t].prepared->qs) {
@@ -588,12 +577,15 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                     ctxs[t] = (BnKQuantSdotCtx){ tasks[t].out, tasks[t].W,
                                                   x_q_buf, q8k_d, q8k_bsums,
                                                   tasks[t].prepared };
-                    bn_tp_fn fn = bn_quant_q6k_scalar_sdot_range;
+                    bn_tp_fn fn = bn_quant_q6k_scalar_sdot_4row_range;
                     if (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
                         fn = bn_quant_q4k_scalar_sdot_range;
                     else if (tasks[t].W->type == BN_GGUF_TENSOR_Q5_K)
                         fn = bn_quant_q5k_scalar_sdot_range;
-                    tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
+                    int n = tasks[t].W->rows;
+                    if (tasks[t].W->type == BN_GGUF_TENSOR_Q6_K)
+                        n = (n + 3) / 4;
+                    tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n };
                 }
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);
                 return;
@@ -603,7 +595,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 #endif
 
 #if defined(__AVX2__)
-    if (bn_quant_policy_avx2_kquant_float_for_tasks(tasks, n_tasks)) {
+    if (bn_quant_policy_avx2_kquant_float_for_tasks(
+            bn_tp_quant_policy(pool), tasks, n_tasks)) {
         int all_kquant_float = 1;
         for (int t = 0; t < n_tasks; t++) {
             int ty = tasks[t].W->type;
@@ -649,7 +642,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 #ifdef __AVX2__
             if (batch_type == BN_GGUF_TENSOR_Q5_K) {
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
-                if (bn_quant_policy_avx512_q5k_vnni_enabled(tasks[0].W->rows)) {
+                if (bn_quant_policy_avx512_q5k_vnni_enabled(
+                        bn_tp_quant_policy(pool), tasks[0].W->rows)) {
                     int n_bpr = cols / BN_QK_K;
                     if (n_bpr >= 1 && n_bpr <= BN_MAX_SCALE_BLOCKS / 8) {
                         float q8k_d[n_bpr];
@@ -693,16 +687,13 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
             }
 #endif
             int reference_dot =
-                bn_quant_policy_batch_reference_q4_dot_enabled(tasks, n_tasks);
+                bn_quant_policy_batch_reference_q4_dot_enabled(
+                    bn_tp_quant_policy(pool), tasks, n_tasks);
             if (batch_type == BN_GGUF_TENSOR_Q4_0 && reference_dot) {
                 int n_blocks = cols / 32;
                 if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
                 float x_scales[n_blocks];
-#if defined(__ARM_NEON) || defined(__AVX2__) || defined(__wasm_simd128__)
                 bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, cols);
-#else
-                batch_quant_x_to_q8_blocks_scalar(x, x_q_buf, x_scales, cols);
-#endif
                 BnQ4SdotCtx ctxs[BN_MAX_BATCH];
                 BnTPTask tp_tasks[BN_MAX_BATCH];
                 for (int t = 0; t < n_tasks; t++) {
@@ -710,12 +701,22 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                                               x_q_buf, x_scales,
                                               tasks[t].prepared };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-                    bn_tp_fn fn = tasks[t].prepared &&
+                    int scalar_dot =
+                        bn_quant_policy_q4_scalar_dot_requested(
+                            bn_tp_quant_policy(pool));
+                    bn_tp_fn fn = scalar_dot
+                        ? bn_quant_q4_scalar_sdot_range
+                        : tasks[t].prepared &&
                                       tasks[t].prepared->kind ==
                                           BN_PREPARED_WEIGHT_Q4_0_REPACK
                         ? bn_quant_q4_repacked_neon_sdot_range
-                        : bn_quant_q4_neon_sdot_range;
-                    int n_items = tasks[t].W->rows;
+                        : bn_quant_q4_neon_sdot_4row_range;
+                    int n_items = scalar_dot ? tasks[t].W->rows :
+                        tasks[t].prepared &&
+                                          tasks[t].prepared->kind ==
+                                              BN_PREPARED_WEIGHT_Q4_0_REPACK
+                        ? tasks[t].W->rows
+                        : (tasks[t].W->rows + 3) / 4;
 #elif defined(__AVX512F__) && defined(__AVX512BW__) && \
       defined(__AVX512VNNI__)
                     bn_tp_fn fn = bn_quant_q4_avx512_vnni_4row_range;
@@ -724,13 +725,15 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                     bn_tp_fn fn = bn_quant_q4_avx2_4row_range;
                     int n_items = (tasks[t].W->rows + 3) / 4;
 #elif defined(__wasm_relaxed_simd__)
-                    bn_tp_fn fn = bn_quant_policy_wasm_q4_canonical4_enabled()
+                    bn_tp_fn fn = bn_quant_policy_wasm_q4_canonical4_enabled(
+                                      bn_tp_quant_policy(pool))
                         ? bn_quant_q4_wasm_sdot_4row_range
                         : (tasks[t].prepared && tasks[t].prepared->qs
                            ? bn_quant_q4_repacked_wasm_sdot_8row_range
                            : bn_quant_q4_wasm_sdot_range);
                     int n_items = tasks[t].W->rows;
-                    if (bn_quant_policy_wasm_q4_canonical4_enabled())
+                    if (bn_quant_policy_wasm_q4_canonical4_enabled(
+                            bn_tp_quant_policy(pool)))
                         n_items = (tasks[t].W->rows + 3) / 4;
                     else if (tasks[t].prepared && tasks[t].prepared->qs)
                         n_items = (tasks[t].W->rows + 7) / 8;

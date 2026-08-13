@@ -12,8 +12,6 @@
 #include "gpu_backend.h"
 #include "gpu_policy.h"
 #include "gpu_shader.h"
-#include "model.h"
-#include "model_internal.h"
 #include "quant.h"
 #include "gguf.h"
 #include "webgpu.h"
@@ -40,6 +38,7 @@ static WGPUStringView sv(const char *s)
 /* ── Internal context ──────────────────────────────────────────────── */
 
 typedef struct {
+    const BnBackendRuntimePolicy *runtime_policy;
     WGPUInstance        instance;
     WGPUAdapter         adapter;
     WGPUDevice          device;
@@ -1184,62 +1183,58 @@ static void wgpu_free_activations(void *vctx);  /* forward decl for cleanup */
 
 /* ── Vtable: init_activations ──────────────────────────────────────── */
 
-static int wgpu_init_activations(void *vctx, const void *config_ptr)
+static int wgpu_init_activations(void *vctx,
+                                 const BnGPUActivationPlan *plan)
 {
     BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
-    const BnConfig *c = (const BnConfig *)config_ptr;
-    if (!ctx || !c) return -1;
+    if (!ctx || !plan) return -1;
 
     /* Compute buffer sizes */
-    int n_attn = bn_gpu_policy_attention_layer_count(c);
-    BnGPUMoERouteShape moe_route_shape =
-        bn_gpu_policy_moe_route_shape(c);
-    int q_dim = c->n_heads * c->head_size;
-    int xb_size = q_dim > c->dim ? q_dim : c->dim;
+    int n_attn = plan->attention_layer_count;
+    int q_dim = plan->n_heads * plan->head_size;
+    int xb_size = q_dim > plan->dim ? q_dim : plan->dim;
 
     size_t sizes[BN_GPU_BUF_COUNT] = {0};
-    sizes[BN_GPU_BUF_X]           = (size_t)c->dim * sizeof(float);
+    sizes[BN_GPU_BUF_X]           = (size_t)plan->dim * sizeof(float);
     sizes[BN_GPU_BUF_XB]          = (size_t)xb_size * sizeof(float);
-    sizes[BN_GPU_BUF_XB2]         = (size_t)c->dim * sizeof(float);
+    sizes[BN_GPU_BUF_XB2]         =
+        (size_t)plan->xb2_elements * sizeof(float);
     sizes[BN_GPU_BUF_Q]           = (size_t)q_dim * sizeof(float);
-    {
-        int hb_dim = c->hidden_dim;
-        if (moe_route_shape.expert_hidden_dim > hb_dim)
-            hb_dim = moe_route_shape.expert_hidden_dim;
-        sizes[BN_GPU_BUF_HB]  = (size_t)hb_dim * sizeof(float);
-        sizes[BN_GPU_BUF_HB2] = (size_t)hb_dim * sizeof(float);
-    }
-    sizes[BN_GPU_BUF_KEY_CACHE]   = (size_t)n_attn * c->seq_len * c->kv_dim * sizeof(float);
-    sizes[BN_GPU_BUF_VALUE_CACHE] = (size_t)n_attn * c->seq_len * c->kv_dim * sizeof(float);
-    sizes[BN_GPU_BUF_ATT]         = (size_t)c->n_heads * c->seq_len * sizeof(float);
-    sizes[BN_GPU_BUF_LOGITS]      = (size_t)c->vocab_size * sizeof(float);
-    sizes[BN_GPU_BUF_ROPE_FREQ]   = (size_t)(c->head_size / 2) * sizeof(float);
+    sizes[BN_GPU_BUF_HB] =
+        (size_t)plan->hb_elements * sizeof(float);
+    sizes[BN_GPU_BUF_HB2] =
+        (size_t)plan->hb_elements * sizeof(float);
+    sizes[BN_GPU_BUF_KEY_CACHE]   = (size_t)n_attn * plan->seq_len * plan->kv_dim * sizeof(float);
+    sizes[BN_GPU_BUF_VALUE_CACHE] = (size_t)n_attn * plan->seq_len * plan->kv_dim * sizeof(float);
+    sizes[BN_GPU_BUF_ATT]         = (size_t)plan->n_heads * plan->seq_len * sizeof(float);
+    sizes[BN_GPU_BUF_LOGITS]      = (size_t)plan->vocab_size * sizeof(float);
+    sizes[BN_GPU_BUF_ROPE_FREQ]   = (size_t)(plan->head_size / 2) * sizeof(float);
     sizes[BN_GPU_BUF_SCRATCH]     = (size_t)xb_size * sizeof(float);
     {
-        size_t qkv_size = (size_t)(q_dim + 2 * c->kv_dim) * sizeof(float);
+        size_t qkv_size = (size_t)(q_dim + 2 * plan->kv_dim) * sizeof(float);
         size_t gated_q_size = (size_t)(2 * q_dim) * sizeof(float);
         sizes[BN_GPU_BUF_QKV] = qkv_size > gated_q_size ? qkv_size : gated_q_size;
     }
 
     /* MoE activation buffers (if model has MoE layers) */
-    if (moe_route_shape.expert_hidden_dim > 0) {
+    if (plan->moe_expert_hidden_dim > 0) {
         sizes[BN_GPU_BUF_MOE_HB] =
-            (size_t)moe_route_shape.expert_hidden_dim * sizeof(float);
+            (size_t)plan->moe_expert_hidden_dim * sizeof(float);
         sizes[BN_GPU_BUF_MOE_HB2] =
-            (size_t)moe_route_shape.expert_hidden_dim * sizeof(float);
-        sizes[BN_GPU_BUF_MOE_OUT] = (size_t)c->dim * sizeof(float);
+            (size_t)plan->moe_expert_hidden_dim * sizeof(float);
+        sizes[BN_GPU_BUF_MOE_OUT] = (size_t)plan->dim * sizeof(float);
     }
 
     /* SSM activation buffers (if model has SSM layers) */
-    if (bn_gpu_policy_uses_hybrid_ssm(c)) {
-        int n_ssm = bn_gpu_policy_ssm_layer_count(c);
-        int num_v_heads = c->ssm_time_step_rank;
-        int head_k_dim  = c->ssm_state_size;
-        int head_v_dim  = c->ssm_inner_size / (num_v_heads > 0 ? num_v_heads : 1);
-        int key_dim     = c->ssm_group_count * head_k_dim;
-        int value_dim   = c->ssm_inner_size;
+    if (plan->uses_hybrid_ssm) {
+        int n_ssm = plan->ssm_layer_count;
+        int num_v_heads = plan->ssm_time_step_rank;
+        int head_k_dim  = plan->ssm_state_size;
+        int head_v_dim  = plan->ssm_inner_size / (num_v_heads > 0 ? num_v_heads : 1);
+        int key_dim     = plan->ssm_group_count * head_k_dim;
+        int value_dim   = plan->ssm_inner_size;
         int qkv_dim     = key_dim * 2 + value_dim;
-        int kern        = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
+        int kern        = plan->ssm_conv_kernel > 0 ? plan->ssm_conv_kernel : 4;
 
         sizes[BN_GPU_BUF_SSM_STATE]      = (size_t)n_ssm * num_v_heads * head_k_dim * head_v_dim * sizeof(float);
         sizes[BN_GPU_BUF_SSM_CONV_STATE] = (size_t)n_ssm * (kern - 1) * qkv_dim * sizeof(float);
@@ -1280,19 +1275,16 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
 
     /* Upload precomputed RoPE frequencies */
     {
-        int rope_dims = bn_gpu_policy_rope_dims_for_head(c, c->head_size);
-        int half = rope_dims / 2;
-        float *freq = malloc((size_t)half * sizeof(float));
-        if (!freq) return -1;
-        bn_gpu_policy_init_rope_frequencies(c, freq, half);
+        if (plan->rope_frequency_count > 0 && !plan->rope_frequencies)
+            return -1;
         wgpuQueueWriteBuffer(ctx->queue, ctx->act_bufs[BN_GPU_BUF_ROPE_FREQ],
-                              0, freq, (size_t)half * sizeof(float));
-        free(freq);
+                              0, plan->rope_frequencies,
+                              (size_t)plan->rope_frequency_count * sizeof(float));
     }
 
     /* Create staging buffer for logits readback */
     {
-        size_t logits_size = (size_t)c->vocab_size * sizeof(float);
+        size_t logits_size = (size_t)plan->vocab_size * sizeof(float);
         size_t aligned = (logits_size + 3) & ~(size_t)3;
         WGPUBufferDescriptor desc = {
             .label = sv("bn_fwd_staging"),
@@ -2215,7 +2207,7 @@ static int wgpu_execute(void *vctx, const void *ops_raw, int n_ops,
 
     /* GPU profiling: set the common GPU profile level to see timing. */
     if (ctx->gpu_profile < 0)
-        ctx->gpu_profile = bn_gpu_policy_profile_level();
+        ctx->gpu_profile = bn_gpu_policy_profile_level(ctx->runtime_policy);
     if (ctx->gpu_profile && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
         fprintf(stderr, "[gpu:profile] frame=%d ops=%d passes=%d | "
                 "uniforms=%.1fms encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
@@ -2286,10 +2278,20 @@ static int wgpu_execute(void *vctx, const void *ops_raw, int n_ops,
 
 /* ── Public API: create ────────────────────────────────────────────── */
 
-BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
+BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir) {
+    BnBackendRuntimePolicy policy;
+    if (bn_gpu_backend_runtime_policy_init(&policy) != 0) return NULL;
+    BnGPUBackend *gpu = bn_gpu_wgpu_create_with_policy(shader_dir, &policy);
+    bn_backend_runtime_policy_free(&policy);
+    return gpu;
+}
+
+BnGPUBackend *bn_gpu_wgpu_create_with_policy(
+    const char *shader_dir, const BnBackendRuntimePolicy *runtime_policy)
 {
     BnWgpuCtx *ctx = calloc(1, sizeof(BnWgpuCtx));
     if (!ctx) return NULL;
+    ctx->runtime_policy = runtime_policy;
     ctx->gpu_profile = -1;  /* uninitialized, checked on first execute */
 
     /* Create instance with primary backends.
@@ -2414,6 +2416,17 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
         free(ctx);
         return NULL;
     }
+    if (bn_gpu_backend_capture_runtime_policy_from(gpu, runtime_policy) != 0) {
+        wgpu_free_activations(ctx);
+        if (ctx->queue) wgpuQueueRelease(ctx->queue);
+        if (ctx->device) wgpuDeviceRelease(ctx->device);
+        if (ctx->adapter) wgpuAdapterRelease(ctx->adapter);
+        if (ctx->instance) wgpuInstanceRelease(ctx->instance);
+        free(ctx);
+        free(gpu);
+        return NULL;
+    }
+    ctx->runtime_policy = &gpu->runtime_policy;
     gpu->buffer_create         = wgpu_buffer_create;
     gpu->buffer_create_biased  = wgpu_buffer_create_biased;
     gpu->buffer_destroy        = wgpu_buffer_destroy;
@@ -2492,6 +2505,7 @@ void bn_gpu_wgpu_destroy(BnGPUBackend *gpu)
         if (ctx->instance) wgpuInstanceRelease(ctx->instance);
         free(ctx);
     }
+    bn_gpu_backend_release_runtime_policy(gpu);
     free(gpu);
 }
 

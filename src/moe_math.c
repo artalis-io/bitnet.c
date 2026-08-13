@@ -21,16 +21,31 @@ BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols) {
 
 // --- Phase 3: SwiGLU range function for parallel dispatch ---
 
+static float moe_gelu_tanh(float x) {
+    if (x <= -10.0f)
+        return 0.0f;
+    if (x >= 10.0f)
+        return x;
+    float inner = 0.7978845608028654f * x *
+                  (1.0f + 0.044715f * x * x);
+    return 0.5f * x * (1.0f + tanhf(inner));
+}
+
+static float moe_reference_gelu(float x) {
+    float rounded_x = bn_fp16_to_fp32(bn_fp32_to_fp16(x));
+    float gelu = moe_gelu_tanh(rounded_x);
+    return bn_fp16_to_fp32(bn_fp32_to_fp16(gelu));
+}
+
 void bn_moe_swiglu_range(void *ctx, int start, int end) {
     BnSwiGLUCtx *c = (BnSwiGLUCtx *)ctx;
     int i = start;
     if (c->uses_reference_silu < 0) {
         for (; i < end; i++) {
             float g = c->gate[i];
-            float gelu = 0.5f * g *
-                         (1.0f + tanhf(0.7978845608028654f * g *
-                                       (1.0f + 0.044715f * g * g)));
-            c->hb[i] = gelu * c->up[i];
+            c->hb[i] = (c->uses_reference_ffn_activation
+                            ? moe_reference_gelu(g)
+                            : moe_gelu_tanh(g)) * c->up[i];
         }
         return;
     }
@@ -40,15 +55,15 @@ void bn_moe_swiglu_range(void *ctx, int start, int end) {
 
 // Vectorized SwiGLU for pread path (single expert, no dispatch overhead)
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
-                   int uses_reference_silu) {
+                   int uses_reference_silu,
+                   int uses_reference_ffn_activation) {
     int i = 0;
     if (uses_reference_silu < 0) {
         for (; i < n; i++) {
             float g = gate[i];
-            float gelu = 0.5f * g *
-                         (1.0f + tanhf(0.7978845608028654f * g *
-                                       (1.0f + 0.044715f * g * g)));
-            hb[i] = gelu * up[i];
+            hb[i] = (uses_reference_ffn_activation
+                         ? moe_reference_gelu(g)
+                         : moe_gelu_tanh(g)) * up[i];
         }
         return;
     }
