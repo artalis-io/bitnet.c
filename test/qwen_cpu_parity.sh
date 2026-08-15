@@ -161,6 +161,8 @@ run_case "qwen36_dense" "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" \
     "*qwen3.6*27b*.gguf" 3 5
 run_case "qwen36_moe" "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" \
     "*qwen3.6*35b*a3b*.gguf" 3 5 --pread --cache-mb "$SPARSE_CACHE_MB"
+run_case "qwen38_dense" "Qwen 3.8 dense" "BN_MODEL_QWEN38_DENSE" \
+    "*qwen3.8*27b*.gguf" 3 5
 
 if [[ "$REQUIRE_MODELS" == "1" && "$missing" -ne 0 ]]; then
     echo "Qwen CPU parity FAILED: $missing required model case(s) missing"

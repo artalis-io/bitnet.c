@@ -703,6 +703,8 @@ const BnCPUBackendOps *bn_transformer_cpu_backend_ops(
     };
     if (bn_transformer_cpu_reference_math_requested(runtime))
         return &reference;
+#else
+    (void)runtime;
 #endif
     return &BN_CPU_BACKEND;
 }

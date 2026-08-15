@@ -143,9 +143,14 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     idx = bn_gguf_find_key(f, "tokenizer.ggml.eot_token_id");
     t->eot_id = (idx >= 0) ? (int)bn_gguf_get_u32(f, "tokenizer.ggml.eot_token_id") : -1;
 
-    // add_bos_token: use GGUF value if present, otherwise add BOS only if bos_token_id is defined
+    // Respect explicit GGUF metadata. For omitted values, let model-owned
+    // tokenizer policy supply the family default.
     idx = bn_gguf_find_key(f, "tokenizer.ggml.add_bos_token");
-    t->add_bos = (idx >= 0) ? (int)f->kvs[idx].value.b : has_bos;
+    const char *tokenizer_pre =
+        bn_gguf_get_str(f, "tokenizer.ggml.pre");
+    t->add_bos = (idx >= 0)
+        ? (int)f->kvs[idx].value.b
+        : bn_model_tokenizer_default_add_bos(tokenizer_pre, has_bos);
     if (t->metaspace && has_bos)
         t->add_bos = 1;
 

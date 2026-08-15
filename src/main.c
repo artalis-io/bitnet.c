@@ -1056,7 +1056,12 @@ int main(int argc, char **argv) {
 
     // Load model
     BnModel model;
-    if (bn_model_load(&model, gf, args.max_seq_len, args.kv_f16, args.kv_tq_bits) != 0) {
+    int prepare_cpu_weights =
+        !(early_metal_gpu &&
+          bn_model_gguf_has_auxiliary_prediction_blocks(gf));
+    if (bn_model_load_with_cpu_preparation(
+            &model, gf, args.max_seq_len, args.kv_f16, args.kv_tq_bits,
+            prepare_cpu_weights) != 0) {
         SH_LOG_ERROR("Failed to load model");
         bn_gguf_free(gf);
 #ifdef BN_ENABLE_METAL

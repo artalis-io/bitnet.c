@@ -28,6 +28,7 @@ typedef struct {
     int rope_dim_count_swa;         // sliding-window/local-attention RoPE dim count
     int rope_text_dims;             // MROPE: dims for text section only (0 = use rope_dim_count)
     int full_attn_interval;         // 0 = all attention, N = every Nth layer is attention
+    int nextn_predict_layers;       // auxiliary prediction blocks excluded from decode
     int ssm_state_size;             // head_k_dim (128)
     int ssm_conv_kernel;            // conv kernel size (4)
     int ssm_inner_size;             // value_dim = num_v_heads * head_v_dim (4096)

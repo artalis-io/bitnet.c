@@ -211,7 +211,10 @@ static int tensor_dim0(BnGGUFFile *f, const char *name) {
 
 // --- Model loading ---
 
-int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits) {
+int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
+                                       int max_seq_len, int kv_f16,
+                                       int kv_tq_bits,
+                                       int prepare_cpu_weights) {
     memset(m, 0, sizeof(BnModel));
     if (model_ensure_runtime(m) != 0 ||
         model_ensure_io(m) != 0 ||
@@ -238,10 +241,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         bn_model_arch_gguf_u32_or_i32_array(f, "feed_forward_length", 0);
 
     c->n_layers = bn_model_arch_gguf_u32(f, "block_count");
-    int n_nextn_layers =
+    c->nextn_predict_layers =
         bn_model_arch_gguf_u32(f, "nextn_predict_layers");
-    if (n_nextn_layers > 0 && n_nextn_layers < c->n_layers)
-        c->n_layers -= n_nextn_layers;
+    if (c->nextn_predict_layers > 0 &&
+        c->nextn_predict_layers < c->n_layers)
+        c->n_layers -= c->nextn_predict_layers;
 
     c->n_heads = bn_model_arch_gguf_u32(f, "attention.head_count");
 
@@ -931,7 +935,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         emb_i8_scales_bytes = (size_t)i8_emb_rows * sizeof(float);
     }
 
-    size_t prepared_weight_bytes = bn_model_backend_prepared_size(c, w);
+    size_t prepared_weight_bytes = prepare_cpu_weights
+        ? bn_model_backend_prepared_size(c, w) : 0;
     size_t shared_gate_float_bytes = 0;
     if (bn_model_load_policy_has_shared_expert(c)) {
         for (int i = 0; i < c->n_layers; i++) {
@@ -1038,6 +1043,12 @@ fail_state:
 fail_layers:
     bn_model_free(m);
     return -1;
+}
+
+int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16,
+                  int kv_tq_bits) {
+    return bn_model_load_with_cpu_preparation(
+        m, f, max_seq_len, kv_f16, kv_tq_bits, 1);
 }
 
 void bn_model_free(BnModel *m) {

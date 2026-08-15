@@ -200,6 +200,12 @@ int bn_transformer_gpu_can_fused_gateup_silu_pair(const BnGPUBackend *gpu,
                                                   int gate_type,
                                                   int up_type,
                                                   int act_type);
+int bn_transformer_gpu_can_borrowed_pair_gateup_silu(
+    const BnGPUBackend *gpu,
+    const BnConfig *config,
+    int gate_type,
+    int up_type,
+    int act_type);
 int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
                                                    int tensor_type,
                                                    int act_type);

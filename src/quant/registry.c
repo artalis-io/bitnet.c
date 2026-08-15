@@ -242,6 +242,10 @@ int bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(int type) {
         type, BN_QUANT_CAP_GPU_FUSED_GATEUP_BACKEND_OPT_IN);
 }
 
+int bn_quant_format_supports_borrowed_pair_fused_gateup(int type) {
+    return type == BN_GGUF_TENSOR_Q4_0;
+}
+
 int bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                        int act_type) {
     return act_type != 1 || type != BN_GGUF_TENSOR_Q4_K;

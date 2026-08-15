@@ -20,6 +20,10 @@ typedef struct BnModel {
 } BnModel;
 
 int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits);
+int  bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
+                                        int max_seq_len, int kv_f16,
+                                        int kv_tq_bits,
+                                        int prepare_cpu_weights);
 void bn_model_free(BnModel *m);
 void bn_model_embed_token(const BnModel *m, float *out, int token);
 int bn_model_uses_moe(const BnModel *model);

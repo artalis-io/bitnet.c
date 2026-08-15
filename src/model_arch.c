@@ -614,6 +614,13 @@ int bn_model_tokenizer_uses_metaspace(const char *tokenizer_model) {
     return bn_model_arch_tokenizer_uses_metaspace(tokenizer_model);
 }
 
+int bn_model_tokenizer_default_add_bos(const char *tokenizer_pre,
+                                       int has_bos_token) {
+    if (tokenizer_pre && strcmp(tokenizer_pre, "qwen35") == 0)
+        return 0;
+    return has_bos_token != 0;
+}
+
 int bn_model_arch_uses_small_dense_shape(const BnConfig *c) {
     return bn_model_arch_uses_dense_attention_only(c) &&
            c->dim <= 2560;

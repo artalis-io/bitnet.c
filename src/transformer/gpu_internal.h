@@ -1928,6 +1928,16 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     int cols,
     int use_small_dense_native_quant,
     uint32_t flags);
+int bn_transformer_gpu_emit_context_fused_gateup_silu_pair(
+    BnTransformerGPUEmitContext *ctx,
+    int type,
+    void *gate_buf,
+    void *up_buf,
+    int buf_in,
+    int buf_out,
+    int rows,
+    int cols,
+    uint32_t flags);
 int bn_transformer_gpu_emit_context_moe_route_topk(
     BnTransformerGPUEmitContext *ctx,
     void *router_buf,

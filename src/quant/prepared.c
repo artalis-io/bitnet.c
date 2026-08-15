@@ -108,6 +108,12 @@ static int prepare_q4_0(BnPreparedWeight *prepared, const BnQWeight *w,
 #endif
             }
             uint8_t *dst = prepared->qs + gb * 64;
+#ifdef BN_FORCE_SCALAR
+            for (int r = 0; r < 4; r++) {
+                size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
+                memcpy(dst + r * 16, blocks[src].qs, 16);
+            }
+#else
             for (int ng = 0; ng < 4; ng++) {
                 for (int r = 0; r < 4; r++) {
                     size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
@@ -117,6 +123,7 @@ static int prepare_q4_0(BnPreparedWeight *prepared, const BnQWeight *w,
                         dp[j] = qs[j] ^ 0x88;
                 }
             }
+#endif
         }
     }
     return 0;

@@ -51,28 +51,23 @@ kernel void ssm_delta(device float       *state [[buffer(0)]],
         float delta = (v[v_off + hv_idx * hv + vi] - s_k) * b;
 
         float4 vdelta = delta;
+        float4 y4 = 0.0f;
         for (ki = 0; ki + 4 <= hk; ki += 4) {
             device float4 *state4 = (device float4 *)(state + row + ki);
             device const float4 *k4 =
                 (device const float4 *)(k + k_base + ki);
-            float4 ls = fma(*k4, vdelta, *state4);
-            *state4 = ls;
-        }
-        for (; ki < hk; ki++)
-            state[row + ki] += k[k_base + ki] * delta;
-
-        float4 y4 = 0.0f;
-        for (ki = 0; ki + 4 <= hk; ki += 4) {
-            device const float4 *state4 =
-                (device const float4 *)(state + row + ki);
             device const float4 *q4 =
                 (device const float4 *)(q + q_base + ki);
-            y4 = fma(*state4, *q4, y4);
+            float4 ls = fma(*k4, vdelta, *state4);
+            *state4 = ls;
+            y4 = fma(ls, *q4, y4);
         }
         float2 y2 = y4.xy + y4.zw;
         float y = y2.x + y2.y;
-        for (; ki < hk; ki++)
+        for (; ki < hk; ki++) {
+            state[row + ki] += k[k_base + ki] * delta;
             y += state[row + ki] * q[q_base + ki];
+        }
         out[hv_idx * hv + vi] = y * q_scale;
     }
 }

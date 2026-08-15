@@ -528,6 +528,11 @@ static inline int bn_backend_quant_supports_native_quant_fused_gateup(
     return bn_backend_quant_supports_native_quant_matmul(type);
 }
 
+static inline int bn_backend_quant_supports_borrowed_pair_fused_gateup(
+    int type) {
+    return bn_quant_format_supports_borrowed_pair_fused_gateup(type);
+}
+
 static inline int bn_backend_quant_supports_asymmetric_kquant_dot_fused_gateup(
     int type) {
     return bn_backend_quant_supports_asymmetric_kquant_dot_matvec(type);

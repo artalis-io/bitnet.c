@@ -4453,6 +4453,25 @@ static void test_gpu_policy_helpers(void) {
     c.policy_flags |= BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION;
     assert(bn_transformer_gpu_reference_attention_cpu_fallback_enabled(
         &gpu, &c));
+    c.nextn_predict_layers = 1;
+    assert(!bn_transformer_gpu_reference_attention_cpu_fallback_enabled(
+        &gpu, &c));
+    assert(bn_model_transformer_policy_has_auxiliary_prediction_blocks(&c));
+    assert(!bn_transformer_gpu_can_borrowed_pair_gateup_silu(
+        &gpu, &c, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0,
+        BN_MODEL_ACTIVATION_SILU));
+    gpu.caps |= BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU;
+    assert(bn_transformer_gpu_can_borrowed_pair_gateup_silu(
+        &gpu, &c, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0,
+        BN_MODEL_ACTIVATION_SILU));
+    assert(!bn_transformer_gpu_can_borrowed_pair_gateup_silu(
+        &gpu, &c, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0,
+        BN_MODEL_ACTIVATION_SILU));
+    c.nextn_predict_layers = 0;
+    assert(!bn_model_transformer_policy_has_auxiliary_prediction_blocks(&c));
+    assert(!bn_transformer_gpu_can_borrowed_pair_gateup_silu(
+        &gpu, &c, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0,
+        BN_MODEL_ACTIVATION_SILU));
     assert(!bn_transformer_gpu_reference_attention_exact_enabled(&gpu, &c));
     gpu.caps |= BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH;
     assert(!bn_transformer_gpu_reference_attention_cpu_fallback_enabled(
@@ -5525,8 +5544,8 @@ static void test_gpu_op_kind_mapping(void) {
     assert(ctx_ops[1].W_buf == (void *)4);
     bn_transformer_gpu_emit_context_free(&ctx);
 
-    BnGPUOp ctx_ops2[5];
-    bn_transformer_gpu_emit_context_init(&ctx, ctx_ops2, 5);
+    BnGPUOp ctx_ops2[6];
+    bn_transformer_gpu_emit_context_init(&ctx, ctx_ops2, 6);
     assert(bn_transformer_gpu_emit_context_copy(
                &ctx, BN_GPU_VALUE_QKV, BN_GPU_VALUE_Q, 0, 0, 16) == 0);
     assert(bn_transformer_gpu_emit_context_residual_add(
@@ -5542,13 +5561,26 @@ static void test_gpu_op_kind_mapping(void) {
                BN_GPU_VALUE_HB, 64, 64, 32, 0, 0) == 0);
     assert(ctx.n == 0);
     assert(ctx.graph->n_ops == 5);
+    assert(bn_transformer_gpu_emit_context_fused_gateup_silu_pair(
+               &ctx, BN_GGUF_TENSOR_Q4_0, (void *)7, (void *)8,
+               BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, 64, 32, 4) == 0);
+    assert(ctx.n == 6);
+    assert(ctx.graph->n_ops == 0);
     assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
-    assert(ctx.n == 5);
+    assert(ctx.n == 6);
     assert(ctx_ops2[0].op_code == BN_GPU_CODE_COPY);
     assert(ctx_ops2[1].op_code == BN_GPU_CODE_RESIDUAL_ADD);
     assert(ctx_ops2[2].op_code == BN_GPU_CODE_SILU_GATE);
     assert(ctx_ops2[3].op_code == BN_GPU_CODE_MATVEC);
     assert(ctx_ops2[4].op_code == BN_GPU_CODE_FUSED_GATEUP_SILU);
+    assert(ctx_ops2[5].op_kind == BN_GPU_OP_FFN);
+    assert(ctx_ops2[5].op_code == BN_GPU_CODE_FUSED_GATEUP_SILU);
+    assert(ctx_ops2[5].type == BN_GGUF_TENSOR_Q4_0);
+    assert(ctx_ops2[5].W_buf == (void *)7);
+    assert(ctx_ops2[5].W_buf2 == (void *)8);
+    assert(ctx_ops2[5].rows == 64);
+    assert(ctx_ops2[5].cols == 32);
+    assert(ctx_ops2[5].flags == 4);
     bn_transformer_gpu_emit_context_free(&ctx);
 
     BnGPUOp route_ops[4];

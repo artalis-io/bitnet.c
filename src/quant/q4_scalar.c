@@ -115,6 +115,14 @@ static int32_t q4_repacked_scalar_dot_row(const uint8_t *qbase,
                                           const int8_t *x_q,
                                           int row_lane) {
     int32_t sum = 0;
+#ifdef BN_FORCE_SCALAR
+    const uint8_t *qp = qbase + row_lane * 16;
+    for (int j = 0; j < 16; j++) {
+        uint8_t q = qp[j];
+        sum += ((int32_t)(q & 0x0f) - 8) * (int32_t)x_q[j];
+        sum += ((int32_t)(q >> 4) - 8) * (int32_t)x_q[j + 16];
+    }
+#else
     for (int ng = 0; ng < 4; ng++) {
         const uint8_t *qp = qbase + ng * 16 + row_lane * 4;
         const int8_t *xlo = x_q + ng * 4;
@@ -125,6 +133,7 @@ static int32_t q4_repacked_scalar_dot_row(const uint8_t *qbase,
             sum += ((int32_t)(q >> 4) - 8) * (int32_t)xhi[j];
         }
     }
+#endif
     return sum;
 }
 

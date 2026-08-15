@@ -353,6 +353,7 @@ int      bn_quant_format_can_gpu_split(int type);
 int      bn_quant_format_gpu_requires_reference_silu(int type);
 int      bn_quant_format_gpu_prefers_gateup_split(int type);
 int      bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(int type);
+int      bn_quant_format_supports_borrowed_pair_fused_gateup(int type);
 int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                             int act_type);
 uint32_t bn_quant_format_gpu_matvec_kquant_dot_flag(int type, int enabled);

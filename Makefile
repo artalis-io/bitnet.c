@@ -246,8 +246,13 @@ BENCH_PREFILL_SRCS = bench/bench_prefill.c $(filter-out src/main.c, $(SRCS))
 bench_prefill: $(BENCH_PREFILL_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-# Scalar benchmark (no -march=native, no SIMD)
-SCALAR_CFLAGS = -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude -DBN_FORCE_SCALAR
+# Scalar backend benchmark (no explicit SIMD kernels)
+SCALAR_CFLAGS = -O3 -flto -Wall -Wextra -Wshadow -std=c11 -Iinclude -DBN_FORCE_SCALAR
+ifeq ($(UNAME_S),Darwin)
+ifneq ($(filter arm% aarch%,$(UNAME_M)),)
+SCALAR_CFLAGS += -mcpu=apple-m1
+endif
+endif
 ifeq ($(UNAME_S),Linux)
 SCALAR_CFLAGS += -D_GNU_SOURCE
 endif
@@ -312,7 +317,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS) $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_cuda_compare bench_qwen_cuda_matrix bench_kernels_run bitnet_scalar bitnet_avx2 bitnet_avx512 build_cpu_parity_backends bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_cpu_parity test_cpu_parity_required test_qwen_cpu_parity test_gemma4_cpu_parity test_gguf test_quant test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_qwen36_cuda test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check check-cpu-parity-tools check-cpu-parity-fixtures check-cpu-parity-remote-fixtures fetch-cpu-parity-fixtures fetch-qwen36-sparse-fixture fetch-gemma4-fixtures fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_cuda_compare bench_qwen_cuda_matrix bench_kernels_run bitnet_scalar bitnet_avx2 bitnet_avx512 build_cpu_parity_backends bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_cpu_parity test_cpu_parity_required test_qwen_cpu_parity test_gemma4_cpu_parity test_gguf test_quant test_quant_scalar test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_qwen36_cuda test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check check-cpu-parity-tools check-cpu-parity-fixtures check-cpu-parity-remote-fixtures fetch-cpu-parity-fixtures fetch-qwen36-sparse-fixture fetch-gemma4-fixtures fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -358,7 +363,7 @@ check-cpu-parity-tools:
 check-cpu-parity-remote-fixtures:
 	./scripts/check_cpu_parity_remote_fixtures.sh
 
-test: test_architecture test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend
+test: test_architecture test_gguf test_quant test_quant_scalar test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend
 
 test_architecture: test_backend_matrix test_model_matrix
 
@@ -390,6 +395,9 @@ test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 
 test_quant: test/test_quant.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+test_quant_scalar: test/test_quant_scalar.c src/quant/fp16.c src/quant/prepared.c src/quant/q4_scalar.c src/sh_arena.c
+	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_avx512_quant: test/test_avx512_quant.c src/quant/q8_avx512_vnni.c src/quant/q4_avx512_vnni.c \
                    src/quant/q4k_avx512_vnni.c src/quant/q5k_avx512.c src/quant/q6k_avx512_vnni.c \
@@ -795,4 +803,4 @@ test_coherence: $(COHERENCE_SRCS) $(COHERENCE_EXTRA_OBJS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bitnet_avx2 bitnet_avx512 bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_metal_f32 test_coherence test_e2e test_prefill test_kv_f16 test/llama_layer_probe default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+	rm -f bitnet bitnet_scalar bitnet_avx2 bitnet_avx512 bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_quant_scalar test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_metal_f32 test_coherence test_e2e test_prefill test_kv_f16 test/llama_layer_probe default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)

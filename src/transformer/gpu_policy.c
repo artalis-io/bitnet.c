@@ -83,6 +83,20 @@ int bn_transformer_gpu_can_fused_gateup_silu_pair(const BnGPUBackend *gpu,
            bn_transformer_gpu_can_fused_gateup_silu(gpu, gate_type, act_type);
 }
 
+int bn_transformer_gpu_can_borrowed_pair_gateup_silu(
+    const BnGPUBackend *gpu,
+    const BnConfig *config,
+    int gate_type,
+    int up_type,
+    int act_type) {
+    return bn_model_transformer_policy_has_auxiliary_prediction_blocks(config) &&
+           gate_type == up_type &&
+           bn_backend_quant_supports_borrowed_pair_fused_gateup(gate_type) &&
+           bn_transformer_gpu_activation_uses_silu_path(act_type) &&
+           bn_transformer_gpu_has_cap(
+               gpu, BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU);
+}
+
 int bn_transformer_gpu_activation_uses_silu_path(int activation) {
     return bn_model_activation_uses_silu_path(activation);
 }
@@ -1064,6 +1078,7 @@ int bn_transformer_gpu_reference_attention_cpu_fallback_enabled(
     const BnConfig *c) {
     return bn_gpu_policy_backend_reference_attention_fallback_supported(gpu) &&
            bn_model_transformer_policy_requires_reference_attention(c) &&
+           !bn_model_transformer_policy_has_auxiliary_prediction_blocks(c) &&
            !bn_transformer_gpu_reference_attention_exact_enabled(gpu, c) &&
            !bn_gpu_policy_backend_reference_attention_native_graph_supported(
                gpu) &&
@@ -2456,7 +2471,10 @@ bn_transformer_gpu_small_dense_native_quant_layer_policy_for_backend(
         .to_layer = bn_gpu_policy_small_dense_native_quant_to_layer_or_default(
             runtime, n_layers,
             bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled(
-                runtime)),
+                runtime) ||
+            (bn_model_transformer_policy_has_auxiliary_prediction_blocks(c) &&
+             bn_gpu_backend_has_cap(gpu,
+                                    BN_GPU_CAP_PREPARED_NATIVE_QUANT))),
         .attn_only =
             bn_gpu_policy_small_dense_native_quant_attn_only_enabled(runtime),
         .ffn_only =

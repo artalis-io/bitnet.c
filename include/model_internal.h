@@ -80,6 +80,7 @@ int bn_model_activation_is_gelu(int activation);
 int bn_model_activation_uses_silu_path(int activation);
 int bn_model_gguf_uses_moe(BnGGUFFile *file);
 int bn_model_gguf_context_length(BnGGUFFile *file);
+int bn_model_gguf_has_auxiliary_prediction_blocks(BnGGUFFile *file);
 int bn_model_load_policy_uses_moe(const BnConfig *config);
 int bn_model_load_policy_loads_extra_metadata(const BnConfig *config);
 int bn_model_load_policy_uses_hybrid_layer_layout(const BnConfig *config);
@@ -185,6 +186,8 @@ int bn_model_transformer_policy_uses_hybrid_layer_layout(
 int bn_model_transformer_policy_uses_hybrid_ssm(const BnConfig *config);
 int bn_model_transformer_policy_uses_hybrid_moe(const BnConfig *config);
 int bn_model_transformer_policy_uses_large_dense_hybrid_ssm(
+    const BnConfig *config);
+int bn_model_transformer_policy_has_auxiliary_prediction_blocks(
     const BnConfig *config);
 int bn_model_transformer_policy_uses_non_hybrid_moe(
     const BnConfig *config);

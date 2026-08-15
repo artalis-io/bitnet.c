@@ -75,6 +75,7 @@ run_case "qwen35_dense" "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" "*qwen3*5*9b-q*
 run_case "qwen35_moe" "Qwen 3.5 sparse MoE" "BN_MODEL_QWEN35_MOE" "*qwen3.5*35b*a3b*.gguf"
 run_case "qwen36_dense" "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" "*qwen3.6*27b*.gguf"
 run_case "qwen36_moe" "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" "*qwen3.6*35b*a3b*.gguf"
+run_case "qwen38_dense" "Qwen 3.8 dense" "BN_MODEL_QWEN38_DENSE" "*qwen3.8*27b*.gguf"
 run_case "gemma4_dense" "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" "*gemma*4*e*b*q*.gguf" "*gemma*4*31b*q*.gguf"
 run_case "gemma4_moe" "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" "*gemma*4*26b*q*.gguf" "*gemma*4*a4b*q*.gguf" "*gemma*4*a4b*mxfp4*.gguf"
 

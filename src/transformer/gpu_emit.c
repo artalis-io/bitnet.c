@@ -730,6 +730,42 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     return 0;
 }
 
+int bn_transformer_gpu_emit_context_fused_gateup_silu_pair(
+    BnTransformerGPUEmitContext *ctx,
+    int type,
+    void *gate_buf,
+    void *up_buf,
+    int buf_in,
+    int buf_out,
+    int rows,
+    int cols,
+    uint32_t flags) {
+    if (!ctx || !gate_buf || !up_buf || rows <= 0 || cols <= 0)
+        return -1;
+    if (bn_transformer_gpu_emit_context_lower_pending(ctx) != 0)
+        return -1;
+    if (!ctx->lowered_ops || ctx->n < 0 || ctx->n >= ctx->cap)
+        return -1;
+    BnGPUOp *op = &((BnGPUOp *)ctx->lowered_ops)[ctx->n++];
+    memset(op, 0, sizeof(*op));
+    op->op_kind = BN_GPU_OP_FFN;
+    op->op_code = BN_GPU_CODE_FUSED_GATEUP_SILU;
+    op->type = type;
+    op->W_buf = gate_buf;
+    op->W_buf2 = up_buf;
+    op->buf_in = buf_in;
+    op->buf_out = buf_out;
+    op->buf_aux = -1;
+    op->rows = rows;
+    op->cols = cols;
+    op->flags = flags;
+    op->p[0] = (uint32_t)rows;
+    op->p[1] = (uint32_t)cols;
+    op->p[2] = (uint32_t)rows;
+    return 0;
+}
+
+
 int bn_transformer_gpu_emit_context_moe_route_topk(
     BnTransformerGPUEmitContext *ctx,
     void *router_buf,
@@ -1254,12 +1290,26 @@ void bn_transformer_gpu_emit_context_dense_ffn(
         int prefer_gateup_split =
             bn_transformer_gpu_dense_ffn_prefers_gateup_split(
                 c, ffn_layout.gate_type);
+        int use_borrowed_pair_gateup =
+            !reference_gateup_accumulation &&
+            !prefer_gateup_split &&
+            !gateup_stacked && res && res->gpu && res->ffn_gate &&
+            res->ffn_up &&
+            ffn_layout.gate_rows == ffn_layout.up_rows &&
+            bn_transformer_gpu_can_borrowed_pair_gateup_silu(
+                res->gpu, c, ffn_layout.gate_type, ffn_layout.up_type,
+                ffn_plan->activation);
         int use_fused_gateup = !reference_gateup_accumulation &&
                                !prefer_gateup_split &&
                                gateup_stacked &&
                                bn_transformer_gpu_can_fused_gateup_silu(res->gpu, ffn_layout.gate_type,
                                                                          ffn_plan->activation);
-        if (use_fused_gateup) {
+        if (use_borrowed_pair_gateup) {
+            bn_transformer_gpu_emit_context_fused_gateup_silu_pair(
+                ctx, ffn_layout.gate_type, res->ffn_gate, res->ffn_up,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, ffn_layout.gate_rows,
+                ffn_layout.gate_cols, silu_flags);
+        } else if (use_fused_gateup) {
             bn_transformer_gpu_emit_context_fused_gateup_silu(
                 ctx, ffn_layout.gate_type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, ffn_layout.gate_rows,
@@ -1976,7 +2026,8 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                                          int capture_raw_projection) {
     int reference_recurrent =
         bn_transformer_gpu_reference_recurrent_exact_enabled(
-            res ? res->gpu : NULL, c);
+            res ? res->gpu : NULL, c) &&
+        !bn_model_transformer_policy_has_auxiliary_prediction_blocks(c);
     int ssm_idx = plan->ssm_idx;
     BnTransformerSSMShapePolicy ssm_shape;
     if (!bn_transformer_ssm_shape_policy(&ssm_shape, c))

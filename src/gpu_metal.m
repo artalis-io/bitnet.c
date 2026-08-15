@@ -83,6 +83,7 @@ typedef struct {
     id<MTLComputePipelineState> reference_q5k_matvec_pipeline;
     id<MTLComputePipelineState> reference_q4k_matvec_pipeline;
     id<MTLComputePipelineState> borrowed_native_q4_matvec_pipeline;
+    id<MTLComputePipelineState> borrowed_native_q4_pair_gateup_pipeline;
     id<MTLComputePipelineState> argmax_pipeline;
     id<MTLComputePipelineState> argmax_reduce_pipeline;
     int small_dense_native_quant_enabled;
@@ -1594,6 +1595,10 @@ static int metal_init_activations(void *vctx,
     ctx->borrowed_native_q4_matvec_pipeline = compile_shader_with_math(
         ctx, ctx->shader_dir, "q4_native_matvec.metal",
         "q4_native_matvec", 1);
+    ctx->borrowed_native_q4_pair_gateup_pipeline =
+        compile_shader_with_math(
+            ctx, ctx->shader_dir, "q4_native_pair_gateup.metal",
+            "q4_native_pair_gateup", 1);
     if (!ctx->reference_gqa_scores_pipeline ||
         !ctx->reference_softmax_pipeline ||
         !ctx->reference_gqa_combine_pipeline ||
@@ -2473,6 +2478,11 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                        ctx->cpu_order_rmsnorm_pipeline) {
                 pipeline = ctx->cpu_order_rmsnorm_pipeline;
             } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
+                       op->W_buf && op->W_buf2 &&
+                       ((BnMetalBuf *)op->W_buf)->native_matvec_layout &&
+                       ((BnMetalBuf *)op->W_buf2)->native_matvec_layout) {
+                pipeline = ctx->borrowed_native_q4_pair_gateup_pipeline;
+            } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                        op->p[6] && op->W_buf &&
                        metal_small_dense_native_quant_graph_path_supported(
                            ctx, op->type,
@@ -3327,7 +3337,18 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (!wbuf) continue;
                 params[3] = op->flags;
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
-                if (op->p[6] &&
+                if (pipeline ==
+                    ctx->borrowed_native_q4_pair_gateup_pipeline) {
+                    BnMetalBuf *up = (BnMetalBuf *)op->W_buf2;
+                    if (!up) METAL_EXEC_FAIL();
+                    [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                    [enc setBuffer:up->buf offset:up->offset atIndex:1];
+                    [enc setBuffer:ctx->act_bufs[op->buf_in]
+                          offset:0 atIndex:2];
+                    [enc setBuffer:ctx->act_bufs[op->buf_out]
+                          offset:0 atIndex:3];
+                    [enc setBytes:params length:sizeof(params) atIndex:4];
+                } else if (op->p[6] &&
                     metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->prepared_small_dense_native_quant_gateup_pipeline)) {
@@ -3451,8 +3472,13 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 threads_per_tg = 128;
             }
             if (pipeline == ctx->borrowed_native_q4_matvec_pipeline) {
-                tile_rows = 32;
-                threads_per_tg = 256;
+                tile_rows = 4;
+                threads_per_tg = 32;
+            }
+            if (pipeline ==
+                ctx->borrowed_native_q4_pair_gateup_pipeline) {
+                tile_rows = 4;
+                threads_per_tg = 32;
             }
             if (pipeline == ctx->reference_native_quant_matvec_pipeline) {
                 tile_rows = 32;
@@ -4193,7 +4219,8 @@ BnGPUBackend *bn_gpu_metal_create_with_policy(
                                     BN_GPU_CAP_MOE_ROUTED_LOWBIT_BLOCK32 |
                                     BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT |
                                     BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT |
-                                    BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU;
+                                    BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU |
+                                    BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU;
         if (bn_gpu_policy_metal_reference_attention_enabled(
                 ctx->runtime_policy))
             gpu->caps |= BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH;

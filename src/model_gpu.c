@@ -126,8 +126,27 @@ static void *upload_gpu_buffer_mode(BnGPUBackend *gpu,
     }
 }
 
-static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
+static void *upload_qweight_borrowed_native(BnGPUBackend *gpu,
+                                            BnQWeight *w) {
+    if (!gpu || !w || !w->data)
+        return NULL;
+    size_t sz = bn_backend_layout_qweight_data_size(w);
+    if (sz == 0 ||
+        !bn_gpu_backend_native_matvec_borrowed_supported(
+            gpu, sz, w->type, w->rows, w->cols))
+        return NULL;
+    return bn_gpu_backend_create_native_matvec_borrowed_buffer(
+        gpu, w->data, sz, w->type, w->rows, w->cols);
+}
+
+static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w,
+                                   int prefer_borrowed_native) {
     if (!w->data) return NULL;
+    if (prefer_borrowed_native) {
+        void *borrowed = upload_qweight_borrowed_native(gpu, w);
+        if (borrowed)
+            return borrowed;
+    }
     size_t sz = bn_backend_layout_qweight_data_size(w);
     if (sz == 0) return NULL;
     if (bn_gpu_policy_logits_kquant_f32_cache_enabled(gpu, w->type)) {
@@ -159,9 +178,13 @@ static void *upload_qweight_mode(BnGPUBackend *gpu, BnQWeight *w,
 
 static int upload_qweight_owned_mode(BnModel *model, BnBackendModel *backend,
                                      BnGPUBackend *gpu, BnQWeight *w,
-                                     int quant_only) {
+                                     int quant_only,
+                                     int prefer_borrowed_native) {
     (void)model;
-    void *handle = upload_qweight_mode(gpu, w, quant_only);
+    void *handle = prefer_borrowed_native
+        ? upload_qweight_borrowed_native(gpu, w) : NULL;
+    if (!handle)
+        handle = upload_qweight_mode(gpu, w, quant_only);
     if (!w->data) return 0;
     if (!handle) return -1;
     if (bn_backend_model_register_qweight(backend, w, handle) != 0) {
@@ -918,13 +941,18 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
     BnWeights *w = &model->weights;
     BnConfig *c = &model->config;
+    int prefer_borrowed_native =
+        bn_model_transformer_policy_has_auxiliary_prediction_blocks(c);
     int prepared_native_quant_layout =
         bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_PREPARED_NATIVE_QUANT) &&
-        bn_model_backend_policy_requires_stable_per_layer_input_layout(c);
+        bn_model_backend_policy_requires_stable_per_layer_input_layout(c) &&
+        !prefer_borrowed_native;
     bn_gpu_backend_configure_prepared_native_quant(
         gpu, prepared_native_quant_layout);
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int n_layers = c->n_layers;
+    int allow_optional_stacked_layouts =
+        !bn_model_transformer_policy_has_auxiliary_prediction_blocks(c);
     int upload_moe_all_model = bn_gpu_policy_moe_resident_routed_ffn_enabled(
         gpu, can_use_resident_moe_routed_ffn_model(gpu, c, w));
     int upload_moe_all_native_quant_f16_cache = 0;
@@ -975,7 +1003,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     }
 
     if (w->output_weight.data) {
-        void *output_weight_gpu = upload_qweight_logits(gpu, &w->output_weight);
+        void *output_weight_gpu = upload_qweight_logits(
+            gpu, &w->output_weight, prefer_borrowed_native);
         if (!output_weight_gpu ||
             bn_backend_model_register_qweight(backend, &w->output_weight,
                                               output_weight_gpu) != 0) {
@@ -997,7 +1026,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 .cols = c->dim,
                 .scale = 1.0f,
             };
-            void *emb_gpu_buf = upload_qweight_logits(gpu, &tied);
+            void *emb_gpu_buf = upload_qweight_logits(
+                gpu, &tied, prefer_borrowed_native);
             if (register_gpu_handle(model, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING,
                                     emb_gpu_buf) != 0) {
                 bn_gpu_backend_destroy_buffer(gpu, emb_gpu_buf);
@@ -1042,7 +1072,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
             if (upload_qweight_owned_mode(model, backend, gpu, weights[i],
-                                          quant_only_individual[i]) != 0) {
+                                          quant_only_individual[i],
+                                          prefer_borrowed_native) != 0) {
                 bn_model_release_gpu(model);
                 return -1;
             }
@@ -1315,7 +1346,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *qkv_stacked_gpu = NULL;
-        if (optional_layout_fits_memory(
+        if (allow_optional_stacked_layouts && optional_layout_fits_memory(
                 gpu, qweight_triple_upload_bytes(gpu, &lw->attn.wq, &lw->attn.wk,
                                                   &lw->attn.wv),
                 l, "qkv_stacked")) {
@@ -1334,7 +1365,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *qk_stacked_gpu = NULL;
-        if (optional_layout_fits_memory(
+        if (allow_optional_stacked_layouts && optional_layout_fits_memory(
                 gpu, qweight_pair_upload_bytes(gpu, &lw->attn.wq, &lw->attn.wk),
                 l, "qk_stacked")) {
             qk_stacked_gpu =
@@ -1349,7 +1380,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *gateup_stacked_gpu = NULL;
-        if (optional_layout_fits_memory(
+        if (allow_optional_stacked_layouts && optional_layout_fits_memory(
                 gpu,
                 qweight_pair_upload_bytes(gpu, &lw->ffn.ffn_gate, &lw->ffn.ffn_up),
                 l, "gateup_stacked")) {
@@ -1365,7 +1396,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *shared_gateup_stacked_gpu = NULL;
-        if (optional_layout_fits_memory(
+        if (allow_optional_stacked_layouts && optional_layout_fits_memory(
                 gpu, qweight_pair_upload_bytes(gpu, &lw->shared.shared_gate,
                                                 &lw->shared.shared_up),
                 l, "shared_gateup_stacked")) {
@@ -1382,7 +1413,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *ssm_qkvz_stacked_gpu = NULL;
-        if (optional_layout_fits_memory(
+        if (allow_optional_stacked_layouts && optional_layout_fits_memory(
                 gpu, qweight_pair_upload_bytes(gpu, &lw->ssm.wqkv, &lw->ssm.wz),
                 l, "ssm_qkvz_stacked")) {
             ssm_qkvz_stacked_gpu =

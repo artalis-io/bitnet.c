@@ -426,6 +426,46 @@ static void test_gpu_upload_reference_attention_output_layout(void) {
     printf("PASSED\n");
 }
 
+static void test_gpu_upload_aux_decode_ssm_ab_layout(void) {
+    printf("test_gpu_upload_aux_decode_ssm_ab_layout... ");
+
+    BnModel model = {0};
+    model.config.n_layers = 1;
+    model.config.dim = 4;
+    model.config.hidden_dim = 2;
+    model.config.nextn_predict_layers = 1;
+    model.weights.layers = calloc(1, sizeof(BnLayerWeights));
+    assert(model.weights.layers);
+
+    float alpha_data[8] = {0};
+    float beta_data[8] = {0};
+    float gate_data[8] = {0};
+    float up_data[8] = {0};
+    BnLayerWeights *lw = &model.weights.layers[0];
+    lw->ssm.ssm_alpha = (BnQWeight){
+        alpha_data, BN_GGUF_TENSOR_F32, 2, 4, 1.0f
+    };
+    lw->ssm.ssm_beta = (BnQWeight){
+        beta_data, BN_GGUF_TENSOR_F32, 2, 4, 1.0f
+    };
+    lw->ffn.ffn_gate = (BnQWeight){
+        gate_data, BN_GGUF_TENSOR_F32, 2, 4, 1.0f
+    };
+    lw->ffn.ffn_up = (BnQWeight){
+        up_data, BN_GGUF_TENSOR_F32, 2, 4, 1.0f
+    };
+
+    assert(bn_model_upload_weights(&model, &mock_gpu) == 0);
+    BnBackendModel *backend = bn_model_backend(&model);
+    assert(bn_backend_model_handle(
+               backend, 0, BN_BACKEND_HANDLE_SSM_AB_STACKED) != NULL);
+    assert(bn_backend_model_handle(
+               backend, 0, BN_BACKEND_HANDLE_GATEUP_STACKED) == NULL);
+
+    bn_model_free(&model);
+    printf("PASSED\n");
+}
+
 static void test_gpu_upload_moe_router(void) {
     printf("test_gpu_upload_moe_router... ");
 
@@ -828,6 +868,7 @@ static void test_gpu_policy_helpers(void) {
         &dense_gf, "attention.sliding_window_pattern", 1));
     assert(bn_model_arch_gguf_f32(&dense_gf, "rope.freq_base") ==
            1000000.0f);
+    assert(!bn_model_gguf_has_auxiliary_prediction_blocks(&dense_gf));
     assert(bn_gpu_policy_auto_caps_sequence(1, 0, 0, 0, 8192, 4096));
     assert(bn_gpu_policy_auto_caps_sequence(0, 1, 0, 0, 8192, 4096));
     assert(!bn_gpu_policy_auto_caps_sequence(0, 0, 1, 0, 8192, 4096));
@@ -842,6 +883,15 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_auto_caps_sequence(0, 0, 1, 1, 8192, 4096));
     moe_kvs[2].value.u32 = 4096;
     assert(!bn_gpu_policy_auto_caps_sequence(0, 0, 1, 1, 4096, 4096));
+
+    BnGGUFKeyValue auxiliary_kvs[2];
+    auxiliary_kvs[0] = test_make_str_kv("general.architecture", "qwen35");
+    auxiliary_kvs[1] = test_make_u32_kv(
+        "qwen35.nextn_predict_layers", 1);
+    BnGGUFFile auxiliary_gf = {0};
+    auxiliary_gf.n_kv = 2;
+    auxiliary_gf.kvs = auxiliary_kvs;
+    assert(bn_model_gguf_has_auxiliary_prediction_blocks(&auxiliary_gf));
 
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
     BnGPUBackend routed_cuda = { .kind = BN_GPU_BACKEND_CUDA };
@@ -6564,6 +6614,7 @@ int main(void) {
     test_gpu_moe_cache_entry_cap();
     test_gpu_upload_weights();
     test_gpu_upload_reference_attention_output_layout();
+    test_gpu_upload_aux_decode_ssm_ab_layout();
     test_gpu_upload_moe_router();
     test_model_gpu_moe_prefill_resident();
     test_gpu_matvec();

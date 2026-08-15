@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "tokenizer.h"
+#include "model_tokenizer_policy.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -148,6 +149,8 @@ static void test_tokenizer_init(void) {
     assert(bn_tokenizer_is_eog(&t, t.eos_id));
     assert(!bn_tokenizer_is_eog(&t, 2));
     assert(strcmp(t.vocab[0], "<bos>") == 0);
+    assert(bn_model_tokenizer_default_add_bos(NULL, 1));
+    assert(!bn_model_tokenizer_default_add_bos("qwen35", 1));
     assert(strcmp(t.vocab[9], "hello") == 0);
 
     bn_tokenizer_free(&t);

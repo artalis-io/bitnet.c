@@ -31,6 +31,10 @@ int bn_model_gguf_context_length(BnGGUFFile *file) {
     return bn_model_arch_gguf_u32(file, "context_length");
 }
 
+int bn_model_gguf_has_auxiliary_prediction_blocks(BnGGUFFile *file) {
+    return bn_model_arch_gguf_u32(file, "nextn_predict_layers") > 0;
+}
+
 int bn_model_load_policy_uses_moe(const BnConfig *config) {
     return bn_model_arch_uses_moe(config);
 }
@@ -385,6 +389,11 @@ int bn_model_transformer_policy_uses_small_dense_shape(
 int bn_model_transformer_policy_uses_large_dense_shape(
     const BnConfig *config) {
     return bn_model_arch_uses_large_dense_shape(config);
+}
+
+int bn_model_transformer_policy_has_auxiliary_prediction_blocks(
+    const BnConfig *config) {
+    return config && config->nextn_predict_layers > 0;
 }
 
 int bn_model_transformer_policy_allows_small_dense_prefill_decode_fallback(
