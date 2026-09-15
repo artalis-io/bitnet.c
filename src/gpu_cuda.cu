@@ -3474,31 +3474,34 @@ static __global__ void q6k_mmq_packed_kernel(
         if (begin >= end) continue;
         float sums[2][4] = {{0.0f}};
         for (int b = begin; b < end; b++) {
-            for (int i = tid; i < tile_rows * BN_QK_K; i += blockDim.x) {
-                int tile_row = i / BN_QK_K;
-                int k = i & (BN_QK_K - 1);
+            for (int i = tid; i < tile_rows * (BN_QK_K / 16);
+                 i += blockDim.x) {
+                int tile_row = i / (BN_QK_K / 16);
+                int k16 = i % (BN_QK_K / 16);
                 int row = row0 + tile_row;
-                int q = 0;
+                uint4 value = make_uint4(0, 0, 0, 0);
                 if (row < rows) {
                     const BnCudaQ6KMmqBlock *blk =
                         blocks + (size_t)row * n_bpr + b;
-                    q = blk->qs[k];
+                    memcpy(&value, blk->qs + k16 * 16, sizeof(value));
                 }
-                tile_a[tile_row][k] = (int8_t)q;
+                memcpy(tile_a[tile_row] + k16 * 16, &value, sizeof(value));
             }
-            for (int i = tid; i < tile_tokens * BN_QK_K;
+            for (int i = tid; i < tile_tokens * (BN_QK_K / 16);
                  i += blockDim.x) {
-                int token = i / BN_QK_K;
-                int k = i & (BN_QK_K - 1);
+                int token = i / (BN_QK_K / 16);
+                int k16 = i % (BN_QK_K / 16);
                 int global_token = token0 + token;
-                int8_t q = 0;
+                uint4 value = make_uint4(0, 0, 0, 0);
                 if (global_token < n_tokens) {
-                    int group = k / 32;
-                    int j = k & 31;
-                    q = xq[(size_t)global_token * x_blocks +
-                            (size_t)b * 8 + group].qs[j];
+                    int group = k16 / 2;
+                    int group_k16 = k16 & 1;
+                    memcpy(&value,
+                           xq[(size_t)global_token * x_blocks +
+                              (size_t)b * 8 + group].qs + group_k16 * 16,
+                           sizeof(value));
                 }
-                tile_b[token][k] = q;
+                memcpy(tile_b[token] + k16 * 16, &value, sizeof(value));
             }
             for (int i = tid; i < tile_tokens * 8; i += blockDim.x) {
                 int token = i / 8;
