@@ -45,6 +45,12 @@ typedef struct {
 } BnCudaKQuantMmqBlock;
 
 typedef struct {
+    int8_t qs[BN_QK_K];
+    uint16_t d;
+    int8_t scales[16];
+} BnCudaQ6KMmqBlock;
+
+typedef struct {
     uint16_t d;
     int16_t qsum;
     int8_t qs[32];
@@ -1086,6 +1092,25 @@ static __global__ void pack_q5k_mmq_kernel(BnCudaKQuantMmqBlock *out,
         out[block].ms[i] = cuda_fp32_to_fp16_bits(
             -cuda_fp16_to_fp32(src->dmin) * (float)mn);
     }
+}
+
+static __global__ void pack_q6k_mmq_kernel(BnCudaQ6KMmqBlock *out,
+                                            const BnBlockQ6K *blocks,
+                                            size_t n_blocks) {
+    size_t block = blockIdx.x;
+    int i = threadIdx.x;
+    if (block >= n_blocks || i >= BN_QK_K) return;
+    const BnBlockQ6K *src = blocks + block;
+    int group = i / 32;
+    int j = i & 31;
+    int chunk = group / 4;
+    int segment = group & 3;
+    int lo = (src->ql[chunk * 64 + (segment & 1) * 32 + j] >>
+              ((segment / 2) * 4)) & 15;
+    int hi = (src->qh[chunk * 32 + j] >> (segment * 2)) & 3;
+    out[block].qs[i] = (int8_t)((lo | (hi << 4)) - 32);
+    if (i == 0) out[block].d = src->d;
+    if (i < 16) out[block].scales[i] = src->scales[i];
 }
 
 static __global__ void dequant_q5k_to_f16_kernel(
@@ -3383,7 +3408,7 @@ static __global__ void kquant_mmq_packed_kernel(
 
 template <int tile_rows, int tile_tokens, int token_groups>
 static __global__ void q6k_mmq_packed_kernel(
-        float *out, const BnBlockQ6K *blocks,
+        float *out, const BnCudaQ6KMmqBlock *blocks,
         const BnCudaBlockQ8MmqF32 *xq, int rows, int cols, int n_tokens,
         int jwidth, int ref_grid) {
     __shared__ __align__(16) int8_t tile_a[tile_rows][BN_QK_K + 16];
@@ -3425,15 +3450,9 @@ static __global__ void q6k_mmq_packed_kernel(
                 int row = row0 + tile_row;
                 int q = 0;
                 if (row < rows) {
-                    const BnBlockQ6K *blk = blocks + (size_t)row * n_bpr + b;
-                    int group = k / 32;
-                    int j = k & 31;
-                    int chunk = group / 4;
-                    int segment = group & 3;
-                    int lo = (blk->ql[chunk * 64 + (segment & 1) * 32 + j] >>
-                              ((segment / 2) * 4)) & 15;
-                    int hi = (blk->qh[chunk * 32 + j] >> (segment * 2)) & 3;
-                    q = (lo | (hi << 4)) - 32;
+                    const BnCudaQ6KMmqBlock *blk =
+                        blocks + (size_t)row * n_bpr + b;
+                    q = blk->qs[k];
                 }
                 tile_a[tile_row][k] = (int8_t)q;
             }
@@ -3507,7 +3526,7 @@ static __global__ void q6k_mmq_packed_kernel(
                         int ai = (l / 2) * 8 + lane / 4;
                         int row = row0 + row_warp * 16 + ai;
                         if (row < rows && token0 + token + (l & 1) < n_tokens) {
-                            const BnBlockQ6K *blk =
+                            const BnCudaQ6KMmqBlock *blk =
                                 blocks + (size_t)row * n_bpr + b;
                             int dot = c_half[0][l] * blk->scales[group * 2] +
                                       c_half[1][l] * blk->scales[group * 2 + 1];
@@ -3521,7 +3540,7 @@ static __global__ void q6k_mmq_packed_kernel(
                             int ai = (l / 2) * 8 + lane / 4;
                             int row = row0 + row_warp * 16 + ai;
                             if (row < rows) {
-                                const BnBlockQ6K *blk =
+                                const BnCudaQ6KMmqBlock *blk =
                                     blocks + (size_t)row * n_bpr + b;
                                 sums[panel][l] = fmaf(part[group / 4][l],
                                     cuda_fp16_to_fp32(blk->d),
@@ -17098,15 +17117,22 @@ static int cuda_buffer_create_iq_f16_cache(const BnCudaCtx *ctx,
 
 static size_t cuda_buffer_kquant_mmq_bytes(const BnCudaCtx *ctx, int type,
                                            int rows, int cols) {
-    if (!ctx || (type != BN_GGUF_TENSOR_Q4_K && type != BN_GGUF_TENSOR_Q5_K) ||
-        rows <= 0 || cols <= 0 || (cols % BN_QK_K) != 0 ||
-        !bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled(
-            ctx->runtime_policy))
+    int asymmetric = type == BN_GGUF_TENSOR_Q4_K ||
+                     type == BN_GGUF_TENSOR_Q5_K;
+    int q6 = type == BN_GGUF_TENSOR_Q6_K && ctx &&
+             ctx->compute_capability == 1200;
+    if (!ctx || (!asymmetric && !q6) || rows <= 0 || cols <= 0 ||
+        (cols % BN_QK_K) != 0 ||
+        (asymmetric &&
+         !bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled(
+             ctx->runtime_policy)))
         return 0;
     size_t blocks_per_row = (size_t)cols / BN_QK_K;
-    if ((size_t)rows > SIZE_MAX / blocks_per_row / sizeof(BnCudaKQuantMmqBlock))
+    size_t block_bytes = q6 ? sizeof(BnCudaQ6KMmqBlock)
+                            : sizeof(BnCudaKQuantMmqBlock);
+    if ((size_t)rows > SIZE_MAX / blocks_per_row / block_bytes)
         return SIZE_MAX;
-    return (size_t)rows * blocks_per_row * sizeof(BnCudaKQuantMmqBlock);
+    return (size_t)rows * blocks_per_row * block_bytes;
 }
 
 static size_t cuda_buffer_f16_cache_extra_bytes(void *vctx, int type,
@@ -17166,10 +17192,14 @@ static void cuda_buffer_create_kquant_mmq(BnCudaCtx *ctx, BnCudaBuffer *buf) {
         pack_q4k_mmq_kernel<<<n_blocks, BN_QK_K>>>(
             (BnCudaKQuantMmqBlock *)buf->mmq_data,
             (const BnBlockQ4K *)buf->data, n_blocks);
-    else
+    else if (buf->type == BN_GGUF_TENSOR_Q5_K)
         pack_q5k_mmq_kernel<<<n_blocks, BN_QK_K>>>(
             (BnCudaKQuantMmqBlock *)buf->mmq_data,
             (const BnBlockQ5K *)buf->data, n_blocks);
+    else
+        pack_q6k_mmq_kernel<<<n_blocks, BN_QK_K>>>(
+            (BnCudaQ6KMmqBlock *)buf->mmq_data,
+            (const BnBlockQ6K *)buf->data, n_blocks);
     err = cudaGetLastError();
     if (err != cudaSuccess) {
         cudaFree(buf->mmq_data);
@@ -17662,13 +17692,13 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
          * Otherwise the reference distributes K work over one SM wave. */
         int64_t grid = 100 * tiles / ((int64_t)nsm * waves) >= 90 ? tiles : nsm;
         if (grid > INT_MAX) return -1;
-        if (type == BN_GGUF_TENSOR_Q6_K && n_tokens >= 16) {
+        if (type == BN_GGUF_TENSOR_Q6_K && n_tokens >= 16 && w->mmq_data) {
             if (n_tokens >= 64) {
                 dim3 mmq_grid((rows + 31) / 32,
                               (n_tokens + 63) / 64, 1);
                 q6k_mmq_packed_kernel<32, 64, 4>
                     <<<mmq_grid, 256, 0, stream>>>(
-                        out, (const BnBlockQ6K *)w->data,
+                        out, (const BnCudaQ6KMmqBlock *)w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
                         n_tokens, jwidth, (int)grid);
             } else if (n_tokens >= 32) {
@@ -17676,7 +17706,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                               (n_tokens + 31) / 32, 1);
                 q6k_mmq_packed_kernel<64, 32, 2>
                     <<<mmq_grid, 256, 0, stream>>>(
-                        out, (const BnBlockQ6K *)w->data,
+                        out, (const BnCudaQ6KMmqBlock *)w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
                         n_tokens, jwidth, (int)grid);
             } else {
@@ -17684,7 +17714,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                               (n_tokens + 15) / 16, 1);
                 q6k_mmq_packed_kernel<128, 16, 1>
                     <<<mmq_grid, 256, 0, stream>>>(
-                        out, (const BnBlockQ6K *)w->data,
+                        out, (const BnCudaQ6KMmqBlock *)w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
                         n_tokens, jwidth, (int)grid);
             }
