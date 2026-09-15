@@ -1839,6 +1839,74 @@ static __global__ void kquant_mmq_ordered_kernel(
     if (lane == 0) out[(size_t)token * rows + row] = tail + prefix;
 }
 
+/* Reuse each Q4_K weight block across eight prompt tokens.  Each token keeps
+ * the same Stream-K partitioning and FMA sequence as kquant_mmq_ordered_kernel. */
+static __global__ void q4k_mmq_ordered_t8_kernel(
+    float *out, const BnBlockQ4K *weights, const BnCudaBlockQ8Mmq *input,
+    int rows, int cols, int nt, int jwidth, int grid) {
+    int lane = threadIdx.x & 7;
+    int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
+    int token0 = blockIdx.y * 8;
+    if (row >= rows) return;
+    unsigned mask = __activemask();
+    int groups = cols / 32, nb = cols / 256;
+    int token_tiles = (nt - 1) / jwidth + 1;
+    int64_t tile = (int64_t)(row / 128) * token_tiles + token0 / jwidth;
+    int64_t tile_begin = tile * nb;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) * token_tiles * nb;
+    int first = (int)(((tile_begin + 1) * grid + total - 1) / total) - 1;
+    int last = (int)(((tile_begin + nb) * grid + total - 1) / total) - 1;
+    float tail[8] = {0}, prefix[8] = {0};
+    int have_tail = 0;
+    for (int bid = last; bid >= first; bid--) {
+        int64_t raw_begin = (int64_t)bid * total / grid - tile_begin;
+        int64_t raw_end = (int64_t)(bid + 1) * total / grid - tile_begin;
+        int begin = raw_begin < 0 ? 0 : (int)raw_begin;
+        int end = raw_end > nb ? nb : (int)raw_end;
+        if (begin >= end) continue;
+        float acc[8] = {0};
+        for (int base = begin * 8; base < end * 8; base += 8) {
+            int g = base + lane, group = g & 7;
+            const BnBlockQ4K *w = weights + (size_t)row * nb + g / 8;
+            int sc, mn;
+            cuda_kquant_group_scale_min(w->scales, group, &sc, &mn);
+            float wd = cuda_fp16_to_fp32(cuda_fp32_to_fp16_bits(cuda_fp16_to_fp32(w->d) * sc));
+            float wm = cuda_fp16_to_fp32(cuda_fp32_to_fp16_bits(cuda_fp16_to_fp32(w->dmin) * mn));
+#pragma unroll
+            for (int t = 0; t < 8; t++) {
+                int token = token0 + t;
+                if (token >= nt) continue;
+                const BnCudaBlockQ8Mmq *x = input + (size_t)token * groups + g;
+                int dot = cuda_q4k_dot_32(w->qs + (group / 2) * 32, x->qs,
+                                          (group & 1) * 4);
+                float xd = cuda_fp16_to_fp32(x->d);
+                float xs = cuda_fp16_to_fp32(x->original_sum);
+#pragma unroll
+                for (int i = 0; i < 8; i++) {
+                    int d = __shfl_sync(mask, dot, i, 8);
+                    float dw = __shfl_sync(mask, wd, i, 8);
+                    float dm = __shfl_sync(mask, wm, i, 8);
+                    float dx = __shfl_sync(mask, xd, i, 8);
+                    float sx = __shfl_sync(mask, xs, i, 8);
+                    acc[t] = fmaf(dw * dx, (float)d, acc[t]);
+                    acc[t] = fmaf(-dm, sx, acc[t]);
+                }
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < 8; t++) {
+            if (!have_tail) tail[t] = acc[t];
+            else prefix[t] += acc[t];
+        }
+        have_tail = 1;
+    }
+    if (lane == 0)
+#pragma unroll
+        for (int t = 0; t < 8; t++)
+            if (token0 + t < nt)
+                out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
+}
+
 /* Each eight-lane group owns one output row. Integer dots are independent;
  * floating-point weighting follows the reference's ordered MMQ subblocks. */
 static __global__ void signed_mmq_ordered_kernel(
@@ -2929,15 +2997,17 @@ static __global__ void q4k_dot_matmul8_token_sharedx_kernel(
     }
 }
 
-template <int tile_rows, int tile_tokens, int token_groups>
+template <int tile_rows, int tile_tokens, int token_groups,
+          bool reference_sum = false>
 static __global__ void kquant_mmq_packed_kernel(
         float *out, const BnCudaKQuantMmqBlock *blocks,
         const BnCudaBlockQ8_1 *xq, int rows, int cols, int n_tokens,
-        size_t out_offset) {
+        size_t out_offset, int jwidth = 0, int ref_grid = 0) {
     __shared__ __align__(16) int8_t tile_a[tile_rows][BN_QK_K + 16];
     __shared__ __align__(16) int8_t tile_b[tile_tokens][BN_QK_K + 16];
     __shared__ float x_d[tile_tokens][8];
     __shared__ int x_qsum[tile_tokens][8];
+    __shared__ float x_original_sum[tile_tokens][8];
     int tid = threadIdx.x;
     int lane = tid & 31;
     int warp = tid >> 5;
@@ -2947,9 +3017,32 @@ static __global__ void kquant_mmq_packed_kernel(
     int token0 = blockIdx.y * tile_tokens;
     int n_bpr = cols / BN_QK_K;
     int x_blocks = cols / 32;
-    float sums[2][4] = {{0.0f}};
+    float tail[2][4] = {{0.0f}};
+    float prefix[2][4] = {{0.0f}};
+    int token_tiles = jwidth > 0 ? (n_tokens - 1) / jwidth + 1 : 1;
+    int64_t tile = (int64_t)(row0 / 128) * token_tiles +
+                   (jwidth > 0 ? token0 / jwidth : 0);
+    int64_t tile_begin = tile * n_bpr;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) *
+                    token_tiles * n_bpr;
+    int first = 0, last = 0;
+    if (ref_grid > 0) {
+        first = (int)(((tile_begin + 1) * ref_grid + total - 1) / total) - 1;
+        last = (int)(((tile_begin + n_bpr) * ref_grid + total - 1) / total) - 1;
+    }
+    int have_tail = 0;
 
-    for (int b = 0; b < n_bpr; b++) {
+    for (int bid = last; bid >= first; bid--) {
+        int begin = 0, end = n_bpr;
+        if (ref_grid > 0) {
+            int64_t raw_begin = (int64_t)bid * total / ref_grid - tile_begin;
+            int64_t raw_end = (int64_t)(bid + 1) * total / ref_grid - tile_begin;
+            begin = raw_begin < 0 ? 0 : (int)raw_begin;
+            end = raw_end > n_bpr ? n_bpr : (int)raw_end;
+            if (begin >= end) continue;
+        }
+        float sums[2][4] = {{0.0f}};
+    for (int b = begin; b < end; b++) {
         for (int i = tid; i < tile_rows * (BN_QK_K / 16);
              i += blockDim.x) {
             int tile_row = i / (BN_QK_K / 16);
@@ -2999,15 +3092,19 @@ static __global__ void kquant_mmq_packed_kernel(
             int global_token = token0 + token;
             float dx = 0.0f;
             int qsum = 0;
+            float original_sum = 0.0f;
             if (global_token < n_tokens) {
                 const BnCudaBlockQ8_1 *xb =
                     xq + (size_t)global_token * x_blocks +
                     (size_t)b * 8 + group;
                 dx = cuda_fp16_to_fp32(xb->d);
                 qsum = (int)xb->qsum;
+                if (reference_sum)
+                    original_sum = cuda_fp16_to_fp32((uint16_t)xb->qsum);
             }
             x_d[token][group] = dx;
             x_qsum[token][group] = qsum;
+            x_original_sum[token][group] = original_sum;
         }
 #if __CUDA_ARCH__ >= 800
         asm volatile("cp.async.wait_group 0;");
@@ -3019,6 +3116,21 @@ static __global__ void kquant_mmq_packed_kernel(
             int a[4];
             float d_a[2];
             float m_a[2];
+#if __CUDA_ARCH__ >= 750
+            {
+                const int *base = (const int *)(
+                    tile_a[row_warp * 16] + group * 32);
+                const int *src = base + (lane % 16) *
+                    ((BN_QK_K + 16) / 4) + (lane / 16) * 4;
+                unsigned int shared_src =
+                    (unsigned int)__cvta_generic_to_shared(src);
+                asm volatile(
+                    "ldmatrix.sync.aligned.m8n8.x4.b16 "
+                    "{%0, %1, %2, %3}, [%4];"
+                    : "=r"(a[0]), "=r"(a[1]), "=r"(a[2]), "=r"(a[3])
+                    : "r"(shared_src));
+            }
+#else
 #pragma unroll
             for (int l = 0; l < 4; l++) {
                 int ai = (l / 2) * 8 + lane / 4;
@@ -3026,6 +3138,7 @@ static __global__ void kquant_mmq_packed_kernel(
                 memcpy(&a[l], &tile_a[row_warp * 16 + ai]
                                          [group * 32 + aj * 4], 4);
             }
+#endif
 #pragma unroll
             for (int rfrag = 0; rfrag < 2; rfrag++) {
                 int ai = rfrag * 8 + lane / 4;
@@ -3043,6 +3156,20 @@ static __global__ void kquant_mmq_packed_kernel(
 #pragma unroll
             for (int panel = 0; panel < 2; panel++) {
                 int bv[2], c[4] = {0, 0, 0, 0};
+#if __CUDA_ARCH__ >= 750
+                {
+                    const int *base = (const int *)(
+                        tile_b[token_warp * 16 + panel * 8] + group * 32);
+                    const int *src = base + (lane % 8) *
+                        ((BN_QK_K + 16) / 4) + ((lane / 8) * 4) % 8;
+                    unsigned int shared_src =
+                        (unsigned int)__cvta_generic_to_shared(src);
+                    asm volatile(
+                        "ldmatrix.sync.aligned.m8n8.x2.b16 {%0, %1}, [%2];"
+                        : "=r"(bv[0]), "=r"(bv[1])
+                        : "r"(shared_src));
+                }
+#else
 #pragma unroll
                 for (int l = 0; l < 2; l++) {
                     int bi = lane / 4;
@@ -3050,6 +3177,7 @@ static __global__ void kquant_mmq_packed_kernel(
                     memcpy(&bv[l], &tile_b[token_warp * 16 + panel * 8 + bi]
                                                [group * 32 + bj * 4], 4);
                 }
+#endif
 #if __CUDA_ARCH__ >= 800
                 asm volatile(
                     "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
@@ -3097,14 +3225,34 @@ static __global__ void kquant_mmq_packed_kernel(
                     int token = token_warp * 16 + panel * 8 + oj;
                     if (row < rows && token0 + token < n_tokens) {
                         float dx = d_b[l & 1];
-                        sums[panel][l] += dx *
-                            (d_a[l / 2] * (float)c[l] +
-                             m_a[l / 2] * (float)sum_b[l & 1]);
+                        if (reference_sum) {
+                            float sx = x_original_sum[
+                                token_warp * 16 + panel * 8 + oj][group];
+                            sums[panel][l] = fmaf(d_a[l / 2] * dx,
+                                (float)c[l], sums[panel][l]);
+                            sums[panel][l] = fmaf(m_a[l / 2], sx,
+                                sums[panel][l]);
+                        } else {
+                            sums[panel][l] += dx *
+                                (d_a[l / 2] * (float)c[l] +
+                                 m_a[l / 2] * (float)sum_b[l & 1]);
+                        }
                     }
                 }
             }
         }
         __syncthreads();
+    }
+
+#pragma unroll
+        for (int panel = 0; panel < 2; panel++) {
+#pragma unroll
+            for (int l = 0; l < 4; l++) {
+                if (!have_tail) tail[panel][l] = sums[panel][l];
+                else prefix[panel][l] += sums[panel][l];
+            }
+        }
+        have_tail = 1;
     }
 
 #pragma unroll
@@ -3117,7 +3265,7 @@ static __global__ void kquant_mmq_packed_kernel(
             int token = token0 + token_warp * 16 + panel * 8 + oj;
             if (row < rows && token < n_tokens)
                 out[out_offset + (size_t)token * rows + row] =
-                    sums[panel][l];
+                    tail[panel][l] + prefix[panel][l];
         }
     }
 }
@@ -17054,6 +17202,40 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                          0, stream>>>(
                 out, w->data, (const BnCudaBlockQ8MmqF32 *)xq,
                 rows, cols, type, n_tokens, jwidth, (int)grid);
+        } else if ((type == BN_GGUF_TENSOR_Q4_K ||
+                    type == BN_GGUF_TENSOR_Q5_K) &&
+                   n_tokens >= 16 && w->mmq_data) {
+            if (n_tokens >= 64) {
+                dim3 mmq_grid((rows + 63) / 64,
+                              (n_tokens + 63) / 64, 1);
+                kquant_mmq_packed_kernel<64, 64, 4, true>
+                    <<<mmq_grid, 512, 0, stream>>>(
+                        out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                        (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                        n_tokens, 0, jwidth, (int)grid);
+            } else if (n_tokens >= 32) {
+                dim3 mmq_grid((rows + 127) / 128,
+                              (n_tokens + 31) / 32, 1);
+                kquant_mmq_packed_kernel<128, 32, 2, true>
+                    <<<mmq_grid, 512, 0, stream>>>(
+                        out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                        (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                        n_tokens, 0, jwidth, (int)grid);
+            } else {
+                dim3 mmq_grid((rows + 127) / 128,
+                              (n_tokens + 15) / 16, 1);
+                kquant_mmq_packed_kernel<128, 16, 1, true>
+                    <<<mmq_grid, 256, 0, stream>>>(
+                        out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                        (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                        n_tokens, 0, jwidth, (int)grid);
+            }
+        } else if (type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 4) {
+            q4k_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
+                                                  (n_tokens + 7) / 8), 128,
+                                           0, stream>>>(
+                out, (const BnBlockQ4K *)w->data, xq, rows, cols, n_tokens,
+                jwidth, (int)grid);
         } else {
             kquant_mmq_ordered_kernel<<<dim3((rows + 15) / 16, n_tokens), 128,
                                            0, stream>>>(
