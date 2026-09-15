@@ -17649,7 +17649,8 @@ static int cuda_kquant_batch_input_enabled(const BnCudaCtx *ctx, int type,
 static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                   const BnCudaBuffer *w, const float *input,
                                   int rows, int cols, int n_tokens, int type,
-                                  cudaStream_t stream) {
+                                  cudaStream_t stream,
+                                  const BnCudaBlockQ8Mmq *prepared_xq = NULL) {
     if (bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_MMQ_BLOCK32_SIGNED_NIBBLE))
         return cuda_q4_batch_matmul(ctx,out,w,input,rows,cols,n_tokens,stream);
 #ifdef BN_CUDA_MXFP4_SM120
@@ -17704,10 +17705,13 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
         }
         return cudaGetLastError() == cudaSuccess ? 0 : -1;
     }
-    BnCudaBlockQ8Mmq *xq = (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
-    quantize_mmq_input_kernel<<<dim3(cols / 32, n_tokens), 32,
-                                       0, stream>>>(xq, input, cols,
-            bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_MMQ_F32_SCALE));
+    BnCudaBlockQ8Mmq *xq = prepared_xq
+        ? (BnCudaBlockQ8Mmq *)prepared_xq
+        : (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
+    if (!prepared_xq)
+        quantize_mmq_input_kernel<<<dim3(cols / 32, n_tokens), 32,
+                                           0, stream>>>(xq, input, cols,
+                bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_MMQ_F32_SCALE));
     if (ctx->compute_capability == 1200) {
         const int widths[] = {8, 16, 24, 32, 40, 48, 64, 80, 96, 112, 128};
         int jwidth = 8, token_tiles = INT_MAX, nsm = 0;
@@ -25594,12 +25598,31 @@ static int cuda_prefill_dense_layer(
     } else if (separate_gateup) {
         BnCudaBuffer gate_view, up_view;
         if (cuda_buffer_row_view(gate, 0, hidden_dim, &gate_view) != 0 ||
-            cuda_buffer_row_view(gate, hidden_dim, hidden_dim, &up_view) != 0 ||
-            cuda_matmul_device_out(ctx, d_gateup, &gate_view, d_ffn_norm,
-                hidden_dim, dim, n_tokens, gate_type) != 0 ||
-            cuda_matmul_device_out(ctx, d_gateup + hidden_values, &up_view, d_ffn_norm,
-                hidden_dim, dim, n_tokens, gate_type) != 0)
+            cuda_buffer_row_view(gate, hidden_dim, hidden_dim, &up_view) != 0)
             return -1;
+        if (gate_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16) {
+            if (cuda_ensure_q8_1(ctx, dim * n_tokens) != 0)
+                return -1;
+            BnCudaBlockQ8Mmq *prepared_xq =
+                (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
+            quantize_mmq_input_kernel<<<dim3(dim / 32, n_tokens), 32>>>(
+                prepared_xq, d_ffn_norm, dim, 0);
+            if (cudaGetLastError() != cudaSuccess ||
+                cuda_kquant_batch_matmul(ctx, d_gateup, &gate_view,
+                    d_ffn_norm, hidden_dim, dim, n_tokens, gate_type,
+                    ctx->exec_stream, prepared_xq) != 0 ||
+                cuda_kquant_batch_matmul(ctx, d_gateup + hidden_values,
+                    &up_view, d_ffn_norm, hidden_dim, dim, n_tokens,
+                    gate_type, ctx->exec_stream, prepared_xq) != 0)
+                return -1;
+        } else if (cuda_matmul_device_out(ctx, d_gateup, &gate_view,
+                       d_ffn_norm, hidden_dim, dim, n_tokens,
+                       gate_type) != 0 ||
+                   cuda_matmul_device_out(ctx, d_gateup + hidden_values,
+                       &up_view, d_ffn_norm, hidden_dim, dim, n_tokens,
+                       gate_type) != 0) {
+            return -1;
+        }
     } else if (stacked_gateup) {
         if (cuda_matmul_device_out(ctx, d_gateup, gate, d_ffn_norm,
                                    hidden_dim * 2, dim, n_tokens,
