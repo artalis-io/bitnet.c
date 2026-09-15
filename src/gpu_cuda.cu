@@ -25301,6 +25301,7 @@ static int cuda_prefill_dense_layer(
         attn_norm_f16 = ctx->d_x_f16;
     int separate_qk = !packed_qkv;
     int projection_q_rows = q_dim * (q_gated ? 2 : 1);
+    BnCudaBlockQ8Mmq *attn_prepared_xq = NULL;
     if (separate_qk) {
         BnCudaBuffer q_view, k_view;
         if (cuda_buffer_row_view(qk, 0, projection_q_rows, &q_view) != 0 ||
@@ -25309,17 +25310,16 @@ static int cuda_prefill_dense_layer(
         if (qk_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16) {
             if (cuda_ensure_q8_1(ctx, dim * n_tokens) != 0)
                 return -1;
-            BnCudaBlockQ8Mmq *prepared_xq =
-                (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
+            attn_prepared_xq = (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
             quantize_mmq_input_kernel<<<dim3(dim / 32, n_tokens), 32>>>(
-                prepared_xq, d_attn_norm, dim, 0);
+                attn_prepared_xq, d_attn_norm, dim, 0);
             if (cudaGetLastError() != cudaSuccess ||
                 cuda_kquant_batch_matmul(ctx, q_gated ? d_qk : d_q,
                     &q_view, d_attn_norm, projection_q_rows, dim, n_tokens,
-                    qk_type, ctx->exec_stream, prepared_xq) != 0 ||
+                    qk_type, ctx->exec_stream, attn_prepared_xq) != 0 ||
                 cuda_kquant_batch_matmul(ctx, d_k, &k_view, d_attn_norm,
                     kv_dim, dim, n_tokens, qk_type, ctx->exec_stream,
-                    prepared_xq) != 0)
+                    attn_prepared_xq) != 0)
                 return -1;
         } else if (cuda_matmul_device_out_preconverted_f16(ctx,
                        q_gated ? d_qk : d_q, &q_view, d_attn_norm,
@@ -25337,10 +25337,19 @@ static int cuda_prefill_dense_layer(
     }
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_QK);
     if (!packed_qkv) {
-        if (cuda_matmul_device_out_preconverted_f16(
-                ctx, d_v, wv, d_attn_norm, attn_norm_f16, wv_rows, dim,
-                n_tokens, wv_type) != 0)
+        if (attn_prepared_xq &&
+            cuda_kquant_batch_input_enabled(ctx, wv_type, n_tokens) &&
+            !bn_quant_format_has_cap(wv_type,
+                                     BN_QUANT_CAP_GPU_MMQ_F32_SCALE)) {
+            if (cuda_kquant_batch_matmul(ctx, d_v, wv, d_attn_norm,
+                    wv_rows, dim, n_tokens, wv_type, ctx->exec_stream,
+                    attn_prepared_xq) != 0)
+                return -1;
+        } else if (cuda_matmul_device_out_preconverted_f16(
+                       ctx, d_v, wv, d_attn_norm, attn_norm_f16,
+                       wv_rows, dim, n_tokens, wv_type) != 0) {
             return -1;
+        }
     }
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_WV);
 
