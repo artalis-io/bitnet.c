@@ -9665,6 +9665,7 @@ static __global__ void moe_q4k_gateup_routed_mid_batch_kernel(
     const BnCudaBlockQ8_1 *xq,
     const int *indices,
     const float *weights,
+    const int *slot_order,
     int hidden,
     int cols,
     int n_experts,
@@ -9679,9 +9680,9 @@ static __global__ void moe_q4k_gateup_routed_mid_batch_kernel(
 
     int row = task % hidden;
     int slot_task = task / hidden;
-    int slot = slot_task % k;
-    int token = slot_task / k;
-    int route_off = token * k + slot;
+    int route_off = slot_order ? slot_order[slot_task] : slot_task;
+    int slot = route_off % k;
+    int token = route_off / k;
     if (weights && fabsf(weights[route_off]) <= 1.0e-7f) {
         mid[(size_t)route_off * (size_t)hidden + (size_t)row] = 0.0f;
         return;
@@ -22546,7 +22547,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                 moe_q4k_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
                     d_mid, (const BnBlockQ4K *)gate->data,
                     (const BnBlockQ4K *)up->data, xq, d_indices, d_weights,
-                    hidden_dim, dim, n_experts, k, n_tokens);
+                    NULL, hidden_dim, dim, n_experts, k, n_tokens);
             }
         }
     }
@@ -22923,6 +22924,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             routed_asymmetric_kquant, routed_native_quant, n_tokens,
             use_cublas_all_active_two_fixed,
             use_cublas_grouped, use_cublas_gateup_only);
+    if (routed_asymmetric_kquant && n_tokens > 1 &&
+        !use_cublas_all_active_two_fixed)
+        use_sorted_slots = 1;
     size_t sorted_route_aux_bytes = use_sorted_slots
         ? (route_items * sizeof(int) + (size_t)n_experts * 4u * sizeof(int))
         : 0u;
@@ -23388,9 +23392,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
                 hidden_dim, dim, n_experts, k, n_tokens);
         } else {
             moe_q4k_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
-                d_mid, (const BnBlockQ4K *)gate->data,
-                (const BnBlockQ4K *)up->data, xq, d_indices, d_weights,
-                hidden_dim, dim, n_experts, k, n_tokens);
+            d_mid, (const BnBlockQ4K *)gate->data,
+            (const BnBlockQ4K *)up->data, xq, d_indices, d_weights,
+            d_slot_order, hidden_dim, dim, n_experts, k, n_tokens);
         }
     }
     err = cudaGetLastError();
