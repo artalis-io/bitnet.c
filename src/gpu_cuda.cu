@@ -3158,6 +3158,8 @@ static __global__ void kquant_mmq_packed_kernel(
     __shared__ float x_d[tile_tokens][8];
     __shared__ int x_qsum[tile_tokens][8];
     __shared__ float x_original_sum[tile_tokens][8];
+    __shared__ uint16_t w_ds[tile_rows][8];
+    __shared__ uint16_t w_ms[tile_rows][8];
     int tid = threadIdx.x;
     int lane = tid & 31;
     int warp = tid >> 5;
@@ -3256,6 +3258,20 @@ static __global__ void kquant_mmq_packed_kernel(
             x_qsum[token][group] = qsum;
             x_original_sum[token][group] = original_sum;
         }
+        for (int i = tid; i < tile_rows * 8; i += blockDim.x) {
+            int tile_row = i / 8;
+            int group = i & 7;
+            int row = row0 + tile_row;
+            uint16_t ds = 0, ms = 0;
+            if (row < rows) {
+                const BnCudaKQuantMmqBlock *blk =
+                    blocks + (size_t)row * n_bpr + b;
+                ds = blk->ds[group];
+                ms = blk->ms[group];
+            }
+            w_ds[tile_row][group] = ds;
+            w_ms[tile_row][group] = ms;
+        }
 #if __CUDA_ARCH__ >= 800
         asm volatile("cp.async.wait_group 0;");
 #endif
@@ -3294,10 +3310,10 @@ static __global__ void kquant_mmq_packed_kernel(
                 int ai = rfrag * 8 + lane / 4;
                 int row = row0 + row_warp * 16 + ai;
                 if (row < rows) {
-                    const BnCudaKQuantMmqBlock *blk =
-                        blocks + (size_t)row * n_bpr + b;
-                    d_a[rfrag] = cuda_fp16_to_fp32(blk->ds[group]);
-                    m_a[rfrag] = cuda_fp16_to_fp32(blk->ms[group]);
+                    d_a[rfrag] = cuda_fp16_to_fp32(
+                        w_ds[row_warp * 16 + ai][group]);
+                    m_a[rfrag] = cuda_fp16_to_fp32(
+                        w_ms[row_warp * 16 + ai][group]);
                 } else {
                     d_a[rfrag] = 0.0f;
                     m_a[rfrag] = 0.0f;
