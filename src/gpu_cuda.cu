@@ -42,6 +42,8 @@ typedef struct {
     int8_t qs[BN_QK_K];
     uint16_t ds[8];
     uint16_t ms[8];
+    uint8_t scales32[8];
+    uint8_t mins32[8];
 } BnCudaKQuantMmqBlock;
 
 typedef struct {
@@ -1067,6 +1069,8 @@ static __global__ void pack_q4k_mmq_kernel(BnCudaKQuantMmqBlock *out,
             cuda_fp16_to_fp32(src->d) * (float)sc);
         out[block].ms[i] = cuda_fp32_to_fp16_bits(
             -cuda_fp16_to_fp32(src->dmin) * (float)mn);
+        out[block].scales32[i] = (uint8_t)sc;
+        out[block].mins32[i] = (uint8_t)mn;
     }
 }
 
@@ -1091,6 +1095,8 @@ static __global__ void pack_q5k_mmq_kernel(BnCudaKQuantMmqBlock *out,
             cuda_fp16_to_fp32(src->d) * (float)sc);
         out[block].ms[i] = cuda_fp32_to_fp16_bits(
             -cuda_fp16_to_fp32(src->dmin) * (float)mn);
+        out[block].scales32[i] = (uint8_t)sc;
+        out[block].mins32[i] = (uint8_t)mn;
     }
 }
 
@@ -2112,7 +2118,8 @@ static __global__ void q4k_q8k_dot_matvec_kernel(float *out,
  * sequence; lane zero then performs the AVX horizontal reduction order. */
 static __global__ void q4k_f32_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ4K *blocks, const float *x,
-    const float *bias, int rows, int cols, size_t out_offset) {
+    const BnCudaKQuantMmqBlock *packed, const float *bias,
+    int rows, int cols, size_t out_offset) {
     int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
     int row = global_lane >> 3;
     int lane = global_lane & 7;
@@ -2123,13 +2130,20 @@ static __global__ void q4k_f32_avx2_reference_matvec_kernel(
     for (int b = 0; b < n_bpr; b++) {
         float acc = 0.0f;
         const BnBlockQ4K *blk = &row_blocks[b];
+        const BnCudaKQuantMmqBlock *pblk = packed
+            ? packed + (size_t)row * n_bpr + b : NULL;
         const float *xb = x + (size_t)b * BN_QK_K;
         float d = cuda_fp16_to_fp32(blk->d);
         float dmin = cuda_fp16_to_fp32(blk->dmin);
         for (int group = 0; group < 8; group++) {
             int sc = 0;
             int mn = 0;
-            cuda_kquant_group_scale_min(blk->scales, group, &sc, &mn);
+            if (pblk) {
+                sc = (int)pblk->scales32[group];
+                mn = (int)pblk->mins32[group];
+            } else {
+                cuda_kquant_group_scale_min(blk->scales, group, &sc, &mn);
+            }
             float ds = __fmul_rn(d, (float)sc);
             float dm = __fmul_rn(dmin, (float)mn);
             int byte_off = (group >> 1) * 32;
@@ -27715,7 +27729,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
-                    out, (const BnBlockQ4K *)w->data, in, bias,
+                    out, (const BnBlockQ4K *)w->data, in,
+                    (const BnCudaKQuantMmqBlock *)w->mmq_data, bias,
                     op->rows, op->cols, out_offset);
                 break;
             }
@@ -28092,7 +28107,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (op->rows * 8 + asymmetric_kquant_threads - 1) /
                             asymmetric_kquant_threads,
                         asymmetric_kquant_threads, 0,
-                        out, (const BnBlockQ4K *)w->data, in, bias,
+                        out, (const BnBlockQ4K *)w->data, in,
+                        (const BnCudaKQuantMmqBlock *)w->mmq_data, bias,
                         op->rows, op->cols, out_offset);
                 } else if (bn_gpu_policy_kquant_matvec4_enabled(ctx->runtime_policy, op->cols)) {
                     int blocks = (op->rows + warps * 4 - 1) / (warps * 4);
