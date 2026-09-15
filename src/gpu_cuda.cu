@@ -2089,8 +2089,8 @@ static __global__ void q4k_f32_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ4K *blocks, const float *x,
     const float *bias, int rows, int cols, size_t out_offset) {
     int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = global_lane >> 5;
-    int lane = global_lane & 31;
+    int row = global_lane >> 3;
+    int lane = global_lane & 7;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
     const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
