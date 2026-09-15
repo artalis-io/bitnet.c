@@ -2148,14 +2148,15 @@ static __global__ void q4k_f32_avx2_reference_matvec_kernel(
 static __global__ void q5k_f32_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ5K *blocks, const float *x,
     const float *bias, int rows, int cols, size_t out_offset) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = global_lane >> 3;
+    int lane = global_lane & 7;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
     const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
     float row_sum = 0.0f;
     for (int b = 0; b < n_bpr; b++) {
-        float acc[8] = {0.0f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 0.0f, 0.0f};
+        float acc = 0.0f;
         const BnBlockQ5K *blk = &row_blocks[b];
         const float *xb = x + (size_t)b * BN_QK_K;
         float d = cuda_fp16_to_fp32(blk->d);
@@ -2170,27 +2171,30 @@ static __global__ void q5k_f32_avx2_reference_matvec_kernel(
             int shift = (group & 1) ? 4 : 0;
 #pragma unroll
             for (int quarter = 0; quarter < 4; quarter++) {
-#pragma unroll
-                for (int lane = 0; lane < 8; lane++) {
-                    int i = quarter * 8 + lane;
-                    int q = ((blk->qs[byte_off + i] >> shift) & 15) |
-                            (((blk->qh[i] >> group) & 1) << 4);
-                    float w = fmaf((float)q, ds, -dm);
-                    acc[lane] = fmaf(
-                        w, xb[(size_t)group * 32 + i], acc[lane]);
-                }
+                int i = quarter * 8 + lane;
+                int q = ((blk->qs[byte_off + i] >> shift) & 15) |
+                        (((blk->qh[i] >> group) & 1) << 4);
+                float w = fmaf((float)q, ds, -dm);
+                acc = fmaf(w, xb[(size_t)group * 32 + i], acc);
             }
         }
-        float s0 = __fadd_rn(acc[0], acc[4]);
-        float s1 = __fadd_rn(acc[1], acc[5]);
-        float s2 = __fadd_rn(acc[2], acc[6]);
-        float s3 = __fadd_rn(acc[3], acc[7]);
-        float block_sum =
-            __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
-        row_sum = __fadd_rn(row_sum, block_sum);
+        unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
+        float a[8];
+#pragma unroll
+        for (int i = 0; i < 8; i++) a[i] = __shfl_sync(mask, acc, i, 8);
+        if (lane == 0) {
+            float s0 = __fadd_rn(a[0], a[4]);
+            float s1 = __fadd_rn(a[1], a[5]);
+            float s2 = __fadd_rn(a[2], a[6]);
+            float s3 = __fadd_rn(a[3], a[7]);
+            row_sum = __fadd_rn(row_sum,
+                __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3)));
+        }
     }
-    if (bias) row_sum = __fadd_rn(row_sum, bias[row]);
-    out[out_offset + row] = row_sum;
+    if (lane == 0) {
+        if (bias) row_sum = __fadd_rn(row_sum, bias[row]);
+        out[out_offset + row] = row_sum;
+    }
 }
 
 /* Match bn_quant_q4k_avx2_4row_range's integer dot and its two scalar
@@ -2279,13 +2283,57 @@ static __device__ __forceinline__ float cuda_q5k_q8k_avx2_reference_row(
 static __global__ void q5k_q8k_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ5K *blocks, const BnBlockQ8K *xq,
     const float *bias, int rows, int cols, size_t out_offset) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = global_lane >> 3;
+    int lane = global_lane & 7;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
-    float value = cuda_q5k_q8k_avx2_reference_row(
-        blocks + (size_t)row * n_bpr, xq, n_bpr);
-    if (bias) value = __fadd_rn(value, bias[row]);
-    out[out_offset + row] = value;
+    const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
+    float acc = 0.0f;
+    float min_sum = 0.0f;
+    for (int b = 0; b < n_bpr; b++) {
+        const BnBlockQ5K *w = row_blocks + b;
+        const BnBlockQ8K *xb = xq + b;
+        int sumi = 0, min_corr = 0;
+        for (int group = 0; group < 8; group++) {
+            int sc = 0, mn = 0;
+            cuda_kquant_group_scale_min(w->scales, group, &sc, &mn);
+            if (lane == 0)
+                min_corr += mn * ((int)xb->bsums[group * 2] +
+                                  (int)xb->bsums[group * 2 + 1]);
+            int dot = 0;
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                int i = group * 32 + lane * 4 + j;
+                int half = i & 31;
+                uint8_t packed = w->qs[(group >> 1) * 32 + half];
+                int qv = ((group & 1) ? (packed >> 4) : (packed & 15)) |
+                    (((w->qh[half] >> group) & 1) << 4);
+                dot += qv * (int)xb->qs[group * 32 + lane * 4 + j];
+            }
+            sumi += sc * dot;
+        }
+        float d = __fmul_rn(xb->d, cuda_fp16_to_fp32(w->d));
+        acc = fmaf(d, (float)sumi, acc);
+        if (lane == 0) {
+            float dmin = -__fmul_rn(xb->d, cuda_fp16_to_fp32(w->dmin));
+            min_sum = fmaf(dmin, (float)min_corr, min_sum);
+        }
+    }
+    unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
+    float a[8];
+#pragma unroll
+    for (int i = 0; i < 8; i++) a[i] = __shfl_sync(mask, acc, i, 8);
+    if (lane == 0) {
+        float s0 = __fadd_rn(a[0], a[4]);
+        float s1 = __fadd_rn(a[1], a[5]);
+        float s2 = __fadd_rn(a[2], a[6]);
+        float s3 = __fadd_rn(a[3], a[7]);
+        float value = __fadd_rn(
+            __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3)), min_sum);
+        if (bias) value = __fadd_rn(value, bias[row]);
+        out[out_offset + row] = value;
+    }
 }
 
 static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
@@ -13445,6 +13493,158 @@ static __device__ float cuda_attention_mul_ftz(float a, float b) {
     float result;
     asm("mul.rn.ftz.f32 %0, %1, %2;" : "=f"(result) : "f"(a), "f"(b));
     return result;
+}
+
+/* Reproduce the host AVX2 attention contract for 128-wide Qwen heads while
+ * keeping the complete decode attention step resident on CUDA. */
+static __device__ __forceinline__ float cuda_attention_fast_exp_avx2(float x) {
+    const float r = 0x1.8p23f;
+    float z = fmaf(x, 0x1.715476p+0f, r);
+    float n = __fsub_rn(z, r);
+    float b = fmaf(-n, 0x1.7f7d1cp-20f,
+                   fmaf(-n, 0x1.62e4p-1f, x));
+    uint32_t zb = __float_as_uint(z);
+    uint32_t e = zb << 23;
+    float k = __uint_as_float(e + UINT32_C(0x3f800000));
+    float u = __fmul_rn(b, b);
+    float j = fmaf(0x1.0e4020p-7f, b, 0x1.573e2ep-5f);
+    j = fmaf(j, u, fmaf(0x1.555e66p-3f, b, 0x1.fffdb6p-2f));
+    j = fmaf(j, u, __fmul_rn(0x1.ffffecp-1f, b));
+    if (fabsf(n) <= 126.0f) return fmaf(k, j, k);
+    uint32_t d = n <= 0.0f ? UINT32_C(0x82000000) : 0u;
+    float s1 = __uint_as_float(d + UINT32_C(0x7f000000));
+    float s2 = __uint_as_float(e - d);
+    if (fabsf(n) > 192.0f) return __fmul_rn(s1, s1);
+    return __fmul_rn(fmaf(s2, j, s2), s1);
+}
+
+static __device__ __forceinline__ float cuda_attention_hsum8_avx2(
+        const float v[8]) {
+    float a0 = __fadd_rn(v[0], v[4]);
+    float a1 = __fadd_rn(v[1], v[5]);
+    float a2 = __fadd_rn(v[2], v[6]);
+    float a3 = __fadd_rn(v[3], v[7]);
+    return __fadd_rn(__fadd_rn(a0, a1), __fadd_rn(a2, a3));
+}
+
+static __device__ __forceinline__ float cuda_softmax_hsum8_avx2(
+        const float v[8]) {
+    float a0 = __fadd_rn(v[0], v[4]);
+    float a1 = __fadd_rn(v[1], v[5]);
+    float a2 = __fadd_rn(v[2], v[6]);
+    float a3 = __fadd_rn(v[3], v[7]);
+    return __fadd_rn(__fadd_rn(a0, a2), __fadd_rn(a1, a3));
+}
+
+static __global__ void flash_attention_avx2_reference_128_kernel(
+        float *out, const float *q, const void *key_cache,
+        const void *value_cache, int n_heads, int n_kv, int kv_mul,
+        int kv_dim, uint32_t loff, float scale, int kv_f16,
+        int first_key) {
+    const int h = blockIdx.x;
+    const int tid = threadIdx.x;
+    if (h >= n_heads) return;
+    const int kh = h / kv_mul;
+    const float *qh = q + (size_t)h * 128;
+    extern __shared__ float probabilities[];
+
+    for (int t = tid; t < n_kv; t += blockDim.x) {
+        float sums[4][8] = {{0.0f}};
+        size_t koff = (size_t)loff + (size_t)t * kv_dim + kh * 128;
+#pragma unroll
+        for (int chunk = 0; chunk < 4; chunk++)
+#pragma unroll
+            for (int lane = 0; lane < 8; lane++) {
+                int d = chunk * 32 + lane;
+#pragma unroll
+                for (int step = 0; step < 4; step++, d += 8)
+                    sums[step][lane] = fmaf(
+                        qh[d], cuda_kv_load(key_cache, koff + d, kv_f16),
+                        sums[step][lane]);
+            }
+        float lanes[8];
+#pragma unroll
+        for (int lane = 0; lane < 8; lane++)
+            lanes[lane] = __fadd_rn(
+                __fadd_rn(sums[0][lane], sums[2][lane]),
+                __fadd_rn(sums[1][lane], sums[3][lane]));
+        probabilities[t] = t >= first_key
+            ? __fmul_rn(cuda_attention_hsum8_avx2(lanes), scale)
+            : -INFINITY;
+    }
+    __syncthreads();
+
+    if (tid == 0) {
+        float maximum = probabilities[0];
+        for (int t = 1; t < n_kv; t++)
+            if (probabilities[t] > maximum) maximum = probabilities[t];
+        double denominator = 0.0;
+        int t = 0;
+        for (; t + 15 < n_kv; t += 16) {
+            float values[16];
+#pragma unroll
+            for (int lane = 0; lane < 16; lane++) {
+                values[lane] = cuda_attention_fast_exp_avx2(
+                    __fsub_rn(probabilities[t + lane], maximum));
+                probabilities[t + lane] = values[lane];
+            }
+            float lanes[8];
+#pragma unroll
+            for (int lane = 0; lane < 8; lane++)
+                lanes[lane] = __fadd_rn(values[lane], values[lane + 8]);
+            denominator += (double)cuda_softmax_hsum8_avx2(lanes);
+        }
+        if (t < n_kv) {
+            float values[16];
+#pragma unroll
+            for (int lane = 0; lane < 16; lane++) {
+                values[lane] = lane < n_kv - t
+                    ? cuda_attention_fast_exp_avx2(
+                        __fsub_rn(probabilities[t + lane], maximum))
+                    : 0.0f;
+                if (lane < n_kv - t) probabilities[t + lane] = values[lane];
+            }
+            float lanes[8];
+#pragma unroll
+            for (int lane = 0; lane < 8; lane++)
+                lanes[lane] = __fadd_rn(values[lane], values[lane + 8]);
+            denominator += (double)cuda_softmax_hsum8_avx2(lanes);
+        }
+        float inv = (float)(1.0 / denominator);
+        for (int i = 0; i < n_kv; i++)
+            probabilities[i] = __fmul_rn(probabilities[i], inv);
+    }
+    __syncthreads();
+
+    for (int d = tid; d < 128; d += blockDim.x) {
+        float sums[4][8] = {{0.0f}};
+        int t = 0;
+        for (; t + 31 < n_kv; t += 32)
+#pragma unroll
+            for (int group = 0; group < 4; group++)
+#pragma unroll
+                for (int lane = 0; lane < 8; lane++) {
+                    int key = t + group * 8 + lane;
+                    size_t voff = (size_t)loff + (size_t)key * kv_dim +
+                                  kh * 128 + d;
+                    sums[group][lane] = fmaf(probabilities[key],
+                        cuda_kv_load(value_cache, voff, kv_f16),
+                        sums[group][lane]);
+                }
+        float lanes[8];
+#pragma unroll
+        for (int lane = 0; lane < 8; lane++)
+            lanes[lane] = __fadd_rn(
+                __fadd_rn(sums[0][lane], sums[2][lane]),
+                __fadd_rn(sums[1][lane], sums[3][lane]));
+        float value = cuda_attention_hsum8_avx2(lanes);
+        for (; t < n_kv; t++) {
+            size_t voff = (size_t)loff + (size_t)t * kv_dim + kh * 128 + d;
+            value = fmaf(probabilities[t],
+                cuda_kv_load(value_cache, voff, kv_f16), value);
+        }
+        out[(size_t)h * 128 + d] = value;
+    }
 }
 static __device__ __forceinline__ float cuda_attention_f16_contract_load(
         const void *cache, size_t index, int kv_f16) {
@@ -27493,7 +27693,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q5k_f32_avx2_reference_matvec_kernel,
-                    (op->rows + reference_threads - 1) /
+                    (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ5K *)w->data, in, bias,
@@ -27556,7 +27756,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q5k_q8k_avx2_reference_matvec_kernel,
-                    (op->rows + reference_threads - 1) /
+                    (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ5K *)w->data, xq, bias,
@@ -30378,6 +30578,18 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
              * not shared memory proportional to the full context capacity. */
             int flash_scratch = graph_exec ? min(seq_len, 2048) : n_kv;
             size_t shared = (size_t)(flash_scratch + threads) * sizeof(float);
+            if (head_size == 128 && n_kv <= 2048) {
+                int first_key = op->attention_window > 0 &&
+                    n_kv > op->attention_window
+                    ? n_kv - op->attention_window : 0;
+                BN_CUDA_LAUNCH(ctx,
+                    flash_attention_avx2_reference_128_kernel,
+                    n_heads, 128, (size_t)n_kv * sizeof(float),
+                    out, q, key, value, n_heads, n_kv, kv_mul, kv_dim,
+                    op->p[6], cuda_u32_to_f32(op->p[7]), ctx->kv_f16,
+                    first_key);
+                break;
+            }
             BN_CUDA_LAUNCH(ctx, flash_attention_kernel, n_heads, threads,
                 shared,
                 out, q, key, value, n_heads, head_size, n_kv, kv_mul,
@@ -31085,6 +31297,7 @@ BnGPUBackend *bn_gpu_cuda_create_with_policy(
                 BN_GPU_CAP_HYBRID_SSM_MOE_GRAPH |
                 BN_GPU_CAP_HYPER_CONNECTION_GRAPH |
                 BN_GPU_CAP_REFERENCE_ATTENTION |
+                BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH |
                 BN_GPU_CAP_REFERENCE_ATTENTION_FALLBACK |
                 BN_GPU_CAP_REFERENCE_RECURRENT |
                 BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL |
