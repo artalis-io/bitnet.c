@@ -2089,8 +2089,8 @@ static __global__ void q4k_f32_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ4K *blocks, const float *x,
     const float *bias, int rows, int cols, size_t out_offset) {
     int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = global_lane >> 3;
-    int lane = global_lane & 7;
+    int row = global_lane >> 5;
+    int lane = global_lane & 31;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
     const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
@@ -2340,14 +2340,14 @@ static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ4K *blocks, const BnBlockQ8K *xq,
     const float *bias, int rows, int cols, size_t out_offset) {
     int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = global_lane >> 3;
-    int lane = global_lane & 7;
+    int row = global_lane >> 5;
+    int lane = global_lane & 31;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
     const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
     float row_acc = 0.0f;
     float row_min = 0.0f;
-    unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
+    unsigned mask = 0xffffffffu;
     for (int b = 0; b < n_bpr; b++) {
         const BnBlockQ4K *blk = row_blocks + b;
         const BnBlockQ8K *xb = xq + b;
@@ -2361,13 +2361,15 @@ static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
             int shift = (group & 1) ? 4 : 0;
             int group_dot = 0;
 #pragma unroll
-            for (int i = lane; i < 32; i += 8) {
+            for (int i = lane; i < 32; i += 32) {
                 int q = (blk->qs[byte_off + i] >> shift) & 15;
                 group_dot += q * (int)xb->qs[group * 32 + i];
             }
-            group_dot += __shfl_down_sync(mask, group_dot, 4, 8);
-            group_dot += __shfl_down_sync(mask, group_dot, 2, 8);
-            group_dot += __shfl_down_sync(mask, group_dot, 1, 8);
+            group_dot += __shfl_down_sync(mask, group_dot, 16);
+            group_dot += __shfl_down_sync(mask, group_dot, 8);
+            group_dot += __shfl_down_sync(mask, group_dot, 4);
+            group_dot += __shfl_down_sync(mask, group_dot, 2);
+            group_dot += __shfl_down_sync(mask, group_dot, 1);
             if (lane == 0) {
                 dot += sc * group_dot;
                 min_corr += mn * ((int)xb->bsums[group * 2] +
@@ -27714,7 +27716,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q4k_q8k_avx2_reference_matvec_kernel,
-                    (op->rows * 8 + reference_threads - 1) /
+                    (op->rows * 32 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ4K *)w->data, xq, bias,
