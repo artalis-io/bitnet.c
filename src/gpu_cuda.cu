@@ -3270,6 +3270,184 @@ static __global__ void kquant_mmq_packed_kernel(
     }
 }
 
+template <int tile_rows, int tile_tokens, int token_groups>
+static __global__ void q6k_mmq_packed_kernel(
+        float *out, const BnBlockQ6K *blocks,
+        const BnCudaBlockQ8MmqF32 *xq, int rows, int cols, int n_tokens,
+        int jwidth, int ref_grid) {
+    __shared__ __align__(16) int8_t tile_a[tile_rows][BN_QK_K + 16];
+    __shared__ __align__(16) int8_t tile_b[tile_tokens][BN_QK_K + 16];
+    __shared__ float x_d[tile_tokens][8];
+    int tid = threadIdx.x;
+    int lane = tid & 31;
+    int warp = tid >> 5;
+    int row_warp = warp / token_groups;
+    int token_warp = warp % token_groups;
+    int row0 = blockIdx.x * tile_rows;
+    int token0 = blockIdx.y * tile_tokens;
+    int n_bpr = cols / BN_QK_K;
+    int x_blocks = cols / 32;
+    float tail[2][4] = {{0.0f}};
+    float prefix[2][4] = {{0.0f}};
+    int token_tiles = (n_tokens - 1) / jwidth + 1;
+    int64_t tile = (int64_t)(row0 / 128) * token_tiles + token0 / jwidth;
+    int64_t tile_begin = tile * n_bpr;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) *
+                    token_tiles * n_bpr;
+    int first = (int)(((tile_begin + 1) * ref_grid + total - 1) /
+                      total) - 1;
+    int last = (int)(((tile_begin + n_bpr) * ref_grid + total - 1) /
+                     total) - 1;
+    int have_tail = 0;
+
+    for (int bid = last; bid >= first; bid--) {
+        int64_t raw_begin = (int64_t)bid * total / ref_grid - tile_begin;
+        int64_t raw_end = (int64_t)(bid + 1) * total / ref_grid - tile_begin;
+        int begin = raw_begin < 0 ? 0 : (int)raw_begin;
+        int end = raw_end > n_bpr ? n_bpr : (int)raw_end;
+        if (begin >= end) continue;
+        float sums[2][4] = {{0.0f}};
+        for (int b = begin; b < end; b++) {
+            for (int i = tid; i < tile_rows * BN_QK_K; i += blockDim.x) {
+                int tile_row = i / BN_QK_K;
+                int k = i & (BN_QK_K - 1);
+                int row = row0 + tile_row;
+                int q = 0;
+                if (row < rows) {
+                    const BnBlockQ6K *blk = blocks + (size_t)row * n_bpr + b;
+                    int group = k / 32;
+                    int j = k & 31;
+                    int chunk = group / 4;
+                    int segment = group & 3;
+                    int lo = (blk->ql[chunk * 64 + (segment & 1) * 32 + j] >>
+                              ((segment / 2) * 4)) & 15;
+                    int hi = (blk->qh[chunk * 32 + j] >> (segment * 2)) & 3;
+                    q = (lo | (hi << 4)) - 32;
+                }
+                tile_a[tile_row][k] = (int8_t)q;
+            }
+            for (int i = tid; i < tile_tokens * BN_QK_K;
+                 i += blockDim.x) {
+                int token = i / BN_QK_K;
+                int k = i & (BN_QK_K - 1);
+                int global_token = token0 + token;
+                int8_t q = 0;
+                if (global_token < n_tokens) {
+                    int group = k / 32;
+                    int j = k & 31;
+                    q = xq[(size_t)global_token * x_blocks +
+                            (size_t)b * 8 + group].qs[j];
+                }
+                tile_b[token][k] = q;
+            }
+            for (int i = tid; i < tile_tokens * 8; i += blockDim.x) {
+                int token = i / 8;
+                int group = i & 7;
+                int global_token = token0 + token;
+                x_d[token][group] = global_token < n_tokens
+                    ? xq[(size_t)global_token * x_blocks +
+                         (size_t)b * 8 + group].d
+                    : 0.0f;
+            }
+            __syncthreads();
+
+#pragma unroll
+            for (int panel = 0; panel < 2; panel++) {
+                float part[2][4] = {{0.0f}};
+#pragma unroll
+                for (int group = 0; group < 8; group++) {
+                    int c_half[2][4] = {{0}};
+#pragma unroll
+                    for (int half = 0; half < 2; half++) {
+                        int a[2], bv;
+                        const int *abase = (const int *)(
+                            tile_a[row_warp * 16] + group * 32 + half * 16);
+                        const int *asrc = abase + (lane % 16) *
+                            ((BN_QK_K + 16) / 4);
+                        unsigned int ash =
+                            (unsigned int)__cvta_generic_to_shared(asrc);
+                        asm volatile(
+                            "ldmatrix.sync.aligned.m8n8.x2.b16 {%0, %1}, [%2];"
+                            : "=r"(a[0]), "=r"(a[1]) : "r"(ash));
+                        const int *bbase = (const int *)(
+                            tile_b[token_warp * 16 + panel * 8] +
+                            group * 32 + half * 16);
+                        const int *bsrc = bbase + (lane % 8) *
+                            ((BN_QK_K + 16) / 4) + ((lane / 8) * 2) % 4;
+                        unsigned int bsh =
+                            (unsigned int)__cvta_generic_to_shared(bsrc);
+                        asm volatile(
+                            "ldmatrix.sync.aligned.m8n8.x1.b16 {%0}, [%1];"
+                            : "=r"(bv) : "r"(bsh));
+                        asm volatile(
+                            "mma.sync.aligned.m16n8k16.row.col.s32.s8.s8.s32 "
+                            "{%0, %1, %2, %3}, {%4, %5}, {%6}, "
+                            "{%0, %1, %2, %3};"
+                            : "+r"(c_half[half][0]), "+r"(c_half[half][1]),
+                              "+r"(c_half[half][2]), "+r"(c_half[half][3])
+                            : "r"(a[0]), "r"(a[1]), "r"(bv));
+                    }
+                    int token = token_warp * 16 + panel * 8 +
+                                (lane % 4) * 2;
+                    float dx[2] = {x_d[token][group],
+                                   x_d[token + 1][group]};
+#pragma unroll
+                    for (int l = 0; l < 4; l++) {
+                        int ai = (l / 2) * 8 + lane / 4;
+                        int row = row0 + row_warp * 16 + ai;
+                        if (row < rows && token0 + token + (l & 1) < n_tokens) {
+                            const BnBlockQ6K *blk =
+                                blocks + (size_t)row * n_bpr + b;
+                            int dot = c_half[0][l] * blk->scales[group * 2] +
+                                      c_half[1][l] * blk->scales[group * 2 + 1];
+                            part[group / 4][l] = fmaf((float)dot,
+                                dx[l & 1], part[group / 4][l]);
+                        }
+                    }
+                    if ((group & 3) == 3) {
+#pragma unroll
+                        for (int l = 0; l < 4; l++) {
+                            int ai = (l / 2) * 8 + lane / 4;
+                            int row = row0 + row_warp * 16 + ai;
+                            if (row < rows) {
+                                const BnBlockQ6K *blk =
+                                    blocks + (size_t)row * n_bpr + b;
+                                sums[panel][l] = fmaf(part[group / 4][l],
+                                    cuda_fp16_to_fp32(blk->d),
+                                    sums[panel][l]);
+                            }
+                        }
+                    }
+                }
+            }
+            __syncthreads();
+        }
+#pragma unroll
+        for (int panel = 0; panel < 2; panel++) {
+#pragma unroll
+            for (int l = 0; l < 4; l++) {
+                if (!have_tail) tail[panel][l] = sums[panel][l];
+                else prefix[panel][l] += sums[panel][l];
+            }
+        }
+        have_tail = 1;
+    }
+
+#pragma unroll
+    for (int panel = 0; panel < 2; panel++) {
+#pragma unroll
+        for (int l = 0; l < 4; l++) {
+            int oi = (l / 2) * 8 + lane / 4;
+            int oj = (lane % 4) * 2 + (l & 1);
+            int row = row0 + row_warp * 16 + oi;
+            int token = token0 + token_warp * 16 + panel * 8 + oj;
+            if (row < rows && token < n_tokens)
+                out[(size_t)token * rows + row] =
+                    tail[panel][l] + prefix[panel][l];
+        }
+    }
+}
+
 static __global__ void q5k_dot_matmul_kernel(float *out,
                                              const BnBlockQ5K *blocks,
                                              const BnCudaBlockQ8_1 *xq,
@@ -17197,7 +17375,33 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
          * Otherwise the reference distributes K work over one SM wave. */
         int64_t grid = 100 * tiles / ((int64_t)nsm * waves) >= 90 ? tiles : nsm;
         if (grid > INT_MAX) return -1;
-        if (signed_subblocks) {
+        if (type == BN_GGUF_TENSOR_Q6_K && n_tokens >= 16) {
+            if (n_tokens >= 64) {
+                dim3 mmq_grid((rows + 31) / 32,
+                              (n_tokens + 63) / 64, 1);
+                q6k_mmq_packed_kernel<32, 64, 4>
+                    <<<mmq_grid, 256, 0, stream>>>(
+                        out, (const BnBlockQ6K *)w->data,
+                        (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
+                        n_tokens, jwidth, (int)grid);
+            } else if (n_tokens >= 32) {
+                dim3 mmq_grid((rows + 63) / 64,
+                              (n_tokens + 31) / 32, 1);
+                q6k_mmq_packed_kernel<64, 32, 2>
+                    <<<mmq_grid, 256, 0, stream>>>(
+                        out, (const BnBlockQ6K *)w->data,
+                        (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
+                        n_tokens, jwidth, (int)grid);
+            } else {
+                dim3 mmq_grid((rows + 127) / 128,
+                              (n_tokens + 15) / 16, 1);
+                q6k_mmq_packed_kernel<128, 16, 1>
+                    <<<mmq_grid, 256, 0, stream>>>(
+                        out, (const BnBlockQ6K *)w->data,
+                        (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
+                        n_tokens, jwidth, (int)grid);
+            }
+        } else if (signed_subblocks) {
             signed_mmq_ordered_kernel<<<dim3((rows + 15) / 16, n_tokens), 128,
                                          0, stream>>>(
                 out, w->data, (const BnCudaBlockQ8MmqF32 *)xq,
@@ -17242,7 +17446,11 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                 out, w->data, xq, rows, cols, type, n_tokens, jwidth,
                 (int)grid);
         }
-        return cudaGetLastError() == cudaSuccess ? 0 : -1;
+        cudaError_t mmq_err = cudaGetLastError();
+        if (mmq_err != cudaSuccess)
+            fprintf(stderr, "CUDA MMQ launch type=%d rows=%d cols=%d nt=%d: %s\n",
+                    type, rows, cols, n_tokens, cudaGetErrorString(mmq_err));
+        return mmq_err == cudaSuccess ? 0 : -1;
     }
     kquant_mmq_kernel<<<dim3((rows + 7) / 8, n_tokens), 256,
                                     0, stream>>>(
