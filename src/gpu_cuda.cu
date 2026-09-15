@@ -2082,21 +2082,21 @@ static __global__ void q4k_q8k_dot_matvec_kernel(float *out,
     }
 }
 
-/* Reproduce src/quant/q4k_avx2.c for reference decode.  Each CUDA thread
- * owns one row and retains the AVX2 kernel's eight float accumulation lanes;
- * both the per-value FMA sequence and final horizontal reduction stay in the
- * CPU reference order. */
+/* Reproduce src/quant/q4k_avx2.c for reference decode.  Eight CUDA lanes own
+ * the AVX2 accumulation lanes of one row.  Each lane retains its serial FMA
+ * sequence; lane zero then performs the AVX horizontal reduction order. */
 static __global__ void q4k_f32_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ4K *blocks, const float *x,
     const float *bias, int rows, int cols, size_t out_offset) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = global_lane >> 3;
+    int lane = global_lane & 7;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
     const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
     float row_sum = 0.0f;
     for (int b = 0; b < n_bpr; b++) {
-        float acc[8] = {0.0f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 0.0f, 0.0f};
+        float acc = 0.0f;
         const BnBlockQ4K *blk = &row_blocks[b];
         const float *xb = x + (size_t)b * BN_QK_K;
         float d = cuda_fp16_to_fp32(blk->d);
@@ -2111,26 +2111,35 @@ static __global__ void q4k_f32_avx2_reference_matvec_kernel(
             int shift = (group & 1) ? 4 : 0;
 #pragma unroll
             for (int quarter = 0; quarter < 4; quarter++) {
-#pragma unroll
-                for (int lane = 0; lane < 8; lane++) {
-                    int i = quarter * 8 + lane;
-                    int q = (blk->qs[byte_off + i] >> shift) & 15;
-                    float w = fmaf((float)q, ds, -dm);
-                    acc[lane] = fmaf(
-                        w, xb[(size_t)group * 32 + i], acc[lane]);
-                }
+                int i = quarter * 8 + lane;
+                int q = (blk->qs[byte_off + i] >> shift) & 15;
+                float w = fmaf((float)q, ds, -dm);
+                acc = fmaf(w, xb[(size_t)group * 32 + i], acc);
             }
         }
-        float s0 = __fadd_rn(acc[0], acc[4]);
-        float s1 = __fadd_rn(acc[1], acc[5]);
-        float s2 = __fadd_rn(acc[2], acc[6]);
-        float s3 = __fadd_rn(acc[3], acc[7]);
-        float block_sum =
-            __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
-        row_sum = __fadd_rn(row_sum, block_sum);
+        unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
+        float a0 = __shfl_sync(mask, acc, 0, 8);
+        float a1 = __shfl_sync(mask, acc, 1, 8);
+        float a2 = __shfl_sync(mask, acc, 2, 8);
+        float a3 = __shfl_sync(mask, acc, 3, 8);
+        float a4 = __shfl_sync(mask, acc, 4, 8);
+        float a5 = __shfl_sync(mask, acc, 5, 8);
+        float a6 = __shfl_sync(mask, acc, 6, 8);
+        float a7 = __shfl_sync(mask, acc, 7, 8);
+        if (lane == 0) {
+            float s0 = __fadd_rn(a0, a4);
+            float s1 = __fadd_rn(a1, a5);
+            float s2 = __fadd_rn(a2, a6);
+            float s3 = __fadd_rn(a3, a7);
+            float block_sum =
+                __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
+            row_sum = __fadd_rn(row_sum, block_sum);
+        }
     }
-    if (bias) row_sum = __fadd_rn(row_sum, bias[row]);
-    out[out_offset + row] = row_sum;
+    if (lane == 0) {
+        if (bias) row_sum = __fadd_rn(row_sum, bias[row]);
+        out[out_offset + row] = row_sum;
+    }
 }
 
 /* Reproduce bn_quant_q5k_avx2_range for FP32-input reference FFN
@@ -21724,6 +21733,8 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
                        32, 0, (BnCudaBlockQ8_1 *)quant, mid, hidden, items);
         if (bn_quant_format_has_cap(down->type, BN_QUANT_CAP_GPU_ROUTED_KQUANT_ORDERED_SIGNED_DOWN)) {
             BN_CUDA_LAUNCH(ctx,kquant_routed_mmvq_kernel<BN_GGUF_TENSOR_Q6_K>,dim3(dim,items),nt==1?128:32,0,down_values,down->data,(BnCudaBlockQ8_1*)quant,dim,hidden,map,1);
+        } else if (down->type == BN_GGUF_TENSOR_Q4_K) {
+            BN_CUDA_LAUNCH(ctx,kquant_routed_mmvq_kernel<BN_GGUF_TENSOR_Q4_K>,dim3(dim,items),nt==1?128:32,0,down_values,down->data,(BnCudaBlockQ8_1*)quant,dim,hidden,map,1);
         } else {
         BN_CUDA_LAUNCH(ctx, kquant_routed_mmvq_kernel<BN_GGUF_TENSOR_Q5_K>, dim3(dim,items),
             nt == 1 ? 128 : 32, 0, down_values, (const BnBlockQ5K *)down->data,
@@ -21756,6 +21767,10 @@ static int cuda_moe_ordered_supported(const BnCudaCtx *ctx, int gate, int up, in
     return ctx && ctx->compute_capability == 1200 &&
         (bn_backend_quant_moe_routed_e8m0(gate,up,down) ||
          bn_backend_quant_moe_routed_ordered_kquant(gate,up,down) ||
+         (nt > 0 && nt <= 8 && gate == BN_GGUF_TENSOR_Q4_K &&
+          up == BN_GGUF_TENSOR_Q4_K &&
+          (down == BN_GGUF_TENSOR_Q4_K ||
+           down == BN_GGUF_TENSOR_Q6_K)) ||
          (nt > 0 && nt <= 8 &&
           (bn_backend_quant_moe_routed_affine_mmvq(gate,up,down) ||
            bn_backend_quant_moe_routed_lowbit_block32(gate,up,down))));
@@ -27413,7 +27428,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q4k_f32_avx2_reference_matvec_kernel,
-                    (op->rows + reference_threads - 1) /
+                    (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ4K *)w->data, in, bias,
@@ -27790,7 +27805,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (reference_kquant_matvec) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q4k_f32_avx2_reference_matvec_kernel,
-                        (op->rows + asymmetric_kquant_threads - 1) /
+                        (op->rows * 8 + asymmetric_kquant_threads - 1) /
                             asymmetric_kquant_threads,
                         asymmetric_kquant_threads, 0,
                         out, (const BnBlockQ4K *)w->data, in, bias,
