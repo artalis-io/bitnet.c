@@ -3223,20 +3223,20 @@ static __global__ void kquant_mmq_packed_kernel(
 #if __CUDA_ARCH__ >= 800
         asm volatile("cp.async.commit_group;");
 #endif
-        for (int i = tid; i < tile_tokens * (BN_QK_K / 4);
+        for (int i = tid; i < tile_tokens * (BN_QK_K / 16);
              i += blockDim.x) {
-            int token = i / (BN_QK_K / 4);
-            int k4 = i % (BN_QK_K / 4);
-            int group = k4 / 8;
-            int group_k4 = k4 & 7;
+            int token = i / (BN_QK_K / 16);
+            int k16 = i % (BN_QK_K / 16);
+            int group = k16 / 2;
+            int group_k16 = k16 & 1;
             int global_token = token0 + token;
-            uint32_t value = 0;
+            uint4 value = make_uint4(0, 0, 0, 0);
             if (global_token < n_tokens)
                 memcpy(&value,
                        xq[(size_t)global_token * x_blocks +
-                          (size_t)b * 8 + group].qs + group_k4 * 4,
+                          (size_t)b * 8 + group].qs + group_k16 * 16,
                        sizeof(value));
-            memcpy(tile_b[token] + k4 * 4, &value, sizeof(value));
+            memcpy(tile_b[token] + k16 * 16, &value, sizeof(value));
         }
         for (int i = tid; i < tile_tokens * 8; i += blockDim.x) {
             int token = i / 8;
