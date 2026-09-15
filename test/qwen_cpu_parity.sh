@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=${BN_MODEL_ROOT:-models}
+ROOT=${BN_MODEL_ROOT:-/data/models/gguf}
 LEVEL=${QWEN_CPU_PARITY_LEVEL:-standard}
 REQUIRE_MODELS=${REQUIRE_MODELS:-0}
 COMPARE=${COMPARE_LLAMA:-./test/compare_llama.sh}
@@ -9,6 +9,8 @@ NEON_BIN=${BITNET_NEON:-./bitnet}
 SCALAR_BIN=${BITNET_SCALAR:-./bitnet_scalar}
 AVX2_BIN=${BITNET_AVX2:-./bitnet_avx2}
 AVX512_BIN=${BITNET_AVX512:-./bitnet_avx512}
+LLAMA_AVX2_BIN_DIR=${LLAMA_AVX2_BIN_DIR:-}
+LLAMA_AVX512_BIN_DIR=${LLAMA_AVX512_BIN_DIR:-}
 case "$(uname -m)" in
     arm64|aarch64) DEFAULT_BACKENDS=neon,scalar ;;
     x86_64|amd64) DEFAULT_BACKENDS=scalar,avx2,avx512 ;;
@@ -17,6 +19,18 @@ esac
 BACKENDS=${QWEN_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-$DEFAULT_BACKENDS}}
 CASES=${QWEN_CPU_PARITY_CASES:-all}
 SPARSE_CACHE_MB=${QWEN_CPU_PARITY_CACHE_MB:-2048}
+THREADS=${QWEN_CPU_PARITY_THREADS:-${CPU_PARITY_THREADS:-1}}
+
+if [[ ! "$THREADS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: QWEN_CPU_PARITY_THREADS must be a positive integer" >&2
+    exit 1
+fi
+
+PREFILL_MODES=${QWEN_CPU_PARITY_PREFILL_MODES:-${CPU_PARITY_PREFILL_MODES:-default,tokenwise}}
+if [[ ! "$PREFILL_MODES" =~ ^(default|tokenwise)(,(default|tokenwise))*$ ]]; then
+    echo "ERROR: QWEN_CPU_PARITY_PREFILL_MODES must contain default and/or tokenwise" >&2
+    exit 1
+fi
 
 fail=0
 ran=0
@@ -64,10 +78,31 @@ run_backend() {
 
     echo "RUN $backend $name: $model (-n $tokens)"
     ran=$((ran + 1))
-    if ! BITNET="$bitnet" "$COMPARE" "$model" -n "$tokens" --strict -t 1 \
-        --llama-cache-k f32 --llama-cache-v f32 --llama-flash-off "$@"; then
-        fail=1
-    fi
+    local llama_bin_dir=${LLAMA_BIN_DIR:-}
+    case "$backend" in
+        AVX2)
+            llama_bin_dir=${LLAMA_AVX2_BIN_DIR:-$llama_bin_dir}
+            ;;
+        AVX512)
+            llama_bin_dir=${LLAMA_AVX512_BIN_DIR:-$llama_bin_dir}
+            ;;
+    esac
+
+    local mode
+    local mode_args=()
+    for mode in ${PREFILL_MODES//,/ }; do
+        mode_args=()
+        if [[ "$mode" == tokenwise ]]; then
+            mode_args+=(--no-prefill)
+        fi
+        echo "  prefill=$mode"
+        if ! LLAMA_BIN_DIR="$llama_bin_dir" \
+            BITNET="$bitnet" \
+            "$COMPARE" "$model" -n "$tokens" --strict -t "$THREADS" \
+            --llama-cache-k f32 --llama-cache-v f32 --llama-flash-off "${mode_args[@]}" "$@"; then
+            fail=1
+        fi
+    done
 }
 
 validate_backends() {
@@ -150,19 +185,22 @@ validate_backends
 run_case "qwen25" "Qwen 2.5 dense" "BN_MODEL_QWEN25" \
     "*qwen2.5*.gguf" 3 16
 run_case "qwen3_dense" "Qwen 3 dense" "BN_MODEL_QWEN3_DENSE" \
-    "*qwen3-[0-9.]*b-q*.gguf" 5 16
+    "*qwen3-4b-q*.gguf" 5 16
 run_case "qwen3_moe" "Qwen 3 sparse MoE" "BN_MODEL_QWEN3_MOE" \
-    "*qwen3-*a3b*.gguf" 3 5 --pread --cache-mb "$SPARSE_CACHE_MB"
+    "*qwen3-*a3b*.gguf" 3 16 --pread --cache-mb "$SPARSE_CACHE_MB"
 run_case "qwen35_dense" "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" \
-    "*qwen3*5*9b-q*.gguf" 5 16
+    "*qwen3.5*27b*q*.gguf" 5 16
 run_case "qwen35_moe" "Qwen 3.5 sparse MoE" "BN_MODEL_QWEN35_MOE" \
-    "*qwen3.5*35b*a3b*.gguf" 3 5 --pread --cache-mb "$SPARSE_CACHE_MB"
+    "*qwen3.5*-a*b*-00001-of-*.gguf" 3 16 --pread --cache-mb "$SPARSE_CACHE_MB"
 run_case "qwen36_dense" "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" \
-    "*qwen3.6*27b*.gguf" 3 5
+    "*qwen3.6*27b*.gguf" 3 16
 run_case "qwen36_moe" "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" \
-    "*qwen3.6*35b*a3b*.gguf" 3 5 --pread --cache-mb "$SPARSE_CACHE_MB"
+    "*qwen3.6*35b*a3b*.gguf" 3 16 --pread --cache-mb "$SPARSE_CACHE_MB"
 run_case "qwen38_dense" "Qwen 3.8 dense" "BN_MODEL_QWEN38_DENSE" \
-    "*qwen3.8*27b*.gguf" 3 5
+    "*qwen3.8*27b*.gguf" 3 16
+run_case "qwen38_moe" "Qwen 3.8 sparse MoE" "BN_MODEL_QWEN38_MOE" \
+    "*qwen3.8*flash*next*-00001-of-*.gguf" 3 16 \
+    --pread --cache-mb "$SPARSE_CACHE_MB"
 
 if [[ "$REQUIRE_MODELS" == "1" && "$missing" -ne 0 ]]; then
     echo "Qwen CPU parity FAILED: $missing required model case(s) missing"
@@ -174,7 +212,7 @@ if [[ "$fail" -ne 0 ]]; then
     exit 1
 fi
 
-echo "Qwen CPU parity PASSED: ran=$ran skipped=$missing level=$LEVEL backends=$BACKENDS"
+echo "Qwen CPU parity PASSED: ran=$ran skipped=$missing level=$LEVEL backends=$BACKENDS prefill=$PREFILL_MODES"
 if [[ "$missing_backends" -ne 0 ]]; then
     echo "Qwen CPU parity backend skips: $missing_backends"
 fi

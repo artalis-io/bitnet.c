@@ -106,6 +106,34 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
                           sizeof(float), &per_layer_input_size) != 0)
         return 0;
 
+    size_t hc_dim = 0;
+    size_t hc_arena_bytes = 0;
+    if (c->hyper_connection_count > 0) {
+        if (checked_mul_size((size_t)c->hyper_connection_count,
+                             (size_t)c->dim, &hc_dim) != 0 ||
+            checked_mul_size(3 * hc_dim +
+                                 (size_t)c->hyper_connection_rank +
+                                 (size_t)c->hyper_connection_count,
+                             sizeof(float), &hc_arena_bytes) != 0)
+            return 0;
+        if (hc_dim > (size_t)INT_MAX) return 0;
+        if ((int)hc_dim > x_q_size) x_q_size = (int)hc_dim;
+    }
+    size_t ple_arena_bytes = 0;
+    if (c->ple_head_count > 0) {
+        size_t ple_hist = 0;
+        size_t ple_token_bytes = 0;
+        if (checked_mul3_size((size_t)(c->ple_conv_kernel - 1),
+                              (size_t)c->ple_ngram_size, hc_dim,
+                              &ple_hist) != 0 ||
+            checked_mul_size(ple_hist, sizeof(float),
+                             &ple_arena_bytes) != 0 ||
+            checked_mul_size((size_t)c->seq_len, sizeof(int32_t),
+                             &ple_token_bytes) != 0 ||
+            checked_add_size(&ple_arena_bytes, ple_token_bytes) != 0)
+            return 0;
+    }
+
     size_t ssm_state_size_total = 0;
     size_t ssm_conv_state_total = 0;
     if (n_ssm_layers > 0 && c->ssm_time_step_rank > 0) {
@@ -190,6 +218,10 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         checked_add_size(&arena_size, tmp) != 0)
         return 0;
     if (checked_add_size(&arena_size, per_layer_input_size) != 0)
+        return 0;
+    if (checked_add_size(&arena_size, hc_arena_bytes) != 0)
+        return 0;
+    if (checked_add_size(&arena_size, ple_arena_bytes) != 0)
         return 0;
     size_t kv_elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
     if (checked_mul3_size(2, kv_cache_size, kv_elem_size, &tmp) != 0 ||
@@ -326,6 +358,21 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
                          &per_layer_input_size) != 0)
         return -1;
 
+    size_t hc_dim = 0;
+    if (c->hyper_connection_count > 0) {
+        if (checked_mul_size((size_t)c->hyper_connection_count,
+                             (size_t)c->dim, &hc_dim) != 0 ||
+            hc_dim > (size_t)INT_MAX)
+            return -1;
+        if ((int)hc_dim > x_q_size) x_q_size = (int)hc_dim;
+    }
+    size_t ple_hist = 0;
+    if (c->ple_head_count > 0 &&
+        checked_mul3_size((size_t)(c->ple_conv_kernel - 1),
+                          (size_t)c->ple_ngram_size, hc_dim,
+                          &ple_hist) != 0)
+        return -1;
+
     size_t kv_elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
     BnRunState *s = state;
 
@@ -344,6 +391,23 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     s->per_layer_input = per_layer_input_size > 0
         ? (float *)sh_arena_calloc(arena, per_layer_input_size, sizeof(float))
         : NULL;
+    s->hc_residual = hc_dim > 0
+        ? (float *)sh_arena_calloc(arena, hc_dim, sizeof(float)) : NULL;
+    s->hc_norm = hc_dim > 0
+        ? (float *)sh_arena_calloc(arena, hc_dim, sizeof(float)) : NULL;
+    s->hc_gate = hc_dim > 0
+        ? (float *)sh_arena_calloc(arena, hc_dim, sizeof(float)) : NULL;
+    s->hc_low_rank = hc_dim > 0
+        ? (float *)sh_arena_calloc(arena, c->hyper_connection_rank,
+                                   sizeof(float)) : NULL;
+    s->hc_inject = hc_dim > 0
+        ? (float *)sh_arena_calloc(arena, c->hyper_connection_count,
+                                   sizeof(float)) : NULL;
+    s->token_history = c->ple_head_count > 0
+        ? (int32_t *)sh_arena_calloc(arena, c->seq_len, sizeof(int32_t))
+        : NULL;
+    s->ple_conv_state = ple_hist > 0
+        ? (float *)sh_arena_calloc(arena, ple_hist, sizeof(float)) : NULL;
 
     s->ssm_state = NULL;
     s->ssm_conv_state = NULL;
@@ -401,6 +465,9 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         !s->x_q || !s->rope_freq)
         return -1;
     if (per_layer_input_size > 0 && !s->per_layer_input)
+        return -1;
+    if (c->ple_head_count > 0 &&
+        (!s->token_history || !s->ple_conv_state))
         return -1;
     if (ssm_state_size_total > 0 && (!s->ssm_state || !s->ssm_conv_state))
         return -1;

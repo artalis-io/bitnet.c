@@ -58,6 +58,10 @@ typedef enum {
     BN_GPU_CODE_MOE_ROUTE_TOPK,
     BN_GPU_CODE_MOE_ROUTED_FFN,
     BN_GPU_CODE_GELU_GATE,
+    BN_GPU_CODE_HC_STREAM_RMSNORM,
+    BN_GPU_CODE_HC_SCALE_SILU,
+    BN_GPU_CODE_HC_GATED_REDUCE,
+    BN_GPU_CODE_HC_COMBINE,
 } BnGPUOpCode;
 
 // A single backend shader command in the lowered forward pass.
@@ -73,18 +77,31 @@ typedef struct BnGPUOp {
     int buf_aux;         // secondary BN_GPU_VALUE_* (-1 if unused)
     int rows, cols;      // dimensions (matvec: weight dims; others: element count in p0)
     uint32_t flags;      // backend-private lowered flags
+    int attention_window; // attention only: 0 = full causal history
     uint32_t p[BN_GPU_OP_PARAMS]; // shader-specific parameters (32 bytes)
 } BnGPUOp;
 
+/* RMSNORM only: p[2] is a scalar applied after normalization, before W. */
+#define BN_GPU_OP_FLAG_RMSNORM_SEPARATE_SCALE 1u
+#define BN_GPU_OP_FLAG_RMSNORM_REFERENCE_ORDER 2u
+/* WEIGHTED_ADD p[3]: output scale, p[4]: these arithmetic modes. */
+#define BN_GPU_WEIGHTED_ADD_SEPARATE_SCALE 1u
+#define BN_GPU_WEIGHTED_ADD_FMA 2u
+#define BN_GPU_WEIGHTED_ADD_SIGMOID_REFERENCE_DOT 1u
 #define BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT 1u
 #define BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK 1u
 #define BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM 2u
+#define BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK 4u
 #define BN_GPU_OP_FLAG_REFERENCE_SILU 4u
+#define BN_GPU_OP_FLAG_MOE_Q8_FLOAT_DOWN 8u
+#define BN_GPU_OP_FLAG_MOE_SEPARATE_REDUCTION 16u
 #define BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT 8u
 #define BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER 16u
 #define BN_GPU_OP_FLAG_REFERENCE_ACTIVATION 32u
 #define BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION 64u
 #define BN_GPU_OP_FLAG_MATVEC_BLOCK_Q8_ACTIVATION 128u
+#define BN_GPU_OP_FLAG_REFERENCE_WIDE_ACCUMULATION 256u
+#define BN_GPU_OP_FLAG_MOE_SEPARATE_OUTPUT_SCALE 512u
 
 static inline int bn_gpu_op_code_is_matvec(int code) {
     return code == BN_GPU_CODE_MATVEC;
@@ -133,6 +150,7 @@ static inline BnGPUOpKind bn_gpu_op_kind_from_code(int code) {
         case BN_GPU_CODE_RMSNORM:
         case BN_GPU_CODE_RESIDUAL_RMSNORM:
         case BN_GPU_CODE_PER_HEAD_RMSNORM:
+        case BN_GPU_CODE_HC_STREAM_RMSNORM:
             return BN_GPU_OP_RMSNORM;
         case BN_GPU_CODE_ROPE:
         case BN_GPU_CODE_ROPE_QK:
@@ -148,11 +166,14 @@ static inline BnGPUOpKind bn_gpu_op_kind_from_code(int code) {
         case BN_GPU_CODE_SIGMOID_GATE:
         case BN_GPU_CODE_SILU_ACT:
         case BN_GPU_CODE_RELU2_ACT:
+        case BN_GPU_CODE_HC_SCALE_SILU:
             return BN_GPU_OP_ACTIVATION;
         case BN_GPU_CODE_RESIDUAL_ADD:
         case BN_GPU_CODE_WEIGHTED_ADD:
         case BN_GPU_CODE_WEIGHTED_ADD_SIGMOID:
         case BN_GPU_CODE_BIAS_ADD:
+        case BN_GPU_CODE_HC_GATED_REDUCE:
+        case BN_GPU_CODE_HC_COMBINE:
             return BN_GPU_OP_RESIDUAL;
         case BN_GPU_CODE_COPY:
         case BN_GPU_CODE_DEINTERLEAVE_Q:

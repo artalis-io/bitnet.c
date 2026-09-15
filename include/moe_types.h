@@ -20,6 +20,8 @@ typedef struct {
     int gate_rows, gate_cols;
     int up_rows, up_cols;
     int down_rows, down_cols;
+    // Source tensor anatomy; independent of backend packing or expert cache.
+    int gate_up_fused;
     // Repacked: contiguous [gate|up|down] per expert for cache locality.
     // NULL if not repacked (pread mode or insufficient memory).
     uint8_t *repacked;          // [n_experts * expert_total_bytes]
@@ -31,6 +33,8 @@ typedef struct {
 // Shared MoE I/O control plane (lives on BnModel, shared across sessions)
 typedef struct {
     int fd;
+    int *shard_fds;
+    size_t n_shard_fds;
     const uint8_t *mmap_base; // mmap'd file base pointer (NULL if using pread)
     const uint8_t **mmap_bases; // optional per-shard mmap bases
     size_t n_mmap_bases;

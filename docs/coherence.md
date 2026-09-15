@@ -35,6 +35,28 @@ attention tensor, for example SSM-first hybrids.
 
 ## Interpreting Results
 
+The strict CPU matrices (`test/qwen_cpu_parity.sh` and
+`test/gemma4_cpu_parity.sh`) run every selected model/backend with both default
+prefill and tokenwise prefill, followed by greedy decode. Tokenwise mode passes
+`--no-prefill` to bitnet and batch/microbatch size 1 to llama.cpp. Use
+`CPU_PARITY_PREFILL_MODES=default` or `tokenwise` for a focused rerun; the
+family-specific `QWEN_CPU_PARITY_PREFILL_MODES` and
+`GEMMA4_CPU_PARITY_PREFILL_MODES` override that setting. The default is
+`default,tokenwise`. Default prefill follows runtime policy, so these CLI checks
+alone do not prove that every model executed batched kernels.
+
+The CUDA matrices (`bench/qwen_cuda_matrix.sh` and
+`bench/gemma4_cuda_matrix.sh`) use the same pair of modes when
+`RUN_LLAMA_COMPARE=1`. `CUDA_PARITY_PREFILL_MODES` selects `default`,
+`tokenwise`, or the default `default,tokenwise`. A failure in the first mode
+does not skip the second; either failure makes the matrix fail.
+
+For AVX comparisons, set `LLAMA_AVX2_BIN_DIR` and `LLAMA_AVX512_BIN_DIR` to
+the corresponding reference builds. Reduction order can change greedy
+continuations across ISAs and prefill modes; compare each configuration with
+its matching llama.cpp configuration. Strict comparison requires sampled token
+IDs, equal output counts, and successful exits from both inference processes.
+
 Exact token equality is expected on many small and medium models. Larger models
 can diverge after a few tokens from harmless FP32 reduction-order drift, even
 when standalone matvec checks pass.
@@ -59,3 +81,20 @@ model blocks touched by the change. Keep at least one representative model for:
 - k-quants: `Q2_K`, `Q3_K`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_K`
 - IQ formats: `IQ2_*`, `IQ3_*`, `IQ4_*`
 - dense attention, MoE, and hybrid SSM/attention models
+
+
+CUDA hybrid MoE prefill starting at position zero uses 512-token physical batches when every layer and
+cache span passes the prefix-attention preflight. This matches the pinned
+llama.cpp default microbatch size. Current eligibility requires FP16 KV,
+head256/GQA16 attention and the reference recurrent backend capability, within
+2048 total keys. Prefix continuation is limited to internal batches whose KV
+handoff succeeded. Public resumed requests and other paths retain their existing scheduling.
+
+Set `BN_GPU_PREFILL_FULL_PROMPT=1` before creating the backend to retain one full
+prompt batch for diagnostics. Unset the variable to restore microbatching;
+backend boolean policies are presence-based, so a value of `0` also enables it.
+When comparing this mode, set the reference
+physical batch size explicitly (`--llama-ubatch 2048` in `test/compare_llama.sh`).
+Batch scheduling and host-to-backend KV handoff live in the transformer runtime;
+backend preflight checks resident cache capacity and RoPE resources without
+changing request state.

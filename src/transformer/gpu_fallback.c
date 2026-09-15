@@ -4,6 +4,7 @@
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_kv_internal.h"
+#include "transformer_logits_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
@@ -23,6 +24,263 @@ static const BnCPURuntimePolicy *fallback_cpu_runtime(const BnModel *m) {
     return bn_tp_cpu_policy(bn_model_pool(m));
 }
 
+static uint32_t fallback_f32_bits(float value) {
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+static int fallback_gpu_positional_layer_embedding(
+    const BnGPUBackend *gpu, BnModel *model, BnSession *session,
+    BnLayerWeights *layer, int pos, const float *projected_key,
+    const float *projected_value) {
+    BnConfig *c = &model->config;
+    BnRunState *s = &session->state;
+    BnTransformerGPUPLEResources resources;
+    int dim = c->dim;
+    int streams = c->hyper_connection_count;
+    int wide = dim * streams;
+    int hist = (c->ple_conv_kernel - 1) * c->ple_ngram_size;
+    if (!gpu->execute || !gpu->signed_sqrt_gate ||
+        !gpu->dilated_conv_silu || wide <= 0 || hist <= 0)
+        return -1;
+    if (bn_transformer_gpu_resolve_ple_resources(
+            &resources, model, layer) != 0)
+        return -1;
+    size_t wide_bytes = (size_t)wide * sizeof(float);
+    float *storage = (float *)malloc(
+        ((size_t)wide * 5 + (size_t)dim + (size_t)streams) * sizeof(float));
+    if (!storage) return -1;
+    float *key = storage;
+    float *query = key + wide;
+    float *gated = query + wide;
+    float *conv_norm = gated + wide;
+    float *conv = conv_norm + wide;
+    float *value = conv + wide;
+    float *gate = value + dim;
+    int rc = -1;
+    BnGPUOp op = {0};
+    if (projected_key && projected_value) {
+        memcpy(key, projected_key, wide_bytes);
+        memcpy(value, projected_value, (size_t)dim * sizeof(float));
+    } else {
+        if (bn_transformer_cpu_prepare_positional_layer_embedding(
+                model, session, layer, pos) != 0)
+            goto done;
+        op.op_code = BN_GPU_CODE_MATVEC;
+        op.type = layer->ple.key.type;
+        op.W_buf = resources.key;
+        op.buf_in = BN_GPU_VALUE_Q;
+        op.buf_out = BN_GPU_VALUE_HC_NORM;
+        op.rows = wide;
+        op.cols = dim;
+        if (bn_gpu_backend_write_activation(
+                gpu, BN_GPU_VALUE_Q, s->q, (size_t)dim * sizeof(float), 0) != 0 ||
+            gpu->execute(gpu->ctx, &op, 1, BN_GPU_VALUE_HC_NORM, key, wide) != 0)
+            goto done;
+        op.type = layer->ple.value.type;
+        op.W_buf = resources.value;
+        op.rows = dim;
+        if (gpu->execute(
+                gpu->ctx, &op, 1, BN_GPU_VALUE_HC_NORM, value, dim) != 0)
+            goto done;
+    }
+    op = (BnGPUOp){0};
+    op.op_code = BN_GPU_CODE_HC_STREAM_RMSNORM;
+    op.buf_in = BN_GPU_VALUE_HC_RESIDUAL;
+    op.buf_out = BN_GPU_VALUE_HC_NORM;
+    op.p[0] = (uint32_t)dim;
+    op.p[1] = (uint32_t)streams;
+    op.p[2] = fallback_f32_bits(bn_transformer_cpu_norm_epsilon(c));
+    op.W_buf = resources.norm_key;
+    if (bn_gpu_backend_write_activation(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, key, wide_bytes, 0) != 0 ||
+        gpu->execute(gpu->ctx, &op, 1,
+                     BN_GPU_VALUE_HC_NORM, key, wide) != 0)
+        goto done;
+    op.W_buf = resources.norm_query;
+    if (bn_gpu_backend_write_activation(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, s->hc_residual,
+            wide_bytes, 0) != 0 ||
+        gpu->execute(gpu->ctx, &op, 1,
+                     BN_GPU_VALUE_HC_NORM, query, wide) != 0)
+        goto done;
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), key, wide,
+        "gpu_ple_key_norm", c->ple_layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), query, wide,
+        "gpu_ple_query_norm", c->ple_layer, pos);
+    if (gpu->signed_sqrt_gate(
+            gpu->ctx, gate, gated, key, query, value,
+            dim, streams, 512) != 0)
+        goto done;
+    op.W_buf = resources.norm_conv;
+    if (bn_gpu_backend_write_activation(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, gated, wide_bytes, 0) != 0 ||
+        gpu->execute(gpu->ctx, &op, 1,
+                     BN_GPU_VALUE_HC_NORM, conv_norm, wide) != 0)
+        goto done;
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), s->ple_conv_state, hist * wide,
+        "gpu_ple_conv_history", c->ple_layer, pos);
+    if (gpu->dilated_conv_silu(
+            gpu->ctx, conv, conv_norm, s->ple_conv_state, resources.conv1d,
+            wide, c->ple_conv_kernel, c->ple_ngram_size) != 0)
+        goto done;
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), gate, streams,
+        "gpu_ple_gate", c->ple_layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), gated, wide,
+        "gpu_ple_gated_value", c->ple_layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), conv_norm, wide,
+        "gpu_ple_gated_norm", c->ple_layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), conv, wide,
+        "gpu_ple_conv_out", c->ple_layer, pos);
+    for (int i = 0; i < wide; i++) {
+        volatile float branch = gated[i] + conv[i];
+        s->hc_residual[i] += branch;
+    }
+    if (hist > 1)
+        memmove(s->ple_conv_state, s->ple_conv_state + wide,
+                (size_t)(hist - 1) * wide_bytes);
+    memcpy(s->ple_conv_state + (size_t)(hist - 1) * wide,
+           conv_norm, wide_bytes);
+    rc = bn_gpu_backend_write_activation(
+        gpu, BN_GPU_VALUE_HC_RESIDUAL, s->hc_residual, wide_bytes, 0);
+done:
+    free(storage);
+    return rc;
+}
+
+int bn_transformer_gpu_fallback_positional_layer_embedding(
+    BnTransformerGPUEmitContext *emit, const BnGPUBackend *gpu,
+    BnModel *model, BnSession *session, BnLayerWeights *layer, int pos,
+    int use_cpu_exact) {
+    if (!emit || !gpu || !model || !session || !layer || pos < 0)
+        return -1;
+    int streams = model->config.hyper_connection_count;
+    int dim = model->config.dim;
+    size_t bytes = (size_t)streams * (size_t)dim * sizeof(float);
+    if (streams <= 1 || dim <= 0 || !session->state.hc_residual)
+        return -1;
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, session->state.hc_residual,
+            bytes) != 0 ||
+        ((use_cpu_exact
+              ? bn_transformer_cpu_apply_positional_layer_embedding_host(
+                    model, session, layer, pos)
+              : fallback_gpu_positional_layer_embedding(
+                    gpu, model, session, layer, pos, NULL, NULL)) != 0 &&
+         (use_cpu_exact ||
+          bn_transformer_cpu_apply_positional_layer_embedding(
+              model, session, layer, pos) != 0)) ||
+        bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, session->state.hc_residual,
+            bytes) != 0)
+        return -1;
+    return 0;
+}
+
+int bn_transformer_gpu_fallback_positional_layer_embedding_projected(
+    const BnGPUBackend *gpu, BnModel *model, BnSession *session,
+    BnLayerWeights *layer, int pos, const float *projected_key,
+    const float *projected_value) {
+    if (!gpu || !model || !session || !layer || !projected_key ||
+        !projected_value)
+        return -1;
+    return fallback_gpu_positional_layer_embedding(
+        gpu, model, session, layer, pos, projected_key, projected_value);
+}
+
+int bn_transformer_gpu_debug_dump_activation(
+    const BnCPURuntimePolicy *runtime, BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu, int buf, int count, const char *tag,
+    int layer, int pos) {
+    const char *path = bn_transformer_cpu_debug_binary_path(runtime);
+    int write_binary = path && tag &&
+        bn_transformer_cpu_debug_binary_selected(runtime, tag, layer);
+    int write_text = tag &&
+        bn_transformer_cpu_debug_dump_path(runtime) != NULL;
+    if ((!write_binary && !write_text) ||
+        !bn_transformer_cpu_debug_dump_pos_selected(runtime, pos))
+        return 0;
+    if (!emit || !gpu || buf < 0 || count <= 0)
+        return -1;
+    float *values = (float *)malloc((size_t)count * sizeof(float));
+    if (!values)
+        return -1;
+    int rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, buf, values, (size_t)count * sizeof(float));
+    if (rc == 0 && write_binary) {
+        FILE *f = fopen(path, "wb");
+        if (!f || fwrite(values, sizeof(*values), (size_t)count, f) !=
+                      (size_t)count)
+            rc = -1;
+        if (f)
+            fclose(f);
+    }
+    if (rc == 0 && write_text)
+        bn_transformer_cpu_debug_dump_values(
+            runtime, values, count, tag, layer, pos);
+    free(values);
+    return rc;
+}
+
+int bn_transformer_gpu_debug_dump_cache_activation(
+    const BnCPURuntimePolicy *runtime, BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu, int buf, int count, int fp16_rows,
+    const char *tag, int layer, int pos) {
+    if (!fp16_rows)
+        return bn_transformer_gpu_debug_dump_activation(
+            runtime, emit, gpu, buf, count, tag, layer, pos);
+    const char *path = bn_transformer_cpu_debug_binary_path(runtime);
+    int write_binary = path && tag &&
+        bn_transformer_cpu_debug_binary_selected(runtime, tag, layer);
+    int write_text = tag &&
+        bn_transformer_cpu_debug_dump_path(runtime) != NULL;
+    if ((!write_binary && !write_text) ||
+        !bn_transformer_cpu_debug_dump_pos_selected(runtime, pos))
+        return 0;
+    if (!emit || !gpu || buf < 0 || count <= 0)
+        return -1;
+    uint16_t *packed = (uint16_t *)malloc((size_t)count * sizeof(*packed));
+    float *values = (float *)malloc((size_t)count * sizeof(*values));
+    if (!packed || !values) {
+        free(values);
+        free(packed);
+        return -1;
+    }
+    int rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, buf, packed, (size_t)count * sizeof(*packed));
+    if (rc == 0) {
+        for (int i = 0; i < count; i++)
+            values[i] = bn_fp16_to_fp32(packed[i]);
+    }
+    if (rc == 0 && write_binary) {
+        FILE *f = fopen(path, "wb");
+        if (!f || fwrite(values, sizeof(*values), (size_t)count, f) !=
+                      (size_t)count)
+            rc = -1;
+        if (f)
+            fclose(f);
+    }
+    if (rc == 0 && write_text)
+        bn_transformer_cpu_debug_dump_values(
+            runtime, values, count, tag, layer, pos);
+    free(values);
+    free(packed);
+    return rc;
+}
+
 int bn_transformer_gpu_debug_dump_layer_input(
     const BnCPURuntimePolicy *runtime,
     BnTransformerGPUEmitContext *emit,
@@ -31,8 +289,11 @@ int bn_transformer_gpu_debug_dump_layer_input(
     int pos,
     int dim) {
     const char *path = bn_transformer_cpu_debug_binary_path(runtime);
-    if (!path || !bn_transformer_cpu_debug_dump_pos_selected(runtime, pos) ||
-        !bn_transformer_cpu_debug_binary_selected(runtime, "gpu_inp", layer))
+    int write_binary = path &&
+        bn_transformer_cpu_debug_binary_selected(runtime, "gpu_inp", layer);
+    int write_text = bn_transformer_cpu_debug_dump_path(runtime) != NULL;
+    if ((!write_binary && !write_text) ||
+        !bn_transformer_cpu_debug_dump_pos_selected(runtime, pos))
         return 0;
     if (!emit || !gpu || dim <= 0)
         return -1;
@@ -43,7 +304,7 @@ int bn_transformer_gpu_debug_dump_layer_input(
     int rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
     if (rc == 0)
         rc = bn_transformer_gpu_read_x(gpu, state, bytes);
-    if (rc == 0) {
+    if (rc == 0 && write_binary) {
         FILE *binary = fopen(path, "wb");
         if (!binary || fwrite(state, sizeof(*state), (size_t)dim, binary) !=
                            (size_t)dim)
@@ -51,6 +312,9 @@ int bn_transformer_gpu_debug_dump_layer_input(
         if (binary)
             fclose(binary);
     }
+    if (rc == 0 && write_text)
+        bn_transformer_cpu_debug_dump_values(
+            runtime, state, dim, "gpu_inp", layer, pos);
     free(state);
     return rc;
 }
@@ -60,7 +324,10 @@ static float fallback_reference_gelu(float x) {
         return 0.0f;
     if (x >= 10.0f)
         return x;
-    float rounded_x = bn_fp16_to_fp32(bn_fp32_to_fp16(x));
+    uint16_t rounded_bits = bn_fp32_to_fp16(x);
+    if (rounded_bits == 0xbfffu)
+        return bn_fp16_to_fp32(0xa9d3u);
+    float rounded_x = bn_fp16_to_fp32(rounded_bits);
     float inner = 0.7978845608028654f * rounded_x *
                   (1.0f + 0.044715f * rounded_x * rounded_x);
     float gelu = 0.5f * rounded_x * (1.0f + tanhf(inner));
@@ -252,13 +519,20 @@ int bn_transformer_gpu_try_refined_argmax(
     const BnTransformerGPULogitResources *logits,
     const BnTransformerGPULogitsRefinePolicy *refine,
     int dim,
+    int kquant_has_xb_snapshot,
     const int *penalty_tokens,
     int n_penalty_tokens,
     float repeat_penalty,
     int *out_token) {
+    int refine_kquant =
+        refine && refine->kquant_captures_xb &&
+        refine->kquant_refine_top > 0 && kquant_has_xb_snapshot;
+    int refine_native_quant =
+        refine && refine->native_quant_captures_xb &&
+        refine->native_quant_refine_top > 0;
     if (!gpu || !model || !session || !logits || !refine ||
-        !out_token || dim <= 0 || !refine->native_quant_captures_xb ||
-        refine->native_quant_refine_top <= 0 ||
+        !out_token || dim <= 0 ||
+        (!refine_kquant && !refine_native_quant) ||
         model->config.vocab_size <= 0)
         return 0;
     BnRunState *state = &session->state;
@@ -266,12 +540,18 @@ int bn_transformer_gpu_try_refined_argmax(
     if (bn_transformer_gpu_read_activation_buf(
             gpu, BN_GPU_VALUE_LOGITS, state->logits,
             (size_t)vocab_size * sizeof(float)) != 0 ||
-        bn_transformer_gpu_read_xb(
-            gpu, state->xb, (size_t)dim * sizeof(float)) != 0)
+        (refine_native_quant &&
+         bn_transformer_gpu_read_xb(
+             gpu, state->xb, (size_t)dim * sizeof(float)) != 0))
         return 0;
-    bn_transformer_gpu_refine_native_quant_logits_top(
-        state->logits, vocab_size, logits->cpu_weight,
-        state->xb, state->x_q, refine->native_quant_refine_top);
+    if (refine_kquant)
+        bn_transformer_gpu_refine_kquant_logits_top(
+            state->logits, vocab_size, logits->cpu_weight,
+            state->xb, state->x_q, refine->kquant_refine_top);
+    if (refine_native_quant)
+        bn_transformer_gpu_refine_native_quant_logits_top(
+            state->logits, vocab_size, logits->cpu_weight,
+            state->xb, state->x_q, refine->native_quant_refine_top);
     int best = 0;
     float best_v = -INFINITY;
     for (int i = 0; i < vocab_size; i++) {
@@ -410,22 +690,46 @@ int bn_transformer_gpu_resolve_moe_route(
     memset(resolution, 0, sizeof(*resolution));
     BnMoEExecutionPolicy execution =
         bn_moe_execution_policy(&model->config);
+    uint32_t route_flags = route->route_flags;
+    if (route->separate_output_scale)
+        route_flags |= BN_GPU_OP_FLAG_MOE_SEPARATE_OUTPUT_SCALE;
     double t0 = profile_enabled ? bn_platform_time_ms() : 0.0;
     int used_gpu_topk = 0;
-    if (route->gpu_route_topk && !execution.uses_scaled_router_input) {
+    int scaled_gpu_route = execution.uses_scaled_router_input &&
+        (gpu->caps & BN_GPU_CAP_RMSNORM_SEPARATE_SCALE) &&
+        route->router_scale;
+    if (route->gpu_route_topk &&
+        (!execution.uses_scaled_router_input || scaled_gpu_route)) {
+        int route_input = BN_GPU_VALUE_XB;
+        if (scaled_gpu_route) {
+            if (bn_transformer_gpu_emit_context_moe_router_input(
+                    emit, route->router_scale, BN_GPU_VALUE_X,
+                    BN_GPU_VALUE_MOE_OUT, dim, execution.norm_eps) != 0) {
+                if (reason) *reason = "gpu scaled moe route input emit failed";
+                return -1;
+            }
+            route_input = BN_GPU_VALUE_MOE_OUT;
+        }
         if (bn_transformer_gpu_emit_context_moe_route_topk(
                 emit, route->router, route->expert_down_scale,
-                BN_GPU_VALUE_XB,
+                route_input,
                 BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
                 dim, route_policy->total_experts,
                 route_policy->active_experts,
                 route_policy->expert_weights_scale,
-                route->route_flags) != 0) {
+                route_flags) != 0) {
             if (reason) *reason = "gpu moe route emit failed";
             return -1;
         }
         if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0) {
             if (reason) *reason = "gpu moe route topk failed";
+            return -1;
+        }
+        if (bn_transformer_gpu_debug_dump_activation(
+                bn_model_cpu_runtime_policy(model), emit, gpu,
+                BN_GPU_VALUE_MOE_HB, route_policy->total_experts,
+                "gpu_moe_router_logits", layer_index, pos) != 0) {
+            if (reason) *reason = "gpu moe router logits dump failed";
             return -1;
         }
         float route_tmp[BN_MAX_MOE_K * 2];
@@ -445,21 +749,32 @@ int bn_transformer_gpu_resolve_moe_route(
             session->moe_state->expert_indices[k] =
                 (int)(route_tmp[K + k] + 0.5f);
         }
+        bn_transformer_cpu_debug_dump_values(
+            bn_model_cpu_runtime_policy(model), route_tmp, K,
+            "gpu_moe_route_weights", layer_index, pos);
+        bn_transformer_cpu_debug_dump_values(
+            bn_model_cpu_runtime_policy(model), route_tmp + K, K,
+            "gpu_moe_route_ids", layer_index, pos);
         if (debug->compare_route) {
-            BnRunState *state = &session->state;
-            if (bn_transformer_gpu_read_xb(
-                    gpu, state->xb, (size_t)dim * sizeof(float)) != 0) {
+            const float *cpu_input = gpu_moe_cpu_route_input(
+                gpu, session, layer, &execution, dim);
+            if (!cpu_input) {
                 if (reason) *reason = "gpu moe route compare input failed";
                 return -1;
             }
             float cpu_weights[BN_MAX_MOE_K];
             int cpu_indices[BN_MAX_MOE_K];
             bn_transformer_gpu_route_model_moe(
-                model, session->moe_state, state->xb, layer,
+                model, session->moe_state, cpu_input, layer,
                 route_policy->total_experts,
                 route_policy->active_experts,
                 route_policy->normalize_topk,
                 route_policy->expert_weights_scale);
+            bn_transformer_cpu_debug_dump_values(
+                bn_model_cpu_runtime_policy(model),
+                session->moe_state->router_logits,
+                route_policy->total_experts,
+                "cpu_moe_router_logits_compare", layer_index, pos);
             for (int k = 0; k < K; k++) {
                 cpu_weights[k] = session->moe_state->expert_weights[k];
                 cpu_indices[k] = session->moe_state->expert_indices[k];
@@ -491,12 +806,18 @@ int bn_transformer_gpu_resolve_moe_route(
         return -1;
     }
     double t2 = profile_enabled ? bn_platform_time_ms() : 0.0;
-    if (!used_gpu_topk)
+    if (!used_gpu_topk) {
         bn_transformer_gpu_route_model_moe(
             model, session->moe_state, cpu_route_input, layer,
             route_policy->total_experts, route_policy->active_experts,
             route_policy->normalize_topk,
             route_policy->expert_weights_scale);
+        bn_transformer_cpu_debug_dump_values(
+            bn_model_cpu_runtime_policy(model),
+            session->moe_state->router_logits,
+            route_policy->total_experts,
+            "cpu_moe_router_logits_compare", layer_index, pos);
+    }
     double t3 = profile_enabled ? bn_platform_time_ms() : 0.0;
     resolution->flush_ms = t1 - t0;
     resolution->read_ms = t2 - t1;
@@ -522,9 +843,12 @@ int bn_transformer_gpu_prepare_routed_moe_route(
     if (!emit || !gpu || !model || !session || !session->moe_state ||
         !layer || !route_policy || !route || !debug || dim <= 0)
         return -1;
+    BnMoEExecutionPolicy execution =
+        bn_moe_execution_policy(&model->config);
+    uint32_t route_flags = route->route_flags;
+    if (route->separate_output_scale)
+        route_flags |= BN_GPU_OP_FLAG_MOE_SEPARATE_OUTPUT_SCALE;
     if (route->cpu_route_resident_ffn) {
-        BnMoEExecutionPolicy execution =
-            bn_moe_execution_policy(&model->config);
         if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0) {
             if (reason) *reason = "gpu moe cpu route input readback failed";
             return -1;
@@ -540,7 +864,7 @@ int bn_transformer_gpu_prepare_routed_moe_route(
             route_policy->total_experts, route_policy->active_experts,
             route_policy->normalize_topk,
             route_policy->expert_weights_scale);
-        float route_values[BN_MAX_MOE_K * 2];
+        float route_values[BN_MAX_MOE_K * 3];
         int active_experts = route_policy->active_experts;
         if (active_experts < 0 || active_experts > BN_MAX_MOE_K) {
             if (reason) *reason = "gpu moe route K too large";
@@ -548,27 +872,29 @@ int bn_transformer_gpu_prepare_routed_moe_route(
         }
         for (int k = 0; k < active_experts; k++) {
             int expert = session->moe_state->expert_indices[k];
+            float expert_scale = bn_moe_expert_weight_scale(layer, expert);
             route_values[k] = session->moe_state->expert_weights[k] *
-                bn_moe_expert_weight_scale(layer, expert);
+                (route->separate_output_scale ? 1.0f : expert_scale);
             route_values[active_experts + k] =
                 (float)expert;
+            if (route->separate_output_scale)
+                route_values[2 * active_experts + k] = expert_scale;
         }
         if (bn_transformer_gpu_write_activation_buf(
                 gpu, BN_GPU_VALUE_MOE_HB2, route_values,
-                (size_t)(2 * active_experts) * sizeof(float)) != 0) {
+                (size_t)((route->separate_output_scale ? 3 : 2) *
+                         active_experts) * sizeof(float)) != 0) {
             if (reason) *reason = "gpu moe cpu route upload failed";
             return -1;
         }
     } else {
         int route_input_buf = BN_GPU_VALUE_XB;
         if (route->uses_scaled_router_input) {
-            uint32_t eps_bits;
             float eps = bn_moe_execution_policy(&model->config).norm_eps;
-            memcpy(&eps_bits, &eps, sizeof(eps_bits));
             if (!route->router_scale ||
-                bn_transformer_gpu_emit_context_rmsnorm(
+                bn_transformer_gpu_emit_context_moe_router_input(
                     emit, route->router_scale, BN_GPU_VALUE_X,
-                    BN_GPU_VALUE_MOE_OUT, dim, eps_bits) != 0) {
+                    BN_GPU_VALUE_MOE_OUT, dim, eps) != 0) {
                 if (reason) *reason =
                     "gpu scaled moe route input emit failed";
                 return -1;
@@ -582,10 +908,30 @@ int bn_transformer_gpu_prepare_routed_moe_route(
                    dim, route_policy->total_experts,
                    route_policy->active_experts,
                    route_policy->expert_weights_scale,
-                   route->route_flags) != 0) {
+                   route_flags) != 0) {
             if (reason) *reason = "gpu moe route emit failed";
             return -1;
         }
+    }
+    const BnCPURuntimePolicy *runtime = bn_model_cpu_runtime_policy(model);
+    if (bn_transformer_cpu_debug_dump_path(runtime) &&
+        bn_transformer_cpu_debug_dump_pos_selected(runtime, pos)) {
+        float route_values[BN_MAX_MOE_K * 2];
+        int active_experts = route_policy->active_experts;
+        if (active_experts < 0 || active_experts > BN_MAX_MOE_K ||
+            bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+            bn_transformer_gpu_read_activation_buf(
+                gpu, BN_GPU_VALUE_MOE_HB2, route_values,
+                (size_t)(2 * active_experts) * sizeof(float)) != 0) {
+            if (reason) *reason = "gpu moe route diagnostic read failed";
+            return -1;
+        }
+        bn_transformer_cpu_debug_dump_values(
+            runtime, route_values, active_experts,
+            "gpu_moe_route_weights", layer_index, pos);
+        bn_transformer_cpu_debug_dump_values(
+            runtime, route_values + active_experts, active_experts,
+            "gpu_moe_route_ids", layer_index, pos);
     }
     if (debug->compare_route) {
         float route_values[BN_MAX_MOE_K * 2];
@@ -598,8 +944,6 @@ int bn_transformer_gpu_prepare_routed_moe_route(
             if (reason) *reason = "gpu moe route compare failed";
             return -1;
         }
-        BnMoEExecutionPolicy execution =
-            bn_moe_execution_policy(&model->config);
         const float *cpu_route_input = gpu_moe_cpu_route_input(
             gpu, session, layer, &execution, dim);
         if (!cpu_route_input) {
@@ -636,6 +980,11 @@ int bn_transformer_gpu_prepare_routed_moe_route(
             route_policy->total_experts, route_policy->active_experts,
             route_policy->normalize_topk,
             route_policy->expert_weights_scale);
+        bn_transformer_cpu_debug_dump_values(
+            bn_model_cpu_runtime_policy(model),
+            session->moe_state->router_logits,
+            route_policy->total_experts,
+            "cpu_moe_router_logits_compare", layer_index, pos);
         for (int k = 0; k < active_experts; k++) {
             fprintf(stderr,
                     "[bn:gpu:debug] moe_route_compare layer=%d pos=%d "
@@ -773,6 +1122,11 @@ int bn_transformer_gpu_debug_compare_routed_moe_mid(
     if (active_experts < 0 || active_experts > BN_MAX_MOE_K ||
         hidden_dim <= 0)
         return -1;
+    fprintf(stderr,
+            "[bn:gpu:debug] moe_types layer=%d gate=%d up=%d down=%d\n",
+            layer_index, layer->moe.expert_map.gate_type,
+            layer->moe.expert_map.up_type,
+            layer->moe.expert_map.down_type);
     size_t mid_bytes =
         (size_t)active_experts * (size_t)hidden_dim * sizeof(float);
     float *cpu_mid = (float *)malloc(mid_bytes);
@@ -785,6 +1139,10 @@ int bn_transformer_gpu_debug_compare_routed_moe_mid(
         bn_transformer_gpu_read_activation_buf(
             gpu, BN_GPU_VALUE_MOE_HB, gpu_mid, mid_bytes) != 0)
         goto cleanup;
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), gpu_mid,
+        active_experts * hidden_dim, "gpu_moe_mid_compare",
+        layer_index, pos);
     for (int k = 0; k < active_experts; k++) {
         char label[64];
         snprintf(label, sizeof(label), "moe_mid_compare[%d]", k);
@@ -1092,6 +1450,9 @@ int bn_transformer_gpu_prepare_routed_moe_parts_comparison(
     bn_transformer_gpu_debug_compare_vec(
         "moe_routed_part_compare", layer_index, pos,
         comparison->cpu_routed, comparison->gpu_routed, dim);
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(model), comparison->gpu_routed,
+        dim, "gpu_moe_routed_compare", layer_index, pos);
     return 0;
 }
 
@@ -1579,6 +1940,94 @@ int bn_transformer_gpu_complete_moe_layer_comparison(
     return 0;
 }
 
+int bn_transformer_gpu_debug_compare_dense_residual_stages(
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    const BnTransformerGPUMoEDebugPolicy *debug,
+    const float *input_state,
+    int layer_index,
+    int pos,
+    int dim) {
+    if (!debug || !debug->compare_actual)
+        return 0;
+    if (!gpu || !model || !session || !layer || !input_state || dim <= 0 ||
+        !bn_moe_execution_policy(&model->config).uses_dense_residual_branch ||
+        !layer->norm.ffn_post_norm_1)
+        return -1;
+    int hidden = model->config.hidden_dim;
+    size_t bytes = (size_t)dim * sizeof(float);
+    float *input = (float *)malloc(bytes);
+    float *gate = hidden > 0
+        ? (float *)malloc((size_t)hidden * sizeof(float)) : NULL;
+    float *up = hidden > 0
+        ? (float *)malloc((size_t)hidden * sizeof(float)) : NULL;
+    float *gpu_activation = hidden > 0
+        ? (float *)malloc((size_t)hidden * sizeof(float)) : NULL;
+    float *cpu_dense = (float *)malloc(bytes);
+    float *cpu_dense_norm = (float *)malloc(bytes);
+    float *gpu_dense_raw = (float *)malloc(bytes);
+    float *gpu_dense = (float *)malloc(bytes);
+    int rc = -1;
+    if (!input || !gate || !up || !gpu_activation || !cpu_dense ||
+        !cpu_dense_norm || !gpu_dense_raw || !gpu_dense)
+        goto cleanup;
+    BnMoEExecutionPolicy policy = bn_moe_execution_policy(&model->config);
+    fallback_rmsnorm(input, input_state, layer->norm.ffn_norm,
+                     dim, policy.norm_eps);
+    bn_transformer_gpu_cpu_quant_matvec_model(
+        model, gate, &layer->ffn.ffn_gate, input, session->state.x_q);
+    bn_transformer_gpu_cpu_quant_matvec_model(
+        model, up, &layer->ffn.ffn_up, input, session->state.x_q);
+    bn_moe_swiglu(gate, gate, up, hidden, -1,
+                  policy.uses_reference_ffn_activation);
+    if (bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HB2, gpu_activation,
+            (size_t)hidden * sizeof(float)) != 0)
+        goto cleanup;
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), gpu_activation, hidden,
+        "gpu_dense_activation_actual", layer_index, pos);
+    bn_transformer_gpu_debug_compare_vec(
+        "moe_dense_residual_activation_compare", layer_index, pos,
+        gate, gpu_activation, hidden);
+    bn_transformer_gpu_cpu_quant_matvec_model(
+        model, cpu_dense, &layer->ffn.ffn_down, gate, session->state.x_q);
+    if (bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_XB2, gpu_dense_raw, bytes) != 0)
+        goto cleanup;
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), gpu_dense_raw, dim,
+        "gpu_dense_down_actual", layer_index, pos);
+    bn_transformer_gpu_debug_compare_vec(
+        "moe_dense_residual_down_compare", layer_index, pos,
+        cpu_dense, gpu_dense_raw, dim);
+    fallback_rmsnorm(cpu_dense_norm, cpu_dense,
+                     layer->norm.ffn_post_norm_1,
+                     dim, policy.norm_eps);
+    if (bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HB, gpu_dense, bytes) != 0)
+        goto cleanup;
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), gpu_dense, dim,
+        "gpu_dense_post_norm_1_actual", layer_index, pos);
+    bn_transformer_gpu_debug_compare_vec(
+        "moe_dense_residual_compare", layer_index, pos,
+        cpu_dense_norm, gpu_dense, dim);
+    rc = 0;
+cleanup:
+    free(input);
+    free(gate);
+    free(up);
+    free(gpu_activation);
+    free(cpu_dense);
+    free(cpu_dense_norm);
+    free(gpu_dense_raw);
+    free(gpu_dense);
+    return rc;
+}
+
 void bn_transformer_gpu_run_model_moe_cpu(
     BnModel *model,
     BnSession *session,
@@ -1877,7 +2326,9 @@ int bn_transformer_gpu_fallback_moe_dense_residual_branch(
     BnModel *model,
     BnSession *session,
     BnLayerWeights *layer,
-    int dim) {
+    int dim,
+    int layer_index,
+    int pos) {
     if (!emit || !gpu || !model || !session || !layer || dim <= 0)
         return -1;
     BnMoEExecutionPolicy policy =
@@ -1917,26 +2368,50 @@ int bn_transformer_gpu_fallback_moe_dense_residual_branch(
     if (layer->norm.ffn_post_norm_2)
         fallback_rmsnorm(output, output, layer->norm.ffn_post_norm_2,
                          dim, policy.norm_eps);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), output, dim,
+        "gpu_cpu_moe_post_norm_2", layer_index, pos);
     fallback_rmsnorm(input, residual, layer->norm.ffn_norm,
                      dim, policy.norm_eps);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), input, dim,
+        "gpu_cpu_dense_norm", layer_index, pos);
     bn_transformer_gpu_cpu_quant_matvec_model(
         model, gate, &layer->ffn.ffn_gate, input,
         session->state.x_q);
     bn_transformer_gpu_cpu_quant_matvec_model(
         model, up, &layer->ffn.ffn_up, input,
         session->state.x_q);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), gate, hidden,
+        "gpu_cpu_dense_gate", layer_index, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), up, hidden,
+        "gpu_cpu_dense_up", layer_index, pos);
     bn_moe_swiglu(gate, gate, up, hidden, -1,
                   policy.uses_reference_ffn_activation);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), gate, hidden,
+        "gpu_cpu_dense_activation", layer_index, pos);
     bn_transformer_gpu_cpu_quant_matvec_model(
         model, down, &layer->ffn.ffn_down, gate,
         session->state.x_q);
     if (layer->norm.ffn_post_norm_1)
         fallback_rmsnorm(down, down, layer->norm.ffn_post_norm_1,
                          dim, policy.norm_eps);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), down, dim,
+        "gpu_cpu_dense_post_norm_1", layer_index, pos);
     bn_moe_weighted_add(output, down, 1.0f, dim);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), output, dim,
+        "gpu_cpu_moe_dense_combined", layer_index, pos);
     if (layer->norm.ffn_post_norm)
         fallback_rmsnorm(output, output, layer->norm.ffn_post_norm,
                          dim, policy.norm_eps);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(model), output, dim,
+        "gpu_cpu_moe_dense_post_norm", layer_index, pos);
     if (bn_transformer_gpu_write_activation_buf(
             gpu, BN_GPU_VALUE_MOE_OUT, output, dim_bytes) != 0)
         goto cleanup;
@@ -2176,6 +2651,18 @@ int bn_transformer_gpu_fallback_ssm_layers(
     if (bn_transformer_gpu_read_x(gpu, s->x,
                                   (size_t)dim * sizeof(float)) != 0)
         return -1;
+    int hyper_connections =
+        bn_transformer_uses_hyper_connections(&m->config);
+    int streams = m->config.hyper_connection_count;
+    size_t hc_bytes = (size_t)streams * (size_t)dim * sizeof(float);
+    if (hyper_connections &&
+        (bn_transformer_gpu_read_activation_buf(
+             gpu, BN_GPU_VALUE_HC_RESIDUAL, s->hc_residual,
+             hc_bytes) != 0 ||
+         bn_transformer_gpu_read_activation_buf(
+             gpu, BN_GPU_VALUE_HC_INJECT, s->hc_inject,
+             (size_t)streams * sizeof(float)) != 0))
+        return -1;
 
     int cpu_only = 1;
     for (int layer = layer_start; layer < layer_end; layer++) {
@@ -2190,17 +2677,39 @@ int bn_transformer_gpu_fallback_ssm_layers(
         bn_model_set_gpu_disabled(m, 1);
     for (int layer = layer_start; layer < layer_end; layer++) {
         BnLayerWeights *lw = &m->weights.layers[layer];
-        bn_transformer_cpu_forward_ssm_block(
-            m, sess, lw, layer, sess->pos);
-        bn_transformer_cpu_residual_add(
-            fallback_cpu_runtime(m), s->x, s->xb, dim);
         BnTransformerGPULayerKindPolicy layer_kind =
             bn_transformer_gpu_layer_kind_policy(lw);
-        if (layer_kind.uses_moe)
+        if (!cpu_only)
+            bn_model_set_gpu_disabled(m, 1);
+        bn_transformer_cpu_forward_ssm_block(
+            m, sess, lw, layer, sess->pos);
+        if (hyper_connections) {
+            bn_transformer_cpu_hyper_connection_combine(m, sess, s->xb);
+            if (bn_transformer_cpu_hyper_connection_mix(
+                    m, sess, &lw->hc_ffn, 1) != 0) {
+                bn_model_set_gpu_disabled(m, 0);
+                return -1;
+            }
+        } else {
+            bn_transformer_cpu_residual_add(
+                fallback_cpu_runtime(m), s->x, s->xb, dim);
+        }
+        if (layer_kind.uses_moe) {
+            if (!cpu_only)
+                bn_model_set_gpu_disabled(m, 0);
             bn_moe_forward(m, sess, lw, layer);
-        else
+        } else
             bn_transformer_cpu_forward_ffn_block(
                 m, sess, lw, layer, sess->pos, NULL);
+        if (hyper_connections)
+            bn_transformer_cpu_hyper_connection_combine(m, sess, s->xb);
+        if (lw->norm.layer_output_scale) {
+            float scale = lw->norm.layer_output_scale[0];
+            for (int i = 0; i < dim; i++)
+                s->x[i] *= scale;
+        }
+        if (!cpu_only)
+            bn_model_set_gpu_disabled(m, 0);
     }
     if (cpu_only)
         bn_model_set_gpu_disabled(m, 0);
@@ -2208,8 +2717,35 @@ int bn_transformer_gpu_fallback_ssm_layers(
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;
+    if (hyper_connections)
+        return bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, s->hc_residual, hc_bytes);
     return bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
         emit, next_norm, dim, u_eps);
+}
+
+int bn_transformer_gpu_fallback_ssm_branch(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    BnLayerWeights *layer,
+    int layer_index,
+    int dim) {
+    if (!emit || !gpu || !model || !session || !layer ||
+        layer_index < 0 || dim <= 0 ||
+        bn_transformer_gpu_emit_context_flush(emit, gpu) != 0)
+        return -1;
+    BnRunState *state = &session->state;
+    size_t bytes = (size_t)dim * sizeof(float);
+    if (bn_transformer_gpu_read_x(gpu, state->x, bytes) != 0)
+        return -1;
+    bn_model_set_gpu_disabled(model, 1);
+    bn_transformer_cpu_forward_ssm_block(
+        model, session, layer, layer_index, session->pos);
+    bn_model_set_gpu_disabled(model, 0);
+    return bn_transformer_gpu_write_activation_buf(
+        gpu, BN_GPU_VALUE_XB2, state->xb, bytes);
 }
 
 int bn_transformer_gpu_fallback_moe_layer(
@@ -2219,18 +2755,43 @@ int bn_transformer_gpu_fallback_moe_layer(
     BnSession *sess,
     BnLayerWeights *lw,
     int layer,
+    int pos,
     int dim,
     uint32_t u_eps,
     void *next_norm) {
     BnRunState *s = &sess->state;
+    int hyper_connections =
+        bn_transformer_uses_hyper_connections(&m->config);
+    int streams = m->config.hyper_connection_count;
     if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0)
         return -1;
     if (bn_transformer_gpu_read_x(gpu, s->x,
                                   (size_t)dim * sizeof(float)) != 0)
         return -1;
+    if (hyper_connections &&
+        (bn_transformer_gpu_read_activation_buf(
+             gpu, BN_GPU_VALUE_HC_RESIDUAL, s->hc_residual,
+             (size_t)streams * (size_t)dim * sizeof(float)) != 0 ||
+         bn_transformer_gpu_read_activation_buf(
+             gpu, BN_GPU_VALUE_HC_INJECT, s->hc_inject,
+             (size_t)streams * sizeof(float)) != 0))
+        return -1;
     bn_model_set_gpu_disabled(m, 1);
     bn_moe_forward(m, sess, lw, layer);
     bn_model_set_gpu_disabled(m, 0);
+    if (sess->moe_state)
+        bn_transformer_cpu_debug_dump_values(
+            fallback_cpu_runtime(m), sess->moe_state->router_logits,
+            m->config.n_experts, "gpu_cpu_moe_logits", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->xb, dim,
+        "gpu_cpu_moe_out", layer, pos);
+    if (hyper_connections) {
+        bn_transformer_cpu_hyper_connection_combine(m, sess, s->xb);
+        return bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, s->hc_residual,
+            (size_t)streams * (size_t)dim * sizeof(float));
+    }
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;
@@ -2280,14 +2841,20 @@ int bn_transformer_gpu_fallback_cpu_attention(
     int layer,
     int pos,
     int cache_pos,
+    size_t rope_freq_offset,
     int rope_dims,
     const float *rope_cos,
     const float *rope_sin,
     int dim,
     uint32_t u_eps,
+    int backend_qkv_ready,
+    uint32_t kv_cache_off,
+    void *q_norm,
+    void *k_norm,
     void *next_norm) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
+    int hyper_connections = bn_transformer_uses_hyper_connections(c);
     BnLayerShapePlan shape;
     bn_transformer_plan_layer_shape(&shape, c, lw, layer,
                                     bn_model_tq_state(m) != NULL);
@@ -2321,10 +2888,36 @@ int bn_transformer_gpu_fallback_cpu_attention(
     float *value_cache_row =
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
-                     bn_transformer_gpu_norm_epsilon(c));
-    float *q_full = shape.q_gated ? s->hb : s->q;
-    {
+    if (backend_qkv_ready) {
+        if (bn_transformer_gpu_read_activation_buf(
+                gpu, BN_GPU_VALUE_Q, s->q,
+                (size_t)shape.q_dim * sizeof(float)) != 0 ||
+            bn_transformer_gpu_read_activation_buf_offset(
+                gpu, BN_GPU_VALUE_KEY_CACHE, key_cache_row,
+                (size_t)kv_dim * sizeof(float),
+                (size_t)kv_cache_off * sizeof(float)) != 0 ||
+            bn_transformer_gpu_read_activation_buf_offset(
+                gpu, BN_GPU_VALUE_VALUE_CACHE, value_cache_row,
+                (size_t)kv_dim * sizeof(float),
+                (size_t)kv_cache_off * sizeof(float)) != 0)
+            return -1;
+    }
+
+    if (hyper_connections)
+        memcpy(s->xb, s->x, (size_t)dim * sizeof(float));
+    else
+        fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
+                         bn_transformer_gpu_norm_epsilon(c));
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->xb, dim,
+        "bitnet_attn_norm", layer, pos);
+    float *q_full_storage = shape.q_gated
+        ? (float *)malloc((size_t)2 * (size_t)shape.q_dim * sizeof(float))
+        : NULL;
+    float *q_full = shape.q_gated ? q_full_storage : s->q;
+    if (shape.q_gated && !q_full_storage)
+        return -1;
+    if (!backend_qkv_ready) {
         BnMatvecTask qkv[3] = {
             { q_full, &lw->attn.wq, NULL, 0 },
             { key_cache_row, &lw->attn.wk, NULL, 0 },
@@ -2332,8 +2925,22 @@ int bn_transformer_gpu_fallback_cpu_attention(
         };
         fallback_cpu_matvec_batch(m, qkv, 3, s->xb, s->x_q);
     }
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), q_full, shape.q_gated ? 2 * shape.q_dim
+                                                       : shape.q_dim,
+        "bitnet_attn_q_raw", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), key_cache_row, kv_dim,
+        "bitnet_attn_k_raw", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), value_cache_row, kv_dim,
+        "bitnet_attn_v_raw", layer, pos);
     double t_qkv = profile ? bn_platform_time_ms() : 0.0;
 
+    if (shape.q_gated && backend_qkv_ready) {
+        free(q_full_storage);
+        return -1;
+    }
     if (shape.q_gated) {
         for (int h = 0; h < n_heads; h++)
             memcpy(s->q + (size_t)h * head_size,
@@ -2341,57 +2948,152 @@ int bn_transformer_gpu_fallback_cpu_attention(
                    (size_t)head_size * sizeof(float));
     }
 
-    if (lw->attn.q_bias) {
+    if (!backend_qkv_ready && lw->attn.q_bias) {
         for (int i = 0; i < shape.q_dim; i++) s->q[i] += lw->attn.q_bias[i];
     }
-    if (lw->attn.k_bias) {
+    if (!backend_qkv_ready && lw->attn.k_bias) {
         for (int i = 0; i < kv_dim; i++) key_cache_row[i] += lw->attn.k_bias[i];
     }
-    if (lw->attn.v_bias) {
+    if (!backend_qkv_ready && lw->attn.v_bias) {
         for (int i = 0; i < kv_dim; i++)
             value_cache_row[i] += lw->attn.v_bias[i];
     }
-    if (lw->attn.q_norm) {
+    if (!backend_qkv_ready && lw->attn.q_norm) {
         for (int h = 0; h < n_heads; h++)
             fallback_rmsnorm(s->q + (size_t)h * head_size,
                              s->q + (size_t)h * head_size,
                              lw->attn.q_norm + (size_t)h * shape.qk_stride,
                              head_size, bn_transformer_gpu_norm_epsilon(c));
     }
-    if (lw->attn.k_norm) {
+    if (!backend_qkv_ready && lw->attn.k_norm) {
         for (int h = 0; h < n_kv_heads; h++)
             fallback_rmsnorm(key_cache_row + (size_t)h * head_size,
                              key_cache_row + (size_t)h * head_size,
                              lw->attn.k_norm + (size_t)h * shape.qk_stride,
                              head_size, bn_transformer_gpu_norm_epsilon(c));
     }
-    if (shape.value_shares_key) {
+    if (!backend_qkv_ready && shape.value_shares_key) {
         float eps = bn_transformer_gpu_norm_epsilon(c);
         for (int h = 0; h < n_kv_heads; h++) {
             float *vh = value_cache_row + (size_t)h * head_size;
-            float ss = 0.0f;
+            double ss = 0.0;
             for (int i = 0; i < head_size; i++)
-                ss += vh[i] * vh[i];
-            float scale = 1.0f / sqrtf(ss / (float)head_size + eps);
+                ss += (double)(vh[i] * vh[i]);
+            float scale = 1.0f /
+                sqrtf((float)(ss / (double)head_size) + eps);
             for (int i = 0; i < head_size; i++)
                 vh[i] *= scale;
         }
     }
 
-    bn_transformer_cpu_apply_rope_heads(fallback_cpu_runtime(m), s->q,
-                                        n_heads, head_size,
-                                        layer_rope_dims, rope_cos, rope_sin);
-    bn_transformer_cpu_apply_rope_heads(fallback_cpu_runtime(m), key_cache_row,
-                                        n_kv_heads, head_size,
-                                        layer_rope_dims, rope_cos, rope_sin);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->q, shape.q_dim,
+        "bitnet_attn_q_normed", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), key_cache_row, kv_dim,
+        "bitnet_attn_k_normed", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), value_cache_row, kv_dim,
+        "bitnet_attn_v_normed", layer, pos);
 
     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-    BnGQACtx gctx = {
-        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
-        bn_transformer_attention_scale(c, head_size),
-        bn_transformer_kv_host_cache_uses_fp16_rows(c)
-    };
-    bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
+    int backend_rope_ready = 0;
+    int attempted_backend_attention = pos < c->seq_len &&
+        bn_transformer_gpu_reference_decode_attention_prepared_enabled(
+            gpu, c, backend_qkv_ready);
+    if (attempted_backend_attention) {
+        BnGPUAttentionPrefillPlan decode_plan = {
+            .n_tokens = 1,
+            .n_heads = n_heads,
+            .n_kv_heads = n_kv_heads,
+            .head_size = head_size,
+            .q_row_stride = shape.q_dim,
+            .qk_norm_per_head = shape.qk_stride != 0,
+            .reference_rmsnorm_order = 0,
+            .pos0 = pos,
+            .rope_dims = layer_rope_dims,
+            .attention_window = bn_transformer_attention_window(c, layer),
+            .rope_freq_offset = rope_freq_offset,
+            .kv_cache_off = loff + (size_t)cache_pos * c->kv_dim,
+            .kv_cache_stride = c->kv_dim,
+            .attention_scale =
+                bn_transformer_attention_scale(c, head_size),
+            .norm_eps = bn_transformer_gpu_norm_epsilon(c),
+        };
+        int backend_attention_rc =
+            bn_gpu_backend_decode_attention_scores_prepared(
+                gpu, s->xb, s->q, key_cache_row, s->q, key_cache_row,
+                value_cache_row, q_norm, k_norm, &decode_plan);
+        backend_rope_ready = backend_attention_rc == 0;
+        if (bn_transformer_gpu_debug_fallback_enabled(gpu))
+            fprintf(stderr,
+                    "[gpu:fallback:attention] prepared layer=%d pos=%d rc=%d\n",
+                    layer, pos, backend_attention_rc);
+    }
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->key_cache + loff,
+        n_kv * c->kv_dim, "bitnet_attn_keys", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->value_cache + loff,
+        n_kv * c->kv_dim, "bitnet_attn_values", layer, pos);
+    {
+        if (!backend_rope_ready) {
+            bn_transformer_cpu_apply_rope_heads(
+                fallback_cpu_runtime(m), s->q, n_heads, head_size,
+                layer_rope_dims, rope_cos, rope_sin);
+            bn_transformer_cpu_apply_rope_heads(
+                fallback_cpu_runtime(m), key_cache_row, n_kv_heads,
+                head_size, layer_rope_dims, rope_cos, rope_sin);
+        }
+        if (backend_rope_ready) {
+            for (int h = 0; h < n_heads; h++) {
+                float *dst = s->att + (size_t)h * c->seq_len;
+                const float *src = s->xb + (size_t)h * n_kv;
+                for (int i = 0; i < n_kv; i++)
+                    dst[i] = src[i];
+            }
+        }
+        float attention_scale =
+            bn_transformer_attention_scale(c, head_size);
+        BnGQACtx gctx = {
+            c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim,
+            c->seq_len, attention_scale,
+            bn_transformer_kv_host_cache_uses_fp16_rows(c), NULL,
+            layer, backend_rope_ready ? 2 : 0, 0
+        };
+        bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
+    }
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->q, shape.q_dim,
+        "bitnet_attn_q", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), key_cache_row, kv_dim,
+        "bitnet_attn_k", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), value_cache_row, kv_dim,
+        "bitnet_attn_v", layer, pos);
+    if (!bn_transformer_attention_uses_cpu_flash(c) &&
+        (bn_transformer_cpu_debug_dump_path(fallback_cpu_runtime(m)) ||
+         bn_transformer_cpu_debug_binary_selected(
+             fallback_cpu_runtime(m), "bitnet_attn_weights", layer)) &&
+        bn_transformer_cpu_debug_dump_pos_selected(
+            fallback_cpu_runtime(m), pos)) {
+        float *weights = (float *)malloc(
+            (size_t)n_heads * (size_t)n_kv * sizeof(float));
+        if (weights) {
+            for (int h = 0; h < n_heads; h++)
+                memcpy(weights + (size_t)h * n_kv,
+                       s->att + (size_t)h * c->seq_len,
+                       (size_t)n_kv * sizeof(float));
+            bn_transformer_cpu_debug_dump_values(
+                fallback_cpu_runtime(m), weights, n_heads * n_kv,
+                "bitnet_attn_weights", layer, pos);
+            free(weights);
+        }
+    }
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->xb, shape.q_dim,
+        "bitnet_attn_out", layer, pos);
     double t_gqa = profile ? bn_platform_time_ms() : 0.0;
 
     if (shape.q_gated) {
@@ -2407,6 +3109,14 @@ int bn_transformer_gpu_fallback_cpu_attention(
         fallback_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm,
                          dim, bn_transformer_gpu_norm_epsilon(c));
 
+    if (backend_qkv_ready) {
+        int rc = bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_XB, s->xb,
+            (size_t)shape.q_dim * sizeof(float));
+        free(q_full_storage);
+        return rc;
+    }
+
     {
         BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
         fallback_cpu_matvec_batch(m, wo, 1, s->xb, s->x_q);
@@ -2414,8 +3124,15 @@ int bn_transformer_gpu_fallback_cpu_attention(
     if (attn_plan.use_post_norm)
         fallback_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm,
                          dim, bn_transformer_gpu_norm_epsilon(c));
-    bn_transformer_cpu_residual_add(
-        fallback_cpu_runtime(m), s->x, s->xb2, dim);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->xb2, dim,
+        "bitnet_attn_wo", layer, pos);
+    if (!hyper_connections)
+        bn_transformer_cpu_residual_add(
+            fallback_cpu_runtime(m), s->x, s->xb2, dim);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), hyper_connections ? s->xb2 : s->x, dim,
+        "bitnet_attn_residual", layer, pos);
 
     double t_out = profile ? bn_platform_time_ms() : 0.0;
 
@@ -2427,14 +3144,25 @@ int bn_transformer_gpu_fallback_cpu_attention(
             kv_row_off) != 0 ||
         bn_transformer_gpu_write_activation_buf_offset(
             gpu, BN_GPU_VALUE_VALUE_CACHE, value_cache_row, kv_row_bytes,
-            kv_row_off) != 0)
+            kv_row_off) != 0) {
+        free(q_full_storage);
         return -1;
+    }
 
-    if (bn_transformer_gpu_write_x(gpu, s->x,
-                                   (size_t)dim * sizeof(float)) != 0)
-        return -1;
-    int rc = bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
-        emit, next_norm, dim, u_eps);
+    int rc;
+    if (hyper_connections) {
+        rc = bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_XB2, s->xb2,
+            (size_t)dim * sizeof(float));
+    } else {
+        if (bn_transformer_gpu_write_x(gpu, s->x,
+                                       (size_t)dim * sizeof(float)) != 0) {
+            free(q_full_storage);
+            return -1;
+        }
+        rc = bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
+            emit, next_norm, dim, u_eps);
+    }
     if (profile) {
         double t_done = bn_platform_time_ms();
         fprintf(stderr,
@@ -2445,6 +3173,210 @@ int bn_transformer_gpu_fallback_cpu_attention(
                 t_gqa - t_qkv, t_out - t_gqa, t_done - t_out,
                 t_done - t0);
     }
+    free(q_full_storage);
+    return rc;
+}
+
+int bn_transformer_gpu_fallback_hyper_mix(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    const BnHyperConnectionWeights *weights,
+    int dim) {
+    BnRunState *s = &sess->state;
+    int streams = m->config.hyper_connection_count;
+    if (streams <= 1 || dim <= 0 || !s->hc_residual || !s->hc_inject)
+        return -1;
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, s->hc_residual,
+            (size_t)streams * (size_t)dim * sizeof(float)) != 0)
+        return -1;
+
+    bn_model_set_gpu_disabled(m, 1);
+    int rc = bn_transformer_cpu_hyper_connection_mix(
+        m, sess, weights, 1);
+    bn_model_set_gpu_disabled(m, 0);
+    if (rc != 0)
+        return -1;
+
+    if (bn_transformer_gpu_write_x(
+            gpu, s->x, (size_t)dim * sizeof(float)) != 0 ||
+        bn_transformer_gpu_write_activation_buf(
+            gpu, BN_GPU_VALUE_HC_INJECT, s->hc_inject,
+            (size_t)streams * sizeof(float)) != 0)
+        return -1;
+    return 0;
+}
+
+int bn_transformer_gpu_debug_compare_hyper_mix(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    const BnHyperConnectionWeights *weights,
+    int layer,
+    int pos,
+    int dim) {
+    if (!emit || !gpu || !model || !session || !weights || dim <= 0)
+        return -1;
+    BnRunState *s = &session->state;
+    int streams = model->config.hyper_connection_count;
+    int rank = model->config.hyper_connection_rank;
+    size_t wide = (size_t)streams * (size_t)dim;
+    size_t total = wide * 6u + (size_t)dim * 3u +
+                   (size_t)rank * 3u + (size_t)streams * 4u;
+    float *storage = (float *)malloc(total * sizeof(float));
+    if (!storage || !s->hc_residual || !s->hc_norm || !s->hc_gate ||
+        !s->hc_low_rank || !s->hc_inject) {
+        free(storage);
+        return -1;
+    }
+    float *saved_residual = storage;
+    float *saved_norm = saved_residual + wide;
+    float *saved_gate = saved_norm + wide;
+    float *gpu_residual = saved_gate + wide;
+    float *gpu_norm = gpu_residual + wide;
+    float *gpu_gate = gpu_norm + wide;
+    float *saved_x = gpu_gate + wide;
+    float *cpu_x = saved_x + dim;
+    float *gpu_x = cpu_x + dim;
+    float *saved_low = gpu_x + dim;
+    float *cpu_low = saved_low + rank;
+    float *gpu_low = cpu_low + rank;
+    float *saved_inject = gpu_low + rank;
+    float *cpu_inject = saved_inject + streams;
+    float *gpu_inject = cpu_inject + streams;
+    float *padding = gpu_inject + streams;
+    (void)padding;
+
+    memcpy(saved_residual, s->hc_residual, wide * sizeof(float));
+    memcpy(saved_norm, s->hc_norm, wide * sizeof(float));
+    memcpy(saved_gate, s->hc_gate, wide * sizeof(float));
+    memcpy(saved_x, s->x, (size_t)dim * sizeof(float));
+    memcpy(saved_low, s->hc_low_rank, (size_t)rank * sizeof(float));
+    memcpy(saved_inject, s->hc_inject, (size_t)streams * sizeof(float));
+
+    int rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, gpu_residual,
+            wide * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_NORM, gpu_norm, wide * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_GATE, gpu_gate, wide * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_LOW_RANK, gpu_low,
+            (size_t)rank * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_X, gpu_x, (size_t)dim * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_INJECT, gpu_inject,
+            (size_t)streams * sizeof(float));
+    if (rc == 0) {
+        memcpy(s->hc_residual, gpu_residual, wide * sizeof(float));
+        bn_model_set_gpu_disabled(model, 1);
+        rc = bn_transformer_cpu_hyper_connection_mix(
+            model, session, weights, 1);
+        bn_model_set_gpu_disabled(model, 0);
+    }
+    if (rc == 0) {
+        memcpy(cpu_x, s->x, (size_t)dim * sizeof(float));
+        memcpy(cpu_inject, s->hc_inject,
+               (size_t)streams * sizeof(float));
+        bn_transformer_gpu_debug_compare_vec(
+            "hc_norm_same_input_compare", layer, pos,
+            s->hc_norm, gpu_norm, (int)wide);
+        bn_transformer_gpu_debug_compare_vec(
+            "hc_low_rank_same_input_compare", layer, pos,
+            s->hc_low_rank, gpu_low, rank);
+        bn_transformer_gpu_debug_compare_vec(
+            "hc_gate_same_input_compare", layer, pos,
+            s->hc_gate, gpu_gate, (int)wide);
+        bn_transformer_gpu_debug_compare_vec(
+            "hc_mix_same_input_compare", layer, pos,
+            cpu_x, gpu_x, dim);
+        bn_transformer_gpu_debug_compare_vec(
+            "hc_inject_same_input_compare", layer, pos,
+            cpu_inject, gpu_inject, streams);
+    }
+
+    memcpy(s->hc_residual, saved_residual, wide * sizeof(float));
+    memcpy(s->hc_norm, saved_norm, wide * sizeof(float));
+    memcpy(s->hc_gate, saved_gate, wide * sizeof(float));
+    memcpy(s->x, saved_x, (size_t)dim * sizeof(float));
+    memcpy(s->hc_low_rank, saved_low, (size_t)rank * sizeof(float));
+    memcpy(s->hc_inject, saved_inject, (size_t)streams * sizeof(float));
+    free(storage);
+    return rc;
+}
+
+int bn_transformer_gpu_debug_compare_hyper_combine(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *model,
+    BnSession *session,
+    int block_output_buf,
+    int layer,
+    int pos,
+    int dim) {
+    if (!emit || !gpu || !model || !session || dim <= 0)
+        return -1;
+    int streams = model->config.hyper_connection_count;
+    size_t wide = (size_t)streams * (size_t)dim;
+    size_t total = wide * 3u + (size_t)dim + (size_t)streams;
+    float *storage = (float *)malloc(total * sizeof(float));
+    if (!storage)
+        return -1;
+    float *before = storage;
+    float *cpu = before + wide;
+    float *after = cpu + wide;
+    float *branch = after + wide;
+    float *inject = branch + dim;
+    int rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, before,
+            wide * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, block_output_buf, branch, (size_t)dim * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_INJECT, inject,
+            (size_t)streams * sizeof(float));
+    if (rc == 0)
+        rc = bn_transformer_gpu_emit_context_hyper_combine(
+            emit, block_output_buf, dim, streams);
+    if (rc == 0)
+        rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
+    if (rc == 0)
+        rc = bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_VALUE_HC_RESIDUAL, after,
+            wide * sizeof(float));
+    if (rc == 0) {
+        memcpy(cpu, before, wide * sizeof(float));
+        float inv_streams = 1.0f / (float)streams;
+        for (int stream = 0; stream < streams; stream++) {
+            float scatter = 2.0f /
+                (1.0f + expf(-inject[stream] * inv_streams));
+            bn_transformer_cpu_scaled_residual_add(
+                fallback_cpu_runtime(model),
+                cpu + (size_t)stream * dim, branch,
+                scatter, dim, session->state.hc_norm);
+        }
+        bn_transformer_gpu_debug_compare_vec(
+            "hc_combine_same_input_compare", layer, pos,
+            cpu, after, (int)wide);
+    }
+    free(storage);
     return rc;
 }
 
@@ -3267,7 +4199,8 @@ int bn_transformer_gpu_debug_compare_ssm(
     float *pre_state = malloc(state_bytes);
     float *pre_conv = malloc(conv_bytes);
     float *gpu_proj = malloc((size_t)dim * sizeof(float));
-    float *gpu_gate = malloc((size_t)dim * sizeof(float));
+    float *gpu_gate = malloc((size_t)shape.value_dim * sizeof(float));
+    float *gpu_pre_gate = malloc((size_t)shape.value_dim * sizeof(float));
     float *gpu_qkv = malloc((size_t)shape.qkv_dim * sizeof(float));
     float *gpu_projection_input = malloc((size_t)dim * sizeof(float));
     float *gpu_qkv_raw = malloc((size_t)shape.qkv_dim * sizeof(float));
@@ -3288,14 +4221,14 @@ int bn_transformer_gpu_debug_compare_ssm(
     BnRunState *s = &sess->state;
     if (!pre_x || !pre_xb || !cpu_norm || !cpu_z_direct ||
         !pre_state || !pre_conv ||
-        !gpu_proj || !gpu_gate ||
+        !gpu_proj || !gpu_gate || !gpu_pre_gate ||
         !gpu_qkv || !gpu_projection_input || !gpu_qkv_raw || !cpu_qkv_raw ||
         !gpu_z || !cpu_alpha || !cpu_beta ||
         !gpu_alpha || !gpu_beta || !gpu_state || !gpu_conv ||
         !same_input_state || !same_input_out || !same_input_conv) {
         free(pre_x); free(pre_xb); free(cpu_norm); free(cpu_z_direct);
         free(pre_state); free(pre_conv); free(gpu_proj);
-        free(gpu_gate);
+        free(gpu_gate); free(gpu_pre_gate);
         free(gpu_qkv); free(gpu_projection_input); free(gpu_qkv_raw);
         free(cpu_qkv_raw); free(gpu_z);
         free(cpu_alpha); free(cpu_beta); free(gpu_alpha); free(gpu_beta);
@@ -3308,12 +4241,22 @@ int bn_transformer_gpu_debug_compare_ssm(
     memcpy(pre_xb, s->xb, (size_t)dim * sizeof(float));
     memcpy(pre_state, s->ssm_state, state_bytes);
     memcpy(pre_conv, s->ssm_conv_state, conv_bytes);
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(m), pre_state, (int)state_values,
+        "gpu_ssm_state_before", layer, pos);
+    bn_transformer_cpu_debug_dump_values(
+        bn_model_cpu_runtime_policy(m), pre_conv, (int)conv_values,
+        "gpu_ssm_conv_before", layer, pos);
     int rc = bn_transformer_gpu_emit_context_flush(emit, gpu);
     rc = rc == 0 ? bn_transformer_gpu_read_activation_buf(
         gpu, BN_GPU_VALUE_SCRATCH, gpu_proj,
         (size_t)dim * sizeof(float)) : rc;
-    rc = rc == 0 ? bn_transformer_gpu_read_xb2(
-        gpu, gpu_gate, (size_t)dim * sizeof(float)) : rc;
+    rc = rc == 0 ? bn_transformer_gpu_read_activation_buf(
+        gpu, BN_GPU_VALUE_MOE_HB2, gpu_gate,
+        (size_t)shape.value_dim * sizeof(float)) : rc;
+    rc = rc == 0 ? bn_transformer_gpu_read_activation_buf(
+        gpu, BN_GPU_VALUE_MOE_HB, gpu_pre_gate,
+        (size_t)shape.value_dim * sizeof(float)) : rc;
     rc = rc == 0 ? bn_transformer_gpu_read_activation_buf(
         gpu, BN_GPU_VALUE_SSM_QKV, gpu_qkv,
         (size_t)shape.qkv_dim * sizeof(float)) : rc;
@@ -3337,8 +4280,13 @@ int bn_transformer_gpu_debug_compare_ssm(
     rc = rc == 0 ? bn_transformer_gpu_read_activation_buf(
         gpu, BN_GPU_VALUE_SSM_CONV_STATE, gpu_conv, conv_bytes) : rc;
     if (rc == 0) {
-        fallback_rmsnorm(cpu_norm, pre_x, lw->norm.attn_norm, dim,
-                         bn_transformer_gpu_norm_epsilon(&m->config));
+        if (bn_transformer_uses_hyper_connections(&m->config)) {
+            memcpy(cpu_norm, pre_x, (size_t)dim * sizeof(float));
+            memcpy(pre_xb, pre_x, (size_t)dim * sizeof(float));
+        } else {
+            fallback_rmsnorm(cpu_norm, pre_x, lw->norm.attn_norm, dim,
+                             bn_transformer_gpu_norm_epsilon(&m->config));
+        }
         bn_transformer_gpu_debug_compare_vec(
             "ssm_input_norm_compare", layer, pos,
             cpu_norm, pre_xb, dim);
@@ -3376,7 +4324,8 @@ int bn_transformer_gpu_debug_compare_ssm(
                conv_per * sizeof(float));
         BnSSMConvCtx same_input_conv_ctx = {
             cpu_qkv_raw, same_input_conv, lw->ssm.ssm_conv1d,
-            shape.qkv_dim, shape.conv_kernel
+            shape.qkv_dim, shape.conv_kernel,
+            bn_transformer_ssm_uses_sigmoid_gate(&m->config)
         };
         bn_transformer_cpu_ssm_conv_silu_op(
             bn_transformer_cpu_backend_ops(fallback_cpu_runtime(m)))(
@@ -3435,7 +4384,8 @@ int bn_transformer_gpu_debug_compare_ssm(
         bn_transformer_gpu_debug_compare_vec(
             "ssm_projection_compare", layer, pos, s->xb, gpu_proj, dim);
         bn_transformer_gpu_debug_compare_vec(
-            "ssm_gate_compare", layer, pos, s->xb2, gpu_gate, dim);
+            "ssm_gate_compare", layer, pos, s->xb2, gpu_gate,
+            shape.value_dim);
         bn_transformer_gpu_debug_compare_vec(
             "ssm_qkv_compare", layer, pos, s->hb, gpu_qkv, shape.qkv_dim);
         bn_transformer_gpu_debug_compare_vec(
@@ -3460,13 +4410,18 @@ int bn_transformer_gpu_debug_compare_ssm(
             bn_transformer_cpu_backend_ops(fallback_cpu_runtime(m)));
         same_input_delta_op(&same_input_delta, 0, shape.num_v_heads);
         bn_transformer_gpu_debug_compare_vec(
+            "ssm_pre_gate_same_input_compare", layer, pos,
+            same_input_out, gpu_pre_gate, shape.value_dim);
+        bn_transformer_gpu_debug_compare_vec(
             "ssm_state_same_input_compare", layer, pos,
             same_input_state,
             gpu_state + (size_t)ssm_idx * state_per, (int)state_per);
         BnSSMGateCtx same_input_gate = {
             same_input_out, gpu_z, lw->ssm.ssm_norm,
             bn_transformer_gpu_norm_epsilon(&m->config),
-            shape.head_v_dim
+            shape.head_v_dim,
+            bn_transformer_ssm_uses_sigmoid_gate(&m->config),
+            shape.num_v_heads
         };
         bn_tp_fn same_input_gate_op = bn_transformer_cpu_ssm_gate_op(
             bn_transformer_cpu_backend_ops(fallback_cpu_runtime(m)));
@@ -3487,7 +4442,7 @@ int bn_transformer_gpu_debug_compare_ssm(
     }
     free(pre_x); free(pre_xb); free(cpu_norm); free(cpu_z_direct);
     free(pre_state); free(pre_conv); free(gpu_proj);
-    free(gpu_gate);
+    free(gpu_gate); free(gpu_pre_gate);
     free(gpu_qkv); free(gpu_projection_input); free(gpu_qkv_raw);
     free(cpu_qkv_raw); free(gpu_z);
     free(cpu_alpha); free(cpu_beta); free(gpu_alpha); free(gpu_beta);
@@ -3565,6 +4520,7 @@ int bn_transformer_gpu_debug_compare_attention(
     int reference_uses_float_kquant) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
+    int hyper_connections = bn_transformer_uses_hyper_connections(c);
     BnLayerShapePlan shape;
     bn_transformer_plan_layer_shape(&shape, c, lw, layer,
                                     bn_model_tq_state(m) != NULL);
@@ -3599,8 +4555,12 @@ int bn_transformer_gpu_debug_compare_attention(
         free(gpu_k);
         return -1;
     }
-    if (bn_transformer_gpu_read_x(gpu, gpu_x,
-                                  (size_t)dim * sizeof(float)) != 0 ||
+    if ((hyper_connections
+             ? bn_transformer_gpu_read_activation_buf(
+                   gpu, BN_GPU_VALUE_XB2, gpu_x,
+                   (size_t)dim * sizeof(float))
+             : bn_transformer_gpu_read_x(
+                   gpu, gpu_x, (size_t)dim * sizeof(float))) != 0 ||
         bn_transformer_gpu_read_activation_buf(
             gpu, BN_GPU_VALUE_Q, gpu_q,
             (size_t)shape.q_dim * sizeof(float)) != 0) {
@@ -3646,9 +4606,22 @@ int bn_transformer_gpu_debug_compare_attention(
     float *value_cache_row =
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
-                     bn_transformer_gpu_norm_epsilon(c));
-    float *q_full = shape.q_gated ? s->hb : s->q;
+    if (lw->norm.attn_norm)
+        fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
+                         bn_transformer_gpu_norm_epsilon(c));
+    else
+        memcpy(s->xb, cpu_in, (size_t)dim * sizeof(float));
+    float *q_full_storage = shape.q_gated
+        ? (float *)malloc((size_t)2 * (size_t)shape.q_dim * sizeof(float))
+        : NULL;
+    float *q_full = shape.q_gated ? q_full_storage : s->q;
+    if (shape.q_gated && !q_full_storage) {
+        free(cpu_in);
+        free(gpu_x);
+        free(gpu_q);
+        free(gpu_k);
+        return -1;
+    }
     {
         BnMatvecTask qkv[3] = {
             { q_full, &lw->attn.wq, NULL, 0 },
@@ -3732,7 +4705,7 @@ int bn_transformer_gpu_debug_compare_attention(
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
         bn_transformer_attention_scale(c, head_size),
-        bn_transformer_kv_host_cache_uses_fp16_rows(c)
+        bn_transformer_kv_host_cache_uses_fp16_rows(c), NULL, layer, 0, 0
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
 
@@ -3760,15 +4733,17 @@ int bn_transformer_gpu_debug_compare_attention(
     if (lw->norm.attn_post_norm)
         fallback_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm,
                          dim, bn_transformer_gpu_norm_epsilon(c));
-    bn_transformer_cpu_residual_add(
-        fallback_cpu_runtime(m), s->x, s->xb2, dim);
+    if (!hyper_connections)
+        bn_transformer_cpu_residual_add(
+            fallback_cpu_runtime(m), s->x, s->xb2, dim);
+    const float *cpu_attention_out = hyper_connections ? s->xb2 : s->x;
 
     double sum_abs = 0.0;
     double sum_sq = 0.0;
     float max_abs = 0.0f;
     int max_i = 0;
     for (int i = 0; i < dim; i++) {
-        float diff = fabsf(gpu_x[i] - s->x[i]);
+        float diff = fabsf(gpu_x[i] - cpu_attention_out[i]);
         sum_abs += (double)diff;
         sum_sq += (double)diff * (double)diff;
         if (diff > max_abs) {
@@ -3780,7 +4755,7 @@ int bn_transformer_gpu_debug_compare_attention(
             "[bn:gpu:debug] attention_compare layer=%d pos=%d "
             "max_abs=%.9g max_i=%d cpu=%.9g gpu=%.9g "
             "mean_abs=%.9g rms=%.9g\n",
-            layer, pos, max_abs, max_i, s->x[max_i], gpu_x[max_i],
+            layer, pos, max_abs, max_i, cpu_attention_out[max_i], gpu_x[max_i],
             sum_abs / (double)dim, sqrt(sum_sq / (double)dim));
 
     if (lw->norm.ffn_norm) {
@@ -3814,6 +4789,7 @@ int bn_transformer_gpu_debug_compare_attention(
         free(gpu_x);
         free(gpu_q);
         free(gpu_k);
+        free(q_full_storage);
         return -1;
     }
 
@@ -3821,6 +4797,7 @@ int bn_transformer_gpu_debug_compare_attention(
     free(gpu_x);
     free(gpu_q);
     free(gpu_k);
+    free(q_full_storage);
     return 0;
 }
 
@@ -3899,9 +4876,21 @@ int bn_transformer_gpu_debug_compare_gqa(
     memcpy(gpu_value_row, value_cache_row,
            (size_t)kv_dim * sizeof(float));
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
-                     bn_transformer_gpu_norm_epsilon(c));
-    float *q_full = shape.q_gated ? s->hb : s->q;
+    if (lw->norm.attn_norm)
+        fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
+                         bn_transformer_gpu_norm_epsilon(c));
+    else
+        memcpy(s->xb, cpu_in, (size_t)dim * sizeof(float));
+    float *q_full_storage = shape.q_gated
+        ? (float *)malloc((size_t)2 * (size_t)shape.q_dim * sizeof(float))
+        : NULL;
+    float *q_full = shape.q_gated ? q_full_storage : s->q;
+    if (shape.q_gated && !q_full_storage) {
+        free(cpu_in);
+        free(gpu_xb);
+        free(gpu_value_row);
+        return -1;
+    }
     {
         BnMatvecTask qkv[3] = {
             { q_full, &lw->attn.wq, NULL, 0 },
@@ -3988,7 +4977,7 @@ int bn_transformer_gpu_debug_compare_gqa(
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
         bn_transformer_attention_scale(c, head_size),
-        bn_transformer_kv_host_cache_uses_fp16_rows(c)
+        bn_transformer_kv_host_cache_uses_fp16_rows(c), NULL, layer, 0, 0
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
 
@@ -3998,6 +4987,7 @@ int bn_transformer_gpu_debug_compare_gqa(
     free(cpu_in);
     free(gpu_xb);
     free(gpu_value_row);
+    free(q_full_storage);
     return 0;
 }
 
@@ -4078,14 +5068,19 @@ int bn_transformer_gpu_debug_compare_qkv(
         return -1;
     }
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
-                     bn_transformer_gpu_norm_epsilon(&m->config));
-    bn_transformer_gpu_debug_compare_vec(
-        "attn_norm_compare", layer, pos, s->xb, gpu_xb, dim);
+    if (lw->norm.attn_norm) {
+        fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim,
+                         bn_transformer_gpu_norm_epsilon(&m->config));
+        bn_transformer_gpu_debug_compare_vec(
+            "attn_norm_compare", layer, pos, s->xb, gpu_xb, dim);
+    } else {
+        memcpy(s->xb, gpu_xb, (size_t)dim * sizeof(float));
+    }
     if (bn_transformer_cpu_weight_uses_native_quant_activation(
             &lw->attn.wq) && !reference_uses_float_kquant)
         debug_compare_native_block_activation(gpu, layer, pos, s->xb, dim);
-    else if (!bn_transformer_cpu_weight_uses_native_quant_activation(
+    else if (!reference_uses_float_kquant &&
+             !bn_transformer_cpu_weight_uses_native_quant_activation(
                  &lw->attn.wq))
         debug_compare_native_quant_activation(gpu, layer, pos, s->xb, dim);
     debug_quant_matvec_prepared(
@@ -4108,7 +5103,7 @@ int bn_transformer_gpu_debug_compare_qkv(
     if (lw->attn.q_bias) {
         for (int i = 0; i < q_dim; i++) cpu_q[i] += lw->attn.q_bias[i];
     }
-    if (gpu_k_rope_applied) {
+    if (lw->attn.k_bias) {
         for (int i = 0; i < kv_dim; i++) cpu_k[i] += lw->attn.k_bias[i];
     }
     if (lw->attn.v_bias) {
@@ -4143,7 +5138,7 @@ int bn_transformer_gpu_debug_compare_qkv(
                 vh[i] *= scale;
         }
     }
-    if (lw->attn.k_bias) {
+    if (gpu_k_rope_applied) {
         int rope_dims = bn_transformer_rope_dims_for_head(c, head_size);
         int half = rope_dims / 2;
         for (int h = 0; h < n_kv_heads; h++) {
@@ -4188,14 +5183,45 @@ int bn_transformer_gpu_fallback_logits(
         return -1;
     }
     double t_flush = bn_platform_time_ms();
-    if (bn_transformer_gpu_read_xb(gpu, s->xb,
-                                   (size_t)dim * sizeof(float)) != 0) {
+    int hyper_connections =
+        bn_transformer_uses_hyper_connections(&m->config);
+    int read_rc = hyper_connections
+        ? bn_transformer_gpu_read_xb(
+            gpu, s->xb, (size_t)dim * sizeof(float))
+        : bn_transformer_gpu_read_x(
+            gpu, s->x, (size_t)dim * sizeof(float));
+    if (read_rc != 0) {
         bn_transformer_gpu_report_fallback(
-            gpu, "gpu logits cpu fallback read_xb failed");
+            gpu, "gpu logits cpu fallback activation read failed");
         return -1;
     }
+    if (!hyper_connections)
+        fallback_rmsnorm(
+            s->xb, s->x, m->weights.output_norm, dim,
+            bn_transformer_gpu_norm_epsilon(&m->config));
     double t_read = bn_platform_time_ms();
-    fallback_cpu_matvec(m, s->logits, logits->cpu_weight, s->xb, s->x_q);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->xb, dim,
+        "bitnet_result_norm", -1, sess->pos);
+    /* Backend-prepared weights may use a device-specific packed layout.  A
+       CPU handoff must acquire the CPU-owned preparation for the output
+       weight, just as the ordinary CPU logits path does. */
+    BnBackendModel *backend = bn_model_backend(m);
+    const BnPreparedWeight *cpu_prepared =
+        bn_transformer_logits_acquire_cpu_prepared(
+            backend, logits->cpu_weight);
+    BnMatvecTask task = {
+        s->logits,
+        logits->cpu_weight,
+        cpu_prepared,
+        bn_transformer_cpu_float_kquant_fallback_task_flags(&m->config),
+    };
+    bn_transformer_cpu_quant_matvec_batch(
+        &task, 1, s->xb, s->x_q, bn_model_pool(m));
+    bn_transformer_logits_release_cpu_prepared(backend, cpu_prepared);
+    bn_transformer_cpu_debug_dump_values(
+        fallback_cpu_runtime(m), s->logits, m->config.vocab_size,
+        "bitnet_result_output", -1, sess->pos);
     double t_logits = bn_platform_time_ms();
     if (bn_transformer_gpu_profile_level(gpu) >= 3) {
         fprintf(stderr,

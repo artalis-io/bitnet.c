@@ -38,9 +38,11 @@ def parse_args():
     p.add_argument("model")
     p.add_argument("--bitnet", default="./bitnet",
                    help="bitnet executable to compare")
-    p.add_argument("--bitnet-runtime", choices=("native", "scalar", "neon", "metal"),
+    runtime_choices = ("native", "scalar", "neon", "avx2", "avx512",
+                       "cuda", "metal")
+    p.add_argument("--bitnet-runtime", choices=runtime_choices,
                    help="runtime axis implemented by the BitNet executable")
-    p.add_argument("--llama-runtime", choices=("native", "scalar", "neon", "metal"),
+    p.add_argument("--llama-runtime", choices=runtime_choices,
                    help="runtime axis implemented by the llama.cpp executable")
     p.add_argument("--llama-bench-bin", default="llama-bench",
                    help="matching llama-bench executable")
@@ -119,7 +121,10 @@ def parse_args():
                    dest="metal_native_quant_prepared", action="store_true",
                    help=argparse.SUPPRESS)
     p.add_argument("--benchmark", action="store_true")
+    p.add_argument("--benchmark-prefill", action="store_true",
+                   help="benchmark prompt processing against llama-bench")
     p.add_argument("--bench-tokens", type=int, default=128)
+    p.add_argument("--bench-prompt-tokens", type=int, default=128)
     p.add_argument("--bench-runs", type=int, default=1)
     p.add_argument("--bench-warmup-runs", type=int, default=1)
     p.add_argument("--bitnet-bench-warmup-tokens", type=int, default=0,
@@ -134,6 +139,7 @@ def parse_args():
     p.add_argument("--llama-throughput", choices=("server", "bench"),
                    default="server")
     p.add_argument("--min-throughput-ratio", type=float, default=1.0)
+    p.add_argument("--min-prefill-throughput-ratio", type=float, default=1.0)
     return p.parse_args()
 
 
@@ -164,6 +170,8 @@ def append_bitnet_prompt(cmd, prompt):
 def append_bitnet_common_args(cmd, args):
     if args.metal:
         cmd.append("--metal")
+    elif args.bitnet_runtime == "cuda":
+        cmd.append("--cuda")
     if args.kv16:
         cmd.append("--kv16")
     if args.no_prefill:
@@ -216,6 +224,34 @@ def validate_bitnet_process(proc, args):
         if "falling back to CPU" in proc.stderr:
             raise RuntimeError(
                 "BitNet Metal runtime fell back to CPU; rejecting mixed-axis result")
+    if args.bitnet_runtime == "cuda":
+        if "CUDA weights uploaded" not in proc.stderr:
+            raise RuntimeError(
+                "BitNet CUDA runtime was requested but did not activate; "
+                "rejecting CPU fallback as a runtime-axis mismatch")
+        if "falling back to CPU" in proc.stderr:
+            raise RuntimeError(
+                "BitNet CUDA runtime fell back to CPU; rejecting mixed-axis result")
+
+
+def llama_gpu_runtime_requested(args):
+    return args.llama_metal or args.llama_runtime in ("cuda", "metal")
+
+
+def validate_llama_bench_process(proc, args):
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stdout)
+    runtime = args.llama_runtime
+    if runtime is None and args.llama_metal:
+        runtime = "metal"
+    if runtime == "cuda" and not re.search(r"\|\s*CUDA\s*\|", proc.stdout):
+        raise RuntimeError(
+            "llama.cpp CUDA runtime was requested but did not activate; "
+            "rejecting CPU fallback as a runtime-axis mismatch")
+    if runtime == "metal" and not re.search(r"\|\s*Metal\s*\|", proc.stdout):
+        raise RuntimeError(
+            "llama.cpp Metal runtime was requested but did not activate; "
+            "rejecting CPU fallback as a runtime-axis mismatch")
 
 
 def run_bitnet_topk(args, prompt):
@@ -408,18 +444,59 @@ def run_llama_bench(args):
         "-p", "0", "-fa", "on" if args.flash else "off",
         "-r", str(args.bench_runs),
     ]
-    cmd += ["-ngl", "99" if args.llama_metal else "0"]
+    llama_gpu = llama_gpu_runtime_requested(args)
+    cmd += ["-ngl", "99" if llama_gpu else "0"]
     if args.threads is not None:
         cmd += ["-t", str(args.threads)]
-    if not args.llama_metal:
+    if not llama_gpu:
         cmd += ["-dev", "none"]
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, check=False)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stdout)
+    validate_llama_bench_process(proc, args)
     matches = re.findall(r"tg\d+\s+\|\s+([0-9.]+)\s+±", proc.stdout)
     if not matches:
         raise RuntimeError("llama-bench throughput not found")
+    return float(matches[-1])
+
+
+def run_bitnet_prefill_bench(args):
+    prompt_tokens = [1] * args.bench_prompt_tokens
+    cmd = [
+        args.bitnet, args.model, "-n", "1", "--quiet", "--temp", "0",
+        "--repeat-penalty", "1", "--maxseq",
+        str(max(args.maxseq, args.bench_prompt_tokens + 1)),
+    ]
+    append_bitnet_prompt(cmd, prompt_tokens)
+    append_bitnet_common_args(cmd, args)
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, check=False)
+    validate_bitnet_process(proc, args)
+    matches = re.findall(r"Generation complete.*?prompt_ms=([0-9.]+)",
+                         proc.stderr)
+    if len(matches) != 1 or float(matches[0]) <= 0.0:
+        raise RuntimeError("bitnet prefill timing not found")
+    return args.bench_prompt_tokens * 1000.0 / float(matches[0])
+
+
+def run_llama_prefill_bench(args):
+    cmd = [
+        args.llama_bench_bin, "-m", args.model,
+        "-p", str(args.bench_prompt_tokens), "-n", "0",
+        "-fa", "on" if args.flash else "off",
+        "-r", str(args.bench_runs),
+    ]
+    llama_gpu = llama_gpu_runtime_requested(args)
+    cmd += ["-ngl", "99" if llama_gpu else "0"]
+    if args.threads is not None:
+        cmd += ["-t", str(args.threads)]
+    if not llama_gpu:
+        cmd += ["-dev", "none"]
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, check=False)
+    validate_llama_bench_process(proc, args)
+    matches = re.findall(r"pp\d+\s+\|\s+([0-9.]+)\s+±", proc.stdout)
+    if not matches:
+        raise RuntimeError("llama-bench prefill throughput not found")
     return float(matches[-1])
 
 
@@ -473,8 +550,17 @@ def benchmark_host_is_idle(args):
 def benchmark_runtime_axes_match(args):
     bitnet_runtime = args.bitnet_runtime
     if bitnet_runtime is None:
-        bitnet_runtime = "metal" if args.metal else (
-            "scalar" if "scalar" in os.path.basename(args.bitnet) else "native")
+        bitnet_name = os.path.basename(args.bitnet)
+        if args.metal:
+            bitnet_runtime = "metal"
+        elif "avx512" in bitnet_name:
+            bitnet_runtime = "avx512"
+        elif "avx2" in bitnet_name:
+            bitnet_runtime = "avx2"
+        elif "scalar" in bitnet_name:
+            bitnet_runtime = "scalar"
+        else:
+            bitnet_runtime = "native"
     llama_runtime = args.llama_runtime
     if llama_runtime is None:
         llama_runtime = "metal" if args.llama_metal else "native"
@@ -515,6 +601,9 @@ def main():
     if args.bench_runs < 1:
         print("--bench-runs must be positive", file=sys.stderr)
         return 2
+    if args.bench_prompt_tokens < 1:
+        print("--bench-prompt-tokens must be positive", file=sys.stderr)
+        return 2
     if args.bench_warmup_runs < 0:
         print("--bench-warmup-runs must be non-negative", file=sys.stderr)
         return 2
@@ -525,9 +614,9 @@ def main():
     if args.max_load_per_cpu <= 0.0:
         print("--max-load-per-cpu must be positive", file=sys.stderr)
         return 2
-    if args.benchmark and not benchmark_host_is_idle(args):
+    if (args.benchmark or args.benchmark_prefill) and not benchmark_host_is_idle(args):
         return 2
-    if args.benchmark and not benchmark_runtime_axes_match(args):
+    if (args.benchmark or args.benchmark_prefill) and not benchmark_runtime_axes_match(args):
         return 2
 
     print("Top-logit coherence: bitnet.c vs llama.cpp")
@@ -628,6 +717,24 @@ def main():
             print(f"Throughput samples bitnet=[{bitnet_csv}] "
                   f"llama=[{llama_csv}] median_runs={args.bench_runs}")
         if ratio < args.min_throughput_ratio:
+            failed += 1
+
+    if args.benchmark_prefill:
+        for _ in range(args.bench_warmup_runs):
+            run_bitnet_prefill_bench(args)
+        bitnet_samples = [run_bitnet_prefill_bench(args)
+                          for _ in range(args.bench_runs)]
+        llama_tps = run_llama_prefill_bench(args)
+        bitnet_tps = statistics.median(bitnet_samples)
+        ratio = bitnet_tps / llama_tps if llama_tps > 0.0 else 0.0
+        print("---")
+        print(f"Prefill bitnet={bitnet_tps:.2f} tok/s "
+              f"llama={llama_tps:.2f} tok/s mode=bench ratio={ratio:.3f}")
+        if args.bench_runs > 1:
+            bitnet_csv = ",".join(f"{v:.2f}" for v in bitnet_samples)
+            print(f"Prefill samples bitnet=[{bitnet_csv}] "
+                  f"median_runs={args.bench_runs}")
+        if ratio < args.min_prefill_throughput_ratio:
             failed += 1
 
     return 1 if failed else 0

@@ -2,6 +2,7 @@
 #define BN_TOKENIZER_H
 
 #include "gguf.h"
+#include "model_tokenizer_policy.h"
 
 #define BN_BPE_UNICODE_OFFSET  0x100    // non-printable bytes → U+0100..U+0143
 #define BN_BPE_UNICODE_END     0x143
@@ -19,6 +20,10 @@ typedef struct {
     int     chatml;                 // 1 if model uses ChatML template
     int     metaspace;              // 1 for tokenizers that encode spaces as U+2581
     int     max_token_length;
+    BnTokenizerPre pretokenizer;
+    int     ranked_bpe;
+    int     n_merges;
+    struct BnTokenizerMerge *merges; // owned, immutable pair ranks after init
     // internal: sorted index for binary search during encoding
     int    *sorted_indices;
 } BnTokenizer;

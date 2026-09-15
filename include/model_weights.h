@@ -44,6 +44,21 @@ typedef struct {
 } BnPerLayerEmbeddingWeights;
 
 typedef struct {
+    float *norm;
+    BnQWeight down, up, inject;
+} BnHyperConnectionWeights;
+
+typedef struct {
+    BnQWeight q, k;
+    float *q_norm, *k_norm;
+} BnAttentionIndexerWeights;
+
+typedef struct {
+    BnQWeight key, value;
+    float *norm_key, *norm_query, *norm_conv, *conv1d;
+} BnPositionalLayerEmbeddingWeights;
+
+typedef struct {
     BnQWeight wqkv;                         // fused QKV [dim, qkv_dim]
     BnQWeight wz;                           // Z gate projection [dim, value_dim]
     float *ssm_a;                           // [num_v_heads] F32 - A_log
@@ -76,6 +91,9 @@ typedef struct BnLayerWeights {
     BnSSMWeights ssm;
     BnFFNWeights ffn;
     BnPerLayerEmbeddingWeights per_layer;
+    BnHyperConnectionWeights hc_attn, hc_ffn;
+    BnAttentionIndexerWeights indexer;
+    BnPositionalLayerEmbeddingWeights ple;
     BnMoEWeights moe;
     BnSharedExpertWeights shared;
 } BnLayerWeights;
@@ -88,9 +106,11 @@ typedef struct {
     BnQWeight tied_embedding_weight; // stable quant descriptor for tied logits
     BnQWeight output_weight;      // untied output projection (data=NULL if tied)
     float *output_norm;           // [dim]
+    BnHyperConnectionWeights hc_output;
     float *rope_freqs;            // optional full-attention RoPE factors [head_size/2]
     BnQWeight per_layer_model_proj; // optional per-layer input projection
     BnQWeight per_layer_token_embd; // optional per-layer token embedding
+    BnQWeight ple_token_embd;       // shared PLE hash embedding table
     float *per_layer_proj_norm;   // [per_layer_input_dim]
     BnLayerWeights *layers;       // [n_layers]
 } BnWeights;

@@ -151,6 +151,14 @@ static inline int bn_backend_quant_supports_prepared_kquant(int type) {
     return bn_quant_format_supports_prepared_kquant(type);
 }
 
+static inline int bn_backend_quant_cpu_matmul_matches_matvec(int type) {
+    return bn_quant_format_cpu_matmul_matches_matvec(type);
+}
+
+static inline int bn_backend_quant_requires_native_cpu_prefill(int type) {
+    return bn_quant_format_requires_native_cpu_prefill(type);
+}
+
 static inline int bn_backend_quant_prepared_kquant_blocks_per_row(int dim) {
     return dim > 0 && dim % BN_QK_K == 0 ? dim / BN_QK_K : 0;
 }
@@ -195,6 +203,10 @@ static inline int bn_backend_quant_logits_uses_f16_path(int type) {
 
 static inline int bn_backend_quant_tied_logits_uses_quant_path(int type) {
     return bn_quant_format_tied_logits_uses_quant_path(type);
+}
+
+static inline int bn_backend_quant_tied_logits_uses_prepared_weight(int type) {
+    return bn_quant_format_tied_logits_uses_prepared_weight(type);
 }
 
 static inline int bn_backend_quant_logits_i8_cache_supported(int type) {
@@ -298,6 +310,16 @@ static inline int bn_backend_quant_moe_direct_routed_down(int type) {
     return bn_quant_format_supports_moe_direct_routed_down(type);
 }
 
+static inline int bn_backend_quant_moe_routed_midbit_block32_down(int type) {
+    return bn_quant_format_supports_moe_routed_midbit_block32_down(type);
+}
+
+static inline int bn_backend_quant_moe_routed_midbit_kquant_gateup(
+    int gate_type, int up_type) {
+    return bn_quant_format_supports_moe_routed_midbit_kquant_gateup(
+        gate_type, up_type);
+}
+
 static inline int bn_backend_quant_cpu_fused_kquant_gateup_silu(int gate_type,
                                                                 int up_type) {
     return bn_quant_format_supports_cpu_fused_kquant_gateup_silu(gate_type,
@@ -344,6 +366,32 @@ static inline int bn_backend_quant_moe_routed_native_quant(int gate_type,
                                                            int down_type) {
     return bn_backend_quant_moe_route_native_quant(gate_type, up_type,
                                                    down_type);
+}
+
+static inline int bn_backend_quant_prefill_requires_logical_rows(int type, int n_tokens) {
+    return bn_quant_format_prefill_requires_logical_rows(type, n_tokens);
+}
+
+static inline int bn_backend_quant_moe_routed_affine_mmvq(int gate, int up, int down) {
+    return bn_quant_format_supports_moe_routed_affine_mmvq(gate, up, down);
+}
+
+static inline int bn_backend_quant_moe_routed_ordered_kquant(int gate, int up, int down) {
+    return bn_quant_format_supports_moe_routed_ordered_kquant(gate, up, down);
+}
+
+static inline int bn_backend_quant_moe_routed_e8m0(int gate, int up, int down) {
+    return bn_quant_format_supports_moe_routed_e8m0(gate, up, down);
+}
+
+static inline int bn_backend_quant_moe_merged_gateup(int gate_type, int up_type) {
+    return bn_quant_format_supports_moe_merged_gateup(gate_type, up_type);
+}
+
+static inline int bn_backend_quant_moe_gathered_expert_batch(
+    int gate_type, int up_type, int down_type) {
+    return bn_quant_format_supports_moe_gathered_expert_batch(gate_type,
+                                                            up_type, down_type);
 }
 
 static inline int bn_backend_quant_moe_routed_lowbit_block32(
@@ -441,6 +489,11 @@ static inline int bn_backend_quant_supports_native_quant_f16_cache_matvec(
 static inline int bn_backend_quant_supports_f16_float_cache_matvec(
     int type) {
     return bn_quant_format_supports_f16_float_cache_matvec(type);
+}
+
+static inline int bn_backend_quant_supports_packed_codebook_matvec(
+    int type) {
+    return bn_quant_format_supports_packed_codebook_matvec(type);
 }
 
 static inline int bn_backend_quant_supports_packed_kquant_f16_cache_matvec(

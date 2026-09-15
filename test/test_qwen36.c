@@ -146,12 +146,16 @@ static void add_common_tensors(ModelSpec *s) {
             snprintf(name, sizeof(name), "blk.%d.attn_output.weight", l);
             add_tensor(s, name, BN_GGUF_TENSOR_F32, q_dim, dim, 0);
             snprintf(name, sizeof(name), "blk.%d.attn_q_norm.weight", l);
-            add_tensor(s, name, BN_GGUF_TENSOR_F32, q_dim, 0, 0);
+            /* Qwen shares this norm across heads; its length is one head,
+             * not the concatenated query width (nor the gated Q width). */
+            add_tensor(s, name, BN_GGUF_TENSOR_F32, head_size, 0, 0);
             snprintf(name, sizeof(name), "blk.%d.attn_k_norm.weight", l);
             add_tensor(s, name, BN_GGUF_TENSOR_F32, kv_dim, 0, 0);
         }
 
-        snprintf(name, sizeof(name), "blk.%d.ffn_norm.weight", l);
+        /* Exercise both GGUF spellings for the same FFN input role. */
+        snprintf(name, sizeof(name), l % 2 ? "blk.%d.post_attention_norm.weight"
+                                         : "blk.%d.ffn_norm.weight", l);
         add_tensor(s, name, BN_GGUF_TENSOR_F32, dim, 0, 0);
 
         if (s->moe) {
@@ -288,6 +292,11 @@ static BnGGUFFile *build_qwen36_gguf(uint8_t *buf, size_t cap,
 }
 
 static void assert_forward_finite(BnModel *model) {
+    assert(!bn_model_arch_uses_attention_post_norm(&model->config));
+    for (int l = 0; l < model->config.n_layers; l++) {
+        assert(model->weights.layers[l].norm.ffn_norm != NULL);
+        assert(model->weights.layers[l].norm.attn_post_norm == NULL);
+    }
     BnSession *session = bn_session_create(model, NULL);
     assert(session != NULL);
     float *logits = bn_transformer_forward(model, session, 0, 0);
@@ -334,6 +343,7 @@ static void test_qwen36_dense(void) {
     assert(model.config.seq_len == 8);
     assert(model.config.head_size == 64);
     assert(model.config.rope_dim_count == 64);
+    assert(bn_model_arch_separates_rope_norm(&model.config));
     assert(model.weights.layers[0].block_kind == BN_LAYER_BLOCK_SSM);
     assert(model.weights.layers[3].block_kind == BN_LAYER_BLOCK_ATTENTION);
     assert(model.weights.layers[3].ffn_kind == BN_LAYER_FFN_DENSE);
@@ -445,12 +455,182 @@ static void test_qwen36_explicit_moe(void) {
     printf("PASSED\n");
 }
 
+static void test_prefill_output_rows_state_for_pool(int n_workers,
+                                                    float results[4][16]) {
+    enum { dim = 128, streams = 2, rank = 16, wide = dim * streams };
+    enum { hc_size = wide + 2 * rank * wide + streams * wide };
+    for (int use_hc = 0; use_hc < 2; use_hc++) {
+        for (int final_ssm = 0; final_ssm < 2; final_ssm++) {
+            uint8_t *buf = calloc(1, 4 * 1024 * 1024);
+            assert(buf);
+            BnGGUFFile *gf = build_qwen36_gguf(
+                buf, 4 * 1024 * 1024, "qwen35", use_hc);
+            assert(gf);
+            for (uint64_t t = 0; t < gf->n_tensors; t++) {
+                const BnGGUFTensorInfo *info = &gf->tensors[t];
+                size_t count = 1;
+                for (uint32_t d = 0; d < info->n_dims; d++) count *= info->dims[d];
+                float *data = bn_gguf_tensor_data(gf, (int)t);
+                assert(data);
+                if (strstr(info->name, "norm")) continue;
+                for (size_t j = 0; j < count; j++)
+                    data[j] = 0.03f * sinf((float)(j + 17 * t) * 0.13f);
+            }
+            BnModel model;
+            assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
+            /* Keep the synthetic gated-attention anatomy self-consistent.
+             * A wrong shared norm length can otherwise make token/head
+             * output regions overlap and mask the error in serial runs. */
+            const BnLayerWeights *attn_layer = &model.weights.layers[3];
+            assert(attn_layer->attn.head_size == 64);
+            assert(attn_layer->attn.wo.cols == model.config.n_heads * 64);
+            assert(attn_layer->attn.wq.rows == 2 * model.config.n_heads * 64);
+            if (n_workers >= 0) {
+                BnThreadPool *pool = bn_tp_create(n_workers);
+                assert(pool);
+                bn_model_set_thread_pool(&model, pool, 1);
+            }
+            bn_model_set_moe_mmap_base(&model, gf->raw);
+            if (final_ssm) model.config.n_layers = 3;
+            float *hc_data = NULL;
+            float *ple_data = NULL;
+            if (use_hc) {
+                model.config.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+                if (final_ssm)
+                    model.config.policy_flags |=
+                        BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER;
+                model.config.hyper_connection_count = streams;
+                model.config.hyper_connection_rank = rank;
+                hc_data = calloc(9 * hc_size, sizeof(float));
+                assert(hc_data);
+                for (int h = 0; h < 9; h++) {
+                    BnHyperConnectionWeights *hc = h == 8 ? &model.weights.hc_output :
+                        h % 2 ? &model.weights.layers[h / 2].hc_ffn :
+                                &model.weights.layers[h / 2].hc_attn;
+                    float *p = hc_data + h * hc_size;
+                    hc->norm = p;
+                    for (int i = 0; i < wide; i++) p[i] = 1;
+                    p += wide;
+                    hc->down = (BnQWeight){p, BN_GGUF_TENSOR_F32, rank, wide, 1};
+                    p += rank * wide;
+                    hc->up = (BnQWeight){p, BN_GGUF_TENSOR_F32, wide, rank, 1};
+                    p += rank * wide;
+                    hc->inject = (BnQWeight){p, BN_GGUF_TENSOR_F32, streams, wide, 1};
+                    for (int i = wide; i < hc_size; i++)
+                        hc_data[h * hc_size + i] = 0.01f * sinf((float)i * 0.17f);
+                }
+                /* Put recurrent PLE in the final layer to catch premature
+                 * output-row selection before persistent history updates. */
+                model.config.ple_layer = model.config.n_layers - 1;
+                model.config.ple_head_count = 2;
+                model.config.ple_head_dim = 64;
+                model.config.ple_heads_per_ngram = 2;
+                model.config.ple_ngram_size = 2;
+                model.config.ple_conv_kernel = 3;
+                model.config.ple_eos_token_id = 7;
+                model.config.ple_layer_multipliers[0] = 17;
+                model.config.ple_layer_multipliers[1] = 31;
+                model.config.ple_head_vocab_sizes[0] = 4;
+                model.config.ple_head_vocab_sizes[1] = 4;
+                model.config.ple_head_offsets[1] = 4;
+                enum { ple_size = 8 * 64 + wide * dim + dim * dim + 6 * wide };
+                ple_data = calloc(ple_size, sizeof(float));
+                assert(ple_data);
+                for (int i = 0; i < ple_size; i++)
+                    ple_data[i] = 0.02f * sinf((float)i * 0.11f);
+                float *p = ple_data;
+                model.weights.ple_token_embd =
+                    (BnQWeight){p, BN_GGUF_TENSOR_F32, 8, 64, 1};
+                p += 8 * 64;
+                BnPositionalLayerEmbeddingWeights *ple =
+                    &model.weights.layers[model.config.ple_layer].ple;
+                ple->key = (BnQWeight){p, BN_GGUF_TENSOR_F32, wide, dim, 1};
+                p += wide * dim;
+                ple->value = (BnQWeight){p, BN_GGUF_TENSOR_F32, dim, dim, 1};
+                p += dim * dim;
+                for (int i = 0; i < 3 * wide; i++) p[i] = 1;
+                ple->norm_key = p; p += wide;
+                ple->norm_query = p; p += wide;
+                ple->norm_conv = p; p += wide;
+                ple->conv1d = p;
+            }
+            BnSession *sessions[3];
+            int history[3][8] = {{0}};
+            for (int j = 0; j < 3; j++) {
+                sessions[j] = bn_session_create(&model, NULL);
+                assert(sessions[j]);
+                sessions[j]->state.token_history = history[j];
+                sessions[j]->pos = 1; /* Transformer calls leave caller position alone. */
+                assert(bn_transformer_forward(&model, sessions[j], 0, 0));
+            }
+            const int tokens[] = {1, 2, 3, 4};
+            float all[4 * 8], last[8];
+            for (int i = 0; i < 32; i++) all[i] = NAN;
+            assert(bn_transformer_prefill_all(&model, sessions[0], tokens, 4, 1, all) == 0);
+            float *logits = bn_transformer_prefill(&model, sessions[1], tokens, 4, 1);
+            assert(logits);
+            memcpy(last, logits, sizeof(last));
+            assert(bn_transformer_prefill_no_logits(&model, sessions[2], tokens, 4, 1) == 0);
+            for (int i = 0; i < 32; i++) assert(isfinite(all[i]));
+            for (int i = 0; i < 8; i++) {
+                assert(isfinite(last[i]));
+                assert(fabsf(last[i] - all[24 + i]) < 1e-4f);
+            }
+            for (int j = 1; j < 3; j++) {
+                const BnRunState *a = &sessions[0]->state, *b = &sessions[j]->state;
+                assert(memcmp(a->ssm_state, b->ssm_state, 3 * 64 * 16 * sizeof(float)) == 0);
+                assert(memcmp(a->ssm_conv_state, b->ssm_conv_state, 3 * 3 * 96 * sizeof(float)) == 0);
+                if (use_hc)
+                    assert(memcmp(a->ple_conv_state, b->ple_conv_state,
+                                  4 * wide * sizeof(float)) == 0);
+                if (!final_ssm) {
+                    assert(memcmp(a->key_cache, b->key_cache, 8 * 64 * sizeof(float)) == 0);
+                    assert(memcmp(a->value_cache, b->value_cache, 8 * 64 * sizeof(float)) == 0);
+                }
+                assert(memcmp(history[0], history[j], sizeof(history[0])) == 0);
+            }
+            for (int t = 0; t < 4; t++) assert(history[0][1 + t] == tokens[t]);
+            float continuation[8];
+            for (int j = 0; j < 3; j++) {
+                assert(sessions[j]->pos == 1);
+                logits = bn_transformer_forward(&model, sessions[j], 5, 5);
+                assert(logits);
+                if (j == 0) memcpy(continuation, logits, sizeof(continuation));
+                else assert(memcmp(continuation, logits, sizeof(continuation)) == 0);
+                sessions[j]->state.token_history = NULL;
+                bn_session_free(sessions[j], NULL);
+            }
+            memcpy(results[use_hc * 2 + final_ssm], last, sizeof(last));
+            memcpy(results[use_hc * 2 + final_ssm] + 8, continuation,
+                   sizeof(continuation));
+            bn_model_free(&model);
+            free(hc_data);
+            free(ple_data);
+            bn_gguf_free(gf);
+            free(buf);
+        }
+    }
+}
+
+static void test_prefill_output_rows_state(void) {
+    printf("test_prefill_output_rows_state... ");
+    float serial[4][16], pooled[4][16];
+    test_prefill_output_rows_state_for_pool(-1, serial);
+    const int worker_counts[] = {0, 3, 7};
+    for (size_t p = 0; p < sizeof(worker_counts) / sizeof(worker_counts[0]); p++) {
+        test_prefill_output_rows_state_for_pool(worker_counts[p], pooled);
+        assert(memcmp(serial, pooled, sizeof(serial)) == 0);
+    }
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Qwen3.6 Architecture Tests ===\n");
     test_qwen36_dense();
     test_qwen36_moe();
     test_qwen36_explicit_dense();
     test_qwen36_explicit_moe();
+    test_prefill_output_rows_state();
     printf("All Qwen3.6 architecture tests passed!\n");
     return 0;
 }

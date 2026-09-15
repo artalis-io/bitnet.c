@@ -70,6 +70,16 @@ static int prepare_forward_token_state(BnModel *m, BnSession *sess,
     }
 
     bn_model_embed_token(m, sess->state.x, token);
+    if (sess->state.token_history)
+        sess->state.token_history[pos % c->seq_len] = token;
+    if (bn_transformer_uses_hyper_connections(c)) {
+        BnRunState *s = &sess->state;
+        int hc = c->hyper_connection_count;
+        if (!s->hc_residual || hc <= 1) return -1;
+        for (int stream = 0; stream < hc; stream++)
+            memcpy(s->hc_residual + (size_t)stream * c->dim,
+                   s->x, (size_t)c->dim * sizeof(float));
+    }
     if (prepare_per_layer_input_state(m, sess, token) != 0) {
         SH_LOG_ERROR("Per-layer input preparation failed");
         return -1;
@@ -165,6 +175,11 @@ static int forward_layers(BnModel *m, BnSession *sess, int pos) {
             return -1;
     }
 
+    if (bn_transformer_uses_hyper_connections(c) &&
+        bn_transformer_cpu_hyper_connection_mix(
+            m, sess, &m->weights.hc_output, 0) != 0)
+        return -1;
+
     return 0;
 }
 
@@ -211,6 +226,15 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 0);
     return logits;
+}
+
+int bn_transformer_forward_argmax(BnModel *m, BnSession *s,
+    int token, int pos, const int *penalty_tokens, int n_penalty_tokens,
+    float repeat_penalty, int *out_token) {
+    if (!out_token || prepare_forward_token_state(m, s, token, pos) != 0)
+        return -1;
+    return bn_transformer_gpu_forward_argmax(m, s, token, pos,
+        penalty_tokens, n_penalty_tokens, repeat_penalty, out_token);
 }
 
 int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,

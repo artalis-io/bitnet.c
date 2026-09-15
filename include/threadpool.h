@@ -21,7 +21,7 @@ typedef struct {
     int disable_q4_dot;
     int disable_q6_dot;
     int avx512_kquant_vnni; /* -1 = shape default, 0/1 = override */
-    int avx2_kquant_float;
+    int avx2_kquant_float; /* -1 = format default, 0/1 = override */
     int q4_scalar_dot;
     int wasm_q4_canonical4;
     int disable_native_quant_matmul_batch;
@@ -58,7 +58,8 @@ const BnQuantRuntimePolicy *bn_tp_quant_policy(const BnThreadPool *pool);
 void bn_cpu_runtime_policy_from_env(BnCPURuntimePolicy *policy);
 const BnCPURuntimePolicy *bn_tp_cpu_policy(const BnThreadPool *pool);
 
-// Create a thread pool with n_workers background threads.
+// Create a runtime with n_workers background threads. Zero workers retains
+// runtime policy while dispatching exclusively on the calling thread.
 // Main thread participates as thread 0 (not counted in n_workers).
 BnThreadPool *bn_tp_create(int n_workers);
 
@@ -69,6 +70,11 @@ void bn_tp_free(BnThreadPool *pool);
 // If pool is NULL, runs serially on the calling thread.
 // Threads steal work in chunks via atomic counters for load balancing.
 void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks);
+
+// Opt-in scheduling for expensive independent items (for example, SSM heads).
+// With a non-NULL pool each claimed range contains one item. NULL retains the
+// serial whole-range fallback. Does not change subsequent normal dispatches.
+void bn_tp_dispatch_fine(BnThreadPool *pool, BnTPTask *tasks, int n_tasks);
 
 // Returns total thread count (n_workers + 1 for main thread).
 int bn_tp_num_threads(const BnThreadPool *pool);

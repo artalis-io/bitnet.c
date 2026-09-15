@@ -231,9 +231,15 @@ const void *bn_moe_load_expert_proj_into(const BnMoEIO *io, BnMoEStats *stats,
         return base + offset;
 
 #if !defined(__EMSCRIPTEN__)
-    if (io->fd < 0 || proj_bytes > buf_size) return NULL;
+    int fd = io->fd;
+    if (io->shard_fds && io->n_shard_fds > 0) {
+        uint32_t shard_idx = moe_proj_shard_idx(map, proj);
+        if ((size_t)shard_idx >= io->n_shard_fds) return NULL;
+        fd = io->shard_fds[shard_idx];
+    }
+    if (fd < 0 || proj_bytes > buf_size) return NULL;
     double t0 = bn_platform_time_ms();
-    ssize_t n = pread(io->fd, buf, proj_bytes, (off_t)offset);
+    ssize_t n = pread(fd, buf, proj_bytes, (off_t)offset);
     stats->io_time_ms += bn_platform_time_ms() - t0;
     if (n != (ssize_t)proj_bytes) return NULL;
     return buf;

@@ -95,6 +95,7 @@ BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
 
     s->pos = 0;
     s->gpu_kv_direct_valid = 0;
+    s->state.batched_prompt_contract = 0;
     return s;
 }
 
@@ -166,7 +167,18 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
         memset(rs->ssm_conv_state, 0, conv_total);
     }
 
+    if (rs->token_history)
+        memset(rs->token_history, 0,
+               (size_t)c->seq_len * sizeof(*rs->token_history));
+    if (rs->ple_conv_state && c->ple_head_count > 0) {
+        size_t hc_dim = (size_t)c->hyper_connection_count * c->dim;
+        size_t ple_count = (size_t)(c->ple_conv_kernel - 1) *
+                           c->ple_ngram_size * hc_dim;
+        memset(rs->ple_conv_state, 0, ple_count * sizeof(float));
+    }
+
     s->pos = 0;
     s->gpu_kv_direct_valid = 0;
+    s->state.batched_prompt_contract = 0;
     (void)bn_gpu_backend_reset_activations(bn_model_gpu(model));
 }

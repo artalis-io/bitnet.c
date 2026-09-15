@@ -69,6 +69,7 @@ typedef struct {
     const BnPreparedWeight *prepared;
     void *backend_handle;
     BnLogitsTiedQuantDispatchPolicy dispatch;
+    int uses_prepared_weight;
 } BnLogitsTiedQuantExecutionPolicy;
 
 void bn_transformer_logits_i8_neon_range(void *ctx, int start, int end);
@@ -90,7 +91,7 @@ int bn_transformer_logits_cpu_native_tied_quant_enabled(
     const BnCPURuntimePolicy *runtime);
 int bn_transformer_logits_backend_refine_supported(
     const BnLogitsBackendOps *ops, const BnQWeight *W);
-int bn_transformer_logits_tied_kquant_refine_supported(const BnQWeight *W);
+int bn_transformer_logits_kquant_refine_supported(const BnQWeight *W);
 int bn_transformer_logits_native_quant_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -121,6 +122,12 @@ bn_transformer_logits_tied_quant_dispatch_policy_for(
 BnLogitsQuantResources bn_transformer_logits_quant_resources(
     const BnBackendModel *backend,
     const BnQWeight *W);
+const BnPreparedWeight *bn_transformer_logits_acquire_cpu_prepared(
+    BnBackendModel *backend,
+    const BnQWeight *W);
+void bn_transformer_logits_release_cpu_prepared(
+    BnBackendModel *backend,
+    const BnPreparedWeight *prepared);
 BnLogitsTiedQuantExecutionPolicy
 bn_transformer_logits_tied_quant_execution_policy_for(
     const BnCPURuntimePolicy *runtime,

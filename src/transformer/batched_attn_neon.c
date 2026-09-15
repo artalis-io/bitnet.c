@@ -200,6 +200,8 @@ void bn_transformer_batched_attn_naive_neon_range(void *ctx, int h_start,
         for (int t = 0; t < n_tokens; t++) {
             int pos = pos0 + t;
             int n_kv = (pos + 1 < seq_len) ? pos + 1 : seq_len;
+            if (b->attention_window > 0 && n_kv > b->attention_window)
+                n_kv = b->attention_window;
             int kv_start = pos - n_kv + 1;
             if (n_kv > BN_MAX_VLA_ELEMS) return;
 
@@ -270,6 +272,8 @@ void bn_transformer_batched_attn_flash_neon_range(void *ctx, int h_start,
         for (int t = 0; t < n_tokens; t++) {
             int pos = pos0 + t;
             int n_kv = (pos + 1 < seq_len) ? pos + 1 : seq_len;
+            if (b->attention_window > 0 && n_kv > b->attention_window)
+                n_kv = b->attention_window;
             int kv_start = pos - n_kv + 1;
             float q_local[head_size];
             float out_buf[head_size];

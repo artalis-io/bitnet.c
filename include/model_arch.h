@@ -21,12 +21,21 @@
 #define BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT            (1u << 15)
 #define BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH          (1u << 16)
 #define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION  (1u << 17)
+#define BN_MODEL_ARCH_POLICY_MOE_SEPARATE_ROUTER_TOPK            (1u << 18)
 #define BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION       (1u << 19)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION           (1u << 20)
 #define BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK              (1u << 21)
 #define BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS                (1u << 22)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION                (1u << 23)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT                (1u << 24)
+#define BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS                  (1u << 25)
+#define BN_MODEL_ARCH_POLICY_QUERY_SPARSE_ATTENTION              (1u << 26)
+#define BN_MODEL_ARCH_POLICY_SSM_SIGMOID_GATE                    (1u << 27)
+#define BN_MODEL_ARCH_POLICY_POSITIONAL_LAYER_EMBEDDING           (1u << 28)
+#define BN_MODEL_ARCH_POLICY_SEPARATE_ROPE_NORM                  (1u << 29)
+
+#define BN_MODEL_ARCH_POLICY_MOE_PREFILL_MATVEC_ROUTER           (1u << 30)
+#define BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION_LAST_THIRD      (1u << 31)
 
 typedef struct {
     const char *name;
@@ -85,6 +94,27 @@ typedef enum {
     BN_MODEL_TENSOR_SHARED_FFN_DOWN,
     BN_MODEL_TENSOR_SHARED_FFN_ROUTER,
     BN_MODEL_TENSOR_LAYER_OUTPUT_SCALE,
+    BN_MODEL_TENSOR_HC_ATTN_NORM,
+    BN_MODEL_TENSOR_HC_ATTN_DOWN,
+    BN_MODEL_TENSOR_HC_ATTN_UP,
+    BN_MODEL_TENSOR_HC_ATTN_INJECT,
+    BN_MODEL_TENSOR_HC_FFN_NORM,
+    BN_MODEL_TENSOR_HC_FFN_DOWN,
+    BN_MODEL_TENSOR_HC_FFN_UP,
+    BN_MODEL_TENSOR_HC_FFN_INJECT,
+    BN_MODEL_TENSOR_INDEXER_Q,
+    BN_MODEL_TENSOR_INDEXER_K,
+    BN_MODEL_TENSOR_INDEXER_Q_NORM,
+    BN_MODEL_TENSOR_INDEXER_K_NORM,
+    BN_MODEL_TENSOR_HC_OUTPUT_NORM,
+    BN_MODEL_TENSOR_HC_OUTPUT_DOWN,
+    BN_MODEL_TENSOR_HC_OUTPUT_UP,
+    BN_MODEL_TENSOR_PLE_KEY,
+    BN_MODEL_TENSOR_PLE_VALUE,
+    BN_MODEL_TENSOR_PLE_NORM_KEY,
+    BN_MODEL_TENSOR_PLE_NORM_QUERY,
+    BN_MODEL_TENSOR_PLE_NORM_CONV,
+    BN_MODEL_TENSOR_PLE_CONV1D,
 } BnModelTensorRole;
 
 const char *bn_model_arch_prefix(const char *arch);
@@ -129,6 +159,7 @@ int bn_model_arch_uses_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_dense_attention_only(const BnConfig *c);
 int bn_model_arch_uses_large_dense_shape(const BnConfig *c);
+int bn_model_arch_separates_rope_norm(const BnConfig *c);
 int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer);
 int bn_model_arch_uses_swa_rope(const BnConfig *c, int layer_head_size);
 int bn_model_arch_rope_dims_for_head(const BnConfig *c,
@@ -157,10 +188,18 @@ int bn_model_arch_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c);
 int bn_model_arch_moe_requires_reference_attention(const BnConfig *c);
 int bn_model_arch_requires_reference_attention(const BnConfig *c);
+int bn_model_arch_reference_attention_from_layer(const BnConfig *c);
 int bn_model_arch_requires_reference_recurrent(const BnConfig *c);
+int bn_model_arch_uses_hyper_connections(const BnConfig *c);
+int bn_model_arch_uses_query_sparse_attention(const BnConfig *c);
+int bn_model_arch_ssm_uses_sigmoid_gate(const BnConfig *c);
+int bn_model_arch_uses_positional_layer_embedding(const BnConfig *c);
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
 int bn_model_arch_moe_uses_reference_router_accumulation(
     const BnConfig *c);
+int bn_model_arch_attention_uses_padded_weighted_v_reduction(
+    const BnConfig *c);
+int bn_model_arch_moe_uses_separate_router_topk(const BnConfig *c);
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c);
 int bn_model_arch_uses_moe(const BnConfig *c);
 int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix);
@@ -187,10 +226,13 @@ float bn_model_arch_moe_expert_weights_scale(const BnConfig *c);
 int bn_model_arch_moe_uses_reference_silu(const BnConfig *c);
 int bn_model_arch_config_has_shared_expert(const BnConfig *c);
 int bn_model_arch_shared_expert_hidden_dim(const BnConfig *c);
+int bn_model_arch_moe_prefill_uses_matvec_router(const BnConfig *c);
 int bn_model_arch_moe_prefill_requires_matvec(const BnConfig *c);
 int bn_model_arch_uses_all_active_two_expert_moe(const BnConfig *c,
                                                  int dim);
 int bn_model_arch_loads_extra_metadata(const BnConfig *c);
+/* Zero for full-attention layers, otherwise includes the current token. */
+int bn_model_arch_attention_window(const BnConfig *c, int layer);
 int bn_model_arch_loads_per_layer_input_weights(const BnConfig *c);
 int bn_model_arch_layer_reuses_kv(const BnConfig *c, int layer);
 int bn_model_arch_kv_reuse_layer(const BnConfig *c, int layer);

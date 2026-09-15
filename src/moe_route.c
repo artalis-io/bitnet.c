@@ -12,11 +12,12 @@ typedef struct {
 
 static void moe_router_range(void *ctx, int start, int end) {
     BnRouterCtx *c = (BnRouterCtx *)ctx;
-    for (; start + 3 < end; start += 4) {
-        if (!bn_moe_dot4_rows(c->logits + start, c->router_w, c->x,
-                              c->dim, start))
-            break;
-    }
+    if (!c->uses_reference_router_accumulation)
+        for (; start + 3 < end; start += 4) {
+            if (!bn_moe_dot4_rows(c->logits + start, c->router_w, c->x,
+                                  c->dim, start))
+                break;
+        }
     for (int e = start; e < end; e++) {
         const float *row = c->router_w + (size_t)e * c->dim;
         c->logits[e] = c->uses_reference_router_accumulation
@@ -25,30 +26,26 @@ static void moe_router_range(void *ctx, int start, int end) {
     }
 }
 
-// Router: SIMD matvec -> softmax -> top-K selection
-void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
-                  int dim, int n_experts, int k, int norm_topk_prob,
-                  float expert_weights_scale,
-                  int uses_reference_router_accumulation,
-                  BnThreadPool *pool) {
-    // Router matvec: vectorized + thread-dispatched
-    BnRouterCtx rctx = {
-        ms->router_logits, router_w, x, dim,
-        uses_reference_router_accumulation
-    };
-    BnTPTask rtask = { moe_router_range, &rctx, n_experts };
-    bn_tp_dispatch(pool, &rtask, 1);
-
+void bn_moe_route_logits(const float *router_logits,
+                          int *expert_indices,
+                          float *expert_weights,
+                          int n_experts,
+                          int k,
+                          int norm_topk_prob,
+                          float expert_weights_scale) {
     // Softmax denominator over all experts. Keep raw logits intact so routing
     // diagnostics and downstream observers can inspect the actual scores.
-    float max_val = ms->router_logits[0];
+    float max_val = router_logits[0];
     for (int e = 1; e < n_experts; e++)
-        if (ms->router_logits[e] > max_val)
-            max_val = ms->router_logits[e];
+        if (router_logits[e] > max_val)
+            max_val = router_logits[e];
 
     float probs[n_experts];
-    double sum = bn_moe_softmax_exp(probs, ms->router_logits,
+    double sum = bn_moe_softmax_exp(probs, router_logits,
                                     n_experts, max_val);
+    float inv_sum = (float)(1.0 / sum);
+    for (int e = 0; e < n_experts; e++)
+        probs[e] *= inv_sum;
 
     // Top-K selection over raw logits. Softmax is monotonic, and retaining the
     // scores avoids rewriting the full router output just to mark selections.
@@ -58,33 +55,61 @@ void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
         for (int e = 0; e < n_experts; e++) {
             int already_selected = 0;
             for (int j = 0; j < i; j++) {
-                if (ms->expert_indices[j] == e) {
+                if (expert_indices[j] == e) {
                     already_selected = 1;
                     break;
                 }
             }
             if (already_selected)
                 continue;
-            if (ms->router_logits[e] > best_val) {
-                best_val = ms->router_logits[e];
+            if (router_logits[e] > best_val) {
+                best_val = router_logits[e];
                 best = e;
             }
         }
-        ms->expert_indices[i] = best;
-        ms->expert_weights[i] = (float)((double)probs[best] / sum);
+        expert_indices[i] = best;
+        expert_weights[i] = probs[best];
     }
 
     if (norm_topk_prob) {
-        float wsum = 0.0f;
+        double wsum64 = 0.0;
         for (int i = 0; i < k; i++)
-            wsum += ms->expert_weights[i];
+            wsum64 += (double)expert_weights[i];
+        float wsum = (float)wsum64;
         if (wsum > 0.0f) {
             for (int i = 0; i < k; i++)
-                ms->expert_weights[i] /= wsum;
+                expert_weights[i] /= wsum;
         }
     }
     if (expert_weights_scale != 0.0f && expert_weights_scale != 1.0f) {
         for (int i = 0; i < k; i++)
-            ms->expert_weights[i] *= expert_weights_scale;
+            expert_weights[i] *= expert_weights_scale;
     }
+}
+
+void bn_moe_route_buffers(float *router_logits, int *expert_indices,
+                          float *expert_weights, const float *x,
+                          const float *router_w, int dim, int n_experts,
+                          int k, int norm_topk_prob,
+                          float expert_weights_scale,
+                          int uses_reference_router_accumulation,
+                          BnThreadPool *pool) {
+    BnRouterCtx rctx = {router_logits, router_w, x, dim,
+                       uses_reference_router_accumulation};
+    BnTPTask task = {moe_router_range, &rctx, n_experts};
+    bn_tp_dispatch(pool, &task, 1);
+    bn_moe_route_logits(router_logits, expert_indices, expert_weights,
+                        n_experts, k, norm_topk_prob, expert_weights_scale);
+}
+
+// Router: SIMD matvec -> softmax -> top-K selection
+void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
+                  int dim, int n_experts, int k, int norm_topk_prob,
+                  float expert_weights_scale,
+                  int uses_reference_router_accumulation,
+                  BnThreadPool *pool) {
+    bn_moe_route_buffers(ms->router_logits, ms->expert_indices,
+                         ms->expert_weights, x, router_w, dim, n_experts, k,
+                         norm_topk_prob, expert_weights_scale,
+                         uses_reference_router_accumulation, pool);
 }

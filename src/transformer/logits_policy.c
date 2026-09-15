@@ -26,7 +26,7 @@ int bn_transformer_logits_backend_refine_supported(
            bn_backend_quant_supports_native_quant_logits_refine(W->type);
 }
 
-int bn_transformer_logits_tied_kquant_refine_supported(const BnQWeight *W) {
+int bn_transformer_logits_kquant_refine_supported(const BnQWeight *W) {
     return W && W->data &&
            bn_backend_quant_supports_kquant_logits_refine(W->type);
 }
@@ -111,7 +111,7 @@ bn_transformer_logits_tied_quant_dispatch_policy_for(
     const BnQWeight *W) {
     return bn_transformer_logits_tied_quant_dispatch_policy(
         bn_transformer_logits_cpu_native_tied_quant_enabled(runtime),
-        bn_transformer_logits_tied_kquant_refine_supported(W),
+        bn_transformer_logits_kquant_refine_supported(W),
         bn_transformer_logits_cpu_tied_kquant_hybrid_top(runtime),
         bn_transformer_logits_cpu_tied_kquant_refine_top(runtime),
         bn_transformer_logits_native_quant_refine_enabled(gpu, c, W));
@@ -128,6 +128,18 @@ BnLogitsQuantResources bn_transformer_logits_quant_resources(
     };
 }
 
+const BnPreparedWeight *bn_transformer_logits_acquire_cpu_prepared(
+    BnBackendModel *backend,
+    const BnQWeight *W) {
+    return bn_backend_model_acquire_cpu_prepared(backend, W);
+}
+
+void bn_transformer_logits_release_cpu_prepared(
+    BnBackendModel *backend,
+    const BnPreparedWeight *prepared) {
+    bn_backend_model_release_cpu_prepared(backend, prepared);
+}
+
 BnLogitsTiedQuantExecutionPolicy
 bn_transformer_logits_tied_quant_execution_policy_for(
     const BnCPURuntimePolicy *runtime,
@@ -142,7 +154,9 @@ bn_transformer_logits_tied_quant_execution_policy_for(
         bn_transformer_logits_quant_resources(backend, W);
     policy.valid = 1;
     policy.weight = W;
-    policy.prepared = resources.prepared;
+    policy.uses_prepared_weight =
+        bn_backend_quant_tied_logits_uses_prepared_weight(W->type);
+    policy.prepared = policy.uses_prepared_weight ? resources.prepared : NULL;
     policy.backend_handle =
         bn_transformer_gpu_resolve_tied_embedding(backend);
     policy.dispatch =

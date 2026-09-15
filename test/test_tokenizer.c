@@ -151,6 +151,10 @@ static void test_tokenizer_init(void) {
     assert(strcmp(t.vocab[0], "<bos>") == 0);
     assert(bn_model_tokenizer_default_add_bos(NULL, 1));
     assert(!bn_model_tokenizer_default_add_bos("qwen35", 1));
+    assert(bn_model_tokenizer_pretokenizer(NULL) == BN_TOKENIZER_PRE_NONE);
+    assert(bn_model_tokenizer_pretokenizer("unknown") == BN_TOKENIZER_PRE_NONE);
+    assert(bn_model_tokenizer_pretokenizer("qwen2") == BN_TOKENIZER_PRE_LETTERS);
+    assert(bn_model_tokenizer_pretokenizer("qwen35") == BN_TOKENIZER_PRE_LETTERS_MARKS);
     assert(strcmp(t.vocab[9], "hello") == 0);
 
     bn_tokenizer_free(&t);
@@ -321,8 +325,151 @@ static void test_tokenizer_gemma4_metaspace(void) {
     printf("PASSED\n");
 }
 
+/* Deliberately admit cross-boundary vocabulary entries and misleading scores.
+ * Only pretokenization and the explicit pair table may authorize a merge. */
+static BnGGUFFile *build_ranked_fixture(uint8_t *buf, const char *model, const char *pre,
+                                      const char *const *vocab, size_t nv,
+                                      const char *const *merges, size_t nm) {
+    size_t pos = 0;
+    #define PUT(d,n) do { memcpy(buf + pos, (d), (n)); pos += (n); } while (0)
+    #define U32(v) do { uint32_t x_ = (v); PUT(&x_, 4); } while (0)
+    #define U64(v) do { uint64_t x_ = (v); PUT(&x_, 8); } while (0)
+    #define STR(s) do { const char *s_ = (s); size_t n_ = strlen(s_); U64(n_); PUT(s_, n_); } while (0)
+    U32(0x46554747); U32(3); U64(0); U64(pre ? 4 : 3);
+    STR("tokenizer.ggml.model"); U32(BN_GGUF_TYPE_STRING); STR(model);
+    if (pre) { STR("tokenizer.ggml.pre"); U32(BN_GGUF_TYPE_STRING); STR(pre); }
+    STR("tokenizer.ggml.tokens"); U32(BN_GGUF_TYPE_ARRAY);
+    U32(BN_GGUF_TYPE_STRING); U64(nv);
+    for (size_t i = 0; i < nv; i++) STR(vocab[i]);
+    STR("tokenizer.ggml.merges"); U32(BN_GGUF_TYPE_ARRAY);
+    U32(BN_GGUF_TYPE_STRING); U64(nm);
+    for (size_t i = 0; i < nm; i++) STR(merges[i]);
+    #undef PUT
+    #undef U32
+    #undef U64
+    #undef STR
+    return bn_gguf_open(buf, pos);
+}
+
+static void assert_encoding(BnTokenizer *t, const char *text,
+                            const int *expected, int count) {
+    int actual[128];
+    int n = bn_tokenizer_encode(t, text, 0, actual, 128);
+    assert(n == count);
+    assert(memcmp(actual, expected, (size_t)count * sizeof(int)) == 0);
+    /* Truncation must preserve the prefix and caller's guard. */
+    for (int cap = 1; cap <= count; cap++) {
+        actual[cap] = -123;
+        n = bn_tokenizer_encode(t, text, 0, actual, cap);
+        assert(n == cap && actual[cap] == -123);
+        assert(memcmp(actual, expected, (size_t)cap * sizeof(int)) == 0);
+    }
+}
+
+static void test_tokenizer_ranked_bpe(void) {
+    printf("test_tokenizer_ranked_bpe... ");
+    const char *vocab[] = {"a", "b", "c", "ab", "bc", "abc", "aa"};
+    const char *merges[] = {"b c", "a b", "a a"};
+    uint8_t buf[8192];
+    BnGGUFFile *f = build_ranked_fixture(buf, "gpt2", "qwen2", vocab, 7, merges, 3);
+    assert(f);
+    BnTokenizer t;
+    assert(bn_tokenizer_init(&t, f) == 0);
+    bn_gguf_free(f); /* The tokenizer owns its merge table. */
+    t.scores[3] = 100; t.scores[5] = 1000;
+    const int abc[] = {0, 4}, aaa[] = {6, 0};
+    assert_encoding(&t, "abc", abc, 2);
+    assert_encoding(&t, "aaa", aaa, 2);
+    bn_tokenizer_free(&t);
+    f = build_ranked_fixture(buf, "gpt2", "qwen2", vocab, 7, NULL, 0);
+    assert(f && bn_tokenizer_init(&t, f) == 0);
+    const int no_merges[] = {0, 1, 2};
+    assert_encoding(&t, "abc", no_merges, 3);
+    bn_tokenizer_free(&t); bn_gguf_free(f);
+    printf("PASSED\n");
+}
+
+static void test_tokenizer_qwen_boundaries(void) {
+    printf("test_tokenizer_qwen_boundaries... ");
+    const char *vocab[] = {
+        "Ġ", "ĠĠ", "ĠĠĠ", "ĠĠĠĠ", "x", "Ġx", "ĠĠĠĠx", // 0..6
+        "1", "2", "12", "'", "s", "'s", "x'", "x's",     // 7..14
+        "!", "Ċ", "!Ċ", "ĉ", "ĉĉ", "ĉx",                 // 15..20
+        "a", "Ì", "ģ", "Ìģ", "aÌģ", "b", "aÌģb", "Ìģb", // 21..28
+        "Â", "ł", "Âł", "ÂłÂł", "Âłx"                   // 29..33
+    };
+    const char *merges[] = {
+        "Ġ Ġ", "ĠĠ Ġ", "ĠĠ ĠĠ", "ĠĠĠ Ġ", "Ġ x", "ĠĠĠĠ x",
+        "1 2", "x '", "' s", "x' s", "! Ċ", "ĉ ĉ", "ĉ x",
+        "Ì ģ", "a Ìģ", "aÌģ b", "Ìģ b", "Â ł", "Âł Âł", "Âł x"
+    };
+    for (int version = 1; version <= 2; version++) {
+        uint8_t buf[8192];
+        BnGGUFFile *f = build_ranked_fixture(buf, "gpt2", version == 1 ? "qwen2" : "qwen35",
+            vocab, sizeof(vocab)/sizeof(vocab[0]), merges, sizeof(merges)/sizeof(merges[0]));
+        assert(f);
+        BnTokenizer t;
+        assert(bn_tokenizer_init(&t, f) == 0);
+        const int indent[] = {2, 5}, digits[] = {7, 8}, contraction[] = {4, 12};
+        const int newline[] = {17, 2, 5}, tabs[] = {18, 20}, trailing[] = {3};
+        const int nbsp[] = {31, 33};
+        assert_encoding(&t, "    x", indent, 2);
+        assert_encoding(&t, "12", digits, 2);
+        assert_encoding(&t, "x's", contraction, 2);
+        assert_encoding(&t, "!\n    x", newline, 3);
+        assert_encoding(&t, "\t\tx", tabs, 2);
+        assert_encoding(&t, "    ", trailing, 1);
+        assert_encoding(&t, "\xc2\xa0\xc2\xa0x", nbsp, 2);
+        const int qwen2_marks[] = {21, 28}, qwen35_marks[] = {27};
+        assert_encoding(&t, "a\xcc\x81" "b", version == 1 ? qwen2_marks : qwen35_marks,
+                        version == 1 ? 2 : 1);
+        bn_tokenizer_free(&t); bn_gguf_free(f);
+    }
+    printf("PASSED\n");
+}
+
+static void test_tokenizer_raw_bpe(void) {
+    printf("test_tokenizer_raw_bpe... ");
+    const char *vocab[] = {"a", "b", "c", "ab", "bc", "abc", "▁", "▁a",
+        "\n", "\n\n", "a\n", "\na", "<0x0D>", "<0xF0>", "<0x9F>", "<0x99>", "<0x82>"};
+    const char *merges[] = {"b c", "a b", "▁ a"};
+    uint8_t buf[8192];
+    /* Real metadata may identify the tokenizer model without a pre key. */
+    BnGGUFFile *f = build_ranked_fixture(buf, "gemma4", NULL, vocab, 17, merges, 3);
+    assert(f);
+    BnTokenizer t;
+    assert(bn_tokenizer_init(&t, f) == 0);
+    assert(t.pretokenizer == BN_TOKENIZER_PRE_NEWLINES && t.ranked_bpe);
+    t.scores[5] = t.scores[10] = t.scores[11] = 1000;
+    const int abc[] = {0, 4}, space[] = {7}, lines[] = {0, 9, 7};
+    const int unlisted_run[] = {0, 8, 8, 8, 7}, bytes[] = {12, 13, 14, 15, 16};
+    assert_encoding(&t, "abc", abc, 2);
+    assert_encoding(&t, " a", space, 1);
+    assert_encoding(&t, "a\n\n a", lines, 3);
+    assert_encoding(&t, "a\n\n\n a", unlisted_run, 5);
+    assert_encoding(&t, "\r🙂", bytes, 5);
+    const unsigned char expected[] = {13, 0xf0, 0x9f, 0x99, 0x82};
+    for (int i = 0; i < 5; i++) {
+        const unsigned char *piece = (const unsigned char *)bn_tokenizer_decode(&t, bytes[i]);
+        assert(piece[0] == expected[i] && piece[1] == 0);
+    }
+    bn_tokenizer_free(&t); bn_gguf_free(f);
+
+    /* Normalization can expand an unknown space to three fallback bytes. */
+    const char *fallback[] = {"<0xE2>", "<0x96>", "<0x81>"};
+    f = build_ranked_fixture(buf, "gemma4", NULL, fallback, 3, NULL, 0);
+    assert(f && bn_tokenizer_init(&t, f) == 0);
+    const int expanded[] = {0, 1, 2, 0, 1, 2};
+    assert_encoding(&t, "  ", expanded, 6);
+    bn_tokenizer_free(&t); bn_gguf_free(f);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Tokenizer Tests ===\n");
+    test_tokenizer_raw_bpe();
+    test_tokenizer_ranked_bpe();
+    test_tokenizer_qwen_boundaries();
     test_tokenizer_init();
     test_tokenizer_decode();
     test_tokenizer_encode();

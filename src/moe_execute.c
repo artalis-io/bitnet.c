@@ -4,8 +4,118 @@
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_policy.h"
+#include "sh_arena.h"
 #include <stdio.h>
 #include <stdlib.h>
+
+static SHArena *moe_prepare_task_weight(BnPreparedWeight *prepared,
+                                        const BnQWeight *weight) {
+    size_t bytes = bn_moe_quant_prepared_weight_size(weight);
+    if (bytes == 0)
+        return NULL;
+    SHArena *arena = sh_arena_create(bytes);
+    if (!arena)
+        return NULL;
+    if (bn_moe_quant_prepare_weight(prepared, weight, arena) != 0) {
+        sh_arena_free(arena);
+        return NULL;
+    }
+    return arena;
+}
+
+static void moe_quant_matvec_batch_with_local_prepared(
+    const BnMatvecTask *tasks, int n_tasks, const float *x,
+    int8_t *quantized_buf, BnThreadPool *pool, BnBackendModel *backend) {
+    const BnCPURuntimePolicy *cpu_policy = bn_tp_cpu_policy(pool);
+    if (cpu_policy && !cpu_policy->prepared_qweights) {
+        bn_moe_quant_matvec_batch(tasks, n_tasks, x, quantized_buf, pool);
+        return;
+    }
+    BnMatvecTask local[2 * BN_MAX_MOE_K + 2];
+    BnPreparedWeight prepared[2 * BN_MAX_MOE_K + 2];
+    SHArena *arenas[2 * BN_MAX_MOE_K + 2] = {0};
+    const BnPreparedWeight *cached[2 * BN_MAX_MOE_K + 2] = {0};
+    if (n_tasks <= 0 || n_tasks > (int)(sizeof(local) / sizeof(local[0])))
+        return;
+    for (int i = 0; i < n_tasks; i++) {
+        local[i] = tasks[i];
+        memset(&prepared[i], 0, sizeof(prepared[i]));
+        if (!bn_moe_quant_matvec_uses_prepared_weight(
+                local[i].W, local[i].flags, pool)) {
+            local[i].prepared = NULL;
+        } else if (!local[i].prepared) {
+            cached[i] = bn_backend_model_acquire_cpu_prepared(
+                backend, local[i].W);
+            if (cached[i]) {
+                local[i].prepared = cached[i];
+            } else {
+                arenas[i] = moe_prepare_task_weight(&prepared[i], local[i].W);
+            }
+            if (arenas[i])
+                local[i].prepared = &prepared[i];
+        }
+    }
+    bn_moe_quant_matvec_batch(local, n_tasks, x, quantized_buf, pool);
+    for (int i = 0; i < n_tasks; i++)
+        bn_backend_model_release_cpu_prepared(backend, cached[i]);
+    for (int i = 0; i < n_tasks; i++)
+        sh_arena_free(arenas[i]);
+}
+
+static void moe_quant_matvec_multi_with_local_prepared(
+    const BnMatvecMultiTask *tasks, int n_tasks, int8_t *quantized_bufs,
+    BnThreadPool *pool, BnBackendModel *backend) {
+    const BnCPURuntimePolicy *cpu_policy = bn_tp_cpu_policy(pool);
+    if (cpu_policy && !cpu_policy->prepared_qweights) {
+        bn_moe_quant_matvec_multi(tasks, n_tasks, quantized_bufs, pool);
+        return;
+    }
+    BnMatvecMultiTask local[BN_MAX_MOE_K];
+    BnPreparedWeight prepared[BN_MAX_MOE_K];
+    SHArena *arenas[BN_MAX_MOE_K] = {0};
+    const BnPreparedWeight *cached[BN_MAX_MOE_K] = {0};
+    if (n_tasks <= 0 || n_tasks > BN_MAX_MOE_K)
+        return;
+    for (int i = 0; i < n_tasks; i++) {
+        local[i] = tasks[i];
+        memset(&prepared[i], 0, sizeof(prepared[i]));
+        if (!local[i].prepared) {
+            cached[i] = bn_backend_model_acquire_cpu_prepared(
+                backend, local[i].W);
+            if (cached[i]) {
+                local[i].prepared = cached[i];
+            } else {
+                arenas[i] = moe_prepare_task_weight(&prepared[i], local[i].W);
+            }
+            if (arenas[i])
+                local[i].prepared = &prepared[i];
+        }
+    }
+    bn_moe_quant_matvec_multi(local, n_tasks, quantized_bufs, pool);
+    for (int i = 0; i < n_tasks; i++)
+        bn_backend_model_release_cpu_prepared(backend, cached[i]);
+    for (int i = 0; i < n_tasks; i++)
+        sh_arena_free(arenas[i]);
+}
+
+static void moe_quant_matvec_with_local_prepared(
+    float *out, const BnQWeight *weight, const float *x,
+    int8_t *quantized_buf, BnThreadPool *pool, BnBackendModel *backend) {
+    const BnCPURuntimePolicy *cpu_policy = bn_tp_cpu_policy(pool);
+    if (cpu_policy && !cpu_policy->prepared_qweights) {
+        bn_moe_quant_matvec(out, weight, x, quantized_buf, pool);
+        return;
+    }
+    BnPreparedWeight prepared = {0};
+    const BnPreparedWeight *cached =
+        bn_backend_model_acquire_cpu_prepared(backend, weight);
+    SHArena *arena = cached ? NULL : moe_prepare_task_weight(&prepared, weight);
+    bn_moe_quant_matvec_prepared(out, weight,
+                                 cached ? cached : (arena ? &prepared : NULL),
+                                 x, quantized_buf, pool);
+    bn_backend_model_release_cpu_prepared(backend, cached);
+    sh_arena_free(arena);
+}
 
 static int moe_try_gpu_resident_routed(BnModel *m, BnSession *sess,
                                        BnLayerWeights *lw, int layer) {
@@ -28,18 +138,17 @@ static int moe_try_gpu_resident_routed(BnModel *m, BnSession *sess,
         backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
     if (!gate || !up || !down)
         return -1;
-    float adjusted_weights[BN_MAX_MOE_K];
+    float output_scales[BN_MAX_MOE_K];
     for (int k = 0; k < route.active_experts; k++) {
         int expert = ms->expert_indices[k];
         if (expert < 0 || expert >= route.total_experts)
             return -1;
-        adjusted_weights[k] = ms->expert_weights[k] *
-                              bn_moe_expert_weight_scale(lw, expert);
+        output_scales[k] = bn_moe_expert_weight_scale(lw, expert);
     }
     const BnMoEExpertMap *map = &lw->moe.expert_map;
     int rc = bn_gpu_backend_moe_routed_ffn_batch(
         gpu, ms->expert_out, gate, up, down, ms->expert_indices,
-        adjusted_weights, sess->state.xb, 1, m->config.dim,
+        ms->expert_weights, output_scales, sess->state.xb, 1, m->config.dim,
         route.expert_hidden_dim, route.total_experts, route.active_experts,
         map->gate_type, map->up_type, map->down_type,
         execution.activation);
@@ -134,7 +243,10 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
-    bn_moe_weighted_add(ms->expert_out, s->xb2, weight, m->config.dim);
+    bn_moe_scale_expert_output(s->xb2,
+        bn_moe_expert_weight_scale(lw, expert_idx), m->config.dim);
+    bn_moe_scale_expert_output(s->xb2, weight, m->config.dim);
+    bn_moe_residual_add(ms->expert_out, s->xb2, m->config.dim);
     ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
 
     bn_gpu_moe_bridge_release_temporaries(m, &temps);
@@ -182,15 +294,6 @@ static void moe_dense_residual_branch(BnModel *m, BnSession *sess,
     bn_moe_weighted_add(ms->expert_out, s->xb2, 1.0f, c->dim);
 }
 
-static void moe_rmsnorm_unit(float *out, const float *x, int size, float eps) {
-    float ss = 0.0f;
-    for (int i = 0; i < size; i++)
-        ss += x[i] * x[i];
-    ss = 1.0f / sqrtf(ss / (float)size + eps);
-    for (int i = 0; i < size; i++)
-        out[i] = x[i] * ss;
-}
-
 // Full MoE FFN block
 void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                              struct BnLayerWeights *lw, int l,
@@ -217,7 +320,10 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
     const float *ffn_norm = lw->norm.ffn_norm;
     if (exec_policy.uses_dense_residual_branch && lw->norm.ffn_sub_norm)
         ffn_norm = lw->norm.ffn_sub_norm;
-    bn_moe_rmsnorm(s->xb, s->x, ffn_norm, dim, exec_policy.norm_eps);
+    if (ffn_norm)
+        bn_moe_rmsnorm(s->xb, s->x, ffn_norm, dim, exec_policy.norm_eps);
+    else
+        memcpy(s->xb, s->x, (size_t)dim * sizeof(float));
     if (observe)
         observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_INPUT, s->xb, dim);
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
@@ -226,11 +332,8 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
     t0 = bn_moe_time_ms();
     const float *router_x = s->xb;
     if (exec_policy.uses_scaled_router_input) {
-        float inv_sqrt_dim = 1.0f / sqrtf((float)dim);
-        moe_rmsnorm_unit(s->xb2, s->x, dim, exec_policy.norm_eps);
-        for (int d = 0; d < dim; d++)
-            s->xb2[d] *= inv_sqrt_dim *
-                         (lw->moe.router_scale ? lw->moe.router_scale[d] : 1.0f);
+        bn_moe_scaled_router_input(s->xb2, s->x, lw->moe.router_scale,
+                                    dim, exec_policy.norm_eps);
         router_x = s->xb2;
     }
     bn_moe_route(ms, router_x, lw->moe.router_weight, dim,
@@ -285,8 +388,7 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                                                  &lw->moe.expert_map, 1))
                 continue;
             valid_indices[valid_k] = eidx;
-            valid_weights[valid_k] = ms->expert_weights[k] *
-                                     bn_moe_expert_weight_scale(lw, eidx);
+            valid_weights[valid_k] = ms->expert_weights[k];
             valid_k++;
         }
 
@@ -307,8 +409,9 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                     shared_gu_ready = 1;
                 }
             }
-            bn_moe_quant_matvec_batch(gu_tasks, n_gu, s->xb, s->x_q,
-                                      bn_model_pool(m));
+            moe_quant_matvec_batch_with_local_prepared(
+                gu_tasks, n_gu, s->xb, s->x_q, bn_model_pool(m),
+                bn_model_backend(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             // Parallel SwiGLU
@@ -366,9 +469,9 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                         ms->expert_down_batch[k], &wdowns[k], ms->expert_hb_batch[k], NULL
                     };
                 }
-                bn_moe_quant_matvec_multi(down_tasks, n_down,
-                                          ms->down_x_q_bufs,
-                                          bn_model_pool(m));
+                moe_quant_matvec_multi_with_local_prepared(
+                    down_tasks, n_down, ms->down_x_q_bufs, bn_model_pool(m),
+                    bn_model_backend(m));
             }
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
@@ -377,7 +480,11 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
             for (int k = 0; k < valid_k; k++) {
                 float w = valid_weights[k];
                 if (w == 0.0f) continue;
-                bn_moe_weighted_add(ms->expert_out, ms->expert_down_batch[k], w, dim);
+                bn_moe_scale_expert_output(ms->expert_down_batch[k],
+                    bn_moe_expert_weight_scale(lw, valid_indices[k]), dim);
+                bn_moe_scale_expert_output(ms->expert_down_batch[k], w, dim);
+                bn_moe_residual_add(ms->expert_out,
+                                    ms->expert_down_batch[k], dim);
             }
             ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
 
@@ -394,19 +501,22 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
 
         // --- Two-phase: separate cache hits from misses ---
         int n_hits = 0, n_misses = 0;
+        int hit_slots[BN_MAX_MOE_K], miss_slots[BN_MAX_MOE_K];
         int miss_indices[BN_MAX_MOE_K];
-        float hit_weights[BN_MAX_MOE_K], miss_weights[BN_MAX_MOE_K];
+        float route_weights[BN_MAX_MOE_K] = {0};
         const uint8_t *hit_ptrs[BN_MAX_MOE_K];  // cache slab pointers for hits
+        int defer_cached_down = cache &&
+            bn_moe_cache_capacity_internal(cache) >= K;
 
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
             if (eidx < 0) continue;
+            route_weights[k] = ms->expert_weights[k];
 
             if (cache) {
                 const uint8_t *cached = bn_moe_cache_lookup_internal(cache, l, eidx);
                 if (cached) {
-                    hit_weights[n_hits] = ms->expert_weights[k] *
-                                          bn_moe_expert_weight_scale(lw, eidx);
+                    hit_slots[n_hits] = k;
                     hit_ptrs[n_hits] = cached;
                     n_hits++;
                     ms->stats.cache_hits++;
@@ -414,38 +524,17 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                 }
                 ms->stats.cache_misses++;
             }
+            miss_slots[n_misses] = k;
             miss_indices[n_misses] = eidx;
-            miss_weights[n_misses] = ms->expert_weights[k] *
-                                     bn_moe_expert_weight_scale(lw, eidx);
             n_misses++;
         }
 
-        // Start I/O for first miss while we batch-compute hits
+        // Miss I/O starts after hit computation. Inserting a miss can evict a
+        // slot referenced by hit_ptrs, so those pointers must be consumed first.
         int miss_io_started = 0;
         uint8_t *miss_slot_ptr = NULL;
         uint8_t *miss_g_dst, *miss_u_dst, *miss_d_dst;
         size_t miss_g_off, miss_g_sz, miss_u_off, miss_u_sz, miss_d_off, miss_d_sz;
-
-        if (n_misses > 0) {
-            int meidx = miss_indices[0];
-            bn_moe_proj_info(map, meidx, 0, &miss_g_off, &miss_g_sz);
-            bn_moe_proj_info(map, meidx, 1, &miss_u_off, &miss_u_sz);
-            bn_moe_proj_info(map, meidx, 2, &miss_d_off, &miss_d_sz);
-
-            miss_slot_ptr = cache ? bn_moe_cache_insert_internal(cache, l, meidx) : NULL;
-            miss_g_dst = miss_slot_ptr ? miss_slot_ptr : ms->buf;
-            miss_u_dst = miss_slot_ptr ? miss_slot_ptr + bn_moe_cache_gate_bytes(cache) : ms->buf2;
-            miss_d_dst = miss_slot_ptr ? miss_slot_ptr + bn_moe_cache_gate_bytes(cache) + bn_moe_cache_up_bytes(cache) : ms->buf5;
-
-            if (pf_gu) {
-                bn_moe_prefetch_start2_internal(pf_gu, miss_g_dst, miss_g_sz, (off_t)miss_g_off,
-                                           miss_u_dst, miss_u_sz, (off_t)miss_u_off);
-            }
-            if (pf_dn) {
-                bn_moe_prefetch_start1_internal(pf_dn, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
-            }
-            miss_io_started = 1;
-        }
 
         // Phase 1: Batch gate+up for all cache hits
         if (n_hits > 0) {
@@ -454,14 +543,18 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
             BnMatvecTask gu_tasks[2 * BN_MAX_MOE_K];
             for (int h = 0; h < n_hits; h++) {
                 const uint8_t *cp = hit_ptrs[h];
+                int slot = hit_slots[h];
                 bn_moe_expert_projection_weight(&wgates[h], cp, map, 0);
                 bn_moe_expert_projection_weight(
                     &wups[h], cp + bn_moe_cache_gate_bytes(cache), map, 1);
-                gu_tasks[2*h]     = (BnMatvecTask){ ms->expert_hb_batch[h],  &wgates[h], NULL, gateup_flags };
-                gu_tasks[2*h + 1] = (BnMatvecTask){ ms->expert_hb2_batch[h], &wups[h]  , NULL, gateup_flags };
+                gu_tasks[2*h] = (BnMatvecTask){
+                    ms->expert_hb_batch[slot], &wgates[h], NULL, gateup_flags };
+                gu_tasks[2*h + 1] = (BnMatvecTask){
+                    ms->expert_hb2_batch[slot], &wups[h], NULL, gateup_flags };
             }
-            bn_moe_quant_matvec_batch(gu_tasks, 2 * n_hits, s->xb, s->x_q,
-                                      bn_model_pool(m));
+            moe_quant_matvec_batch_with_local_prepared(
+                gu_tasks, 2 * n_hits, s->xb, s->x_q, bn_model_pool(m),
+                bn_model_backend(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             // Parallel SwiGLU for hits
@@ -469,10 +562,11 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
             BnSwiGLUCtx swiglu_ctxs[BN_MAX_MOE_K];
             BnTPTask swiglu_tasks[BN_MAX_MOE_K];
             for (int h = 0; h < n_hits; h++) {
+                int slot = hit_slots[h];
                 swiglu_ctxs[h] = (BnSwiGLUCtx){
-                    ms->expert_hb_batch[h],
-                    ms->expert_hb_batch[h],
-                    ms->expert_hb2_batch[h],
+                    ms->expert_hb_batch[slot],
+                    ms->expert_hb_batch[slot],
+                    ms->expert_hb2_batch[slot],
                     exec_policy.uses_reference_silu,
                     exec_policy.uses_reference_ffn_activation
                 };
@@ -481,25 +575,48 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
             bn_tp_dispatch(bn_model_pool(m), swiglu_tasks, n_hits);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
-            // Down projections for hits (data already in cache)
-            t0 = bn_moe_time_ms();
-            for (int h = 0; h < n_hits; h++) {
-                const uint8_t *dp = hit_ptrs[h] + bn_moe_cache_gate_bytes(cache) + bn_moe_cache_up_bytes(cache);
-                BnQWeight wdown;
-                bn_moe_expert_projection_weight(&wdown, dp, map, 2);
-                bn_moe_quant_matvec(ms->expert_down_batch[h], &wdown,
-                                    ms->expert_hb_batch[h], s->x_q,
-                                    bn_model_pool(m));
+            if (!defer_cached_down) {
+                t0 = bn_moe_time_ms();
+                for (int h = 0; h < n_hits; h++) {
+                    int slot = hit_slots[h];
+                    const uint8_t *dp = hit_ptrs[h] +
+                        bn_moe_cache_gate_bytes(cache) +
+                        bn_moe_cache_up_bytes(cache);
+                    BnQWeight wdown;
+                    bn_moe_expert_projection_weight(&wdown, dp, map, 2);
+                    moe_quant_matvec_with_local_prepared(
+                        ms->expert_down_batch[slot], &wdown,
+                        ms->expert_hb_batch[slot], s->x_q, bn_model_pool(m),
+                        bn_model_backend(m));
+                }
+                ms->stats.down_time_ms += bn_moe_time_ms() - t0;
             }
-            ms->stats.down_time_ms += bn_moe_time_ms() - t0;
+        }
 
-            // Weighted accumulation for hits
-            t0 = bn_moe_time_ms();
-            for (int h = 0; h < n_hits; h++) {
-                float w = hit_weights[h];
-                bn_moe_weighted_add(ms->expert_out, ms->expert_down_batch[h], w, dim);
-            }
-            ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
+        if (n_misses > 0) {
+            int meidx = miss_indices[0];
+            bn_moe_proj_info(map, meidx, 0, &miss_g_off, &miss_g_sz);
+            bn_moe_proj_info(map, meidx, 1, &miss_u_off, &miss_u_sz);
+            bn_moe_proj_info(map, meidx, 2, &miss_d_off, &miss_d_sz);
+
+            miss_slot_ptr = cache
+                ? bn_moe_cache_insert_internal(cache, l, meidx) : NULL;
+            miss_g_dst = miss_slot_ptr ? miss_slot_ptr : ms->buf;
+            miss_u_dst = miss_slot_ptr
+                ? miss_slot_ptr + bn_moe_cache_gate_bytes(cache) : ms->buf2;
+            miss_d_dst = miss_slot_ptr
+                ? miss_slot_ptr + bn_moe_cache_gate_bytes(cache) +
+                      bn_moe_cache_up_bytes(cache)
+                : ms->buf5;
+
+            if (pf_gu)
+                bn_moe_prefetch_start2_internal(
+                    pf_gu, miss_g_dst, miss_g_sz, (off_t)miss_g_off,
+                    miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+            if (pf_dn)
+                bn_moe_prefetch_start1_internal(
+                    pf_dn, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
+            miss_io_started = 1;
         }
 
         // With distinct cache slots, pipeline miss N+1 I/O across miss N
@@ -556,18 +673,29 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
 
                 t0 = bn_moe_time_ms();
                 BnQWeight wgate, wup;
+                int slot = miss_slots[mi];
                 bn_moe_expert_projection_weight(&wgate, g_dst[mi], map, 0);
                 bn_moe_expert_projection_weight(&wup, u_dst[mi], map, 1);
                 BnMatvecTask gu[2] = {
-                    { ms->expert_hb, &wgate, NULL, gateup_flags },
-                    { ms->expert_hb2, &wup, NULL, gateup_flags },
+                    { ms->expert_hb_batch[slot], &wgate, NULL, gateup_flags },
+                    { ms->expert_hb2_batch[slot], &wup, NULL, gateup_flags },
                 };
-                bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q,
-                                          bn_model_pool(m));
+                moe_quant_matvec_batch_with_local_prepared(
+                    gu, 2, s->xb, s->x_q, bn_model_pool(m),
+                    bn_model_backend(m));
                 ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
+                if (observe) {
+                    observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_EXPERT_GATE,
+                            ms->expert_hb_batch[slot], moe_hidden);
+                    observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_EXPERT_UP,
+                            ms->expert_hb2_batch[slot], moe_hidden);
+                }
+
                 t0 = bn_moe_time_ms();
-                bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
+                bn_moe_swiglu(ms->expert_hb_batch[slot],
+                              ms->expert_hb_batch[slot],
+                              ms->expert_hb2_batch[slot],
                               moe_hidden, exec_policy.uses_reference_silu,
                               exec_policy.uses_reference_ffn_activation);
                 ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
@@ -585,24 +713,22 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                         pf_dn, d_dst[mi + 1], d_sz[mi + 1],
                         (off_t)d_off[mi + 1]);
 
-                t0 = bn_moe_time_ms();
-                BnQWeight wdown;
-                bn_moe_expert_projection_weight(&wdown, d_dst[mi], map, 2);
-                bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
-                                    bn_model_pool(m));
-                ms->stats.down_time_ms += bn_moe_time_ms() - t0;
-
-                t0 = bn_moe_time_ms();
-                bn_moe_weighted_add(ms->expert_out, s->xb2,
-                                    miss_weights[mi], dim);
-                ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
+                if (!defer_cached_down) {
+                    t0 = bn_moe_time_ms();
+                    BnQWeight wdown;
+                    bn_moe_expert_projection_weight(&wdown, d_dst[mi], map, 2);
+                    moe_quant_matvec_with_local_prepared(
+                        ms->expert_down_batch[slot], &wdown,
+                        ms->expert_hb_batch[slot], s->x_q, bn_model_pool(m),
+                        bn_model_backend(m));
+                    ms->stats.down_time_ms += bn_moe_time_ms() - t0;
+                }
             }
         }
 
         // Phase 2 fallback: process cache misses sequentially.
         for (int mi = 0; !pipeline_misses && mi < n_misses; mi++) {
             int eidx = miss_indices[mi];
-            float weight = miss_weights[mi];
             const uint8_t *gate_ptr, *up_ptr, *down_ptr;
 
             if (mi == 0 && miss_io_started) {
@@ -677,22 +803,33 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
 
             // Gate+up matvec (down I/O may still be in flight)
             t0 = bn_moe_time_ms();
+            int slot = miss_slots[mi];
             {
                 BnQWeight wgate, wup;
                 bn_moe_expert_projection_weight(&wgate, gate_ptr, map, 0);
                 bn_moe_expert_projection_weight(&wup, up_ptr, map, 1);
                 BnMatvecTask gu[2] = {
-                     { ms->expert_hb,  &wgate, NULL, gateup_flags },
-                     { ms->expert_hb2, &wup  , NULL, gateup_flags },
+                     { ms->expert_hb_batch[slot],  &wgate, NULL, gateup_flags },
+                     { ms->expert_hb2_batch[slot], &wup, NULL, gateup_flags },
                 };
-                bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q,
-                                          bn_model_pool(m));
+                moe_quant_matvec_batch_with_local_prepared(
+                    gu, 2, s->xb, s->x_q, bn_model_pool(m),
+                    bn_model_backend(m));
             }
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
+            if (observe) {
+                observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_EXPERT_GATE,
+                        ms->expert_hb_batch[slot], moe_hidden);
+                observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_EXPERT_UP,
+                        ms->expert_hb2_batch[slot], moe_hidden);
+            }
+
             // SwiGLU
             t0 = bn_moe_time_ms();
-            bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
+            bn_moe_swiglu(ms->expert_hb_batch[slot],
+                          ms->expert_hb_batch[slot],
+                          ms->expert_hb2_batch[slot],
                           moe_hidden, exec_policy.uses_reference_silu,
                           exec_policy.uses_reference_ffn_activation);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
@@ -712,20 +849,70 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                 }
             }
 
-            // Down matvec
-            {
+            if (!defer_cached_down) {
                 BnQWeight wdown;
                 bn_moe_expert_projection_weight(&wdown, down_ptr, map, 2);
-                bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
-                                    bn_model_pool(m));
+                moe_quant_matvec_with_local_prepared(
+                    ms->expert_down_batch[slot], &wdown,
+                    ms->expert_hb_batch[slot], s->x_q, bn_model_pool(m),
+                    bn_model_backend(m));
             }
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
-
-            // Weighted accumulation
-            t0 = bn_moe_time_ms();
-            bn_moe_weighted_add(ms->expert_out, s->xb2, weight, dim);
-            ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
         }
+
+        if (defer_cached_down) {
+            t0 = bn_moe_time_ms();
+            BnQWeight wdowns[BN_MAX_MOE_K];
+            BnMatvecMultiTask down_tasks[BN_MAX_MOE_K];
+            int n_down = 0;
+            for (int k = 0; k < K; k++) {
+                int eidx = ms->expert_indices[k];
+                if (eidx < 0 || route_weights[k] == 0.0f)
+                    continue;
+                const uint8_t *cp =
+                    bn_moe_cache_lookup_internal(cache, l, eidx);
+                if (!cp) {
+                    SH_LOG_ERROR("Cached expert disappeared before down projection");
+                    route_weights[k] = 0.0f;
+                    continue;
+                }
+                const uint8_t *dp = cp + bn_moe_cache_gate_bytes(cache) +
+                                    bn_moe_cache_up_bytes(cache);
+                bn_moe_expert_projection_weight(&wdowns[n_down], dp, map, 2);
+                down_tasks[n_down] = (BnMatvecMultiTask){
+                    ms->expert_down_batch[k], &wdowns[n_down],
+                    ms->expert_hb_batch[k], NULL };
+                n_down++;
+            }
+            moe_quant_matvec_multi_with_local_prepared(
+                down_tasks, n_down, ms->down_x_q_bufs, bn_model_pool(m),
+                bn_model_backend(m));
+            ms->stats.down_time_ms += bn_moe_time_ms() - t0;
+        }
+
+        // Cache residency must not change the model's reduction order.
+        t0 = bn_moe_time_ms();
+        for (int k = 0; k < K; k++)
+            if (route_weights[k] != 0.0f) {
+                if (observe)
+                    observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_ACTIVATION,
+                            ms->expert_hb_batch[k], moe_hidden);
+                if (observe)
+                    observe(observe_ctx,
+                            BN_MOE_OBSERVE_ROUTED_EXPERT_OUTPUT,
+                            ms->expert_down_batch[k], dim);
+                bn_moe_scale_expert_output(ms->expert_down_batch[k],
+                    bn_moe_expert_weight_scale(lw, ms->expert_indices[k]), dim);
+                bn_moe_scale_expert_output(ms->expert_down_batch[k],
+                                           route_weights[k], dim);
+                if (observe)
+                    observe(observe_ctx,
+                            BN_MOE_OBSERVE_ROUTED_WEIGHTED_EXPERT,
+                            ms->expert_down_batch[k], dim);
+                bn_moe_residual_add(ms->expert_out,
+                                    ms->expert_down_batch[k], dim);
+            }
+        ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
 
         #undef COLLECT_PF_STATS
     }
@@ -734,8 +921,7 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
         // --- Serial fallback (mmap K > BN_MAX_MOE_K or EMSCRIPTEN) ---
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
-            float weight = ms->expert_weights[k] *
-                           bn_moe_expert_weight_scale(lw, eidx);
+            float weight = ms->expert_weights[k];
             if (eidx < 0) continue;
             if (moe_try_gpu_serial_expert(m, sess, lw, l, eidx, weight) == 0)
                 continue;
@@ -757,8 +943,9 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                  { ms->expert_hb,  &wgate, NULL, gateup_flags },
                  { ms->expert_hb2, &wup  , NULL, gateup_flags },
             };
-            bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q,
-                                      bn_model_pool(m));
+            moe_quant_matvec_batch_with_local_prepared(
+                gu, 2, s->xb, s->x_q, bn_model_pool(m),
+                bn_model_backend(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             // SwiGLU activation
@@ -779,13 +966,17 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
             if (!bn_moe_expert_projection_weight(&wdown, down_data,
                                                  &lw->moe.expert_map, 2))
                 continue;
-            bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
-                                bn_model_pool(m));
+            moe_quant_matvec_with_local_prepared(
+                s->xb2, &wdown, ms->expert_hb, s->x_q, bn_model_pool(m),
+                bn_model_backend(m));
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
             // Weighted accumulation
             t0 = bn_moe_time_ms();
-            bn_moe_weighted_add(ms->expert_out, s->xb2, weight, dim);
+            bn_moe_scale_expert_output(s->xb2,
+                bn_moe_expert_weight_scale(lw, eidx), dim);
+            bn_moe_scale_expert_output(s->xb2, weight, dim);
+            bn_moe_residual_add(ms->expert_out, s->xb2, dim);
             ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
         }
     }

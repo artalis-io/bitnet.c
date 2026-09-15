@@ -123,6 +123,12 @@ typedef BnKQuantSdotCtx BnQ4KSdotCtx;
 typedef BnKQuantSdotCtx BnQ5KSdotCtx;
 
 typedef struct {
+    float d[4];
+    int8_t qs[BN_QK_K * 4];
+    int16_t bsums[BN_QK_K / 4];
+} BnBlockQ8Kx4;
+
+typedef struct {
     float *out;
     const BnQWeight *W;
     const int8_t *x_q;
@@ -131,6 +137,7 @@ typedef struct {
     int n_tokens;
     int cols;
     const BnPreparedWeight *prepared;
+    const BnBlockQ8Kx4 *x_q8k_x4;
 } BnKQuantMatmulCtx;
 
 typedef struct {

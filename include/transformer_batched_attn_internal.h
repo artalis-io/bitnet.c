@@ -16,6 +16,7 @@ typedef struct {
     float *out;         // [n_tokens * wo_cols] (typically reuses Q_buf)
 
     size_t loff;
+    int layer;
     int pos0;
     int n_tokens;
 
@@ -33,7 +34,9 @@ typedef struct {
     float *rope_sin;    // [n_tokens * half_rope] pre-allocated by caller
     int rope_stride;    // stride between token RoPE rows, in half-rotary elements
     float attention_scale;
+    int attention_window; // runtime-selected causal window, 0 = full attention
     int kv_cache_uses_fp16_rows;
+    int uses_reference_dot_accumulation;
 
     const float *q_norm;
     const float *k_norm;
@@ -49,9 +52,12 @@ typedef struct {
     int wo_cols;
 } BnBatchedAttnCtx;
 
-void bn_transformer_batched_attn_dispatch(BnModel *m, BnBatchedAttnCtx *ctx);
+// Protects aliased input/output with different layouts; returns -1 on failure.
+int bn_transformer_batched_attn_dispatch(BnModel *m, BnBatchedAttnCtx *ctx);
 
 void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int start, int end);
+void bn_transformer_batched_attn_naive_avx2_pair_range(void *ctx, int start,
+                                                        int end);
 void bn_transformer_batched_attn_naive_neon_range(void *ctx, int start, int end);
 void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int start, int end);
 void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int start, int end);

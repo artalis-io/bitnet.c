@@ -229,8 +229,9 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
         if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, eidx,
                                          temporaries, &expert->buffers) != 0)
             return -1;
-        expert->weight = ms->expert_weights[k] *
-                         bn_moe_expert_weight_scale(lw, eidx);
+        expert->weight = ms->expert_weights[k];
+        expert->output_scale = bn_moe_expert_weight_scale(lw, eidx);
+        expert->has_output_scale = lw->moe.expert_down_scale != NULL;
         out->n_experts++;
     }
     return 0;
@@ -258,6 +259,8 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
     if (!gpu_moe_backend_can_upload_expert_buffers(gpu) || !gpu_cache)
         return -1;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
+    int allow_aux_cache =
+        bn_transformer_gpu_moe_lazy_aux_cache_enabled(gpu);
 
     BnMoEState temp_state;
     memset(&temp_state, 0, sizeof(temp_state));
@@ -334,16 +337,19 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
                 gate_gpu = gpu_moe_create_expert_buffer(
                     gpu, gate_data, em->expert_gate_bytes,
                     em->gate_type, em->gate_rows, em->gate_cols,
-                    bn_moe_mmap_base_for_proj(io, em, 0) != NULL, 1);
+                    bn_moe_mmap_base_for_proj(io, em, 0) != NULL,
+                    allow_aux_cache);
                 up_gpu = gpu_moe_create_expert_buffer(
                     gpu, up_data, em->expert_up_bytes,
                     em->up_type, em->up_rows, em->up_cols,
-                    bn_moe_mmap_base_for_proj(io, em, 1) != NULL, 1);
+                    bn_moe_mmap_base_for_proj(io, em, 1) != NULL,
+                    allow_aux_cache);
             }
             down_gpu = gpu_moe_create_expert_buffer(
                 gpu, down_data, em->expert_down_bytes,
                 em->down_type, em->down_rows, em->down_cols,
-                bn_moe_mmap_base_for_proj(io, em, 2) != NULL, 1);
+                bn_moe_mmap_base_for_proj(io, em, 2) != NULL,
+                allow_aux_cache);
             if (!gate_gpu || (!use_split && !up_gpu) || !down_gpu) {
                 gpu_moe_destroy_partial(gpu, gate_gpu, up_gpu, down_gpu);
                 free(temp_state.buf);

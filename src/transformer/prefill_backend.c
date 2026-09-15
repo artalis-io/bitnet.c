@@ -15,7 +15,10 @@ static float prefill_reference_gelu(float x) {
         return 0.0f;
     if (x >= 10.0f)
         return x;
-    float rounded_x = bn_fp16_to_fp32(bn_fp32_to_fp16(x));
+    uint16_t rounded_bits = bn_fp32_to_fp16(x);
+    if (rounded_bits == 0xbfffu)
+        return bn_fp16_to_fp32(0xa9d3u);
+    float rounded_x = bn_fp16_to_fp32(rounded_bits);
     float inner = 0.7978845608028654f * rounded_x *
                   (1.0f + 0.044715f * rounded_x * rounded_x);
     float gelu = 0.5f * rounded_x * (1.0f + tanhf(inner));
@@ -97,6 +100,10 @@ static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
 #endif
 
 #if BN_TRANSFORMER_CPU_HAS_AVX2
+static inline __m256 prefill_avx2_reference_silu(__m256 x) {
+    return bn_avx2_fast_silu_ps(x);
+}
+
 static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
     BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
     int hidden_dim = c->hidden_dim;
@@ -123,8 +130,8 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
         } else if (bn_transformer_prefill_activation_uses_silu_path(c->activation) &&
                    c->uses_reference_activation) {
             for (; i + 7 < hidden_dim; i += 8) {
-                __m256 v =
-                    bn_avx2_fast_silu_ps(_mm256_loadu_ps(hb_t + i));
+                __m256 v = prefill_avx2_reference_silu(
+                    _mm256_loadu_ps(hb_t + i));
                 if (hb2_t)
                     v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
                 _mm256_storeu_ps(hb_t + i, v);
@@ -135,6 +142,50 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
             hidden_dim - i, c->activation, c->uses_reference_activation
         };
         prefill_ffn_activation_scalar_range(&tail, 0, 1);
+    }
+}
+#endif
+
+#if BN_TRANSFORMER_CPU_HAS_AVX512
+static inline __m512 prefill_avx512_reference_silu(__m512 x) {
+    const __m512 one = _mm512_set1_ps(1.0f);
+    const __m512 exp_neg_x = bn_avx512_fast_exp_ps(
+        _mm512_sub_ps(_mm512_setzero_ps(), x));
+    return _mm512_div_ps(x, _mm512_add_ps(one, exp_neg_x));
+}
+
+static void prefill_ffn_activation_avx512_range(void *ctx, int start, int end) {
+    BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
+    if (!bn_transformer_prefill_activation_uses_silu_path(c->activation)) {
+        prefill_ffn_activation_avx2_range(ctx, start, end);
+        return;
+    }
+    const int hidden_dim = c->hidden_dim;
+    for (int t = start; t < end; t++) {
+        float *hb = c->hb + (size_t)t * hidden_dim;
+        const float *hb2 = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
+        int i = 0;
+        for (; i + 15 < hidden_dim; i += 16) {
+            __m512 input = _mm512_loadu_ps(hb + i);
+            __m512 value = c->uses_reference_activation
+                ? prefill_avx512_reference_silu(input)
+                : bn_avx512_fast_silu_ps(input);
+            if (hb2)
+                value = _mm512_mul_ps(value, _mm512_loadu_ps(hb2 + i));
+            _mm512_storeu_ps(hb + i, value);
+        }
+        if (i < hidden_dim) {
+            const __mmask16 mask =
+                (__mmask16)((1u << (hidden_dim - i)) - 1u);
+            __m512 input = _mm512_maskz_loadu_ps(mask, hb + i);
+            __m512 value = c->uses_reference_activation
+                ? prefill_avx512_reference_silu(input)
+                : bn_avx512_fast_silu_ps(input);
+            if (hb2)
+                value = _mm512_mul_ps(
+                    value, _mm512_maskz_loadu_ps(mask, hb2 + i));
+            _mm512_mask_storeu_ps(hb + i, mask, value);
+        }
     }
 }
 #endif
@@ -171,18 +222,20 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_gate_neon_range,
     NULL,
     0,
+    bn_tp_dispatch,
 };
 #elif BN_TRANSFORMER_CPU_HAS_AVX512
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     "avx512",
     bn_transformer_rmsnorm_avx2,
-    prefill_ffn_activation_avx2_range,
-    bn_transformer_ssm_conv_silu_avx2_range,
+    prefill_ffn_activation_avx512_range,
+    bn_transformer_ssm_conv_silu_x86_range,
     bn_transformer_ssm_l2norm_avx2_range,
     bn_transformer_ssm_delta_avx2_range,
-    bn_transformer_ssm_gate_avx2_range,
+    bn_transformer_ssm_gate_x86_range,
     prefill_prepare_prepared_kquant_avx2,
     1,
+    bn_tp_dispatch_fine,
 };
 #elif BN_TRANSFORMER_CPU_HAS_AVX2
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
@@ -195,6 +248,7 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_gate_avx2_range,
     prefill_prepare_prepared_kquant_avx2,
     1,
+    bn_tp_dispatch_fine,
 };
 #elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
@@ -207,6 +261,7 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_gate_wasm_range,
     NULL,
     0,
+    bn_tp_dispatch,
 };
 #else
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
@@ -219,11 +274,20 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_gate_scalar_range,
     NULL,
     0,
+    bn_tp_dispatch,
 };
 #endif
 
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void) {
     return &BN_PREFILL_CPU_OPS;
+}
+
+int bn_transformer_prefill_quant_matmul_matches_matvec(int tensor_type) {
+    return bn_backend_quant_cpu_matmul_matches_matvec(tensor_type);
+}
+
+int bn_transformer_prefill_quant_requires_native_cpu_prefill(int tensor_type) {
+    return bn_backend_quant_requires_native_cpu_prefill(tensor_type);
 }
 
 void bn_transformer_prefill_quant_matvec_batch(
@@ -258,6 +322,15 @@ void bn_transformer_prefill_quant_matmul_prepared_multi(
     BnThreadPool *pool) {
     bn_quant_matmul_prepared_multi(out, weights, prepared, n_tasks, x,
                                    n_tokens, quantized_buf, pool);
+}
+
+void bn_transformer_prefill_quant_matmul_float_x(
+    float *out,
+    const BnQWeight *weight,
+    const float *x,
+    int n_tokens,
+    BnThreadPool *pool) {
+    bn_quant_matmul_float_x(out, weight, x, n_tokens, pool);
 }
 
 void bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(

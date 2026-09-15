@@ -45,6 +45,7 @@ typedef struct {
 
 typedef struct {
     int requires_matvec_prefill;
+    int uses_matvec_router;
     int uses_grouped_expert_route;
 } BnMoEPrefillPolicy;
 
@@ -105,11 +106,23 @@ typedef struct {
 } BnMoESharedGateupBatchPolicy;
 
 typedef struct {
+    void *gate;
+    void *up;
+    void *down;
+    void *norm;
+    void *dense_norm;
+    void *routed_norm;
+    void *post_norm;
+} BnMoEPrefillDenseGPUResourcePolicy;
+
+typedef struct {
     void *router;
     void *gate_all;
     void *up_all;
     void *down_all;
     void *norm;
+    void *sub_norm;
+    void *router_scale;
     int routed_valid;
     int norm_resid_valid;
 } BnMoEPrefillRoutedGPUResourcePolicy;
@@ -125,6 +138,14 @@ int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
 int bn_moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                      size_t *offset, size_t *proj_bytes);
 int bn_moe_io_has_mmap(const BnMoEIO *io);
+/* Look up existing layouts with stable mapped weight addresses. Acquisitions pin
+ * backend-owned storage and must be released after all projection work. */
+const BnPreparedWeight *bn_moe_prepared_dense_projection(
+    const struct BnModel *model, const BnQWeight *weight);
+const BnPreparedWeight *bn_moe_acquire_prepared_projection(
+    BnModel *model, const BnQWeight *weight);
+void bn_moe_release_prepared_projection(
+    BnModel *model, const BnPreparedWeight *prepared);
 const uint8_t *bn_moe_mmap_base_for_proj(const BnMoEIO *io,
                                          const BnMoEExpertMap *map,
                                          int proj);
@@ -140,6 +161,7 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     const BnMoEExpertMap *map,
                                     int expert_idx, int proj);
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
+BnQWeight bn_moe_make_f32_weight(const float *data, int rows, int cols);
 int bn_moe_expert_projection_weight(BnQWeight *out,
                                     const void *data,
                                     const BnMoEExpertMap *map,
@@ -155,6 +177,25 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
 int bn_moe_policy_uses_reference_silu(const BnConfig *c);
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c);
 BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c);
+void bn_moe_route_logits(const float *router_logits, int *expert_indices,
+                          float *expert_weights, int n_experts, int k,
+                          int norm_topk_prob, float expert_weights_scale);
+/* Returns zero when the CPU keeps tokenwise router computation. */
+int bn_moe_router_batch_logits(float *out, const float *weights,
+                                const float *x, int tokens, int dim,
+                                int experts, BnThreadPool *pool);
+void bn_moe_route_buffers(float *router_logits,
+                          int *expert_indices,
+                          float *expert_weights,
+                          const float *x,
+                          const float *router_w,
+                          int dim,
+                          int n_experts,
+                          int k,
+                          int norm_topk_prob,
+                          float expert_weights_scale,
+                          int uses_reference_router_accumulation,
+                          BnThreadPool *pool);
 
 typedef enum {
     BN_MOE_OBSERVE_ROUTED_INPUT,
@@ -165,6 +206,18 @@ typedef enum {
     BN_MOE_OBSERVE_DENSE_OUTPUT,
     BN_MOE_OBSERVE_COMBINED_OUTPUT,
     BN_MOE_OBSERVE_FINAL_OUTPUT,
+    BN_MOE_OBSERVE_ROUTED_WEIGHTED_EXPERT,
+    BN_MOE_OBSERVE_ROUTE_WEIGHTS,
+    BN_MOE_OBSERVE_ROUTED_ACTIVATION,
+    BN_MOE_OBSERVE_ROUTER_LOGITS,
+    BN_MOE_OBSERVE_RESIDUAL_OUTPUT,
+    BN_MOE_OBSERVE_ROUTED_SUM,
+    BN_MOE_OBSERVE_SHARED_OUTPUT,
+    BN_MOE_OBSERVE_SHARED_GATE,
+    BN_MOE_OBSERVE_SHARED_GATE_LOGIT,
+    BN_MOE_OBSERVE_ROUTED_EXPERT_OUTPUT,
+    BN_MOE_OBSERVE_ROUTED_EXPERT_GATE,
+    BN_MOE_OBSERVE_ROUTED_EXPERT_UP,
 } BnMoEObservePoint;
 
 typedef void (*BnMoEObserveFn)(void *ctx,
@@ -172,12 +225,33 @@ typedef void (*BnMoEObserveFn)(void *ctx,
                                const float *values,
                                int n_values);
 
+typedef void (*BnMoEBatchObserveFn)(void *ctx,
+                                    BnMoEObservePoint point,
+                                    int token,
+                                    int slot,
+                                    int expert,
+                                    const float *values,
+                                    int n_values);
+
+#define BN_MOE_BATCH_INPUT_PRENORMALIZED (1u << 0)
+#define BN_MOE_BATCH_OUTPUT_RAW           (1u << 1)
+
 void bn_moe_forward_observed(struct BnModel *m,
                              BnSession *sess,
                              struct BnLayerWeights *lw,
                              int layer,
                              BnMoEObserveFn observe,
                              void *observe_ctx);
+int bn_moe_forward_batch_observed(struct BnModel *m,
+                                  BnSession *sess,
+                                  struct BnLayerWeights *lw,
+                                  int layer,
+                                  float *act,
+                                  float *xb_scratch,
+                                  int n_tokens,
+                                  uint32_t flags,
+                                  BnMoEBatchObserveFn observe,
+                                  void *observe_ctx);
 BnMoEProjectionBufferLayout
 bn_moe_projection_buffer_layout(const BnConfig *c, const BnWeights *w);
 BnMoEAllActiveTwoRouteResourcePolicy
@@ -227,6 +301,8 @@ BnMoESharedGateupBatchPolicy bn_moe_shared_gateup_batch_policy(
     int shared_up_type,
     int batch_type,
     int mixed_shared_gateup_supported);
+BnMoEPrefillDenseGPUResourcePolicy bn_moe_prefill_dense_gpu_resource_policy(
+    const BnBackendModel *backend, int layer, const BnLayerWeights *weights);
 BnMoEPrefillRoutedGPUResourcePolicy
 bn_moe_prefill_routed_gpu_resource_policy(
     const BnBackendModel *backend,
@@ -255,6 +331,15 @@ void bn_moe_quant_matvec(float *out,
                          const float *x,
                          int8_t *quantized_buf,
                          BnThreadPool *pool);
+size_t bn_moe_quant_prepared_weight_size(const BnQWeight *weight);
+int bn_moe_quant_batch_preparation_worthwhile(const BnQWeight *weight,
+                                              int n_tokens, BnThreadPool *pool);
+int bn_moe_quant_matvec_uses_prepared_weight(const BnQWeight *weight,
+                                             uint32_t flags,
+                                             BnThreadPool *pool);
+int bn_moe_quant_prepare_weight(BnPreparedWeight *prepared,
+                                const BnQWeight *weight,
+                                SHArena *arena);
 void bn_moe_quant_matvec_prepared(float *out,
                                   const BnQWeight *W,
                                   const BnPreparedWeight *prepared,
@@ -276,6 +361,18 @@ void bn_moe_quant_matmul(float *out,
                          int n_tokens,
                          int8_t *quantized_buf,
                          BnThreadPool *pool);
+void bn_moe_quant_matmul_prepared(float *out,
+                                  const BnQWeight *W,
+                                  const BnPreparedWeight *prepared,
+                                  const float *x,
+                                  int n_tokens,
+                                  int8_t *quantized_buf,
+                                  BnThreadPool *pool);
+void bn_moe_quant_matmul_prepared_multi(
+    float **out, const BnQWeight **weights,
+    const BnPreparedWeight **prepared, int n,
+    const float *x, int n_tokens, int8_t *quantized_buf,
+    BnThreadPool *pool);
 void bn_moe_quant_matvec_gateup_gpu_buffers(BnMatvecTask *tasks,
                                             const void **buffers,
                                             int n_tasks,
@@ -295,6 +392,11 @@ void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
                    int uses_reference_silu,
                    int uses_reference_ffn_activation);
 double bn_moe_time_ms(void);
+void bn_moe_scaled_router_input(float *out, const float *x,
+                                 const float *scale, int size, float eps);
+// Apply expert and routing scales as separate calls before residual addition.
+// The caller owns this mutable projection output; model weights stay immutable.
+void bn_moe_scale_expert_output(float *out, float scale, int size);
 void bn_moe_rmsnorm(float *out, const float *x, const float *w,
                     int size, float eps);
 float bn_moe_dot_row(const float *row, const float *x, int dim);

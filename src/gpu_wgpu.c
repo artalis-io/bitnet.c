@@ -1210,6 +1210,22 @@ static int wgpu_init_activations(void *vctx,
     sizes[BN_GPU_BUF_LOGITS]      = (size_t)plan->vocab_size * sizeof(float);
     sizes[BN_GPU_BUF_ROPE_FREQ]   = (size_t)(plan->head_size / 2) * sizeof(float);
     sizes[BN_GPU_BUF_SCRATCH]     = (size_t)xb_size * sizeof(float);
+    if (plan->per_layer_input_dim > 0)
+        sizes[BN_GPU_BUF_PER_LAYER_INPUT] =
+            (size_t)plan->n_layers * (size_t)plan->per_layer_input_dim *
+            sizeof(float);
+    if (plan->hyper_connection_count > 1 &&
+        plan->hyper_connection_rank > 0) {
+        size_t wide = (size_t)plan->hyper_connection_count *
+                      (size_t)plan->dim;
+        sizes[BN_GPU_VALUE_HC_RESIDUAL] = wide * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_NORM] = wide * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_GATE] = wide * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_LOW_RANK] =
+            (size_t)plan->hyper_connection_rank * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_INJECT] =
+            (size_t)plan->hyper_connection_count * sizeof(float);
+    }
     {
         size_t qkv_size = (size_t)(q_dim + 2 * plan->kv_dim) * sizeof(float);
         size_t gated_q_size = (size_t)(2 * q_dim) * sizeof(float);

@@ -39,11 +39,14 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
         int row0 = g * 4;
         int nrows = (row0 + 4 <= rows) ? 4 : rows - row0;
 
-        __m256 row_acc[4] = {
-            _mm256_setzero_ps(), _mm256_setzero_ps(),
-            _mm256_setzero_ps(), _mm256_setzero_ps()
+        __m128 row_acc[4] = {
+            _mm_setzero_ps(), _mm_setzero_ps(),
+            _mm_setzero_ps(), _mm_setzero_ps()
         };
-        float row_corr[4] = {0};
+        __m128 row_min[4] = {
+            _mm_setzero_ps(), _mm_setzero_ps(),
+            _mm_setzero_ps(), _mm_setzero_ps()
+        };
 
 #if defined(__GNUC__) || defined(__clang__)
         #pragma GCC unroll 8
@@ -84,9 +87,8 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
                 __m128i bs_paired = _mm_hadd_epi16(bsl, bsh);
                 __m128i mins_v = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i *)mins));
                 __m128i corr128 = _mm_madd_epi16(mins_v, bs_paired);
-                __m128i ch1 = _mm_hadd_epi32(corr128, corr128);
-                __m128i ch2 = _mm_hadd_epi32(ch1, ch1);
-                int32_t bsum_corr = _mm_cvtsi128_si32(ch2);
+                int32_t min_corr = bn_avx2_hsum_epi32(
+                    _mm256_castsi128_si256(corr128));
 
                 __m256i sumi_v = _mm256_setzero_si256();
                 const uint8_t *qs = blk->qs;
@@ -102,14 +104,18 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
                     sumi_v = _mm256_add_epi32(sumi_v, _mm256_add_epi32(plo, phi));
                 }
 
-                row_acc[r] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(sumi_v),
-                                             _mm256_set1_ps(dx * d), row_acc[r]);
-                row_corr[r] += dx * dmin * (float)bsum_corr;
+                int32_t dot = bn_avx2_hsum_epi32(sumi_v);
+                row_acc[r] = _mm_fmadd_ss(_mm_set_ss((float)dot),
+                                          _mm_set_ss(d * dx), row_acc[r]);
+                row_min[r] = _mm_fmadd_ss(_mm_set_ss((float)min_corr),
+                                          _mm_set_ss(dmin * dx), row_min[r]);
             }
         }
 
-        for (int r = 0; r < nrows; r++)
-            c->out[row0 + r] = bn_avx2_hsum_ps(row_acc[r]) - row_corr[r];
+        for (int r = 0; r < nrows; r++) {
+            c->out[row0 + r] =
+                _mm_cvtss_f32(_mm_sub_ss(row_acc[r], row_min[r]));
+        }
     }
 }
 
@@ -142,12 +148,15 @@ void bn_quant_q4k_avx2_sdot_matmul_4row_range(void *ctx,
         for (int t0 = 0; t0 < n_tokens; t0 += Q4K_MATMUL_4ROW_TILE_T) {
             int tile_n = t0 + Q4K_MATMUL_4ROW_TILE_T <= n_tokens
                 ? Q4K_MATMUL_4ROW_TILE_T : n_tokens - t0;
-            __m256 row_acc[4][Q4K_MATMUL_4ROW_TILE_T];
-            float row_corr[4][Q4K_MATMUL_4ROW_TILE_T] = {{0}};
+            __m128 row_acc[4][Q4K_MATMUL_4ROW_TILE_T];
+            __m128 row_min[4][Q4K_MATMUL_4ROW_TILE_T];
 
-            for (int r = 0; r < 4; r++)
-                for (int ti = 0; ti < Q4K_MATMUL_4ROW_TILE_T; ti++)
-                    row_acc[r][ti] = _mm256_setzero_ps();
+            for (int r = 0; r < 4; r++) {
+                for (int ti = 0; ti < Q4K_MATMUL_4ROW_TILE_T; ti++) {
+                    row_acc[r][ti] = _mm_setzero_ps();
+                    row_min[r][ti] = _mm_setzero_ps();
+                }
+            }
 
             for (int b = 0; b < n_bpr; b++) {
                 __m256i xv[Q4K_MATMUL_4ROW_TILE_T][8];
@@ -216,9 +225,8 @@ void bn_quant_q4k_avx2_sdot_matmul_4row_range(void *ctx,
                         __m128i bsh = _mm256_extracti128_si256(q8sums, 1);
                         __m128i bs_paired = _mm_hadd_epi16(bsl, bsh);
                         __m128i corr128 = _mm_madd_epi16(mins_v, bs_paired);
-                        __m128i ch1 = _mm_hadd_epi32(corr128, corr128);
-                        __m128i ch2 = _mm_hadd_epi32(ch1, ch1);
-                        int32_t bsum_corr = _mm_cvtsi128_si32(ch2);
+                        int32_t min_corr = bn_avx2_hsum_epi32(
+                            _mm256_castsi128_si256(corr128));
 
                         __m256i sumi_v = _mm256_setzero_si256();
                         for (int p = 0; p < 4; p++) {
@@ -229,11 +237,13 @@ void bn_quant_q4k_avx2_sdot_matmul_4row_range(void *ctx,
                             sumi_v = _mm256_add_epi32(sumi_v,
                                 _mm256_add_epi32(plo, phi));
                         }
-                        row_acc[r][ti] = _mm256_fmadd_ps(
-                            _mm256_cvtepi32_ps(sumi_v),
-                            _mm256_set1_ps(dx[ti] * d),
-                            row_acc[r][ti]);
-                        row_corr[r][ti] += dx[ti] * dmin * (float)bsum_corr;
+                        int32_t dot = bn_avx2_hsum_epi32(sumi_v);
+                        row_acc[r][ti] = _mm_fmadd_ss(
+                            _mm_set_ss((float)dot),
+                            _mm_set_ss(d * dx[ti]), row_acc[r][ti]);
+                        row_min[r][ti] = _mm_fmadd_ss(
+                            _mm_set_ss((float)min_corr),
+                            _mm_set_ss(dmin * dx[ti]), row_min[r][ti]);
                     }
                 }
             }
@@ -241,7 +251,8 @@ void bn_quant_q4k_avx2_sdot_matmul_4row_range(void *ctx,
             for (int r = 0; r < nrows; r++) {
                 for (int ti = 0; ti < tile_n; ti++) {
                     c->out[(size_t)(t0 + ti) * rows + row0 + r] =
-                        bn_avx2_hsum_ps(row_acc[r][ti]) - row_corr[r][ti];
+                        _mm_cvtss_f32(_mm_sub_ss(row_acc[r][ti],
+                                                row_min[r][ti]));
                 }
             }
         }

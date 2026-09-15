@@ -35,6 +35,8 @@ int bn_model_ensure_backend(BnModel *model);
 size_t bn_model_backend_prepared_size(const BnConfig *config,
                                       const BnWeights *weights);
 void bn_model_backend_prepare(BnModel *model, SHArena *arena);
+void bn_model_set_cpu_prepared_cache_budget(BnModel *model,
+                                            size_t budget_bytes);
 void bn_model_backend_free(BnModel *model);
 BnGPUBackend *bn_model_gpu(const BnModel *model);
 void bn_model_set_gpu_disabled(BnModel *model, int disabled);
@@ -56,6 +58,8 @@ void bn_model_set_moe_mmap_base(BnModel *model, const uint8_t *base);
 void bn_model_set_moe_mmap_shards(BnModel *model, const uint8_t **bases,
                                   size_t n_bases);
 void bn_model_set_moe_fd(BnModel *model, int fd);
+int bn_model_set_moe_shard_files(BnModel *model,
+                                 const BnMappedFile *files, size_t n_files);
 void bn_model_set_moe_madvise(BnModel *model, int enabled);
 void bn_model_set_moe_cache(BnModel *model, void *cache);
 void *bn_model_moe_cache(const BnModel *model);
@@ -149,11 +153,14 @@ int bn_model_moe_policy_requires_float_kquant_gateup_fallback(
 int bn_model_moe_policy_uses_scaled_router_input(const BnConfig *config);
 int bn_model_moe_policy_uses_reference_router_accumulation(
     const BnConfig *config);
+int bn_model_moe_policy_uses_separate_router_topk(
+    const BnConfig *config);
 int bn_model_moe_policy_uses_dense_residual_branch(const BnConfig *config);
 int bn_model_backend_policy_ffn_sub_norm_elements(const BnConfig *config);
 int bn_model_moe_policy_uses_reference_silu(const BnConfig *config);
 int bn_model_moe_policy_activation(const BnConfig *config);
 float bn_model_moe_policy_norm_epsilon(const BnConfig *config);
+int bn_model_moe_policy_prefill_uses_matvec_router(const BnConfig *config);
 int bn_model_moe_policy_prefill_requires_matvec(const BnConfig *config);
 int bn_model_moe_policy_uses_grouped_expert_route(const BnConfig *config);
 int bn_model_moe_policy_total_experts(const BnConfig *config);
@@ -171,6 +178,7 @@ int bn_model_moe_policy_uses_all_active_two_expert_route(
 int bn_model_moe_policy_has_shared_expert(const BnConfig *config);
 int bn_model_moe_policy_shared_expert_hidden_dim(
     const BnConfig *config);
+int bn_model_transformer_policy_attention_window(const BnConfig *config, int layer);
 int bn_model_transformer_policy_is_attention_layer(const BnConfig *config,
                                                    int layer);
 int bn_model_transformer_policy_attention_layer_index(
@@ -213,7 +221,17 @@ int bn_model_transformer_policy_moe_requires_reference_attention(
     const BnConfig *config);
 int bn_model_transformer_policy_requires_reference_attention(
     const BnConfig *config);
+int bn_model_transformer_policy_reference_attention_from_layer(
+    const BnConfig *config);
 int bn_model_transformer_policy_requires_reference_recurrent(
+    const BnConfig *config);
+int bn_model_transformer_policy_requires_host_reference_prefill(
+    const BnConfig *config);
+int bn_model_transformer_policy_uses_hyper_connections(
+    const BnConfig *config);
+int bn_model_transformer_policy_uses_positional_layer_embedding(
+    const BnConfig *config);
+int bn_model_transformer_policy_ssm_uses_sigmoid_gate(
     const BnConfig *config);
 int bn_model_backend_policy_requires_stable_per_layer_input_layout(
     const BnConfig *config);
@@ -238,6 +256,8 @@ int bn_model_transformer_policy_rmsnorm_uses_reference_order(
 float bn_model_transformer_policy_attention_scale(const BnConfig *config,
                                                   int head_size);
 int bn_model_transformer_policy_attention_value_shares_key(
+    const BnConfig *config);
+int bn_model_transformer_policy_attention_uses_padded_weighted_v_reduction(
     const BnConfig *config);
 int bn_model_transformer_policy_uses_attention_post_norm(
     const BnConfig *config);
@@ -280,6 +300,7 @@ int bn_model_activation_plan_ssm_layer_count(const BnConfig *config);
 int bn_model_activation_plan_uses_hybrid_ssm(const BnConfig *config);
 int bn_model_activation_plan_uses_hybrid_moe(const BnConfig *config);
 int bn_model_activation_plan_uses_moe(const BnConfig *config);
+int bn_model_activation_plan_separates_rope_norm(const BnConfig *config);
 int bn_model_activation_plan_rope_dims_for_head(const BnConfig *config,
                                                 int layer_head_size);
 void bn_model_activation_plan_init_rope_frequencies(

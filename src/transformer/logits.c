@@ -113,7 +113,7 @@ static int logits_top_ids(const float *logits, int n_logits,
 static void logits_refine_tied_kquant_top(BnModel *m, BnRunState *s,
                                           const BnQWeight *W) {
     if (!m || !s ||
-        !bn_transformer_logits_tied_kquant_refine_supported(W))
+        !bn_transformer_logits_kquant_refine_supported(W))
         return;
 
     int refine_top = bn_transformer_logits_cpu_tied_kquant_refine_top(
@@ -135,7 +135,7 @@ static void logits_refine_tied_kquant_top(BnModel *m, BnRunState *s,
 static void logits_hybrid_tied_kquant_top(BnModel *m, BnRunState *s,
                                           const BnQWeight *W) {
     if (!m || !s ||
-        !bn_transformer_logits_tied_kquant_refine_supported(W))
+        !bn_transformer_logits_kquant_refine_supported(W))
         return;
 
     int top_n = bn_transformer_logits_cpu_tied_kquant_hybrid_top(
@@ -190,6 +190,24 @@ static void logits_refine_native_quant(const BnModel *m,
                                   s->x_q, refine_top);
 }
 
+static void logits_refine_gpu_kquant(BnModel *m, BnRunState *s,
+                                     const BnQWeight *W) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    int refine_default =
+        bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
+            gpu, &m->config, &m->weights);
+    if (!gpu || !bn_transformer_logits_kquant_refine_supported(W) ||
+        !bn_transformer_gpu_kquant_logits_refine_enabled(
+            gpu, refine_default))
+        return;
+    int refine_top = bn_transformer_gpu_kquant_logits_refine_top(
+        gpu, refine_default);
+    if (refine_top > 0)
+        bn_transformer_gpu_refine_kquant_logits_top(
+            s->logits, m->config.vocab_size, W, s->x, s->x_q,
+            refine_top);
+}
+
 static void logits_quant_matvec_gpu(const BnModel *m,
                                     float *out,
                                     const BnQWeight *W,
@@ -197,9 +215,16 @@ static void logits_quant_matvec_gpu(const BnModel *m,
                                     int8_t *quantized_buf) {
     BnLogitsQuantResources resources =
         bn_transformer_logits_quant_resources(bn_model_backend(m), W);
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    int cpu_logits = bn_transformer_gpu_cpu_logits_enabled(gpu, 0);
+    BnBackendModel *backend = bn_model_backend(m);
+    const BnPreparedWeight *cpu_prepared = cpu_logits
+        ? bn_transformer_logits_acquire_cpu_prepared(backend, W) : NULL;
     bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
-        out, W, resources.prepared, resources.gpu_buffer, x, quantized_buf,
-        bn_model_pool(m), bn_model_gpu(m));
+        out, W, cpu_logits ? cpu_prepared : resources.prepared,
+        cpu_logits ? NULL : resources.gpu_buffer, x, quantized_buf,
+        bn_model_pool(m), cpu_logits ? NULL : gpu);
+    bn_transformer_logits_release_cpu_prepared(backend, cpu_prepared);
 }
 
 static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
@@ -246,8 +271,9 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         return NULL;
     }
 
-    logits_rmsnorm_model(m, s->x, s->x, w->output_norm, dim,
-                         exec_policy.norm_eps);
+    if (!bn_transformer_uses_hyper_connections(c))
+        logits_rmsnorm_model(m, s->x, s->x, w->output_norm, dim,
+                             exec_policy.norm_eps);
     bn_transformer_cpu_debug_dump_values(
         bn_tp_cpu_policy(bn_model_pool(m)), s->x, dim,
         "bitnet_result_norm", -1, sess->pos);
@@ -265,31 +291,44 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     }
     case BN_LOGITS_UNTIED_QUANT:
         logits_quant_matvec_gpu(m, s->logits, &w->output_weight, s->x, s->x_q);
+        logits_refine_gpu_kquant(m, s, &w->output_weight);
         logits_refine_native_quant(m, s, &w->output_weight);
         break;
     case BN_LOGITS_TIED_QUANT: {
+        BnGPUBackend *gpu = bn_model_gpu(m);
+        int cpu_logits = bn_transformer_gpu_cpu_logits_enabled(gpu, 0);
+        BnBackendModel *backend = bn_model_backend(m);
         BnLogitsTiedQuantExecutionPolicy policy =
             bn_transformer_logits_tied_quant_execution_policy_for(
-                bn_tp_cpu_policy(bn_model_pool(m)), bn_model_gpu(m),
+                bn_tp_cpu_policy(bn_model_pool(m)),
+                cpu_logits ? NULL : gpu,
                 &m->config, bn_model_backend(m),
                 &w->tied_embedding_weight);
         if (!policy.valid || !policy.dispatch.valid)
             return NULL;
+        const BnPreparedWeight *cpu_prepared = cpu_logits && policy.uses_prepared_weight
+            ? bn_transformer_logits_acquire_cpu_prepared(backend,
+                                                         policy.weight)
+            : NULL;
         if (policy.dispatch.matvec_path == BN_LOGITS_TIED_QUANT_CPU_NATIVE) {
             bn_transformer_cpu_quant_matvec_prepared_flags(
-                s->logits, policy.weight, policy.prepared, s->x, s->x_q,
+                s->logits, policy.weight,
+                cpu_logits ? cpu_prepared : policy.prepared,
+                s->x, s->x_q,
                 bn_model_pool(m),
                 bn_transformer_logits_native_quant_task_flags(1));
         } else {
             bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
-                s->logits, policy.weight, policy.prepared,
-                policy.backend_handle,
-                s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
+                s->logits, policy.weight,
+                cpu_logits ? cpu_prepared : policy.prepared,
+                cpu_logits ? NULL : policy.backend_handle,
+                s->x, s->x_q, bn_model_pool(m), cpu_logits ? NULL : gpu);
             if (policy.dispatch.run_tied_kquant_hybrid_refine)
                 logits_hybrid_tied_kquant_top(m, s, policy.weight);
             if (policy.dispatch.run_tied_kquant_refine)
                 logits_refine_tied_kquant_top(m, s, policy.weight);
         }
+        bn_transformer_logits_release_cpu_prepared(backend, cpu_prepared);
         if (policy.dispatch.run_native_quant_refine)
             logits_refine_native_quant(m, s, policy.weight);
         break;

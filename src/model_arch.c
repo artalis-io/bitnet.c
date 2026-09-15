@@ -82,6 +82,24 @@ const char *bn_model_arch_tensor_suffix(BnModelTensorRole role) {
         case BN_MODEL_TENSOR_SHARED_FFN_DOWN: return "ffn_down_shexp.weight";
         case BN_MODEL_TENSOR_SHARED_FFN_ROUTER: return "ffn_gate_inp_shexp.weight";
         case BN_MODEL_TENSOR_LAYER_OUTPUT_SCALE: return "layer_output_scale.weight";
+        case BN_MODEL_TENSOR_HC_ATTN_NORM: return "hc_attn_norm.weight";
+        case BN_MODEL_TENSOR_HC_ATTN_DOWN: return "hc_attn_down.weight";
+        case BN_MODEL_TENSOR_HC_ATTN_UP: return "hc_attn_up.weight";
+        case BN_MODEL_TENSOR_HC_ATTN_INJECT: return "hc_attn_inject.weight";
+        case BN_MODEL_TENSOR_HC_FFN_NORM: return "hc_ffn_norm.weight";
+        case BN_MODEL_TENSOR_HC_FFN_DOWN: return "hc_ffn_down.weight";
+        case BN_MODEL_TENSOR_HC_FFN_UP: return "hc_ffn_up.weight";
+        case BN_MODEL_TENSOR_HC_FFN_INJECT: return "hc_ffn_inject.weight";
+        case BN_MODEL_TENSOR_INDEXER_Q: return "indexer.q_proj.weight";
+        case BN_MODEL_TENSOR_INDEXER_K: return "indexer.k_proj.weight";
+        case BN_MODEL_TENSOR_INDEXER_Q_NORM: return "indexer.q_norm.weight";
+        case BN_MODEL_TENSOR_INDEXER_K_NORM: return "indexer.k_norm.weight";
+        case BN_MODEL_TENSOR_PLE_KEY: return "ple_key.weight";
+        case BN_MODEL_TENSOR_PLE_VALUE: return "ple_value.weight";
+        case BN_MODEL_TENSOR_PLE_NORM_KEY: return "ple_norm_key.weight";
+        case BN_MODEL_TENSOR_PLE_NORM_QUERY: return "ple_norm_query.weight";
+        case BN_MODEL_TENSOR_PLE_NORM_CONV: return "ple_norm_conv.weight";
+        case BN_MODEL_TENSOR_PLE_CONV1D: return "ple_conv1d.weight";
         default:                          return NULL;
     }
 }
@@ -93,6 +111,21 @@ int bn_model_arch_default_tensor_name(char *out,
     const char *suffix = bn_model_arch_tensor_suffix((BnModelTensorRole)role);
     if (!out || out_size == 0 || layer < 0 || !suffix) return -1;
     int n = snprintf(out, out_size, "blk.%d.%s", layer, suffix);
+    return (n < 0 || (size_t)n >= out_size) ? -1 : 0;
+}
+
+static int bn_model_arch_qwen4exp_tensor_name(char *out, size_t out_size,
+                                               int layer, int role) {
+    const char *name = NULL;
+    switch ((BnModelTensorRole)role) {
+        case BN_MODEL_TENSOR_HC_OUTPUT_NORM: name = "output_hc_norm.weight"; break;
+        case BN_MODEL_TENSOR_HC_OUTPUT_DOWN: name = "output_hc_down.weight"; break;
+        case BN_MODEL_TENSOR_HC_OUTPUT_UP: name = "output_hc_up.weight"; break;
+        default:
+            return bn_model_arch_default_tensor_name(out, out_size, layer, role);
+    }
+    if (!out || out_size == 0) return -1;
+    int n = snprintf(out, out_size, "%s", name);
     return (n < 0 || (size_t)n >= out_size) ? -1 : 0;
 }
 
@@ -231,7 +264,7 @@ static int model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
         return 0;
     if (c->per_layer_input_dim > 0)
         return 1;
-    if (c->n_experts > 0 && layer >= 0 &&
+    if (layer >= 0 &&
         layer < c->n_layers &&
         layer < (int)(sizeof(c->sliding_window_pattern) /
                       sizeof(c->sliding_window_pattern[0])))
@@ -311,8 +344,8 @@ void bn_model_arch_init_rope_frequencies_for_theta(float theta,
     int half_rope = rope_dims / 2;
     if (half_rope > capacity_pairs)
         half_rope = capacity_pairs;
-    float freq = 1.0f;
     float freq_scale = powf(theta, -2.0f / (float)rope_dims);
+    float freq = 1.0f;
     for (int i = 0; i < half_rope; i++) {
         freqs[i] = freq;
         freq *= freq_scale;
@@ -329,8 +362,8 @@ void bn_model_arch_init_rope_angles_for_theta(float theta,
     int half_rope = rope_dims / 2;
     if (half_rope > capacity_pairs)
         half_rope = capacity_pairs;
-    float angle = (float)position;
     float theta_scale = powf(theta, -2.0f / (float)rope_dims);
+    float angle = (float)position;
     for (int i = 0; i < half_rope; i++) {
         angles[i] = angle;
         angle *= theta_scale;
@@ -371,9 +404,35 @@ int bn_model_arch_requires_reference_attention(const BnConfig *c) {
                   BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION) != 0);
 }
 
+int bn_model_arch_reference_attention_from_layer(const BnConfig *c) {
+    if (!c || c->n_experts > 0 || c->n_layers <= 0 ||
+        !(c->policy_flags &
+          BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION_LAST_THIRD))
+        return -1;
+    return (2 * c->n_layers) / 3;
+}
+
 int bn_model_arch_requires_reference_recurrent(const BnConfig *c) {
     return c && ((c->policy_flags &
                   BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT) != 0);
+}
+
+int bn_model_arch_uses_hyper_connections(const BnConfig *c) {
+    return c && (c->policy_flags & BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS) != 0;
+}
+
+int bn_model_arch_uses_query_sparse_attention(const BnConfig *c) {
+    return c &&
+           (c->policy_flags & BN_MODEL_ARCH_POLICY_QUERY_SPARSE_ATTENTION) != 0;
+}
+
+int bn_model_arch_ssm_uses_sigmoid_gate(const BnConfig *c) {
+    return c && (c->policy_flags & BN_MODEL_ARCH_POLICY_SSM_SIGMOID_GATE) != 0;
+}
+
+int bn_model_arch_uses_positional_layer_embedding(const BnConfig *c) {
+    return c && (c->policy_flags &
+                 BN_MODEL_ARCH_POLICY_POSITIONAL_LAYER_EMBEDDING) != 0;
 }
 
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
@@ -384,6 +443,20 @@ int bn_model_arch_moe_uses_reference_router_accumulation(
     const BnConfig *c) {
     return c && ((c->policy_flags &
                   BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION) != 0);
+}
+
+int bn_model_arch_attention_uses_padded_weighted_v_reduction(
+    const BnConfig *c) {
+    return c && c->n_experts > 0 &&
+           (c->policy_flags &
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION) != 0 &&
+           (c->policy_flags &
+            BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH) == 0;
+}
+
+int bn_model_arch_moe_uses_separate_router_topk(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_MOE_SEPARATE_ROUTER_TOPK) != 0);
 }
 
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c) {
@@ -554,6 +627,10 @@ int bn_model_arch_shared_expert_hidden_dim(const BnConfig *c) {
     return c->shared_expert_intermediate_size;
 }
 
+int bn_model_arch_moe_prefill_uses_matvec_router(const BnConfig *c) {
+    return c && (c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_PREFILL_MATVEC_ROUTER) != 0;
+}
+
 int bn_model_arch_moe_prefill_requires_matvec(const BnConfig *c) {
     return bn_model_arch_uses_two_expert_all_active_moe(c) &&
            c->has_shared_expert;
@@ -564,6 +641,14 @@ int bn_model_arch_uses_all_active_two_expert_moe(const BnConfig *c,
     return bn_model_arch_uses_two_expert_all_active_moe(c) &&
            c->moe_intermediate_size >= 4096 &&
            dim <= 2048;
+}
+
+int bn_model_arch_attention_window(const BnConfig *c, int layer) {
+    if (!c || c->sliding_window <= 0 || layer < 0 || layer >= c->n_layers ||
+        layer >= (int)(sizeof(c->sliding_window_pattern) /
+                       sizeof(c->sliding_window_pattern[0])))
+        return 0;
+    return c->sliding_window_pattern[layer] ? c->sliding_window : 0;
 }
 
 int bn_model_arch_loads_extra_metadata(const BnConfig *c) {
@@ -601,6 +686,10 @@ int bn_model_arch_loads_moe_aux_weights(const BnConfig *c) {
     return bn_model_arch_moe_uses_scaled_router_input(c);
 }
 
+int bn_model_arch_separates_rope_norm(const BnConfig *c) {
+    return c && (c->policy_flags & BN_MODEL_ARCH_POLICY_SEPARATE_ROPE_NORM) != 0;
+}
+
 int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c) {
     return c &&
            ((c->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS) != 0);
@@ -608,6 +697,16 @@ int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c) {
 
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {
     return bn_model_arch_is_gemma4(tokenizer_model);
+}
+
+BnTokenizerPre bn_model_tokenizer_pretokenizer(const char *tokenizer_pre) {
+    if (tokenizer_pre && strcmp(tokenizer_pre, "qwen2") == 0)
+        return BN_TOKENIZER_PRE_LETTERS;
+    if (tokenizer_pre && strcmp(tokenizer_pre, "qwen35") == 0)
+        return BN_TOKENIZER_PRE_LETTERS_MARKS;
+    if (tokenizer_pre && strcmp(tokenizer_pre, "gemma4") == 0)
+        return BN_TOKENIZER_PRE_NEWLINES;
+    return BN_TOKENIZER_PRE_NONE;
 }
 
 int bn_model_tokenizer_uses_metaspace(const char *tokenizer_model) {
@@ -842,12 +941,17 @@ static int bn_model_arch_match_qwen2(const char *arch) {
 }
 
 static int bn_model_arch_match_qwen3(const char *arch) {
-    return arch && strcmp(arch, "qwen3") == 0;
+    return arch && (strcmp(arch, "qwen3") == 0 ||
+                    strcmp(arch, "qwen3moe") == 0);
 }
 
 static int bn_model_arch_match_qwen35(const char *arch) {
     return arch && (strcmp(arch, "qwen35") == 0 ||
                     strcmp(arch, "qwen35moe") == 0);
+}
+
+static int bn_model_arch_match_qwen4exp(const char *arch) {
+    return arch && strcmp(arch, "qwen4exp") == 0;
 }
 
 static int bn_model_arch_match_bitnet(const char *arch) {
@@ -862,6 +966,30 @@ static int bn_model_arch_match_default(const char *arch) {
 const BnModelArchOps *bn_model_arch_registry(size_t *count) {
     static const BnModelArchOps ops[] = {
         {
+            "qwen4exp",
+            BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION |
+            BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT |
+            BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION |
+            BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
+            BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS |
+            BN_MODEL_ARCH_POLICY_SEPARATE_ROPE_NORM |
+            BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS |
+            BN_MODEL_ARCH_POLICY_QUERY_SPARSE_ATTENTION |
+            BN_MODEL_ARCH_POLICY_SSM_SIGMOID_GATE |
+            BN_MODEL_ARCH_POLICY_POSITIONAL_LAYER_EMBEDDING |
+            BN_MODEL_ARCH_POLICY_MOE_SEPARATE_ROUTER_TOPK,
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ATTENTION |
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION,
+            bn_model_arch_match_qwen4exp,
+            bn_model_arch_prefix,
+            bn_model_arch_default_activation,
+            bn_model_arch_attention_value_unique,
+            bn_model_arch_is_ssm_layer,
+            bn_model_arch_qwen4exp_tensor_name,
+            bn_model_arch_apply_default_shapes,
+        },
+        {
             "gemma4",
             BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |
             BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY |
@@ -870,11 +998,13 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_FFN_POST_NORM |
             BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE |
             BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION |
-            BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
+            BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION |
+            BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION |
             BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT |
             BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION |
             BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH,
-            0,
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION,
             bn_model_arch_match_gemma4,
             bn_model_arch_prefix,
             bn_model_arch_gemma4_activation,
@@ -885,12 +1015,13 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen3",
-            BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
-            BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
+            BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION |
+            BN_MODEL_ARCH_POLICY_SEPARATE_ROPE_NORM |
             BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION |
-            BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
-            0,
+            BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION |
+            BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION_LAST_THIRD,
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION |
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU,
             bn_model_arch_match_qwen3,
             bn_model_arch_prefix,
             bn_model_arch_default_activation,
@@ -903,10 +1034,11 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             "qwen35",
             BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION |
             BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT |
-            BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION |
-            BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS,
+            BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
+            BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS |
+            BN_MODEL_ARCH_POLICY_SEPARATE_ROPE_NORM,
             0,
             bn_model_arch_match_qwen35,
             bn_model_arch_prefix,

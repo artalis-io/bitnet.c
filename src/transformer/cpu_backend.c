@@ -11,6 +11,15 @@
 
 #include <math.h>
 
+#if !BN_TRANSFORMER_CPU_HAS_AVX2
+static void cpu_scaled_residual_add_default(float *x, const float *r,
+                                            float scale, int dim,
+                                            float *scratch) {
+    (void)scratch;
+    for (int i = 0; i < dim; i++) x[i] += r[i] * scale;
+}
+#endif
+
 #if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_residual_add_reference(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i++)
@@ -23,7 +32,10 @@ static float cpu_reference_gelu(float x) {
         return 0.0f;
     if (x >= 10.0f)
         return x;
-    float rounded_x = bn_fp16_to_fp32(bn_fp32_to_fp16(x));
+    uint16_t rounded_bits = bn_fp32_to_fp16(x);
+    if (rounded_bits == 0xbfffu)
+        return bn_fp16_to_fp32(0xa9d3u);
+    float rounded_x = bn_fp16_to_fp32(rounded_bits);
     float inner = 0.7978845608028654f * rounded_x *
                   (1.0f + 0.044715f * rounded_x * rounded_x);
     float gelu = 0.5f * rounded_x * (1.0f + tanhf(inner));
@@ -54,6 +66,15 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
                                           int hidden_dim);
 #endif
 #if BN_TRANSFORMER_CPU_HAS_AVX2
+static inline __m256 cpu_avx2_silu(__m256 x, int batched_prompt_contract) {
+    __m256 one = _mm256_set1_ps(1.0f);
+    __m256 neg_x = _mm256_sub_ps(_mm256_setzero_ps(), x);
+    __m256 ex = batched_prompt_contract
+        ? bn_avx2_fast_exp_ps(neg_x)
+        : bn_avx2_fast_exp_avx512_ps(neg_x);
+    return _mm256_div_ps(x, _mm256_add_ps(one, ex));
+}
+
 static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim);
@@ -71,6 +92,14 @@ static void cpu_apply_ffn_activation_wasm(BnRunState *s,
 
 int bn_transformer_cpu_has_native_quant_activation(void) {
     return BN_TRANSFORMER_CPU_HAS_NATIVE_QUANT_ACTIVATION;
+}
+
+uint32_t bn_transformer_cpu_ssm_out_matvec_task_flags(void) {
+#if defined(__AVX2__) && !defined(__AVX512F__)
+    return BN_MATVEC_TASK_REFERENCE_DOT;
+#else
+    return 0u;
+#endif
 }
 
 int bn_transformer_cpu_weight_uses_native_quant_activation(
@@ -229,12 +258,62 @@ static void cpu_residual_add_neon(float *x, const float *r, int dim) {
 }
 #endif
 
+#if BN_TRANSFORMER_CPU_HAS_AVX512
+static inline __m512 cpu_avx512_reference_silu(__m512 x) {
+    const __m512 one = _mm512_set1_ps(1.0f);
+    const __m512 exp_neg_x = bn_avx512_fast_exp_ps(
+        _mm512_sub_ps(_mm512_setzero_ps(), x));
+    return _mm512_div_ps(x, _mm512_add_ps(one, exp_neg_x));
+}
+
+static void cpu_apply_ffn_activation_avx512(BnRunState *s,
+                                            const BnFFNPlan *ffn_plan,
+                                            int hidden_dim) {
+    if (!bn_transformer_cpu_activation_uses_silu_path(
+            ffn_plan->activation)) {
+        cpu_apply_ffn_activation_avx2(s, ffn_plan, hidden_dim);
+        return;
+    }
+    int i = 0;
+    for (; i + 15 < hidden_dim; i += 16) {
+        __m512 input = _mm512_loadu_ps(s->hb + i);
+        __m512 value = ffn_plan->reference_activation
+            ? cpu_avx512_reference_silu(input)
+            : bn_avx512_fast_silu_ps(input);
+        if (ffn_plan->has_gate)
+            value = _mm512_mul_ps(value, _mm512_loadu_ps(s->hb2 + i));
+        _mm512_storeu_ps(s->hb + i, value);
+    }
+    if (i < hidden_dim) {
+        const __mmask16 mask = (__mmask16)((1u << (hidden_dim - i)) - 1u);
+        __m512 input = _mm512_maskz_loadu_ps(mask, s->hb + i);
+        __m512 value = ffn_plan->reference_activation
+            ? cpu_avx512_reference_silu(input)
+            : bn_avx512_fast_silu_ps(input);
+        if (ffn_plan->has_gate)
+            value = _mm512_mul_ps(
+                value, _mm512_maskz_loadu_ps(mask, s->hb2 + i));
+        _mm512_mask_storeu_ps(s->hb + i, mask, value);
+    }
+}
+#endif
+
 #if BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_residual_add_avx2(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 8)
         _mm256_storeu_ps(x + i,
                          _mm256_add_ps(_mm256_loadu_ps(x + i),
                                        _mm256_loadu_ps(r + i)));
+}
+
+static void cpu_scaled_residual_add_avx2(float *x, const float *r,
+                                         float scale, int dim,
+                                         float *scratch) {
+    /* Keep the product rounded before addition even when this helper is
+     * inlined. Volatile staging is confined to this exact-arithmetic path. */
+    volatile float *rounded = scratch;
+    for (int i = 0; i < dim; i++) rounded[i] = r[i] * scale;
+    for (int i = 0; i < dim; i++) x[i] += rounded[i];
 }
 #endif
 
@@ -298,12 +377,10 @@ static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
 #if BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_apply_sigmoid_gate_avx2(float *x, const float *gate,
                                         int size) {
-    for (int i = 0; i < size; i += 8) {
-        __m256 g = _mm256_loadu_ps(gate + i);
-        __m256 xv = _mm256_loadu_ps(x + i);
-        _mm256_storeu_ps(x + i,
-                         _mm256_mul_ps(xv, bn_avx2_fast_sigmoid_ps(g)));
-    }
+    // The reference sigmoid operator uses expf, unlike its vector SiLU.
+    // Approximation differences can change the following quantized projection.
+    for (int i = 0; i < size; i++)
+        x[i] *= 1.0f / (1.0f + expf(-gate[i]));
 }
 
 static void cpu_apply_rope_heads_avx2(float *buf, int n_heads,
@@ -473,7 +550,9 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
 static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
-    if (ffn_plan->reference_activation) {
+    if (ffn_plan->reference_activation &&
+        !bn_transformer_cpu_activation_uses_silu_path(
+            ffn_plan->activation)) {
         cpu_apply_ffn_reference_activation(s, ffn_plan, hidden_dim);
         return;
     }
@@ -498,7 +577,8 @@ static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                 __m256 g = _mm256_loadu_ps(s->hb + i);
                 __m256 u = _mm256_loadu_ps(s->hb2 + i);
                 _mm256_storeu_ps(s->hb + i,
-                                 _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+                                 _mm256_mul_ps(cpu_avx2_silu(
+                                     g, s->batched_prompt_contract), u));
             }
         }
     } else {
@@ -515,7 +595,8 @@ static void cpu_apply_ffn_activation_avx2(BnRunState *s,
         } else {
             for (int i = 0; i < hidden_dim; i += 8) {
                 __m256 v = _mm256_loadu_ps(s->hb + i);
-                _mm256_storeu_ps(s->hb + i, bn_avx2_fast_silu_ps(v));
+                _mm256_storeu_ps(s->hb + i, cpu_avx2_silu(
+                    v, s->batched_prompt_contract));
             }
         }
     }
@@ -578,9 +659,11 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .gqa = bn_transformer_gqa_neon_range,
     .flash_gqa = bn_transformer_flash_gqa_neon_range,
     .batched_attn_naive = bn_transformer_batched_attn_naive_neon_range,
+    .batched_attn_naive_pair = NULL,
     .batched_attn_flash = bn_transformer_batched_attn_flash_neon_range,
     .batched_attn_flash_pair = NULL,
     .residual_add = cpu_residual_add_neon,
+    .scaled_residual_add = cpu_scaled_residual_add_default,
     .ssm_conv_silu = bn_transformer_ssm_conv_silu_neon_range,
     .ssm_l2norm = bn_transformer_ssm_l2norm_neon_range,
     .ssm_delta = bn_transformer_ssm_delta_neon_range,
@@ -590,39 +673,52 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .apply_rope_heads = cpu_apply_rope_heads_scalar,
     .supports_prepared_kquant = 0,
     .supports_float_kquant_prefill = 0,
+    .prefill_projection_replay =
+        BN_CPU_PREFILL_PROJECTION_REPLAY_FLOAT_KQUANT_TAIL,
+    .supports_hybrid_batch_prefill = 1,
     .rmsnorm_prepared_kquant = NULL,
 };
 #elif BN_TRANSFORMER_CPU_HAS_AVX512
 static const BnCPUBackendOps BN_CPU_BACKEND = {
     .name = "avx512",
+    .supports_hyper_connection_batch_prefill = 1,
+    .selects_last_prefill_ffn_row = 1,
     .rmsnorm = bn_transformer_rmsnorm_avx2,
-    .gqa = bn_transformer_gqa_avx2_range,
+    .gqa = bn_transformer_gqa_avx512_range,
     .flash_gqa = bn_transformer_flash_gqa_avx2_range,
     .batched_attn_naive = bn_transformer_batched_attn_naive_avx2_range,
+    .batched_attn_naive_pair = bn_transformer_batched_attn_naive_avx2_pair_range,
     .batched_attn_flash = bn_transformer_batched_attn_flash_avx2_range,
     .batched_attn_flash_pair = bn_transformer_batched_attn_flash_avx2_pair_range,
     .residual_add = cpu_residual_add_avx2,
-    .ssm_conv_silu = bn_transformer_ssm_conv_silu_avx2_range,
+    .scaled_residual_add = cpu_scaled_residual_add_avx2,
+    .ssm_conv_silu = bn_transformer_ssm_conv_silu_x86_range,
     .ssm_l2norm = bn_transformer_ssm_l2norm_avx2_range,
     .ssm_delta = bn_transformer_ssm_delta_avx2_range,
-    .ssm_gate = bn_transformer_ssm_gate_avx2_range,
-    .apply_ffn_activation = cpu_apply_ffn_activation_avx2,
+    .ssm_gate = bn_transformer_ssm_gate_x86_range,
+    .apply_ffn_activation = cpu_apply_ffn_activation_avx512,
     .apply_sigmoid_gate = cpu_apply_sigmoid_gate_avx2,
     .apply_rope_heads = cpu_apply_rope_heads_avx2,
     .supports_prepared_kquant = 1,
     .supports_float_kquant_prefill = 1,
+    .prefill_projection_replay = BN_CPU_PREFILL_PROJECTION_REPLAY_NONE,
+    .supports_hybrid_batch_prefill = 1,
     .rmsnorm_prepared_kquant = bn_backend_quant_rmsnorm_prepared_kquant_avx2,
 };
 #elif BN_TRANSFORMER_CPU_HAS_AVX2
 static const BnCPUBackendOps BN_CPU_BACKEND = {
     .name = "avx2",
+    .supports_hyper_connection_batch_prefill = 1,
+    .selects_last_prefill_ffn_row = 1,
     .rmsnorm = bn_transformer_rmsnorm_avx2,
     .gqa = bn_transformer_gqa_avx2_range,
     .flash_gqa = bn_transformer_flash_gqa_avx2_range,
     .batched_attn_naive = bn_transformer_batched_attn_naive_avx2_range,
+    .batched_attn_naive_pair = bn_transformer_batched_attn_naive_avx2_pair_range,
     .batched_attn_flash = bn_transformer_batched_attn_flash_avx2_range,
     .batched_attn_flash_pair = bn_transformer_batched_attn_flash_avx2_pair_range,
     .residual_add = cpu_residual_add_avx2,
+    .scaled_residual_add = cpu_scaled_residual_add_avx2,
     .ssm_conv_silu = bn_transformer_ssm_conv_silu_avx2_range,
     .ssm_l2norm = bn_transformer_ssm_l2norm_avx2_range,
     .ssm_delta = bn_transformer_ssm_delta_avx2_range,
@@ -632,6 +728,8 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .apply_rope_heads = cpu_apply_rope_heads_avx2,
     .supports_prepared_kquant = 1,
     .supports_float_kquant_prefill = 1,
+    .prefill_projection_replay = BN_CPU_PREFILL_PROJECTION_REPLAY_NONE,
+    .supports_hybrid_batch_prefill = 1,
     .rmsnorm_prepared_kquant = bn_backend_quant_rmsnorm_prepared_kquant_avx2,
 };
 #elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
@@ -641,9 +739,11 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .gqa = bn_transformer_gqa_wasm_range,
     .flash_gqa = bn_transformer_flash_gqa_wasm_range,
     .batched_attn_naive = bn_transformer_batched_attn_naive_scalar_range,
+    .batched_attn_naive_pair = NULL,
     .batched_attn_flash = bn_transformer_batched_attn_flash_scalar_range,
     .batched_attn_flash_pair = NULL,
     .residual_add = cpu_residual_add_wasm,
+    .scaled_residual_add = cpu_scaled_residual_add_default,
     .ssm_conv_silu = bn_transformer_ssm_conv_silu_wasm_range,
     .ssm_l2norm = bn_transformer_ssm_l2norm_wasm_range,
     .ssm_delta = bn_transformer_ssm_delta_wasm_range,
@@ -653,6 +753,8 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .apply_rope_heads = cpu_apply_rope_heads_scalar,
     .supports_prepared_kquant = 0,
     .supports_float_kquant_prefill = 0,
+    .prefill_projection_replay = BN_CPU_PREFILL_PROJECTION_REPLAY_NONE,
+    .supports_hybrid_batch_prefill = 0,
     .rmsnorm_prepared_kquant = NULL,
 };
 #else
@@ -662,9 +764,11 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .gqa = bn_transformer_gqa_scalar_range,
     .flash_gqa = bn_transformer_flash_gqa_scalar_range,
     .batched_attn_naive = bn_transformer_batched_attn_naive_scalar_range,
+    .batched_attn_naive_pair = NULL,
     .batched_attn_flash = bn_transformer_batched_attn_flash_scalar_range,
     .batched_attn_flash_pair = NULL,
     .residual_add = cpu_residual_add_scalar,
+    .scaled_residual_add = cpu_scaled_residual_add_default,
     .ssm_conv_silu = bn_transformer_ssm_conv_silu_scalar_range,
     .ssm_l2norm = bn_transformer_ssm_l2norm_scalar_range,
     .ssm_delta = bn_transformer_ssm_delta_scalar_range,
@@ -674,6 +778,8 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .apply_rope_heads = cpu_apply_rope_heads_scalar,
     .supports_prepared_kquant = 0,
     .supports_float_kquant_prefill = 0,
+    .prefill_projection_replay = BN_CPU_PREFILL_PROJECTION_REPLAY_NONE,
+    .supports_hybrid_batch_prefill = 0,
     .rmsnorm_prepared_kquant = NULL,
 };
 #endif
@@ -690,6 +796,7 @@ const BnCPUBackendOps *bn_transformer_cpu_backend_ops(
         .batched_attn_flash = bn_transformer_batched_attn_flash_scalar_range,
         .batched_attn_flash_pair = NULL,
         .residual_add = cpu_residual_add_reference,
+        .scaled_residual_add = cpu_scaled_residual_add_default,
         .ssm_conv_silu = bn_transformer_ssm_conv_silu_neon_range,
         .ssm_l2norm = bn_transformer_ssm_l2norm_neon_range,
         .ssm_delta = bn_transformer_ssm_delta_neon_range,
@@ -742,4 +849,21 @@ BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
 
 int bn_transformer_cpu_backend_supports_float_kquant_prefill(void) {
     return BN_CPU_BACKEND.supports_float_kquant_prefill;
+}
+
+BnCPUPrefillProjectionReplayKind
+bn_transformer_cpu_backend_prefill_projection_replay(void) {
+    return BN_CPU_BACKEND.prefill_projection_replay;
+}
+
+int bn_transformer_cpu_backend_supports_hybrid_batch_prefill(void) {
+    return BN_CPU_BACKEND.supports_hybrid_batch_prefill;
+}
+
+int bn_transformer_cpu_backend_supports_hyper_connection_batch_prefill(void) {
+    return BN_CPU_BACKEND.supports_hyper_connection_batch_prefill;
+}
+
+int bn_transformer_cpu_backend_selects_last_prefill_ffn_row(void) {
+    return BN_CPU_BACKEND.selects_last_prefill_ffn_row;
 }

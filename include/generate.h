@@ -10,6 +10,7 @@ typedef struct BnModel BnModel;
 typedef struct BnSession BnSession;
 
 // Callback for streaming token output. Return non-zero to stop generation.
+// EOG tokens are reported with an empty piece before generation stops.
 typedef int (*bn_token_callback)(const char *piece, int token_id, void *user_data);
 
 // Chat template format

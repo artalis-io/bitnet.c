@@ -156,8 +156,11 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
             next = bn_sampler_sample(sampler, logits);
         }
 
-        if (bn_tokenizer_is_eog(tok, next))
+        if (bn_tokenizer_is_eog(tok, next)) {
+            if (cb)
+                cb("", next, user_data);
             break;
+        }
 
         // Ring buffer loop detection
         loop_buf[loop_idx] = next;
@@ -214,7 +217,7 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
 
         BnGPUBackend *gpu = bn_model_gpu(model);
         if (use_gpu_greedy_argmax(gpu, top_logits, sampler) &&
-            bn_transformer_gpu_forward_argmax(
+            bn_transformer_forward_argmax(
                 model, s, next, *pos,
                 sampler->recent_tokens, sampler->recent_len,
                 sampler->repeat_penalty, &gpu_next) == 0) {
@@ -376,12 +379,27 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
     if (model) {
         BnGPUBackend *gpu = bn_model_gpu(model);
         gpu_batch_prefill =
-            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
+            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config) ||
+            bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(
+                gpu, &model->config);
     }
     BnTransformerPrefillEntryPolicy entry_policy =
         bn_transformer_prefill_entry_policy(
             no_prefill, parity_cpu, n_tokens, gpu_attached,
             gpu_batch_prefill);
+    if (s)
+        s->state.batched_prompt_contract = !no_prefill && n_tokens > 1;
+    if (bn_transformer_prefill_profile_enabled(
+            bn_tp_cpu_policy(bn_model_pool(model)))) {
+        fprintf(stderr,
+                "[bn:prefill:entry] batch=%d no_prefill=%d parity_cpu=%d tokens=%d gpu=%d gpu_batch=%d\n",
+                entry_policy.batch, no_prefill, parity_cpu, n_tokens,
+                gpu_attached, gpu_batch_prefill);
+    }
+    int cpu_ssm_fallback = model &&
+        bn_transformer_prefill_cpu_ssm_fallback_required(
+            bn_model_gpu(model), &model->config, &model->weights,
+            model->config.n_layers);
     /* GPU decode reads backend-resident KV buffers. For conservative small
      * dense models, batch prefill is followed by a CPU->GPU KV upload.
      */
@@ -397,7 +415,8 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                 return NULL;
             BnTransformerPrefillSSMStateUploadPolicy ssm_policy =
                 bn_transformer_prefill_ssm_state_upload_policy(
-                    &model->config, bn_model_gpu(model), gpu_attached);
+                    &model->config, bn_model_gpu(model), gpu_attached,
+                    cpu_ssm_fallback);
             if (ssm_policy.upload &&
                 bn_transformer_gpu_upload_ssm_state(model, s) != 0)
                 return NULL;
@@ -442,6 +461,12 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
         bn_transformer_prefill_entry_policy(
             no_prefill, parity_cpu, n_tokens, gpu_attached,
             gpu_batch_prefill);
+    if (s)
+        s->state.batched_prompt_contract = !no_prefill && n_tokens > 1;
+    int cpu_ssm_fallback = model &&
+        bn_transformer_prefill_cpu_ssm_fallback_required(
+            bn_model_gpu(model), &model->config, &model->weights,
+            model->config.n_layers);
     if (entry_policy.batch) {
         int rc = bn_transformer_prefill_no_logits(model, s, tokens,
                                                   n_tokens, pos0);
@@ -456,7 +481,8 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
         if (rc == 0) {
             BnTransformerPrefillSSMStateUploadPolicy ssm_policy =
                 bn_transformer_prefill_ssm_state_upload_policy(
-                    &model->config, bn_model_gpu(model), gpu_attached);
+                    &model->config, bn_model_gpu(model), gpu_attached,
+                    cpu_ssm_fallback);
             if (ssm_policy.upload)
                 rc = bn_transformer_gpu_upload_ssm_state(model, s);
         }

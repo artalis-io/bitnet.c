@@ -125,6 +125,8 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
             batched_rope_token(q, 1, hs, rope_dims, rc, rs, hs);
 
             int n_kv = (pos + 1 < seq_len) ? pos + 1 : seq_len;
+            if (b->attention_window > 0 && n_kv > b->attention_window)
+                n_kv = b->attention_window;
             int kv_start = pos - n_kv + 1;
             float att[n_kv > BN_MAX_VLA_ELEMS ? 1 : n_kv];
             if (n_kv > BN_MAX_VLA_ELEMS) return;
@@ -199,6 +201,8 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
             batched_rope_token(q, 1, hs, rope_dims, rc, rs, hs);
 
             int n_kv = (pos + 1 < seq_len) ? pos + 1 : seq_len;
+            if (b->attention_window > 0 && n_kv > b->attention_window)
+                n_kv = b->attention_window;
             int kv_start = pos - n_kv + 1;
             float out_buf[hs];
             memset(out_buf, 0, hs * sizeof(float));

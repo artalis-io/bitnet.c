@@ -1,6 +1,7 @@
 #include "quant_ctx.h"
 #include "simd_helpers.h"
 #include <immintrin.h>
+#include <math.h>
 
 /* Q4_0 AVX2 tiled matmul: TILE_T=8 token tiling + float accumulation.
  * Inlined dot_i8_float avoids the redundant integer accumulator.
@@ -16,8 +17,44 @@ static inline __m256 dot_i8_float(__m256i w, __m256i x) {
     return _mm256_cvtepi32_ps(p32);
 }
 
+static void q4_x8_avx2_matmul(BnQ4MatmulCtx *c, int start, int end) {
+    const BnBlockQ4_0x8 *packed = (const BnBlockQ4_0x8 *)c->prepared->aux;
+    int blocks = c->cols / 32;
+    const __m128i mask = _mm_set1_epi8(15), bias = _mm_set1_epi8(8);
+    for (int t0 = 0; t0 < c->n_tokens; t0 += Q4_MATMUL_TILE_T) {
+        int count = c->n_tokens - t0;
+        if (count > Q4_MATMUL_TILE_T) count = Q4_MATMUL_TILE_T;
+        for (int row = start; row < end; row++) {
+            float sums[Q4_MATMUL_TILE_T] = {0};
+            for (int b = 0; b < blocks; b++) {
+                const BnBlockQ4_0x8 *block = packed + (size_t)(row / 8) * blocks + b;
+                int lane = row % 8;
+                __m128i raw = _mm_loadu_si128((const __m128i *)block->qs[lane]);
+                __m256i w = _mm256_set_m128i(
+                    _mm_sub_epi8(_mm_and_si128(_mm_srli_epi16(raw, 4), mask), bias),
+                    _mm_sub_epi8(_mm_and_si128(raw, mask), bias));
+                __m256i aw = _mm256_sign_epi8(w, w);
+                float dw = bn_fp16_to_fp32(block->d[lane]);
+                for (int ti = 0; ti < count; ti++) {
+                    size_t t = (size_t)t0 + ti;
+                    __m256i x = _mm256_loadu_si256((const __m256i *)(c->x_q + t * c->cols + b * 32));
+                    __m256i pair = _mm256_maddubs_epi16(aw, _mm256_sign_epi8(x, w));
+                    int sum = bn_avx2_hsum_epi32(_mm256_madd_epi16(pair, _mm256_set1_epi16(1)));
+                    sums[ti] = fmaf((float)sum, dw * c->x_scales[t * blocks + b], sums[ti]);
+                }
+            }
+            for (int ti = 0; ti < count; ti++)
+                c->out[(size_t)(t0 + ti) * c->W->rows + row] += sums[ti];
+        }
+    }
+}
+
 void bn_quant_q4_avx2_matmul_range(void *ctx, int row_start, int row_end) {
     BnQ4MatmulCtx *c = (BnQ4MatmulCtx *)ctx;
+    if (c->prepared && c->prepared->kind == BN_PREPARED_WEIGHT_Q4_0_X8) {
+        q4_x8_avx2_matmul(c, row_start, row_end);
+        return;
+    }
     int cols = c->cols;
     int rows = c->W->rows;
     int n_bpr = cols / 32;

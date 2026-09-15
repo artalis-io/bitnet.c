@@ -86,6 +86,14 @@ static inline int bn_gpu_ir_utility_op_code(BnGPUIRUtilityKind kind) {
             return BN_GPU_CODE_PER_HEAD_RMSNORM;
         case BN_GPU_IR_UTILITY_DEINTERLEAVE_Q:
             return BN_GPU_CODE_DEINTERLEAVE_Q;
+        case BN_GPU_IR_UTILITY_HC_STREAM_RMSNORM:
+            return BN_GPU_CODE_HC_STREAM_RMSNORM;
+        case BN_GPU_IR_UTILITY_HC_SCALE_SILU:
+            return BN_GPU_CODE_HC_SCALE_SILU;
+        case BN_GPU_IR_UTILITY_HC_GATED_REDUCE:
+            return BN_GPU_CODE_HC_GATED_REDUCE;
+        case BN_GPU_IR_UTILITY_HC_COMBINE:
+            return BN_GPU_CODE_HC_COMBINE;
         default:
             return BN_GPU_CODE_UNKNOWN;
     }
@@ -95,12 +103,17 @@ static inline int bn_gpu_ir_utility_op_kind(BnGPUIRUtilityKind kind) {
     switch (kind) {
         case BN_GPU_IR_UTILITY_RESIDUAL_RMSNORM:
         case BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM:
+        case BN_GPU_IR_UTILITY_HC_STREAM_RMSNORM:
             return BN_GPU_OP_RMSNORM;
+        case BN_GPU_IR_UTILITY_HC_SCALE_SILU:
+            return BN_GPU_OP_ACTIVATION;
         case BN_GPU_IR_UTILITY_DEINTERLEAVE_Q:
             return BN_GPU_OP_COPY;
         case BN_GPU_IR_UTILITY_BIAS_ADD:
         case BN_GPU_IR_UTILITY_WEIGHTED_ADD:
         case BN_GPU_IR_UTILITY_WEIGHTED_ADD_SIGMOID:
+        case BN_GPU_IR_UTILITY_HC_GATED_REDUCE:
+        case BN_GPU_IR_UTILITY_HC_COMBINE:
             return BN_GPU_OP_RESIDUAL;
         default:
             return BN_GPU_OP_UNKNOWN;
@@ -118,6 +131,7 @@ static inline int bn_gpu_ir_lower_one_to_shader(
     shader_op->type = -1;
     shader_op->buf_aux = -1;
     shader_op->flags = ir_op->flags;
+    shader_op->attention_window = ir_op->attention_window;
 
     int in0 = ir_op->n_inputs > 0
         ? bn_gpu_ir_lowering_slot(map, ir_op->inputs[0])
@@ -386,6 +400,7 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             if ((kind == BN_GPU_IR_UTILITY_BIAS_ADD ||
                  kind == BN_GPU_IR_UTILITY_RESIDUAL_RMSNORM ||
                  kind == BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM ||
+                 kind == BN_GPU_IR_UTILITY_HC_STREAM_RMSNORM ||
                  kind == BN_GPU_IR_UTILITY_WEIGHTED_ADD_SIGMOID) &&
                 !weight)
                 return -1;
@@ -449,12 +464,13 @@ static inline int bn_gpu_value_graph_lower_to_shader(
                 fprintf(stderr,
                         "[gpu:fallback] lower op failed i=%d kind=%d "
                         "label=%s in0=%d in1=%d out0=%d rows=%d cols=%d "
-                        "aux0=%d aux1=%d\n",
+                        "aux0=%d aux1=%d p0=%u p1=%u flags=%u\n",
                         i, op->kind, op->label ? op->label : "",
                         op->n_inputs > 0 ? op->inputs[0] : -1,
                         op->n_inputs > 1 ? op->inputs[1] : -1,
                         op->n_outputs > 0 ? op->outputs[0] : -1,
-                        op->rows, op->cols, op->aux0, op->aux1);
+                        op->rows, op->cols, op->aux0, op->aux1,
+                        op->params[0], op->params[1], op->flags);
             }
             return -1;
         }

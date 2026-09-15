@@ -1,3 +1,4 @@
+#include "transformer.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_batched_attn_internal.h"
@@ -24,6 +25,300 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+#include <limits.h>
+
+typedef struct {
+    float x[4];
+    float rope[2];
+    float per_layer[2];
+    int fail_buf;
+} MockTokenStaging;
+
+static int mock_token_staging_write(void *ctx, int buf_idx,
+                                    const void *data, size_t size,
+                                    size_t offset) {
+    MockTokenStaging *state = (MockTokenStaging *)ctx;
+    if (buf_idx == state->fail_buf) return -1;
+    assert(offset == 0);
+    float *dst = NULL;
+    size_t capacity = 0;
+    switch (buf_idx) {
+        case BN_GPU_VALUE_X:
+            dst = state->x; capacity = sizeof(state->x); break;
+        case BN_GPU_VALUE_ROPE_FREQ:
+            dst = state->rope; capacity = sizeof(state->rope); break;
+        case BN_GPU_VALUE_PER_LAYER_INPUT:
+            dst = state->per_layer; capacity = sizeof(state->per_layer); break;
+        default: assert(0); return -1;
+    }
+    assert(size == capacity);
+    memcpy(dst, data, size);
+    return 0;
+}
+
+static void test_gpu_token_staging_preserves_prepared_rope(void) {
+    float embeddings[] = {1, 2, 3, 4, -1, -2, -3, -4};
+    float per_layer[] = {5, 6};
+    /* Backend preparation may round differently from CPU frequency setup. */
+    const float prepared_rope[] = {1.0f, 0.010000001f};
+    BnLayerWeights layer = {0};
+    BnModel model = {0};
+    BnSession session = {0};
+    MockTokenStaging state = {.fail_buf = -1};
+    BnGPUBackend gpu = {0};
+    model.config.dim = 4;
+    model.config.vocab_size = 2;
+    model.config.n_layers = 1;
+    model.config.head_size = 4;
+    model.config.rope_dim_count = 4;
+    model.config.rope_theta = 10000.0f;
+    model.weights.layers = &layer;
+    model.weights.emb_type = BN_GGUF_TENSOR_F32;
+    model.weights.token_embedding = embeddings;
+    session.state.per_layer_input = per_layer;
+    gpu.ctx = &state;
+    gpu.write_activation = mock_token_staging_write;
+    memcpy(state.rope, prepared_rope, sizeof(prepared_rope));
+    for (int use_per_layer = 0; use_per_layer < 2; use_per_layer++) {
+        model.config.policy_flags = use_per_layer
+            ? BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT : 0;
+        model.config.per_layer_input_dim = use_per_layer ? 2 : 0;
+        for (int token = 0; token < 2; token++) {
+            per_layer[0] = (float)(token + 5);
+            assert(bn_transformer_gpu_stage_token_input(
+                       &gpu, &model, &session, token) == 0);
+            for (int i = 0; i < 4; i++)
+                assert(state.x[i] == embeddings[token * 4 + i] *
+                       (use_per_layer ? 2.0f : 1.0f));
+            assert(memcmp(state.rope, prepared_rope, sizeof(prepared_rope)) == 0);
+            if (use_per_layer)
+                assert(memcmp(state.per_layer, per_layer, sizeof(per_layer)) == 0);
+        }
+    }
+    state.fail_buf = BN_GPU_VALUE_X;
+    assert(bn_transformer_gpu_stage_token_input(&gpu, &model, &session, 0) == -1);
+    state.fail_buf = BN_GPU_VALUE_PER_LAYER_INPUT;
+    assert(bn_transformer_gpu_stage_token_input(&gpu, &model, &session, 0) == -1);
+    state.fail_buf = -1;
+    session.state.per_layer_input = NULL;
+    assert(bn_transformer_gpu_stage_token_input(&gpu, &model, &session, 0) == -1);
+    assert(memcmp(state.rope, prepared_rope, sizeof(prepared_rope)) == 0);
+    printf("test_gpu_token_staging_preserves_prepared_rope... PASSED\n");
+}
+
+static void test_scaled_silu_order(void) {
+    printf("test_scaled_silu_order... ");
+    bn_transformer_scaled_silu(NULL, 1.0f, 0);
+    const int sizes[] = {1, 7, 8, 15, 16, 17, 31, 32, 33, 320, 321};
+    const float scales[] = {0.25f, 1.0f / 3.0f, -0.7f, 0.0f};
+    float actual[323], expected[321];
+    for (size_t s = 0; s < sizeof(scales) / sizeof(scales[0]); s++) {
+        for (size_t z = 0; z < sizeof(sizes) / sizeof(sizes[0]); z++) {
+            int n = sizes[z];
+            for (int i = 0; i < 323; i++) actual[i] = NAN;
+            for (int i = 0; i < n; i++) {
+                actual[i + 1] = sinf((float)i * 0.37f) * 25.0f;
+                expected[i] = actual[i + 1] * scales[s];
+            }
+            int i = 0;
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__) && !defined(BN_FORCE_SCALAR)
+            for (; i + 15 < n; i += 16)
+                _mm512_storeu_ps(expected + i,
+                    bn_avx512_fast_silu_ps(_mm512_loadu_ps(expected + i)));
+#elif defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+            for (; i + 7 < n; i += 8) {
+                __m256 value = _mm256_loadu_ps(expected + i);
+                __m256 exp_neg = bn_avx2_fast_exp_avx512_ps(
+                    _mm256_sub_ps(_mm256_setzero_ps(), value));
+                _mm256_storeu_ps(expected + i, _mm256_div_ps(
+                    value, _mm256_add_ps(_mm256_set1_ps(1.0f), exp_neg)));
+            }
+#endif
+            for (; i < n; i++)
+                expected[i] = expected[i] / (1.0f + expf(-expected[i]));
+            bn_transformer_scaled_silu(actual + 1, scales[s], n);
+            assert(memcmp(actual + 1, expected, (size_t)n * sizeof(float)) == 0);
+            assert(isnan(actual[0]));
+            for (i = n + 1; i < 323; i++) assert(isnan(actual[i]));
+        }
+    }
+    printf("PASSED\n");
+}
+
+static void test_dilated_conv_and_branch_order(void) {
+    printf("test_dilated_conv_and_branch_order... ");
+    bn_transformer_dilated_conv_silu(NULL, NULL, NULL, NULL, 0, 1, 1);
+    bn_transformer_scaled_branch_add(NULL, NULL, 1, NULL, 0);
+    enum { max_n = 33, max_hist = 9 * max_n };
+    const int sizes[] = {1, 7, 8, 15, 16, 17, 32, 33};
+    float current[max_n + 2], out[max_n + 2], expected[max_n];
+    float weights[4 * max_n], history[max_hist], saved[max_hist];
+    for (size_t z = 0; z < sizeof(sizes) / sizeof(sizes[0]); z++) {
+        int n = sizes[z];
+        for (int kernel = 1; kernel <= 4; kernel++) {
+            for (int dilation = 1; dilation <= 3; dilation++) {
+                for (int i = 0; i < max_hist; i++) history[i] = NAN;
+                for (int i = 0; i < max_n + 2; i++)
+                    current[i] = out[i] = NAN;
+                for (int i = 0; i < n; i++) {
+                    current[i + 1] = (float)(i % 11 - 5) / 7;
+                    for (int k = 0; k < kernel; k++) {
+                        weights[i * kernel + k] = (float)((i + k) % 7 - 3) / 5;
+                        if (k < kernel - 1)
+                            history[k * dilation * n + i] =
+                                (float)((i + 3 * k) % 13 - 6) / 9;
+                    }
+                }
+                memcpy(saved, history, sizeof(history));
+                for (int i = 0; i < n; i++) {
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+                    float sum = 0;
+                    for (int k = 0; k < kernel; k++) {
+                        float v = k == kernel - 1 ? current[i + 1] :
+                            history[k * dilation * n + i];
+                        volatile float p = v * weights[i * kernel + k];
+                        sum = k == 0 ? p : sum + p;
+                    }
+#else
+                    float sum = current[i + 1] * weights[i * kernel + kernel - 1];
+                    for (int k = 0; k < kernel - 1; k++)
+                        sum += history[k * dilation * n + i] * weights[i * kernel + k];
+#endif
+                    expected[i] = sum / (1.0f + expf(-sum));
+                }
+                bn_transformer_dilated_conv_silu(out + 1, current + 1,
+                    history, weights, n, kernel, dilation);
+                for (int i = 0; i < n; i++)
+                    assert(fabsf(out[i + 1] - expected[i]) < 2e-6f);
+                assert(isnan(out[0]) && isnan(out[n + 1]));
+                assert(memcmp(saved, history, sizeof(history)) == 0);
+                bn_transformer_dilated_conv_silu(current + 1, current + 1,
+                    history, weights, n, kernel, dilation);
+                assert(memcmp(out + 1, current + 1, (size_t)n * sizeof(float)) == 0);
+                assert(isnan(current[0]) && isnan(current[n + 1]));
+            }
+        }
+    }
+    // Distinguish oldest-first from current-first convolution accumulation.
+    for (int i = 0; i < max_n; i++) {
+        current[i + 1] = 1;
+        history[i] = 0x1p24f;
+        history[max_n + i] = -0x1p24f;
+        for (int k = 0; k < 3; k++) weights[i * 3 + k] = 1;
+    }
+    bn_transformer_dilated_conv_silu(out + 1, current + 1, history,
+        weights, max_n, 3, 1);
+    for (int i = 0; i < max_n; i++) {
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+        assert(fabsf(out[i + 1] - 1.0f / (1.0f + expf(-1))) < 2e-6f);
+#else
+        assert(out[i + 1] == 0);
+#endif
+    }
+    // Distinguish residual grouping; guards also cover unaligned tail lengths.
+    for (int i = 0; i < max_n; i++) {
+        out[i + 1] = 0x1p25f;
+        current[i + 1] = -0x1p25f;
+        expected[i] = 1;
+    }
+    bn_transformer_scaled_branch_add(out + 1, current + 1, 1, expected, max_n);
+    for (int i = 0; i < max_n; i++) {
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+        assert(out[i + 1] == 0);
+#else
+        assert(out[i + 1] == 1);
+#endif
+    }
+    assert(isnan(out[0]) && isnan(out[max_n + 1]));
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+    // A fused multiply-add would preserve a spurious low-order term.
+    out[1] = 0;
+    current[1] = 0x1.000002p0f;
+    expected[0] = -0x1.000004p0f;
+    bn_transformer_scaled_branch_add(out + 1, current + 1,
+        0x1.000002p0f, expected, 1);
+    assert(out[1] == 0);
+#endif
+    printf("PASSED\n");
+}
+
+static void test_sum_products_rounding(void) {
+    printf("test_sum_products_rounding... ");
+    assert(bn_transformer_sum_products(NULL, NULL, 0) == 0.0f);
+    const float a[] = {1, 2, 3}, b[] = {4, 5, 6};
+    assert(bn_transformer_sum_products(a, b, 3) == 32.0f);
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+    const float cancel[] = {0x1p24f, 1, -0x1p24f};
+    const float ones[] = {1, 1, 1};
+    assert(bn_transformer_sum_products(cancel, ones, 3) == 1.0f);
+    const float rounded_a[] = {0x1.000002p0f, -0x1.000004p0f};
+    const float rounded_b[] = {0x1.000002p0f, 1};
+    assert(bn_transformer_sum_products(rounded_a, rounded_b, 2) == 0.0f);
+    assert((double)rounded_a[0] * rounded_b[0] + rounded_a[1] != 0.0);
+    const int sizes[] = {1, 3, 7, 8, 15, 16, 31, 32, 33, 320, 2560};
+    float x[2562], y[2562];
+    for (size_t k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++) {
+        int n = sizes[k];
+        x[0] = y[0] = x[n + 1] = y[n + 1] = NAN;
+        double expected = 0.0;
+        for (int i = 0; i < n; i++) {
+            x[i + 1] = (float)((i * 31) % 127 - 63) / 17.0f;
+            y[i + 1] = (float)((i * 13) % 97 - 48) / 19.0f;
+            volatile float product = x[i + 1] * y[i + 1];
+            expected += (double)product;
+        }
+        assert(bn_transformer_sum_products(x + 1, y + 1, n) == (float)expected);
+        assert(isnan(x[0]) && isnan(y[0]));
+        assert(isnan(x[n + 1]) && isnan(y[n + 1]));
+    }
+#endif
+    printf("PASSED\n");
+}
+
+static void test_scaled_residual_rounding(void) {
+    printf("test_scaled_residual_rounding... ");
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+    enum { max_dim = 33, streams = 4 };
+    const int dims[] = {1, 7, 8, 15, 16, 17, 32, 33};
+    float input[max_dim + 2], residual[streams * max_dim + 2];
+    float scratch[max_dim + 2], expected[streams * max_dim];
+    float scale = 0x1.000002p0f;
+    for (int i = 0; i < max_dim + 2; i++) input[i] = scale;
+    assert(fmaf(scale, scale, -0x1.000004p0f) != 0.0f);
+    for (size_t d = 0; d < sizeof(dims) / sizeof(dims[0]); d++) {
+        int dim = dims[d];
+        for (int i = 0; i < streams * max_dim + 2; i++) residual[i] = NAN;
+        for (int i = 0; i < max_dim + 2; i++) scratch[i] = NAN;
+        for (int i = 0; i < dim; i++) residual[i + 1] = -0x1.000004p0f;
+        bn_transformer_cpu_scaled_residual_add(NULL, residual + 1,
+            input + 1, scale, dim, scratch + 1);
+        for (int i = 0; i < dim; i++) assert(residual[i + 1] == 0.0f);
+        assert(isnan(residual[0]) && isnan(residual[dim + 1]));
+        assert(isnan(scratch[0]) && isnan(scratch[dim + 1]));
+
+        BnModel m = {0};
+        BnSession sess = {0};
+        float inject[streams] = {-1.3f, 0.001f, 2.7f, -0.72f};
+        m.config.dim = dim;
+        m.config.hyper_connection_count = streams;
+        sess.state.hc_inject = inject;
+        sess.state.hc_norm = scratch + 1;
+        sess.state.hc_residual = residual + 1;
+        for (int j = 0; j < streams; j++) {
+            float scatter = 2.0f / (1.0f + expf(-inject[j] * 0.25f));
+            for (int i = 0; i < dim; i++) {
+                volatile float product = input[i + 1] * scatter;
+                residual[1 + j * dim + i] = -product;
+                expected[j * dim + i] = 0.0f;
+            }
+        }
+        bn_transformer_cpu_hyper_connection_combine(&m, &sess, input + 1);
+        assert(memcmp(residual + 1, expected, (size_t)streams * dim * sizeof(float)) == 0);
+        assert(isnan(residual[0]) && isnan(residual[streams * dim + 1]));
+    }
+#endif
+    printf("PASSED\n");
+}
 
 static const BnCPURuntimePolicy *test_cpu_policy(void) {
     static BnCPURuntimePolicy policy;
@@ -160,6 +455,75 @@ static int mock_dense_ffn_batch(
     return 0;
 }
 
+static int mock_routed_expert_batch(
+    void *ctx, float *out, void *gate, void *up, void *down,
+    const float *X, int nt, int dim, int hidden, int gate_type,
+    int up_type, int down_type, int act_type,
+    const BnGPUMoEExpertBatchPlan *plan) {
+    (void)out; (void)gate; (void)up; (void)down; (void)X;
+    (void)dim; (void)hidden; (void)gate_type; (void)up_type;
+    (void)down_type; (void)act_type;
+    assert(plan == ctx);
+    assert(nt == 2 && plan->total_tokens == 17);
+    assert(plan->n_experts == 128 && plan->expert_index == 31);
+    return -7;
+}
+
+static int test_scaled_norm_callback(void *ctx, float *out, void *norm,
+    const float *x, int nt, int dim, float eps, float post_scale) {
+    int *calls = ctx;
+    (*calls)++;
+    assert(norm == x && nt == 1 && dim == 1);
+    assert(eps == 1e-6f && post_scale == 0.5f);
+    *out = 17.0f;
+    return 0;
+}
+
+static void test_prefill_scaled_norm_raw_weight_contract(void) {
+    int calls = 0;
+    float x = 1.0f, out = 9.0f;
+    BnGPUBackend gpu = {0};
+    gpu.ctx = &calls;
+    gpu.rmsnorm_scaled_batch = test_scaled_norm_callback;
+    assert(bn_transformer_gpu_prefill_scaled_rmsnorm_backend_run(
+        &gpu, &out, &x, &x, 1, 1, 1e-6f, 0.5f) == -1);
+    assert(calls == 0 && out == 9.0f);
+    gpu.caps = BN_GPU_CAP_RMSNORM_SEPARATE_SCALE;
+    assert(bn_transformer_gpu_prefill_scaled_rmsnorm_backend_run(
+        &gpu, &out, &x, &x, 1, 1, 1e-6f, 0.5f) == 0);
+    assert(calls == 1 && out == 17.0f);
+    gpu.rmsnorm_scaled_batch = NULL;
+    assert(bn_transformer_gpu_prefill_scaled_rmsnorm_backend_run(
+        &gpu, &out, &x, &x, 1, 1, 1e-6f, 0.5f) == -1);
+    printf("test_prefill_scaled_norm_raw_weight_contract PASSED\n");
+}
+
+static void test_prefill_logical_projection_rows(void) {
+    BnGPUBackend gpu = {0};
+    assert(bn_transformer_gpu_prefill_stacked_projection_allowed(&gpu, BN_GGUF_TENSOR_Q4_0, 14));
+    gpu.caps = BN_GPU_CAP_PREFILL_LOGICAL_PROJECTION_ROWS;
+    assert(bn_transformer_gpu_prefill_stacked_projection_allowed(&gpu, BN_GGUF_TENSOR_Q4_0, 8));
+    assert(!bn_transformer_gpu_prefill_stacked_projection_allowed(&gpu, BN_GGUF_TENSOR_Q4_0, 9));
+    assert(!bn_transformer_gpu_prefill_stacked_projection_allowed(&gpu, BN_GGUF_TENSOR_Q4_0, 33));
+    assert(bn_transformer_gpu_prefill_stacked_projection_allowed(&gpu, BN_GGUF_TENSOR_F32, 14));
+    assert(bn_transformer_gpu_prefill_stacked_projection_allowed(NULL, BN_GGUF_TENSOR_Q4_0, 14));
+    printf("test_prefill_logical_projection_rows PASSED\n");
+}
+
+static void test_prefill_expert_batch_geometry(void) {
+    BnGPUMoEExpertBatchPlan plan = {17, 128, 31, 0};
+    BnGPUBackend gpu = {0};
+    gpu.ctx = &plan;
+    gpu.dense_ffn_batch = mock_dense_ffn_batch;
+    gpu.moe_expert_ffn_batch = mock_routed_expert_batch;
+    // A rejected routed call must not silently retry with dense geometry.
+    assert(bn_transformer_gpu_prefill_expert_ffn_batch_backend_run(&gpu,
+        NULL, NULL, NULL, NULL, NULL, 2, 96, 64, BN_GGUF_TENSOR_Q4_0,
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0,
+        BN_MODEL_ACTIVATION_GELU, &plan) == -7);
+    printf("test_prefill_expert_batch_geometry PASSED\n");
+}
+
 static int mock_prefill_qkv_attention_wo(
     void *ctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
     void *q_norm_buf, void *k_norm_buf, const float *X, float *K_out,
@@ -167,7 +531,8 @@ static int mock_prefill_qkv_attention_wo(
     int head_size, int kv_mul, int kv_dim, int qk_rows, int qk_type,
     int wv_rows, int wv_type, int wo_rows, int wo_cols, int wo_type,
     int qk_norm_per_head, float norm_eps, int pos0, int rope_dims,
-    float attention_scale) {
+    float attention_scale, int attention_window) {
+    (void)attention_window;
     (void)ctx; (void)out; (void)qk_buf; (void)wv_buf; (void)wo_buf;
     (void)q_norm_buf; (void)k_norm_buf; (void)X; (void)K_out;
     (void)V_out; (void)n_tokens; (void)dim; (void)n_heads;
@@ -185,7 +550,8 @@ static int mock_prefill_qkv_attention_wo_norm_resid(
     int n_heads, int n_kv_heads, int head_size, int kv_mul, int kv_dim,
     int qk_rows, int qk_type, int wv_rows, int wv_type, int wo_rows,
     int wo_cols, int wo_type, int qk_norm_per_head, float norm_eps,
-    int pos0, int rope_dims, float attention_scale) {
+    int pos0, int rope_dims, float attention_scale, int attention_window) {
+    (void)attention_window;
     (void)ctx; (void)out; (void)qk_buf; (void)wv_buf; (void)wo_buf;
     (void)attn_norm_buf; (void)q_norm_buf; (void)k_norm_buf;
     (void)X; (void)K_out; (void)V_out; (void)n_tokens; (void)dim;
@@ -202,7 +568,8 @@ static int mock_prefill_attention(void *ctx, float *out, const float *Q,
                                   int n_tokens, int n_heads,
                                   int n_kv_heads, int head_size,
                                   int kv_mul, int kv_dim,
-                                  float attention_scale) {
+                                  float attention_scale, int attention_window) {
+    (void)attention_window;
     (void)ctx; (void)out; (void)Q; (void)K; (void)V;
     (void)n_tokens; (void)n_heads; (void)n_kv_heads;
     (void)head_size; (void)kv_mul; (void)kv_dim;
@@ -210,11 +577,32 @@ static int mock_prefill_attention(void *ctx, float *out, const float *Q,
     return 0;
 }
 
+typedef struct {
+    float *out, *k_out;
+    const float *q, *k, *v;
+    void *q_norm, *k_norm;
+    const BnGPUAttentionPrefillPlan *plan;
+    int calls;
+} MockPreparedAttention;
+
+static int mock_prefill_attention_prepared(void *ctx, float *out, float *k_out,
+    const float *q, const float *k, const float *v,
+    void *q_norm, void *k_norm, const BnGPUAttentionPrefillPlan *plan) {
+    MockPreparedAttention *expected = (MockPreparedAttention *)ctx;
+    assert(out == expected->out && k_out == expected->k_out);
+    assert(q == expected->q && k == expected->k && v == expected->v);
+    assert(q_norm == expected->q_norm && k_norm == expected->k_norm);
+    assert(plan == expected->plan);
+    expected->calls++;
+    return -7;
+}
+
 static int mock_prefill_attention_wo(
     void *ctx, float *out, void *wo_buf, const float *Q, const float *K,
     const float *V, int n_tokens, int n_heads, int n_kv_heads,
     int head_size, int kv_mul, int kv_dim, int wo_rows, int wo_cols,
-    int wo_type, float attention_scale) {
+    int wo_type, float attention_scale, int attention_window) {
+    (void)attention_window;
     (void)ctx; (void)out; (void)wo_buf; (void)Q; (void)K; (void)V;
     (void)n_tokens; (void)n_heads; (void)n_kv_heads; (void)head_size;
     (void)kv_mul; (void)kv_dim; (void)wo_rows; (void)wo_cols;
@@ -225,18 +613,24 @@ static int mock_prefill_attention_wo(
 static int mock_prefill_dense_layer(
     void *ctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
     void *gate_buf, void *up_buf, void *down_buf, void *attn_norm_buf,
-    void *ffn_norm_buf, void *q_norm_buf, void *k_norm_buf,
+    void *ffn_norm_buf, void *attn_post_norm_buf,
+    void *ffn_post_norm_buf, void *q_norm_buf, void *k_norm_buf,
     void *q_bias_buf, void *k_bias_buf, void *v_bias_buf,
     const float *X, float *K_out, float *V_out, int n_tokens, int dim,
     int hidden_dim, int n_heads, int n_kv_heads, int head_size,
     int kv_mul, int kv_dim, int qk_rows, int qk_type, int wv_rows,
     int wv_type, int wo_rows, int wo_cols, int wo_type, int gate_type,
     int up_type, int down_type, int act_type, int qk_norm_per_head,
-    float norm_eps, int pos0, int rope_dims, uint32_t kv_cache_off,
-    int kv_cache_stride, float attention_scale) {
+    int normalize_v, float norm_eps, int pos0, int rope_dims,
+    size_t rope_freq_offset,
+    uint32_t kv_cache_off, int kv_cache_stride, float attention_scale,
+    float layer_output_scale, int attention_window,
+    int final_ffn_last_row_only) {
+    (void)attention_window;
     (void)ctx; (void)out; (void)qk_buf; (void)wv_buf; (void)wo_buf;
     (void)gate_buf; (void)up_buf; (void)down_buf; (void)attn_norm_buf;
-    (void)ffn_norm_buf; (void)q_norm_buf; (void)k_norm_buf;
+    (void)ffn_norm_buf; (void)attn_post_norm_buf;
+    (void)ffn_post_norm_buf; (void)q_norm_buf; (void)k_norm_buf;
     (void)q_bias_buf; (void)k_bias_buf; (void)v_bias_buf; (void)X;
     (void)K_out; (void)V_out; (void)n_tokens; (void)dim;
     (void)hidden_dim; (void)n_heads; (void)n_kv_heads; (void)head_size;
@@ -244,8 +638,11 @@ static int mock_prefill_dense_layer(
     (void)wv_rows; (void)wv_type; (void)wo_rows; (void)wo_cols;
     (void)wo_type; (void)gate_type; (void)up_type; (void)down_type;
     (void)act_type; (void)qk_norm_per_head; (void)norm_eps;
+    (void)normalize_v;
     (void)pos0; (void)rope_dims; (void)kv_cache_off;
-    (void)kv_cache_stride; (void)attention_scale;
+    (void)rope_freq_offset; (void)kv_cache_stride; (void)attention_scale;
+    (void)layer_output_scale;
+    (void)final_ffn_last_row_only;
     return 0;
 }
 
@@ -307,11 +704,13 @@ static int mock_moe_route_batch(
 static int mock_moe_routed_ffn_batch(
     void *ctx, float *out, void *gate_all_buf, void *up_all_buf,
     void *down_all_buf, const int *indices, const float *weights,
+    const float *output_scales,
     const float *X, int n_tokens, int dim, int hidden_dim,
     int n_experts, int k, int gate_type, int up_type, int down_type,
     int act_type) {
     (void)ctx; (void)out; (void)gate_all_buf; (void)up_all_buf;
-    (void)down_all_buf; (void)indices; (void)weights; (void)X;
+    (void)down_all_buf; (void)indices; (void)weights;
+    (void)output_scales; (void)X;
     (void)n_tokens; (void)dim; (void)hidden_dim; (void)n_experts;
     (void)k; (void)gate_type; (void)up_type; (void)down_type;
     (void)act_type;
@@ -354,7 +753,8 @@ static int mock_prefill_moe_layer(
     int shared_gate_type, int shared_up_type, int shared_down_type,
     int qk_norm_per_head, float norm_eps, int pos0, int rope_dims,
     uint32_t kv_cache_off, int kv_cache_stride, float attention_scale,
-    int norm_topk_prob, float expert_weights_scale) {
+    int norm_topk_prob, float expert_weights_scale, int attention_window) {
+    (void)attention_window;
     (void)ctx; (void)out; (void)qk_buf; (void)wv_buf; (void)wo_buf;
     (void)router_buf; (void)gate_all_buf; (void)up_all_buf;
     (void)down_all_buf; (void)shared_gate_buf; (void)shared_up_buf;
@@ -388,7 +788,8 @@ static int mock_prefill_ssm_layer(
     int num_v_heads, int head_v_dim, int conv_kernel, int ssm_idx,
     int wqkv_type, int wz_type, int alpha_type, int beta_type,
     int out_type, int hidden_dim, int ffn_gate_type, int ffn_up_type,
-    int ffn_down_type, int act_type, float norm_eps, int *did_ffn) {
+    int ffn_down_type, int act_type, int sigmoid_gate, float norm_eps,
+    int *did_ffn) {
     (void)ctx; (void)out; (void)wqkv_buf; (void)wz_buf;
     (void)alpha_buf; (void)beta_buf; (void)qkvz_stacked_buf;
     (void)ab_stacked_buf; (void)ssm_out_buf; (void)attn_norm_buf;
@@ -401,6 +802,7 @@ static int mock_prefill_ssm_layer(
     (void)wqkv_type; (void)wz_type; (void)alpha_type; (void)beta_type;
     (void)out_type; (void)hidden_dim; (void)ffn_gate_type;
     (void)ffn_up_type; (void)ffn_down_type; (void)act_type;
+    (void)sigmoid_gate;
     (void)norm_eps; (void)did_ffn;
     return 0;
 }
@@ -423,6 +825,35 @@ static void rope(float *vec, int dim, int head_size, int pos, float theta) {
 }
 
 // --- Tests ---
+
+static void test_rmsnorm_reference_contract(void) {
+    printf("test_rmsnorm_reference_contract... ");
+    bn_transformer_rmsnorm_reference(NULL, NULL, NULL, 0, 1e-6f);
+    const int sizes[] = {1, 7, 8, 15, 16, 17, 33, 257};
+    float x[259], w[259], out[259], expected[257];
+    for (size_t t = 0; t < sizeof(sizes) / sizeof(sizes[0]); t++) {
+        int n = sizes[t];
+        for (int i = 0; i < 259; i++) x[i] = w[i] = out[i] = NAN;
+        double sum = 0;
+        for (int i = 0; i < n; i++) {
+            x[i + 1] = sinf((float)i * 0.23f) * 7 + 0.125f;
+            w[i + 1] = (float)(i % 11 - 5) / 7;
+            volatile float square = x[i + 1] * x[i + 1];
+            sum += (double)square;
+        }
+        float scale = 1.0f / sqrtf((float)(sum / n) + 1e-6f);
+        for (int i = 0; i < n; i++)
+            expected[i] = (x[i + 1] * scale) * w[i + 1];
+        bn_transformer_rmsnorm_reference(out + 1, x + 1, w + 1, n, 1e-6f);
+        assert(memcmp(out + 1, expected, (size_t)n * sizeof(float)) == 0);
+        bn_transformer_rmsnorm_reference(x + 1, x + 1, w + 1, n, 1e-6f);
+        assert(memcmp(x + 1, expected, (size_t)n * sizeof(float)) == 0);
+        assert(isnan(x[0]) && isnan(out[0]) && isnan(w[0]));
+        for (int i = n + 1; i < 259; i++)
+            assert(isnan(x[i]) && isnan(out[i]) && isnan(w[i]));
+    }
+    printf("PASSED\n");
+}
 
 static void test_rmsnorm(void) {
     printf("test_rmsnorm... ");
@@ -625,6 +1056,12 @@ static void test_fast_silu(void) {
 
 static void test_cpu_execution_helpers(void) {
     printf("test_cpu_execution_helpers... ");
+#if defined(__AVX2__) && !defined(__AVX512F__)
+    assert(bn_transformer_cpu_ssm_out_matvec_task_flags() ==
+           BN_MATVEC_TASK_REFERENCE_DOT);
+#else
+    assert(bn_transformer_cpu_ssm_out_matvec_task_flags() == 0u);
+#endif
 
     float x[8] = {1.0f, -2.0f, 3.0f, -4.0f, 5.0f, -6.0f, 7.0f, -8.0f};
     float r[8] = {0.5f, 0.5f, -1.0f, -1.0f, 2.0f, 2.0f, -3.0f, -3.0f};
@@ -668,11 +1105,38 @@ static void test_cpu_execution_helpers(void) {
     ffn.reference_activation = 1;
     bn_transformer_cpu_apply_ffn_activation(
         test_cpu_policy(), &s, &ffn, 8, 0);
+#ifdef __AVX512F__
+    float reference_expected[16];
+    __m512 reference_g = _mm512_setr_ps(
+        -2.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 2.0f, 4.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    __m512 reference_den = _mm512_add_ps(
+        _mm512_set1_ps(1.0f), bn_avx512_fast_exp_ps(
+            _mm512_sub_ps(_mm512_setzero_ps(), reference_g)));
+    __m512 reference_up = _mm512_setr_ps(
+        1.0f, 0.5f, 2.0f, 3.0f, -1.0f, 1.5f, -0.5f, 2.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    _mm512_storeu_ps(reference_expected, _mm512_mul_ps(
+        _mm512_div_ps(reference_g, reference_den), reference_up));
+#elif defined(__AVX2__)
+    float reference_expected[8];
+    __m256 reference_g = _mm256_setr_ps(
+        -2.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 2.0f, 4.0f);
+    __m256 reference_den = _mm256_add_ps(
+        _mm256_set1_ps(1.0f), bn_avx2_fast_exp_avx512_ps(
+            _mm256_sub_ps(_mm256_setzero_ps(), reference_g)));
+    _mm256_storeu_ps(reference_expected, _mm256_mul_ps(
+        _mm256_div_ps(reference_g, reference_den), _mm256_loadu_ps(hb2)));
+#endif
     for (int i = 0; i < 8; i++) {
+#if defined(__AVX512F__) || defined(__AVX2__)
+        float expected = reference_expected[i];
+#else
         float g = (float[]){
             -2.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 2.0f, 4.0f
         }[i];
         float expected = (g / (1.0f + expf(-g))) * hb2[i];
+#endif
         assert(reference_hb[i] == expected);
     }
     ffn.reference_activation = 0;
@@ -874,6 +1338,35 @@ static void test_gpu_capability_routing(void) {
                &routed_projection_flags, 3, 1) == 0);
     assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
                NULL, 0, 1) == 0);
+    assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q5_K, 0, 1, 1) ==
+           BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION);
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q5_K, 0, 1, 1) == 0);
+    assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 1, 1, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
+    assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 1, 1, 0) ==
+           (BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT |
+            BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));
+    assert(bn_transformer_gpu_moe_dense_residual_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 1, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(bn_transformer_gpu_moe_dense_residual_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 1, 1) ==
+           (BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT |
+            BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q4_K, 0, 1, 1) ==
+           BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION);
+    assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q5_K, 1, 1, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT);
+    gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_matvec_reference_kquant_flags(
                BN_GGUF_TENSOR_Q6_K, 1) ==
            BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT);
@@ -1125,12 +1618,88 @@ static void test_gpu_capability_routing(void) {
     printf("PASSED\n");
 }
 
+static int test_prefill_prefix_support(void *ctx,
+                                     const BnGPUAttentionPrefillPlan *plan) {
+    assert(plan);
+    return *(const int *)ctx;
+}
+
+static void test_prefill_microbatch_policy(void) {
+    BnGPUBackend gpu = {0};
+    BnConfig c = {0};
+    BnGPUAttentionPrefillPlan span = {0};
+    int supported = 1;
+    assert(!bn_gpu_backend_can_check_prefill_prefix(NULL));
+    assert(!bn_gpu_backend_prefill_prefix_supported(&gpu, &span));
+    gpu.ctx = &supported;
+    gpu.prefill_attention_prefix_supported = test_prefill_prefix_support;
+    assert(bn_gpu_backend_can_check_prefill_prefix(&gpu));
+    assert(bn_gpu_backend_prefill_prefix_supported(&gpu, &span));
+    assert(!bn_gpu_backend_prefill_prefix_supported(&gpu, NULL));
+    supported = 0;
+    assert(!bn_gpu_backend_prefill_prefix_supported(&gpu, &span));
+    supported = -1;
+    assert(!bn_gpu_backend_prefill_prefix_supported(&gpu, &span));
+    c.seq_len=2048; c.n_layers=48; c.full_attn_interval=4;
+    c.ssm_state_size=128; c.n_experts=256; c.n_experts_active=8; c.kv_f16=1;
+    assert(bn_transformer_prefill_microbatch_tokens(NULL)==0);
+    assert(bn_transformer_prefill_microbatch_tokens(&gpu)==0);
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,1058,0));
+    gpu.caps=BN_GPU_CAP_PREFILL_PREFIX_KV|BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    assert(bn_transformer_prefill_microbatch_tokens(&gpu)==512);
+    assert(bn_backend_runtime_policy_set(&gpu.runtime_policy,"BN_GPU_PREFILL_FULL_PROMPT","1",1)==0);
+    assert(bn_transformer_prefill_microbatch_tokens(&gpu)==0);
+    /* Backend boolean policies are presence-based, including the value "0". */
+    assert(bn_backend_runtime_policy_set(&gpu.runtime_policy,"BN_GPU_PREFILL_FULL_PROMPT","0",1)==0);
+    assert(bn_transformer_prefill_microbatch_tokens(&gpu)==0);
+    bn_backend_runtime_policy_free(&gpu.runtime_policy);
+    assert(bn_transformer_prefill_microbatch_tokens(&gpu)==512);
+    assert(bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    assert(bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,512));
+    assert(bn_transformer_prefill_prefix_request_allowed(&c,&gpu,1,512));
+    assert(bn_transformer_prefill_prefix_request_allowed(&c,&gpu,34,1024));
+    assert(bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,1536));
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,513,1536));
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,INT_MAX));
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,0,0));
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,2,1));
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,-1));
+    c.seq_len=1024;
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,34,1024));
+    c.seq_len=2048; c.kv_f16=0;
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    c.kv_f16=1; c.n_experts=0;
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    c.n_experts=256; c.kv_tq_bits=3;
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    c.kv_tq_bits=0; c.hyper_connection_count=4;
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    BnTransformerPrefillHybridModelChainPolicy chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(1,1,512,48,0,1);
+    assert(chain.enabled);
+    chain=bn_transformer_prefill_hybrid_model_chain_policy(1,1,512,48,0,0);
+    assert(!chain.enabled);
+    chain=bn_transformer_prefill_hybrid_model_chain_policy(1,1,-1,48,0,1);
+    assert(!chain.enabled);
+    chain=bn_transformer_prefill_hybrid_model_chain_policy(1,1,512,48,1,1);
+    assert(!chain.enabled);
+    printf("prefill microbatch policy PASSED\n");
+}
+
 static void test_gpu_policy_helpers(void) {
     printf("test_gpu_policy_helpers... ");
 
     BnConfig c;
     memset(&c, 0, sizeof(c));
     c.n_layers = 4;
+    BnConfig reference_qkv = {0};
+    BnGPUBackend reference_qkv_gpu = {0};
+    reference_qkv.n_layers = 30;
+    reference_qkv.n_experts = 128;
+    assert(bn_transformer_gpu_reference_qkv_layer_enabled(
+        &reference_qkv_gpu, 29, &reference_qkv));
+    assert(!bn_transformer_gpu_reference_qkv_layer_enabled(
+        &reference_qkv_gpu, 30, &reference_qkv));
     assert(bn_transformer_gpu_graph_op_capacity(&c) >
            80 * c.n_layers);
     assert(bn_transformer_gpu_uses_small_dense_shape(&c));
@@ -1139,6 +1708,23 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_uses_dense_attention_only(&c));
     assert(!bn_transformer_gpu_uses_hybrid_ssm(&c));
     assert(!bn_transformer_gpu_uses_moe(&c));
+    BnGPUBackend cuda_reference = {
+        .kind = BN_GPU_BACKEND_CUDA,
+        .caps = BN_GPU_CAP_REFERENCE_ATTENTION,
+    };
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION;
+    assert(bn_transformer_gpu_reference_dense_ffn_decode_accumulation_enabled(
+        &cuda_reference, &c));
+    c.full_attn_interval = 4;
+    c.ssm_inner_size = 64;
+    assert(!bn_transformer_gpu_reference_dense_ffn_decode_accumulation_enabled(
+        &cuda_reference, &c));
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    assert(bn_transformer_gpu_reference_dense_ffn_decode_accumulation_enabled(
+        &cuda_reference, &c));
+    c.policy_flags = 0;
+    c.full_attn_interval = 0;
+    c.ssm_inner_size = 0;
     BnLayerWeights gpu_dense_lw = {0};
     BnLayerWeights gpu_moe_lw = {0};
     gpu_moe_lw.moe.router_weight = (float *)1;
@@ -1284,7 +1870,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_refine_native_quant_logits_top(
                NULL, 0, NULL, NULL, NULL, 0) == 0);
     assert(bn_transformer_gpu_try_refined_argmax(
-               NULL, NULL, NULL, NULL, NULL, 0,
+               NULL, NULL, NULL, NULL, NULL, 0, 0,
                NULL, 0, 1.0f, NULL) == 0);
     bn_transformer_gpu_refine_output_logits(
         NULL, NULL, NULL, NULL, NULL, 0, 0);
@@ -1354,7 +1940,17 @@ static void test_gpu_policy_helpers(void) {
     gpu.read_activation = mock_gpu_refine_read_activation;
     assert(bn_transformer_gpu_try_refined_argmax(
                &gpu, &refine_model, &refine_session, &logits,
-               &mock_refine_policy, 2, &penalty_token, 1, 2.0f,
+               &mock_refine_policy, 2, 0, &penalty_token, 1, 2.0f,
+               &refined_argmax) == 1);
+    assert(refined_argmax == 1);
+    mock_refine_policy.native_quant_captures_xb = 0;
+    mock_refine_policy.native_quant_refine_top = 0;
+    mock_refine_policy.kquant_captures_xb = 1;
+    mock_refine_policy.kquant_refine_top = 1;
+    refined_argmax = -1;
+    assert(bn_transformer_gpu_try_refined_argmax(
+               &gpu, &refine_model, &refine_session, &logits,
+               &mock_refine_policy, 2, 1, &penalty_token, 1, 2.0f,
                &refined_argmax) == 1);
     assert(refined_argmax == 1);
     assert(bn_transformer_gpu_fallback_shared_expert_mid(
@@ -1460,6 +2056,15 @@ static void test_gpu_policy_helpers(void) {
                       "combined hybrid ssm/moe graph unsupported by gpu backend") == 0);
         gpu.caps |= BN_GPU_CAP_HYBRID_SSM_MOE_GRAPH |
                     BN_GPU_CAP_LARGE_GRAPH_NATIVE;
+        c.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+        reject_reason = NULL;
+        assert(bn_transformer_gpu_validate_forward(
+                   &forward_policy, &gpu, NULL, &c, &weights, 0, 0,
+                   &reject_reason) != 0);
+        assert(reject_reason &&
+               strcmp(reject_reason,
+                      "hyper-connection graph unsupported by gpu backend") == 0);
+        c.policy_flags &= ~BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
         reject_reason = NULL;
         assert(bn_transformer_gpu_validate_forward(
                    &forward_policy, &gpu, NULL, &c, &weights, 0, 0,
@@ -1513,12 +2118,20 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     test_gpu_runtime_refresh(&gpu);
-    assert(!bn_transformer_gpu_prefill_ssm_layer_disabled(&gpu));
+    assert(!bn_transformer_gpu_prefill_ssm_layer_disabled(&gpu, NULL));
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     test_gpu_runtime_refresh(&gpu);
-    assert(bn_transformer_gpu_prefill_ssm_layer_disabled(&gpu));
+    assert(bn_transformer_gpu_prefill_ssm_layer_disabled(&gpu, NULL));
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     test_gpu_runtime_refresh(&gpu);
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    c.hyper_connection_count = 4;
+    assert(bn_transformer_gpu_prefill_ssm_layer_disabled(&gpu, &c));
+    assert(bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(&gpu, &c));
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    c.hyper_connection_count = 0;
+    gpu.kind = BN_GPU_BACKEND_UNKNOWN;
 
     unsetenv("BN_GPU_PROFILE");
     assert(bn_transformer_gpu_profile_level(&gpu) == 0);
@@ -1981,26 +2594,23 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
                 &c, 0).enabled);
     c.has_shared_expert = 1;
-    assert(bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
-               &c, 0).enabled);
+    assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+                &c, 0).enabled);
     assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
                 &c, 1).enabled);
     BnTransformerPrefillEntryDispatchPolicy prefill_entry =
         bn_transformer_prefill_entry_dispatch_policy(
             &c, 0, BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS);
-    assert(prefill_entry.uses_decode_fallback);
-    assert(prefill_entry.path ==
-           BN_TRANSFORMER_PREFILL_ENTRY_DECODE_LAST_LOGITS);
+    assert(!prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path == BN_TRANSFORMER_PREFILL_ENTRY_BATCH);
     prefill_entry = bn_transformer_prefill_entry_dispatch_policy(
         &c, 0, BN_TRANSFORMER_PREFILL_REQUEST_NO_LOGITS);
-    assert(prefill_entry.uses_decode_fallback);
-    assert(prefill_entry.path ==
-           BN_TRANSFORMER_PREFILL_ENTRY_DECODE_NO_LOGITS);
+    assert(!prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path == BN_TRANSFORMER_PREFILL_ENTRY_BATCH);
     prefill_entry = bn_transformer_prefill_entry_dispatch_policy(
         &c, 0, BN_TRANSFORMER_PREFILL_REQUEST_ALL_LOGITS);
-    assert(prefill_entry.uses_decode_fallback);
-    assert(prefill_entry.path ==
-           BN_TRANSFORMER_PREFILL_ENTRY_DECODE_ALL_LOGITS);
+    assert(!prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path == BN_TRANSFORMER_PREFILL_ENTRY_BATCH);
     prefill_entry = bn_transformer_prefill_entry_dispatch_policy(
         &c, 1, BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS);
     assert(!prefill_entry.uses_decode_fallback);
@@ -3065,11 +3675,19 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");
     test_gpu_runtime_refresh(&gpu);
+    assert(bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
+    assert(bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 1));
+    gpu.caps |= BN_GPU_CAP_KQUANT_BLOCK32_LOGITS;
     assert(!bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
     assert(bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 1));
     setenv("BN_GPU_ENABLE_KQUANT_LOGITS_REFINE", "1", 1);
     test_gpu_runtime_refresh(&gpu);
     assert(bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
+    setenv("BN_GPU_DISABLE_KQUANT_LOGITS_REFINE", "1", 1);
+    test_gpu_runtime_refresh(&gpu);
+    assert(!bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 1));
+    unsetenv("BN_GPU_DISABLE_KQUANT_LOGITS_REFINE");
+    gpu.caps &= ~BN_GPU_CAP_KQUANT_BLOCK32_LOGITS;
     unsetenv("BN_GPU_ENABLE_KQUANT_LOGITS_REFINE");
     test_gpu_runtime_refresh(&gpu);
     gpu.kind = BN_GPU_BACKEND_METAL;
@@ -3079,12 +3697,12 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
     unsetenv("BN_GPU_DISABLE_KQUANT_LOGITS_REFINE");
     assert(bn_transformer_gpu_kquant_logits_refine_captures_xb(
-        &logits, 1, 1));
+        &logits, 1));
     assert(!bn_transformer_gpu_kquant_logits_refine_captures_xb(
-        &logits, 1, 0));
+        &logits, 0));
     logits.cpu_weight = NULL;
     assert(!bn_transformer_gpu_kquant_logits_refine_captures_xb(
-        &logits, 1, 1));
+        &logits, 1));
     logits.cpu_weight = &W;
 
     unsetenv("BN_GPU_KQUANT_LOGITS_REFINE_TOP");
@@ -3140,7 +3758,7 @@ static void test_gpu_policy_helpers(void) {
     BnTransformerGPULogitsRefinePolicy refine_policy =
         bn_transformer_gpu_logits_refine_policy(&gpu, &c, NULL, &logits, 1);
     assert(!refine_policy.kquant_default);
-    assert(!refine_policy.kquant_enabled);
+    assert(refine_policy.kquant_enabled);
     assert(!refine_policy.kquant_captures_xb);
     assert(refine_policy.kquant_refine_top == 8);
     assert(refine_policy.native_quant_default);
@@ -3197,8 +3815,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!snapshot_policy.snapshot_satisfies_kquant_refine);
     snapshot_policy = bn_transformer_gpu_logits_refine_snapshot_policy(
         1, 1, &refine_policy);
-    assert(!snapshot_policy.snapshot_before_logits);
-    assert(!snapshot_policy.snapshot_satisfies_kquant_refine);
+    assert(snapshot_policy.snapshot_before_logits);
+    assert(snapshot_policy.snapshot_satisfies_kquant_refine);
     refine_policy.kquant_captures_xb = 0;
     snapshot_policy = bn_transformer_gpu_logits_refine_snapshot_policy(
         1, 0, &refine_policy);
@@ -3222,14 +3840,16 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
 
     unsetenv("BN_CUDA_ENABLE_MOE_PREFILL");
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL");
     gpu.kind = BN_GPU_BACKEND_CUDA;
     test_gpu_runtime_refresh(&gpu);
-    assert(!bn_transformer_prefill_moe_enabled(&gpu));
-    setenv("BN_CUDA_ENABLE_MOE_PREFILL", "1", 1);
-    test_gpu_runtime_refresh(&gpu);
     assert(bn_transformer_prefill_moe_enabled(&gpu));
+    setenv("BN_CUDA_DISABLE_MOE_PREFILL", "1", 1);
+    test_gpu_runtime_refresh(&gpu);
+    assert(!bn_transformer_prefill_moe_enabled(&gpu));
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_prefill_moe_enabled(&gpu));
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL");
     unsetenv("BN_CUDA_ENABLE_MOE_PREFILL");
     memset(&c, 0, sizeof(c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
@@ -3391,21 +4011,20 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_prefill_hybrid_chain_applicable(&gpu, &c));
     c.ssm_inner_size = 128;
     c.dim = 4096;
+    assert(!bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
+        &gpu, &c));
+    assert(!bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
+        &gpu, &c));
+    assert(bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
+    setenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL", "1", 1);
+    test_gpu_runtime_refresh(&gpu);
     assert(bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
         &gpu, &c));
     assert(bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
         &gpu, &c));
     assert(!bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
-    setenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN", "1", 1);
-    assert(bn_backend_runtime_policy_set(
-               &gpu.runtime_policy,
-               "BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN", "1", 1) == 0);
-    assert(!bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
-        &gpu, &c));
-    assert(bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
-    unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
-    bn_backend_runtime_policy_unset(
-        &gpu.runtime_policy, "BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
+    unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
+    test_gpu_runtime_refresh(&gpu);
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
     gpu.kind = BN_GPU_BACKEND_CUDA;
@@ -3423,15 +4042,15 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
     gpu.kind = BN_GPU_BACKEND_CUDA;
     test_gpu_runtime_refresh(&gpu);
-    assert(bn_transformer_gpu_prefill_attention_min_tokens(&gpu) == 16);
-    assert(bn_transformer_prefill_attention_min_tokens(&gpu) == 16);
+    assert(bn_transformer_gpu_prefill_attention_min_tokens(NULL, &gpu) == 16);
+    assert(bn_transformer_prefill_attention_min_tokens(NULL, &gpu) == 16);
     setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "11", 1);
     test_gpu_runtime_refresh(&gpu);
-    assert(bn_transformer_gpu_prefill_attention_min_tokens(&gpu) == 11);
-    assert(bn_transformer_prefill_attention_min_tokens(&gpu) == 11);
+    assert(bn_transformer_gpu_prefill_attention_min_tokens(NULL, &gpu) == 11);
+    assert(bn_transformer_prefill_attention_min_tokens(NULL, &gpu) == 11);
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(bn_transformer_gpu_prefill_attention_min_tokens(&gpu) == 16);
-    assert(bn_transformer_prefill_attention_min_tokens(&gpu) == 16);
+    assert(bn_transformer_gpu_prefill_attention_min_tokens(NULL, &gpu) == 16);
+    assert(bn_transformer_prefill_attention_min_tokens(NULL, &gpu) == 16);
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
@@ -3518,6 +4137,26 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_CPU_FFN_LAYER");
     unsetenv("BN_GPU_CPU_FFN_FROM_LAYER");
     unsetenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
+
+    BnWeights hyper_weights = {0};
+    c.hyper_connection_count = 4;
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    c.n_layers = 48;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    fallback_policy = (BnTransformerGPUCPUFallbackPolicy)
+        {-1, -1, -1, -1, -1, -1, -1};
+    fallback_policy = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+        fallback_policy, &gpu, &c, &hyper_weights);
+    assert(fallback_policy.attn_layer == 47);
+    assert(fallback_policy.attn_from_layer == -1);
+    fallback_policy = (BnTransformerGPUCPUFallbackPolicy)
+        {-1, -1, 3, -1, -1, -1, -1};
+    fallback_policy = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+        fallback_policy, &gpu, &c, &hyper_weights);
+    assert(fallback_policy.attn_layer == 3);
+    c.hyper_connection_count = 0;
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    c.n_layers = 4;
 
     unsetenv("BN_GPU_COMPARE_ATTENTION_LAYER");
     unsetenv("BN_GPU_COMPARE_ATTENTION_POS");
@@ -3671,6 +4310,13 @@ static void test_gpu_policy_helpers(void) {
     assert(small_dense_native_quant_use.use_attention);
     assert(small_dense_native_quant_use.use_ffn);
     assert(small_dense_native_quant_use.use_ffn_down);
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT |
+                     BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    small_dense_native_quant_use =
+        bn_transformer_gpu_small_dense_native_quant_layer_use_policy(
+            &gpu, &c, &manual_small_dense_native_quant_policy, 2, 0, -1);
+    assert(small_dense_native_quant_use.use_hc_attention);
+    c.policy_flags = 0;
     manual_small_dense_native_quant_policy.attn_only = 1;
     small_dense_native_quant_use = bn_transformer_gpu_small_dense_native_quant_layer_use_policy(
         &gpu, &c, &manual_small_dense_native_quant_policy, 2, 0, -1);
@@ -3825,7 +4471,7 @@ static void test_gpu_policy_helpers(void) {
     BnConfig cached_config = {0};
     cached_config.seq_len = 8;
     cached_config.kv_dim = 4;
-    BnGPUOp cached_ops[9] = {0};
+    BnGPUOp cached_ops[10] = {0};
     cached_ops[0].op_code = BN_GPU_CODE_MATVEC;
     cached_ops[0].buf_out = BN_GPU_VALUE_KEY_CACHE;
     cached_ops[0].rows = 2;
@@ -3846,18 +4492,22 @@ static void test_gpu_policy_helpers(void) {
     cached_ops[4].buf_in = BN_GPU_VALUE_KEY_CACHE;
     cached_ops[4].p[0] = 1;
     cached_ops[4].p[3] = 34;
-    cached_ops[5].op_code = BN_GPU_CODE_COPY;
-    cached_ops[5].buf_out = BN_GPU_VALUE_VALUE_CACHE;
-    cached_ops[5].p[1] = 65;
-    cached_ops[5].p[2] = 2;
-    cached_ops[6].op_code = BN_GPU_CODE_GQA_SCORES;
-    cached_ops[6].p[2] = 1;
-    cached_ops[7].op_code = BN_GPU_CODE_SOFTMAX;
-    cached_ops[7].p[1] = 1;
-    cached_ops[8].op_code = BN_GPU_CODE_GQA_COMBINE;
-    cached_ops[8].p[2] = 1;
+    cached_ops[5].op_code = BN_GPU_CODE_PER_HEAD_RMSNORM;
+    cached_ops[5].buf_in = BN_GPU_VALUE_VALUE_CACHE;
+    cached_ops[5].p[0] = 1;
+    cached_ops[5].p[3] = 66;
+    cached_ops[6].op_code = BN_GPU_CODE_COPY;
+    cached_ops[6].buf_out = BN_GPU_VALUE_VALUE_CACHE;
+    cached_ops[6].p[1] = 65;
+    cached_ops[6].p[2] = 2;
+    cached_ops[7].op_code = BN_GPU_CODE_GQA_SCORES;
+    cached_ops[7].p[2] = 1;
+    cached_ops[8].op_code = BN_GPU_CODE_SOFTMAX;
+    cached_ops[8].p[1] = 1;
+    cached_ops[9].op_code = BN_GPU_CODE_GQA_COMBINE;
+    cached_ops[9].p[2] = 1;
     assert(bn_transformer_gpu_patch_cached_decode_ops(
-               cached_ops, 9, &cached_config, 11) == 0);
+               cached_ops, 10, &cached_config, 11) == 0);
     assert(cached_ops[0].p[5] == 44);
     assert(cached_ops[1].p[6] == 44);
     assert(cached_ops[1].p[7] == 76);
@@ -3865,10 +4515,11 @@ static void test_gpu_policy_helpers(void) {
     assert(cached_ops[2].p[5] == 44);
     assert(cached_ops[3].p[2] == 8);
     assert(cached_ops[4].p[3] == 44);
-    assert(cached_ops[5].p[1] == 76);
-    assert(cached_ops[6].p[2] == 8);
-    assert(cached_ops[7].p[1] == 8);
-    assert(cached_ops[8].p[2] == 8);
+    assert(cached_ops[5].p[3] == 76);
+    assert(cached_ops[6].p[1] == 76);
+    assert(cached_ops[7].p[2] == 8);
+    assert(cached_ops[8].p[1] == 8);
+    assert(cached_ops[9].p[2] == 8);
 
     BnBackendSession *decode_backend = bn_backend_session_create();
     assert(decode_backend);
@@ -3930,6 +4581,18 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_flash_attention_enabled(&gpu, 0, 0, 128));
     assert(bn_transformer_gpu_flash_attention_enabled(&gpu, 1, 0, 128));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    BnConfig flash_config = {0};
+    flash_config.policy_flags =
+        BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION;
+    assert(!bn_transformer_gpu_model_flash_attention_enabled(
+        &gpu, &flash_config, 0, 128));
+    flash_config.flash_attn = 1;
+    assert(bn_transformer_gpu_model_flash_attention_enabled(
+        &gpu, &flash_config, 0, 128));
+    flash_config.flash_attn = 0;
+    assert(bn_transformer_gpu_model_flash_attention_enabled(
+        &gpu, &flash_config, 1, 128));
 
     BnMoEExpertMap map;
     memset(&map, 0, sizeof(map));
@@ -4018,6 +4681,11 @@ static void test_gpu_policy_helpers(void) {
         &c, &moe_w, resident_backend));
     c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT;
     assert(!bn_transformer_gpu_moe_decode_cacheable(&gpu,
+        &c, &moe_w, resident_backend));
+    assert(bn_backend_model_register_handle(
+               resident_backend, 0, BN_BACKEND_HANDLE_MOE_ROUTER_SCALE,
+               (void *)6) == 0);
+    assert(bn_transformer_gpu_moe_decode_cacheable(&gpu,
         &c, &moe_w, resident_backend));
     c.policy_flags &= ~BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT;
     moe_layers[0].moe.expert_map.down_cols = 4095;
@@ -4249,9 +4917,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     test_gpu_runtime_refresh(&gpu);
-    assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c));
-    assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
-        &gpu, &c));
+    assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
+    assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(&gpu, &c, &map));
     assert(!bn_transformer_gpu_moe_prefill_route_batch_available(
         &gpu, &c, 1));
     assert(!bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
@@ -4373,25 +5040,32 @@ static void test_gpu_policy_helpers(void) {
     test_gpu_runtime_refresh(&gpu);
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_FAST_FFN");
     c.n_experts = 3;
-    assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
+    gpu.caps |= BN_GPU_CAP_MOE_COMBINED_PREFILL_DEFAULT;
+    assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
+    assert(!bn_transformer_gpu_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    BnMoEExpertMap native_map = map;
+    native_map.gate_type = native_map.up_type = native_map.down_type = BN_GGUF_TENSOR_Q8_0;
+    assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &native_map));
+    assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+        &gpu, &c, &native_map));
+    gpu.caps &= ~BN_GPU_CAP_MOE_COMBINED_PREFILL_DEFAULT;
     assert(bn_transformer_gpu_moe_prefill_route_batch_available(
         &gpu, &c, 1));
     assert(!bn_transformer_gpu_moe_prefill_route_batch_available(
         &gpu, &c, 0));
-    assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
-        &gpu, &c));
+    assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(&gpu, &c, &map));
     setenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE", "1", 1);
     test_gpu_runtime_refresh(&gpu);
-    assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c));
-    assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
-        &gpu, &c));
+    assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
+    assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(&gpu, &c, &map));
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     setenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH", "1", 1);
     test_gpu_runtime_refresh(&gpu);
-    assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c));
-    assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
-        &gpu, &c));
+    assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
+    assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(&gpu, &c, &map));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
     test_gpu_runtime_refresh(&gpu);
@@ -4407,18 +5081,32 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0));
     assert(bn_transformer_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
+    setenv("BN_CUDA_DISABLE_MOE_PREFILL", "1", 1);
+    test_gpu_runtime_refresh(&gpu);
+    assert(!bn_transformer_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL");
+    test_gpu_runtime_refresh(&gpu);
+    assert(bn_transformer_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    setenv("BN_GPU_DISABLE_PREFILL_MATMUL", "1", 1);
+    test_gpu_runtime_refresh(&gpu);
+    assert(!bn_transformer_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
+    test_gpu_runtime_refresh(&gpu);
     assert(!bn_transformer_gpu_prefill_moe_layer_chain_available(
-        &gpu, &c, &map, c.dim, 0, 15));
+        &gpu, &c, &map, c.dim, 0, 0));
     assert(bn_transformer_gpu_prefill_moe_layer_chain_available(
-        &gpu, &c, &map, c.dim, 0, 16));
+        &gpu, &c, &map, c.dim, 0, 1));
     assert(!bn_transformer_gpu_prefill_ssm_moe_chain_available(
-        &gpu, &c, &map, c.dim, 0, 15));
+        &gpu, &c, &map, c.dim, 0, 0));
     assert(bn_transformer_gpu_prefill_ssm_moe_chain_available(
-        &gpu, &c, &map, c.dim, 0, 16));
+        &gpu, &c, &map, c.dim, 0, 1));
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     test_gpu_runtime_refresh(&gpu);
     assert(!bn_transformer_gpu_prefill_ssm_moe_chain_available(
-        &gpu, &c, &map, c.dim, 0, 16));
+        &gpu, &c, &map, c.dim, 0, 1));
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_prefill_moe_ffn_batch_available(
@@ -4503,12 +5191,39 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_decode_entry_policy(&gpu, &c, &dense_w, 0);
     assert(!reference_entry.block_forward);
     assert(bn_transformer_gpu_reference_attention_exact_enabled(&gpu, &c));
+    int saved_n_layers = c.n_layers;
+    c.n_layers = 36;
+    c.n_experts = 0;
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION_LAST_THIRD;
+    BnGPUBackendKind saved_backend_kind = gpu.kind;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_tokenwise_reference_attention_from_layer(
+               &gpu, &c, 0) == 24);
+    assert(bn_transformer_gpu_tokenwise_reference_attention_from_layer(
+               &gpu, &c, 1) == -1);
+    gpu.kind = saved_backend_kind;
+    c.n_layers = saved_n_layers;
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION_LAST_THIRD;
     assert(!bn_transformer_gpu_reference_attention_no_logits_cpu_fallback_enabled(
         &gpu, &c, 0));
     gpu.caps &= ~BN_GPU_CAP_REFERENCE_ATTENTION;
     gpu.caps &= ~BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH;
     gpu.caps &= ~BN_GPU_CAP_REFERENCE_ATTENTION_TOKEN_FALLBACK;
     c.policy_flags |= BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.caps |= BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    assert(!bn_transformer_gpu_reference_attention_cpu_fallback_enabled(
+        &gpu, &c));
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    fallback = (BnTransformerGPUCPUFallbackPolicy)
+        {-1, -1, -1, -1, -1, -1, -1};
+    fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+        fallback, &gpu, &c, &dense_w);
+    assert(fallback.attn_layer == -1);
+    assert(fallback.attn_from_layer == -1);
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    gpu.caps &= ~BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_reference_recurrent_exact_enabled(&gpu, &c));
     gpu.caps |= BN_GPU_CAP_REFERENCE_RECURRENT;
     assert(bn_transformer_gpu_reference_recurrent_exact_enabled(&gpu, &c));
@@ -4796,6 +5511,13 @@ static void test_gpu_policy_helpers(void) {
     BnTransformerGPUGenerateArgmaxPolicy generate_argmax =
         bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.0f, 1.0f);
     assert(generate_argmax.enabled);
+    setenv("BN_GPU_CPU_LOGITS", "1", 1);
+    test_gpu_runtime_refresh(&gpu);
+    generate_argmax =
+        bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.0f, 1.0f);
+    assert(!generate_argmax.enabled);
+    unsetenv("BN_GPU_CPU_LOGITS");
+    test_gpu_runtime_refresh(&gpu);
     generate_argmax =
         bn_transformer_gpu_generate_argmax_policy(NULL, 0, 0.0f, 1.0f);
     assert(!generate_argmax.enabled);
@@ -4988,7 +5710,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 1, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
-    assert(bn_transformer_gpu_decode_cacheable(
+    assert(!bn_transformer_gpu_decode_cacheable(
         &gpu, 1, 1, 0, 0, 0, 1, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
     assert(!bn_transformer_gpu_decode_cacheable(
@@ -5022,6 +5744,15 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, 15));
     assert(bn_transformer_gpu_prefill_ssm_dense_chain_available(
         &gpu, &c, 16));
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT;
+    gpu.caps &= ~BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    assert(!bn_transformer_gpu_prefill_ssm_dense_chain_available(
+        &gpu, &c, 16));
+    gpu.caps |= BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    assert(bn_transformer_gpu_prefill_ssm_dense_chain_available(
+        &gpu, &c, 16));
+    gpu.caps &= ~BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT;
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     test_gpu_runtime_refresh(&gpu);
     assert(!bn_transformer_gpu_prefill_ssm_dense_chain_available(
@@ -5366,6 +6097,18 @@ static void test_logits_policy_helpers(void) {
     assert(tied_quant_exec.weight == &tied_q6);
     assert(tied_quant_exec.prepared != NULL);
     assert(tied_quant_exec.prepared->kind == prepared.kind);
+    assert(tied_quant_exec.uses_prepared_weight);
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+    BnQWeight tied_q4 = tied_q6;
+    tied_q4.type = BN_GGUF_TENSOR_Q4_0;
+    BnPreparedWeight packed_q4 = {.kind = BN_PREPARED_WEIGHT_Q4_0_X8};
+    assert(bn_backend_model_register_prepared_qweight(backend, &tied_q4, &packed_q4) == 0);
+    BnLogitsTiedQuantExecutionPolicy tied_q4_exec =
+        bn_transformer_logits_tied_quant_execution_policy_for(
+            test_cpu_policy(), NULL, NULL, backend, &tied_q4);
+    assert(tied_q4_exec.valid && !tied_q4_exec.uses_prepared_weight);
+    assert(tied_q4_exec.prepared == NULL);
+#endif
     assert(tied_quant_exec.backend_handle == &tied_handle);
     assert(tied_quant_exec.dispatch.valid);
     bn_backend_model_free(backend);
@@ -5413,6 +6156,47 @@ static void test_logits_policy_helpers(void) {
     printf("PASSED\n");
 }
 
+static void test_gpu_staged_value_normalization(void) {
+    printf("test_gpu_staged_value_normalization... ");
+    for (int fp16 = 0; fp16 < 2; fp16++) {
+        for (int normalize = 0; normalize < 2; normalize++) {
+            BnConfig c = {0}; c.dim = 32; c.kv_f16 = fp16;
+            BnLayerWeights lw = {0};
+            lw.attn.wq.type = lw.attn.wk.type = lw.attn.wv.type = BN_GGUF_TENSOR_F32;
+            lw.attn.wq.rows = 32; lw.attn.wk.rows = lw.attn.wv.rows = 16;
+            lw.attn.wq.cols = lw.attn.wk.cols = lw.attn.wv.cols = 32;
+            BnLayerShapePlan plan = {0};
+            plan.q_dim = 32; plan.kv_dim = 16; plan.head_size = 8;
+            plan.n_heads = 4; plan.n_kv_heads = 2;
+            plan.value_shares_key = normalize;
+            BnTransformerGPUQKVResources res = {0};
+            res.wq = (void *)1; res.wk = (void *)2; res.wv = (void *)3;
+            res.v_unit_norm = (void *)4;
+            BnGPUOp ops[32]; BnTransformerGPUEmitContext ctx;
+            bn_transformer_gpu_emit_context_init(&ctx, ops, 32);
+            bn_transformer_gpu_emit_context_qkv(&ctx, &c, &lw, &plan,
+                                                &res, 2, 8, 32, 0, 0, 0);
+            assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+            int found = 0;
+            for (int i = 0; i < ctx.n; i++) {
+                if (ops[i].op_code != BN_GPU_CODE_PER_HEAD_RMSNORM ||
+                    ops[i].W_buf != res.v_unit_norm) continue;
+                found++;
+                assert(ops[i].rows == 2 && ops[i].p[0] == 8);
+                assert(ops[i].buf_in == (fp16 ? BN_GPU_VALUE_SCRATCH : BN_GPU_VALUE_VALUE_CACHE));
+                assert(ops[i].p[3] == (fp16 ? 0u : 32u));
+                if (fp16) {
+                    assert(i + 1 < ctx.n);
+                    assert(ops[i + 1].buf_out == BN_GPU_VALUE_VALUE_CACHE);
+                }
+            }
+            assert(found == normalize);
+            bn_transformer_gpu_emit_context_free(&ctx);
+        }
+    }
+    printf("PASSED\n");
+}
+
 static void test_gpu_op_kind_mapping(void) {
     printf("test_gpu_op_kind_mapping... ");
 
@@ -5426,6 +6210,14 @@ static void test_gpu_op_kind_mapping(void) {
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_COPY) == BN_GPU_OP_COPY);
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FUSED_GATEUP_SILU) == BN_GPU_OP_FFN);
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_SSM_DELTA) == BN_GPU_OP_SSM);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_HC_STREAM_RMSNORM) ==
+           BN_GPU_OP_RMSNORM);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_HC_SCALE_SILU) ==
+           BN_GPU_OP_ACTIVATION);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_HC_GATED_REDUCE) ==
+           BN_GPU_OP_RESIDUAL);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_HC_COMBINE) ==
+           BN_GPU_OP_RESIDUAL);
     assert(bn_gpu_op_kind_from_code(99999) == BN_GPU_OP_UNKNOWN);
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FLASH_ATTN) == BN_GPU_OP_ATTENTION);
     assert(bn_gpu_op_code_is_matvec(BN_GPU_CODE_MATVEC));
@@ -5544,6 +6336,21 @@ static void test_gpu_op_kind_mapping(void) {
     assert(ctx_ops[1].W_buf == (void *)4);
     bn_transformer_gpu_emit_context_free(&ctx);
 
+    /* Logits arithmetic composes quant metadata with backend capability;
+     * neither backend identity nor model family selects the contract. */
+    for (int block32 = 0; block32 < 2; block32++) {
+        BnGPUBackend logits_gpu = {0};
+        logits_gpu.caps = block32 ? BN_GPU_CAP_KQUANT_BLOCK32_LOGITS : 0;
+        bn_transformer_gpu_emit_context_init(&ctx, ctx_ops, 2);
+        ctx.gpu = &logits_gpu;
+        assert(bn_transformer_gpu_emit_context_logits(
+                   &ctx, (void *)4, BN_GGUF_TENSOR_Q6_K, 50, 256) == 0);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+        assert(ctx_ops[0].flags == (block32 ? 0u :
+                   BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT));
+        bn_transformer_gpu_emit_context_free(&ctx);
+    }
+
     BnGPUOp ctx_ops2[6];
     bn_transformer_gpu_emit_context_init(&ctx, ctx_ops2, 6);
     assert(bn_transformer_gpu_emit_context_copy(
@@ -5648,7 +6455,7 @@ static void test_gpu_op_kind_mapping(void) {
     bn_transformer_gpu_emit_context_init(&ctx, split_ops, 2);
     bn_transformer_gpu_emit_context_dense_ffn(
         &ctx, &split_config, &split_layer, &split_plan, &split_resources,
-        32, 0, NULL, 1, NULL, 0, 0, 0);
+        32, 0, NULL, 1, NULL, 0, 0, 0, 0);
     assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
     assert(ctx.n == 2);
     assert(split_ops[0].op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT);
@@ -5727,6 +6534,28 @@ static void test_gpu_op_kind_mapping(void) {
     assert(found_quant_down);
     bn_transformer_gpu_emit_context_free(&ctx);
 
+    residual_resources.ffn_post_norm_1 = (void *)11;
+    residual_resources.ffn_post_norm_2 = (void *)12;
+    residual_resources.ffn_post_norm = (void *)13;
+    bn_transformer_gpu_emit_context_init(&ctx, residual_ops, 32);
+    assert(bn_transformer_gpu_emit_context_dense_residual_moe(
+               &ctx, &residual_config, &residual_layer, &residual_plan,
+               &residual_resources, 32, 0, (void *)9, 1, 0) == 0);
+    assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+    int dense_norm = -1, routed_norm = -1;
+    for (int i = 0; i < ctx.n; i++) {
+        if (residual_ops[i].op_code != BN_GPU_CODE_RMSNORM) continue;
+        if (residual_ops[i].W_buf == (void *)11) dense_norm = i;
+        if (residual_ops[i].W_buf == (void *)12) routed_norm = i;
+    }
+    assert(dense_norm >= 0 && routed_norm > dense_norm);
+    assert(routed_norm + 1 < ctx.n);
+    /* The reference fuses routed normalization with the branch sum. */
+    assert(residual_ops[routed_norm + 1].op_code == BN_GPU_CODE_RESIDUAL_ADD);
+    assert(residual_ops[routed_norm + 1].buf_aux == residual_ops[routed_norm].buf_out);
+    assert(residual_ops[routed_norm + 1].buf_in == residual_ops[dense_norm].buf_out);
+    bn_transformer_gpu_emit_context_free(&ctx);
+
     printf("PASSED\n");
 }
 
@@ -5745,6 +6574,8 @@ static void test_model_arch_registry(void) {
     assert(gemma->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT);
     assert(gemma->policy_flags & BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION);
     assert(gemma->policy_flags &
+           BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER);
+    assert(gemma->policy_flags &
            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION);
     assert(strcmp(gemma->prefix("gemma4"), "gemma4") == 0);
     assert(gemma->attention_value_shares_key("gemma4"));
@@ -5756,9 +6587,10 @@ static void test_model_arch_registry(void) {
     assert(bn_model_backend_policy_requires_stable_per_layer_input_layout(&c));
     assert(!bn_model_arch_requires_float_kquant_fallback(&c));
     assert(bn_model_arch_requires_reference_attention(&c));
+    assert(bn_transformer_prefill_uses_reference_dot_accumulation(&c));
     assert(bn_model_arch_attention_scale(&c, 128) == 1.0f);
     assert(bn_model_arch_rmsnorm_mode(&c) ==
-           BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER);
+           BN_MODEL_ARCH_RMSNORM_REFERENCE_ORDER);
     assert(bn_model_arch_attention_value_shares_key_config(&c));
     assert(bn_model_arch_uses_per_layer_embedding(&c));
     assert(bn_model_arch_uses_attention_post_norm(&c));
@@ -5779,12 +6611,16 @@ static void test_model_arch_registry(void) {
     c.per_layer_input_dim = 128;
     assert(bn_model_arch_loads_per_layer_input_weights(&c));
     assert(bn_model_arch_divides_rope_freqs(&c, 0));
-    assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
-    assert(!bn_model_arch_ffn_uses_reference_activation(&c));
+    assert(!bn_model_arch_prefill_uses_decode_for_parity(&c));
+    assert(bn_model_arch_prefill_uses_reference_activation(&c));
+    assert(bn_model_arch_ffn_uses_reference_activation(&c));
     assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(bn_model_arch_moe_uses_reference_router_accumulation(&c));
     assert(bn_model_arch_moe_uses_dense_residual_branch(&c));
+    c.n_experts = 8;
+    assert(!bn_model_arch_attention_uses_padded_weighted_v_reduction(&c));
+    c.n_experts = 0;
     BnGPUBackend lowbit_backend = {0};
     BnMoEExpertMap lowbit_map = {0};
     lowbit_map.gate_type = BN_GGUF_TENSOR_Q4_0;
@@ -5805,6 +6641,13 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_loads_moe_aux_weights(&c));
 
     c.per_layer_input_dim = 0;
+    c.n_experts = 0;
+    c.n_layers = 60;
+    for (int i = 0; i < c.n_layers; i++)
+        c.sliding_window_pattern[i] = (i % 6) != 5;
+    assert(!bn_model_arch_divides_rope_freqs(&c, 0));
+    assert(bn_model_arch_divides_rope_freqs(&c, 5));
+
     c.n_experts = 4;
     c.n_layers = 30;
     c.kv_unique_layer_count = 20;
@@ -5831,20 +6674,84 @@ static void test_model_arch_registry(void) {
     assert(bitnet->activation("bitnet") == 1);
     assert(!bitnet->attention_value_shares_key("bitnet"));
 
+    const BnModelArchOps *qwen3 = bn_model_arch_ops_for("qwen3");
+    assert(qwen3);
+    assert(bn_model_arch_ops_for("qwen3moe") == qwen3);
+    assert(qwen3->moe_policy_flags &
+           BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ROUTER_ACCUMULATION);
+    assert(qwen3->policy_flags &
+           BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION);
+    assert(!(qwen3->policy_flags &
+             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY));
+    assert(!(qwen3->policy_flags &
+             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK));
+    assert(qwen3->policy_flags &
+           BN_MODEL_ARCH_POLICY_SEPARATE_ROPE_NORM);
+    assert(qwen3->policy_flags &
+           BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION_LAST_THIRD);
+    memset(&c, 0, sizeof(c));
+    c.policy_flags = qwen3->policy_flags;
+    c.n_layers = 36;
+    assert(!bn_model_arch_attention_uses_padded_weighted_v_reduction(&c));
+    assert(bn_model_arch_reference_attention_from_layer(&c) == 24);
+    assert(bn_model_transformer_policy_reference_attention_from_layer(&c) ==
+           24);
+    c.n_experts = 8;
+    c.policy_flags |= qwen3->moe_policy_flags;
+    assert(bn_model_arch_attention_uses_padded_weighted_v_reduction(&c));
+    assert(bn_model_arch_reference_attention_from_layer(&c) == -1);
+    c.n_experts = 0;
+    assert(!bn_model_arch_requires_float_kquant_fallback(&c));
+
     const BnModelArchOps *qwen = bn_model_arch_ops_for("qwen35");
     assert(qwen);
     assert(strcmp(qwen->name, "qwen35") == 0);
     assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION);
     assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT);
+    assert(!(qwen->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY));
     assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS);
     assert(strcmp(qwen->prefix("qwen35"), "qwen35") == 0);
     assert(qwen->activation("qwen35") == 0);
     assert(!qwen->attention_value_shares_key("qwen35"));
+    assert(qwen->policy_flags &
+           BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER);
+
+    const BnModelArchOps *qwen4exp = bn_model_arch_ops_for("qwen4exp");
+    assert(qwen4exp != NULL);
+    assert(strcmp(qwen4exp->name, "qwen4exp") == 0);
+    assert(qwen4exp->policy_flags & BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS);
+    assert(qwen4exp->policy_flags &
+           BN_MODEL_ARCH_POLICY_QUERY_SPARSE_ATTENTION);
+    assert(qwen4exp->policy_flags &
+           BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY);
+    /* Routed SwiGLU uses the backend activation, not forced scalar SiLU. */
+    assert(!(qwen4exp->moe_policy_flags &
+             BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU));
+    assert(qwen4exp->moe_policy_flags &
+           BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ATTENTION);
+    BnConfig qwen4exp_config = {0};
+    bn_model_arch_apply_config(&qwen4exp_config, qwen4exp);
+    assert(bn_model_arch_uses_hyper_connections(&qwen4exp_config));
+    assert(bn_model_arch_uses_query_sparse_attention(&qwen4exp_config));
+    assert(bn_model_arch_moe_uses_separate_router_topk(&qwen4exp_config));
+    assert(bn_transformer_gpu_moe_route_normalization_flags(
+               &qwen4exp_config) & BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK);
+    assert(!(qwen4exp->policy_flags &
+             BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK));
     c.policy_flags = qwen->policy_flags;
     assert(bn_model_arch_requires_reference_attention(&c));
     assert(bn_model_transformer_policy_requires_reference_attention(&c));
     assert(bn_model_arch_requires_reference_recurrent(&c));
     assert(bn_model_transformer_policy_requires_reference_recurrent(&c));
+    assert(!bn_model_transformer_policy_requires_host_reference_prefill(&c));
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    assert(bn_model_transformer_policy_requires_host_reference_prefill(&c));
+    BnGPUBackend cuda_prefill_gpu = {.kind = BN_GPU_BACKEND_CUDA};
+    assert(!bn_transformer_prefill_host_reference_enabled(
+        &cuda_prefill_gpu, &c));
+    assert(bn_transformer_prefill_host_reference_enabled(NULL, &c));
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT;
+    assert(!bn_model_transformer_policy_requires_host_reference_prefill(&c));
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS;
     assert(bn_model_arch_config_uses_full_rope_text_dims(&c));
@@ -6987,6 +7894,13 @@ static void test_block_planning(void) {
         bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c);
     int backend_supports_float_kquant_prefill =
         bn_transformer_cpu_backend_supports_float_kquant_prefill();
+    assert(bn_transformer_cpu_backend_prefill_projection_replay() ==
+           bn_transformer_cpu_backend_ops(
+               test_cpu_policy())->prefill_projection_replay);
+#if defined(__AVX2__)
+    assert(bn_transformer_cpu_backend_prefill_projection_replay() ==
+           BN_CPU_PREFILL_PROJECTION_REPLAY_NONE);
+#endif
     assert(backend_supports_float_kquant_prefill ==
            bn_transformer_cpu_backend_ops(
                test_cpu_policy())->supports_float_kquant_prefill);
@@ -7007,11 +7921,18 @@ static void test_block_planning(void) {
            BN_TRANSFORMER_CPU_PREPARED_KQUANT_INPUT_FLOAT_FALLBACK);
     c.policy_flags = 0;
     assert(bn_transformer_cpu_float_kquant_fallback_task_flags(&c) == 0);
-    assert(!bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c));
+    assert(bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c) ==
+           0);
     assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY;
     assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 1));
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    c.hyper_connection_count = 4;
+    assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0) ==
+           !bn_transformer_cpu_backend_supports_hyper_connection_batch_prefill());
+    assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 1));
+    c.hyper_connection_count = 0;
     c.policy_flags = 0;
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER;
@@ -7303,22 +8224,26 @@ static void test_block_planning(void) {
     ssm_upload_config.ssm_inner_size = 16;
     BnTransformerPrefillSSMStateUploadPolicy ssm_upload =
         bn_transformer_prefill_ssm_state_upload_policy(
-            &ssm_upload_config, &gpu, 1);
+            &ssm_upload_config, &gpu, 1, 0);
     assert(!ssm_upload.upload);
+    ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(
+        &ssm_upload_config, &gpu, 1, 1);
+    assert(ssm_upload.upload);
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     test_gpu_runtime_refresh(&gpu);
     ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(
-        &ssm_upload_config, &gpu, 1);
+        &ssm_upload_config, &gpu, 1, 0);
     assert(ssm_upload.upload);
     ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(
-        &ssm_upload_config, &gpu, 0);
+        &ssm_upload_config, &gpu, 0, 1);
     assert(!ssm_upload.upload);
     ssm_upload_config.full_attn_interval = 0;
     ssm_upload_config.ssm_inner_size = 0;
     ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(
-        &ssm_upload_config, &gpu, 1);
+        &ssm_upload_config, &gpu, 1, 1);
     assert(!ssm_upload.upload);
-    ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(NULL, &gpu, 1);
+    ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(NULL, &gpu,
+                                                                1, 1);
     assert(!ssm_upload.upload);
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     test_gpu_runtime_refresh(&gpu);
@@ -7336,9 +8261,22 @@ static void test_block_planning(void) {
     assert(!bn_transformer_prefill_activation_uses_silu_path(
         BN_MODEL_ACTIVATION_RELU2));
     BnTransformerPrefillActivationPolicy prefill_activation =
-        bn_transformer_prefill_activation_policy(BN_MODEL_ACTIVATION_GELU, 1);
+        bn_transformer_prefill_activation_policy(NULL, BN_MODEL_ACTIVATION_GELU, 1);
     assert(prefill_activation.activation == BN_MODEL_ACTIVATION_GELU);
     assert(prefill_activation.uses_reference_activation);
+    BnGPUBackend activation_gpu = {0};
+    for (int fp32_gelu = 0; fp32_gelu < 2; fp32_gelu++) {
+        activation_gpu.caps = fp32_gelu ? BN_GPU_CAP_FP32_GELU : 0;
+        prefill_activation = bn_transformer_prefill_activation_policy(
+            &activation_gpu, BN_MODEL_ACTIVATION_GELU, 1);
+        assert(prefill_activation.uses_reference_activation == !fp32_gelu);
+        prefill_activation = bn_transformer_prefill_activation_policy(
+            &activation_gpu, BN_MODEL_ACTIVATION_SILU, 1);
+        assert(prefill_activation.uses_reference_activation);
+        prefill_activation = bn_transformer_prefill_activation_policy(
+            &activation_gpu, BN_MODEL_ACTIVATION_GELU, 0);
+        assert(!prefill_activation.uses_reference_activation);
+    }
     BnConfig prefill_config = {0};
     prefill_config.act_type = BN_MODEL_ACTIVATION_GELU;
     prefill_config.has_ffn_gate = 1;
@@ -7447,7 +8385,7 @@ static void test_block_planning(void) {
         shared_all_active_two_fallback =
             bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
                 &shared_all_active_two, 0);
-    assert(shared_all_active_two_fallback.enabled);
+    assert(!shared_all_active_two_fallback.enabled);
     shared_all_active_two_fallback =
         bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
             &shared_all_active_two, 1);
@@ -7521,6 +8459,18 @@ static void test_block_planning(void) {
     assert(buffer_shape.half_rope == 5);
     assert(buffer_shape.batch_floats == 912);
 
+    /* Partial rotary width controls CPU angle buffers, while GPU layer
+     * frequencies retain the full head-width stride used during upload. */
+    buffer_c.head_size = 256;
+    assert(bn_transformer_prefill_buffer_shape_policy(
+        &buffer_shape, &buffer_c, dense_buffer_sequence, 51, 5120, 6144, 64));
+    assert(buffer_shape.half_rope == 32);
+    assert(buffer_shape.gpu_rope_freq_stride == 128);
+    assert(3 * buffer_shape.gpu_rope_freq_stride == 384);
+    assert(bn_transformer_prefill_buffer_shape_policy(
+        &buffer_shape, &buffer_c, dense_buffer_sequence, 51, 5120, 6144, 256));
+    assert(buffer_shape.half_rope == buffer_shape.gpu_rope_freq_stride);
+
     BnTransformerPrefillSequencePolicy ssm_buffer_sequence = {0};
     ssm_buffer_sequence.uses_hybrid_ssm = 1;
     buffer_c.ssm_time_step_rank = 4;
@@ -7535,6 +8485,15 @@ static void test_block_planning(void) {
     assert(buffer_shape.hb_stride == 96);
     assert(buffer_shape.hb2_stride == 96);
     assert(buffer_shape.batch_floats == 1392);
+    buffer_c.hidden_dim = 0;
+    buffer_c.n_experts = 256;
+    assert(bn_transformer_prefill_buffer_shape_policy(
+        &buffer_shape, &buffer_c, ssm_buffer_sequence, 3, 32, 10, 10));
+    assert(buffer_shape.hidden_dim == 0);
+    assert(buffer_shape.hb_stride == 96);
+    assert(buffer_shape.hb2_stride == 96);
+    buffer_c.hidden_dim = 48;
+    buffer_c.n_experts = 0;
     buffer_c.ssm_time_step_rank = 0;
     assert(!bn_transformer_prefill_buffer_shape_policy(
         &buffer_shape, &buffer_c, ssm_buffer_sequence, 3, 32, 10, 10));
@@ -7544,35 +8503,39 @@ static void test_block_planning(void) {
     BnTransformerPrefillSequencePolicy decode_sequence = {0};
     BnTransformerPrefillDecodeFallbackPolicy decode_fallback =
         bn_transformer_prefill_decode_fallback_policy(
-            decode_sequence, 1, 0, 16, 1, 0, 1, 0, 0, 1);
+            decode_sequence, 1, 0, 16, 1, 0, 1, 0, 0, 1, 0);
     assert(decode_fallback.decode);
     assert(!decode_fallback.require_logits_decode);
     decode_fallback = bn_transformer_prefill_decode_fallback_policy(
-        decode_sequence, 1, 1, 8, 16, 0, 1, 0, 0, 1);
+        decode_sequence, 1, 1, 8, 16, 0, 1, 0, 0, 1, 0);
     assert(decode_fallback.decode);
     assert(!decode_fallback.require_logits_decode);
     decode_fallback = bn_transformer_prefill_decode_fallback_policy(
-        decode_sequence, 0, 1, 8, 1, 1, 16, 0, 0, 1);
+        decode_sequence, 0, 1, 8, 1, 1, 16, 0, 0, 1, 0);
     assert(decode_fallback.decode);
     assert(!decode_fallback.require_logits_decode);
     decode_sequence.uses_large_dense_hybrid_ssm = 1;
     decode_fallback = bn_transformer_prefill_decode_fallback_policy(
-        decode_sequence, 0, 1, 16, 1, 0, 1, 1, 1, 1);
+        decode_sequence, 0, 1, 16, 1, 0, 1, 1, 1, 1, 0);
     assert(decode_fallback.decode);
     assert(!decode_fallback.require_logits_decode);
     decode_sequence.uses_hybrid_ssm = 1;
     decode_sequence.uses_large_dense_hybrid_ssm = 0;
     decode_fallback = bn_transformer_prefill_decode_fallback_policy(
-        decode_sequence, 0, 1, 16, 1, 0, 1, 0, 0, 0);
+        decode_sequence, 0, 1, 16, 1, 0, 1, 0, 0, 0, 0);
     assert(decode_fallback.decode);
     assert(decode_fallback.require_logits_decode);
     decode_fallback = bn_transformer_prefill_decode_fallback_policy(
-        decode_sequence, 0, 1, 16, 1, 0, 1, 1, 0, 0);
+        decode_sequence, 0, 1, 16, 1, 0, 1, 1, 0, 0, 0);
     assert(!decode_fallback.decode);
     assert(!decode_fallback.require_logits_decode);
     decode_sequence.uses_hybrid_ssm = 0;
     decode_fallback = bn_transformer_prefill_decode_fallback_policy(
-        decode_sequence, 0, 1, 16, 1, 0, 1, 0, 0, 1);
+        decode_sequence, 0, 1, 16, 1, 0, 1, 0, 0, 1, 0);
+    assert(!decode_fallback.decode);
+    assert(!decode_fallback.require_logits_decode);
+    decode_fallback = bn_transformer_prefill_decode_fallback_policy(
+        decode_sequence, 1, 0, 16, 1, 0, 1, 0, 0, 1, 1);
     assert(!decode_fallback.decode);
     assert(!decode_fallback.require_logits_decode);
 
@@ -7593,22 +8556,22 @@ static void test_block_planning(void) {
     assert(!dense_model_chain.enabled);
 
     BnTransformerPrefillHybridModelChainPolicy hybrid_model_chain =
-        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 1, 0);
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 1, 0, 0);
     assert(hybrid_model_chain.enabled);
     hybrid_model_chain =
-        bn_transformer_prefill_hybrid_model_chain_policy(0, 1, 0, 1, 0);
+        bn_transformer_prefill_hybrid_model_chain_policy(0, 1, 0, 1, 0, 0);
     assert(!hybrid_model_chain.enabled);
     hybrid_model_chain =
-        bn_transformer_prefill_hybrid_model_chain_policy(1, 0, 0, 1, 0);
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 0, 0, 1, 0, 0);
     assert(!hybrid_model_chain.enabled);
     hybrid_model_chain =
-        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 1, 1, 0);
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 1, 1, 0, 0);
     assert(!hybrid_model_chain.enabled);
     hybrid_model_chain =
-        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 0, 0);
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 0, 0, 0);
     assert(!hybrid_model_chain.enabled);
     hybrid_model_chain =
-        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 1, 1);
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 1, 1, 0);
     assert(!hybrid_model_chain.enabled);
 
     BnTransformerPrefillAttentionModePolicy attention_mode =
@@ -7652,7 +8615,7 @@ static void test_block_planning(void) {
     dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
         1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
         prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0);
-    assert(!dense_layer_batch.enabled);
+    assert(dense_layer_batch.enabled);
 
     BnTransformerPrefillDenseLayerChainPolicy dense_layer_chain =
         bn_transformer_prefill_dense_layer_chain_policy(
@@ -7679,7 +8642,7 @@ static void test_block_planning(void) {
     dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
         1, 1, 0, 16, 16, 10000.0f, 10000.0f, 1,
         prefill_layer_kind, 1, 1, 0, 0, 0, 1, 1, 0);
-    assert(!dense_layer_chain.enabled);
+    assert(dense_layer_chain.enabled);
 
     BnGPUBackend dense_layer_gpu = {0};
     assert(!bn_transformer_prefill_dense_layer_gpu_available(
@@ -7710,6 +8673,12 @@ static void test_block_planning(void) {
     matmul_gpu.matmul = mock_gpu_matmul;
     assert(bn_transformer_prefill_quant_matmul_gpu_available(
         &matmul_gpu, 1, 1, 1, 1));
+    setenv("BN_GPU_DISABLE_PREFILL_MATMUL", "1", 1);
+    test_gpu_runtime_refresh(&matmul_gpu);
+    assert(!bn_transformer_prefill_quant_matmul_gpu_available(
+        &matmul_gpu, 1, 1, 1, 1));
+    unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
+    test_gpu_runtime_refresh(&matmul_gpu);
     assert(!bn_transformer_prefill_quant_matmul_gpu_available(
         &matmul_gpu, 0, 1, 1, 1));
     assert(!bn_transformer_prefill_quant_matmul_gpu_available(
@@ -7727,6 +8696,12 @@ static void test_block_planning(void) {
     matmul_batch_gpu.matmul_batch = mock_gpu_matmul_batch;
     assert(bn_transformer_prefill_quant_matmul_batch_gpu_available(
         &matmul_batch_gpu, 2, 1, 1, 1, 1));
+    setenv("BN_GPU_DISABLE_PREFILL_MATMUL", "1", 1);
+    test_gpu_runtime_refresh(&matmul_batch_gpu);
+    assert(!bn_transformer_prefill_quant_matmul_batch_gpu_available(
+        &matmul_batch_gpu, 2, 1, 1, 1, 1));
+    unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
+    test_gpu_runtime_refresh(&matmul_batch_gpu);
     assert(!bn_transformer_prefill_quant_matmul_batch_gpu_available(
         &matmul_batch_gpu, 1, 1, 1, 1, 1));
     assert(!bn_transformer_prefill_quant_matmul_batch_gpu_available(
@@ -7740,6 +8715,48 @@ static void test_block_planning(void) {
     assert(!bn_transformer_prefill_quant_matmul_batch_gpu_available(
         &matmul_batch_gpu, 2, 1, 1, 1, 0));
 
+    BnGPUBackend moe_prefill_gpu = {0};
+    moe_prefill_gpu.kind = BN_GPU_BACKEND_CUDA;
+    test_gpu_runtime_refresh(&moe_prefill_gpu);
+    assert(bn_transformer_gpu_moe_prefill_backend_available(
+        &moe_prefill_gpu));
+    setenv("BN_GPU_DISABLE_PREFILL_MATMUL", "1", 1);
+    test_gpu_runtime_refresh(&moe_prefill_gpu);
+    assert(!bn_transformer_gpu_moe_prefill_backend_available(
+        &moe_prefill_gpu));
+    BnConfig cpu_batch_fallback_config = {0};
+    assert(bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(
+        &moe_prefill_gpu, &cpu_batch_fallback_config));
+    cpu_batch_fallback_config.ssm_inner_size = 16;
+    cpu_batch_fallback_config.full_attn_interval = 4;
+    assert(!bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(
+        &moe_prefill_gpu, &cpu_batch_fallback_config));
+    unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
+    test_gpu_runtime_refresh(&moe_prefill_gpu);
+    setenv("BN_CUDA_DISABLE_MOE_PREFILL", "1", 1);
+    test_gpu_runtime_refresh(&moe_prefill_gpu);
+    assert(!bn_transformer_gpu_moe_prefill_backend_available(
+        &moe_prefill_gpu));
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL");
+    test_gpu_runtime_refresh(&moe_prefill_gpu);
+    assert(bn_transformer_gpu_moe_prefill_backend_available(
+        &moe_prefill_gpu));
+    cpu_batch_fallback_config.ssm_inner_size = 0;
+    cpu_batch_fallback_config.full_attn_interval = 0;
+    assert(!bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(
+        &moe_prefill_gpu, &cpu_batch_fallback_config));
+    cpu_batch_fallback_config.n_experts = 8;
+    setenv("BN_CUDA_DISABLE_MOE_PREFILL", "1", 1);
+    test_gpu_runtime_refresh(&moe_prefill_gpu);
+    assert(bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(
+        &moe_prefill_gpu, &cpu_batch_fallback_config));
+    cpu_batch_fallback_config.ssm_inner_size = 16;
+    cpu_batch_fallback_config.full_attn_interval = 4;
+    assert(!bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(
+        &moe_prefill_gpu, &cpu_batch_fallback_config));
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL");
+    test_gpu_runtime_refresh(&moe_prefill_gpu);
+
     BnConfig prefill_dense_c = {0};
     BnGPUBackend prefill_dense_gpu = {0};
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
@@ -7749,10 +8766,46 @@ static void test_block_planning(void) {
     test_gpu_runtime_refresh(&prefill_dense_gpu);
     assert(bn_transformer_prefill_dense_chain_min_tokens(
         &prefill_dense_c, &prefill_dense_gpu) == 16);
+    prefill_dense_gpu.caps |= BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    assert(bn_transformer_prefill_attention_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 16);
+    prefill_dense_c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT;
+    assert(bn_transformer_prefill_attention_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 1);
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 1);
+    setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "11", 1);
+    test_gpu_runtime_refresh(&prefill_dense_gpu);
+    assert(bn_transformer_prefill_attention_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 11);
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 11);
+    unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
+    test_gpu_runtime_refresh(&prefill_dense_gpu);
+    prefill_dense_gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(bn_transformer_prefill_attention_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 16);
+    prefill_dense_gpu.kind = BN_GPU_BACKEND_CUDA;
+    prefill_dense_gpu.caps &= ~BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL;
+    assert(bn_transformer_prefill_attention_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 16);
+    prefill_dense_c.policy_flags = 0;
+    prefill_dense_c.act_type = BN_MODEL_ACTIVATION_GELU;
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 16);
+    prefill_dense_gpu.caps |= BN_GPU_CAP_FP32_GELU;
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 2);
+    prefill_dense_c.act_type = BN_MODEL_ACTIVATION_SILU;
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 16);
+    prefill_dense_c.act_type = BN_MODEL_ACTIVATION_GELU;
     setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "9", 1);
     test_gpu_runtime_refresh(&prefill_dense_gpu);
     assert(bn_transformer_prefill_dense_chain_min_tokens(
         &prefill_dense_c, &prefill_dense_gpu) == 9);
+    prefill_dense_c.act_type = BN_MODEL_ACTIVATION_SILU;
+    prefill_dense_gpu.caps &= ~BN_GPU_CAP_FP32_GELU;
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN");
     test_gpu_runtime_refresh(&prefill_dense_gpu);
@@ -7898,20 +8951,16 @@ static void test_block_planning(void) {
     assert(bn_transformer_prefill_moe_ffn_batch_available(
         &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
     prefill_gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
-    assert(!bn_transformer_prefill_ssm_moe_chain_available(
-        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 15));
     assert(bn_transformer_prefill_ssm_moe_chain_available(
-        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 1));
     prefill_gpu.prefill_moe_layer = mock_prefill_moe_layer;
-    assert(!bn_transformer_prefill_moe_layer_chain_available(
-        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 15));
     assert(bn_transformer_prefill_moe_layer_chain_available(
-        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 1));
     prefill_gpu.prefill_moe_layer = NULL;
     unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
     test_gpu_runtime_refresh(&prefill_gpu);
     assert(bn_transformer_prefill_moe_chain_min_tokens(
-        &prefill_c, &prefill_gpu) == 16);
+        &prefill_c, &prefill_gpu) == 1);
     setenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS", "7", 1);
     test_gpu_runtime_refresh(&prefill_gpu);
     assert(bn_transformer_prefill_moe_chain_min_tokens(
@@ -8048,6 +9097,31 @@ static void test_block_planning(void) {
     attention_gpu.prefill_attention_wo = mock_prefill_attention_wo;
     assert(bn_transformer_prefill_attention_wo_gpu_available(
         &attention_gpu));
+
+    BnGPUAttentionPrefillPlan prepared_plan = {0};
+    prepared_plan.n_tokens = 2; prepared_plan.q_gated = 1;
+    prepared_plan.q_row_stride = 39; prepared_plan.rope_freq_offset = 17;
+    float prepared_values[5] = {1, 2, 3, 4, 5};
+    MockPreparedAttention prepared_expected = {
+        &prepared_values[0], &prepared_values[1], &prepared_values[2],
+        &prepared_values[3], &prepared_values[4], &prepared_values[2],
+        &prepared_values[3], &prepared_plan, 0
+    };
+    assert(!bn_gpu_backend_can_prefill_attention_prepared(NULL));
+    assert(!bn_gpu_backend_can_prefill_attention_prepared(&attention_gpu));
+    assert(bn_transformer_gpu_prefill_attention_prepared_backend_run(
+        &attention_gpu, prepared_expected.out, prepared_expected.k_out,
+        prepared_expected.q, prepared_expected.k, prepared_expected.v,
+        prepared_expected.q_norm, prepared_expected.k_norm, &prepared_plan) == -1);
+    attention_gpu.ctx = &prepared_expected;
+    attention_gpu.prefill_attention_prepared = mock_prefill_attention_prepared;
+    assert(bn_gpu_backend_can_prefill_attention_prepared(&attention_gpu));
+    assert(bn_transformer_gpu_prefill_attention_prepared_backend_run(
+        &attention_gpu, prepared_expected.out, prepared_expected.k_out,
+        prepared_expected.q, prepared_expected.k, prepared_expected.v,
+        prepared_expected.q_norm, prepared_expected.k_norm, &prepared_plan) == -7);
+    assert(prepared_expected.calls == 1);
+    assert(prepared_values[0] == 1 && prepared_values[1] == 2);
 
     BnTransformerPrefillAttentionBatchPolicy attention_batch =
         bn_transformer_prefill_attention_batch_policy(
@@ -8319,6 +9393,11 @@ static void test_block_planning(void) {
         &prefill_ssm_types, NULL));
 
     const BnPrefillCPUOps *prefill_ops = bn_transformer_prefill_cpu_ops();
+    if (strcmp(prefill_ops->name, "avx2") == 0 ||
+        strcmp(prefill_ops->name, "avx512") == 0)
+        assert(prefill_ops->dispatch_ssm_heads == bn_tp_dispatch_fine);
+    else
+        assert(prefill_ops->dispatch_ssm_heads == bn_tp_dispatch);
     assert(bn_transformer_prefill_ssm_conv_silu_op(prefill_ops) ==
            prefill_ops->ssm_conv_silu);
     assert(bn_transformer_prefill_ssm_l2norm_op(prefill_ops) ==
@@ -8335,7 +9414,8 @@ static void test_block_planning(void) {
     unsetenv("BN_PREFILL_PROFILE");
 
     unsetenv("BN_PREFILL_ALLOW_HYBRID_BATCH");
-    assert(!bn_transformer_prefill_hybrid_batch_allowed(test_cpu_policy()));
+    assert(bn_transformer_prefill_hybrid_batch_allowed(test_cpu_policy()) ==
+           bn_transformer_cpu_backend_supports_hybrid_batch_prefill());
     setenv("BN_PREFILL_ALLOW_HYBRID_BATCH", "1", 1);
     assert(bn_transformer_prefill_hybrid_batch_allowed(test_cpu_policy()));
     unsetenv("BN_PREFILL_ALLOW_HYBRID_BATCH");
@@ -8366,6 +9446,49 @@ static void test_block_planning(void) {
     assert(cpu_backend == BN_CPU_BACKEND_AVX512);
 #endif
 
+    printf("PASSED\n");
+}
+
+static void test_batched_attn_padded_alias(void) {
+    printf("test_batched_attn_padded_alias... ");
+    enum { hs = 128, nt = 32, stride = 2 * hs };
+    float input[nt * stride], query[nt * stride], expected[nt * hs];
+    float key[nt * hs], value[nt * hs], rope[1] = {0};
+    for (int i = 0; i < nt * stride; i++) input[i] = sinf((float)(i * 3 + 1));
+    for (int i = 0; i < nt * hs; i++) {
+        key[i] = sinf((float)(i * 7 + 2));
+        value[i] = cosf((float)(i * 11 + 1));
+    }
+    BnModel model = {0};
+    BnRunState state = {0};
+    state.key_cache = key; state.value_cache = value;
+    BnThreadPool *pool = bn_tp_create(7);
+    assert(pool);
+    bn_model_set_thread_pool(&model, pool, 1);
+    BnBatchedAttnCtx ctx = {
+        .c = &model.config, .s = &state,
+        .Q_buf = query, .out = expected,
+        .n_tokens = nt, .n_heads = 1, .n_kv_heads = 1,
+        .head_size = hs, .kv_dim = hs, .kv_mul = 1, .seq_len = nt,
+        .rope_cos = rope, .rope_sin = rope, .attention_scale = 0.125f,
+        .wq_rows = hs, .q_row_stride = stride, .wo_cols = hs,
+    };
+    for (int flash = 0; flash < 2; flash++) {
+        model.config.flash_attn = flash;
+        memcpy(query, input, sizeof(query));
+        ctx.out = expected;
+        assert(bn_transformer_batched_attn_dispatch(&model, &ctx) == 0);
+        ctx.out = query;
+        for (int repeat = 0; repeat < 64; repeat++) {
+            memcpy(query, input, sizeof(query));
+            assert(bn_transformer_batched_attn_dispatch(&model, &ctx) == 0);
+            assert(memcmp(query, expected, sizeof(expected)) == 0);
+        }
+    }
+    bn_tp_free(pool);
+    bn_model_set_thread_pool(&model, NULL, 0);
+    bn_model_backend_free(&model);
+    free(model.runtime);
     printf("PASSED\n");
 }
 
@@ -8455,6 +9578,249 @@ static void test_batched_attn_fp16_kv(void) {
     printf("PASSED\n");
 }
 
+static void test_gpu_attention_window_emission(void) {
+    printf("test_gpu_attention_window_emission... ");
+    BnConfig c = {0};
+    c.n_layers = 2; c.seq_len = 16; c.sliding_window = 3;
+    c.sliding_window_pattern[0] = 1; c.flash_attn = 1;
+    BnLayerWeights lw = {0};
+    BnGPUBackend gpu = {0}; gpu.kind = BN_GPU_BACKEND_CUDA;
+    BnTransformerGPUAttentionResources resources = {0}; resources.gpu = &gpu;
+    for (int flash = 0; flash < 2; flash++) for (int layer = 0; layer < 2; layer++) {
+        gpu.caps = flash ? BN_GPU_CAP_FLASH_ATTN : 0;
+        BnLayerShapePlan plan = {0};
+        plan.layer = layer; plan.n_heads = 2; plan.n_kv_heads = 1;
+        plan.head_size = 32; plan.kv_mul = 2;
+        BnGPUOp ops[16] = {{0}};
+        BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx, ops, 16);
+        bn_transformer_gpu_emit_context_attention_gqa(
+            &ctx, &c, &lw, &resources, &plan, 5, 32, 6, 0, 5 * 32, 32, 0);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+        int found = 0;
+        for (int i = 0; i < ctx.n; i++) {
+            if (ops[i].op_code == BN_GPU_CODE_FLASH_ATTN ||
+                ops[i].op_code == BN_GPU_CODE_GQA_SCORES) {
+                assert(ops[i].op_code == (flash ? BN_GPU_CODE_FLASH_ATTN : BN_GPU_CODE_GQA_SCORES));
+                assert(ops[i].attention_window == (layer == 0 ? 3 : 0));
+                assert(ops[i].p[2] == 6); /* Masking retains the original cache coordinates. */
+                found++;
+            }
+        }
+        assert(found == 1);
+        bn_transformer_gpu_emit_context_free(&ctx);
+    }
+    printf("PASSED\n");
+}
+
+static void test_attention_sliding_window(void) {
+    printf("test_attention_sliding_window... ");
+    enum { hs = 32, nh = 2, seq = 8, nt = 5, width = hs * nh };
+    BnModel m = {0};
+    m.config.n_layers = 2; m.config.n_heads = nh; m.config.n_kv_heads = 1;
+    m.config.seq_len = seq; m.config.sliding_window = 3;
+    m.config.sliding_window_pattern[0] = 1;
+    BnRunState state = {0};
+    float keys[seq * hs] = {0}, values[seq * hs];
+    uint16_t keys16[seq * hs] = {0}, values16[seq * hs];
+    float queries[nt * width] = {0}, output[nt * width + 2], att[nh * seq];
+    float rope[1] = {0};
+    void (*batch[])(void *, int, int) = {
+        bn_transformer_batched_attn_naive_scalar_range,
+        bn_transformer_batched_attn_flash_scalar_range,
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+        bn_transformer_batched_attn_naive_avx2_range,
+        bn_transformer_batched_attn_flash_avx2_range,
+#endif
+#ifdef __ARM_NEON
+        bn_transformer_batched_attn_naive_neon_range,
+        bn_transformer_batched_attn_flash_neon_range,
+#endif
+    };
+    void (*decode[])(void *, int, int) = {
+        bn_transformer_gqa_scalar_range, bn_transformer_flash_gqa_scalar_range,
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+        bn_transformer_gqa_avx2_range, bn_transformer_flash_gqa_avx2_range,
+#endif
+#if defined(__AVX512F__) && defined(__AVX512BW__) && !defined(BN_FORCE_SCALAR)
+        bn_transformer_gqa_avx512_range,
+#endif
+    };
+    for (int fp16 = 0; fp16 < 2; fp16++) {
+        state.key_cache = fp16 ? (float *)keys16 : keys;
+        state.value_cache = fp16 ? (float *)values16 : values;
+        state.q = queries; state.xb = output + 1; state.att = att;
+        for (int flash = 0; flash < 2; flash++) {
+            m.config.flash_attn = flash;
+            for (int layer = 0; layer < 2; layer++) {
+                for (int t = 0; t < seq; t++) for (int d = 0; d < hs; d++) {
+                    values[t * hs + d] = 3.0f * (t + 1) + (float)(d % 4) / 8.0f;
+                    values16[t * hs + d] = bn_fp32_to_fp16(values[t * hs + d]);
+                }
+                BnBatchedAttnCtx b = {
+                    .c = &m.config, .s = &state, .Q_buf = queries,
+                    .out = output + 1, .layer = layer, .n_tokens = nt,
+                    .n_heads = nh, .n_kv_heads = 1, .head_size = hs,
+                    .kv_dim = hs, .kv_mul = nh, .seq_len = seq,
+                    .rope_cos = rope, .rope_sin = rope, .attention_scale = 1.0f,
+                    .kv_cache_uses_fp16_rows = fp16, .wq_rows = width, .wo_cols = width,
+                };
+                for (size_t fn = 0; fn <= sizeof(batch) / sizeof(batch[0]); fn++) {
+                    output[0] = output[nt * width + 1] = -12345.0f;
+                    if (fn == 0) assert(bn_transformer_batched_attn_dispatch(&m, &b) == 0);
+                    else {
+                        b.attention_window = layer == 0 ? 3 : 0;
+                        batch[fn - 1](&b, 0, nh);
+                    }
+                    for (int t = 0; t < nt; t++) for (int h = 0; h < nh; h++) for (int d = 0; d < hs; d++) {
+                        int first = layer == 0 && t >= 3 ? t - 2 : 0;
+                        float expected = 1.5f * (first + t + 2) + (float)(d % 4) / 8.0f;
+                        assert(fabsf(output[1 + t * width + h * hs + d] - expected) < 2e-4f);
+                    }
+                    assert(output[0] == -12345.0f && output[nt * width + 1] == -12345.0f);
+                }
+                /* Position nine wraps the cache; the three-token window must
+                 * select absolute positions seven, eight and nine. */
+                for (int slot = 0; slot < seq; slot++) for (int d = 0; d < hs; d++) {
+                    int pos = slot < 2 ? slot + seq : slot;
+                    values[slot * hs + d] = 3.0f * (pos + 1) + (float)(d % 4) / 8.0f;
+                    values16[slot * hs + d] = bn_fp32_to_fp16(values[slot * hs + d]);
+                }
+                BnGQACtx g = {
+                    .c = &m.config, .s = &state, .pos = 9, .n_kv = seq,
+                    .kv_mul = nh, .head_size = hs, .kv_dim = hs, .seq_len = seq,
+                    .attention_scale = 1.0f, .kv_cache_uses_fp16_rows = fp16, .layer = layer,
+                };
+                bn_transformer_cpu_gqa_dispatch(&m, &g, nh, nh);
+                for (size_t fn = 0; fn <= sizeof(decode) / sizeof(decode[0]); fn++) {
+                    if (fn) decode[fn - 1](&g, 0, nh);
+                    for (int h = 0; h < nh; h++) for (int d = 0; d < hs; d++) {
+                        float expected = (layer == 0 ? 27.0f : 19.5f) + (float)(d % 4) / 8.0f;
+                        assert(fabsf(output[1 + h * hs + d] - expected) < 2e-4f);
+                    }
+                }
+            }
+        }
+    }
+    printf("PASSED\n");
+}
+
+static void test_batched_attn_fp32_wrapped_kv(void) {
+    printf("test_batched_attn_fp32_wrapped_kv... ");
+#if defined(__AVX2__) && !defined(BN_FORCE_SCALAR)
+    enum { head_size = 128, seq_len = 61, pos = 70 };
+    BnConfig c = {0};
+    BnRunState s = {0};
+    float key_cache[seq_len * head_size];
+    float value_cache[seq_len * head_size];
+    float q_buf[head_size];
+    float out_scalar[head_size];
+    float out_avx[head_size];
+    float rope_cos[1] = {0.0f};
+    float rope_sin[1] = {0.0f};
+    for (int i = 0; i < seq_len * head_size; i++) {
+        key_cache[i] = (float)((i * 17) % 101 - 50) / 127.0f;
+        value_cache[i] = (float)((i * 29) % 113 - 56) / 131.0f;
+    }
+    for (int i = 0; i < head_size; i++)
+        q_buf[i] = (float)((i * 11) % 31 - 15) / 97.0f;
+    s.key_cache = key_cache;
+    s.value_cache = value_cache;
+    BnBatchedAttnCtx ctx = {
+        .c = &c, .s = &s, .Q_buf = q_buf, .out = out_scalar,
+        .loff = 0, .pos0 = pos, .n_tokens = 1,
+        .n_heads = 1, .n_kv_heads = 1, .head_size = head_size,
+        .kv_dim = head_size, .kv_mul = 1, .seq_len = seq_len,
+        .rope_dims = 0, .rope_cos = rope_cos, .rope_sin = rope_sin,
+        .attention_scale = 1.0f / sqrtf((float)head_size),
+        .kv_cache_uses_fp16_rows = 0, .norm_eps = 1e-5f,
+        .wq_rows = head_size, .wo_cols = head_size,
+    };
+    bn_transformer_batched_attn_naive_scalar_range(&ctx, 0, 1);
+    ctx.out = out_avx;
+    bn_transformer_batched_attn_naive_avx2_range(&ctx, 0, 1);
+    for (int i = 0; i < head_size; i++)
+        assert(fabsf(out_avx[i] - out_scalar[i]) < 2e-6f);
+#endif
+    printf("PASSED\n");
+}
+
+static void test_batched_attn_avx512_value_order(void) {
+#if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)
+    printf("test_batched_attn_avx512_value_order... ");
+    const int dimensions[] = {8, 24, 64, 72, 128, 256};
+    const int lengths[] = {1, 15, 16, 17, 63, 64, 65, 127, 128, 129, 257};
+    enum { max_head = 256, heads = 2, max_seq = 264, prefix = 13 };
+    size_t capacity = prefix + (size_t)max_seq * heads * max_head;
+    float *keys = calloc(capacity, sizeof(float));
+    float *values = malloc(capacity * sizeof(float));
+    assert(keys && values);
+    for (size_t i = 0; i < capacity; i++) {
+        keys[i] = sinf((float)i * 0.019f);
+        values[i] = sinf((float)i * 0.17f) * 11.0f;
+    }
+    for (size_t shape = 0; shape < sizeof(dimensions) / sizeof(dimensions[0]); shape++) {
+        int head = dimensions[shape], kv_dim = heads * head;
+        float q[heads * max_head] = {0}, actual[heads * max_head];
+        float expected[heads * max_head], rope[1] = {0};
+        if (head >= 64)
+            for (int h = 0; h < heads; h++) q[h * head] = 1.0f;
+        for (int length = 0; length < 11; length++) {
+            int n = lengths[length];
+            for (int wrapped = 0; wrapped < 2; wrapped++) {
+                int seq = wrapped ? n : n + 7;
+                int pos = wrapped ? n + 13 : n - 1;
+                int start = pos - n + 1;
+                BnConfig c = {0};
+                BnRunState s = {.key_cache = keys, .value_cache = values};
+                BnBatchedAttnCtx ctx = {
+                    .c = &c, .s = &s, .Q_buf = q, .out = actual,
+                    .loff = prefix, .pos0 = pos, .n_tokens = 1,
+                    .n_heads = heads, .n_kv_heads = heads, .head_size = head,
+                    .kv_dim = kv_dim, .kv_mul = 1, .seq_len = seq,
+                    .rope_dims = 0, .rope_cos = rope, .rope_sin = rope,
+                    .attention_scale = 0.375f, .wq_rows = heads * head,
+                    .wo_cols = heads * head,
+                };
+                bn_transformer_batched_attn_naive_avx2_range(&ctx, 0, heads);
+                for (int h = 0; h < heads; h++) {
+                    float att[512];
+                    int padded = (n + 255) & ~255;
+                    for (int i = 0; i < n; i++)
+                        att[i] = head >= 64
+                            ? keys[prefix + ((start + i) % seq) * kv_dim + h * head] * 0.375f
+                            : 0.0f;
+                    for (int i = n; i < padded; i++) att[i] = -INFINITY;
+                    bn_transformer_softmax(att, padded);
+                    for (int d = 0; d < head; d++) {
+                        // Independent token-strided reference for the native
+                        // SGEMM order: one vector accumulator per output.
+                        __m512 acc = _mm512_setzero_ps();
+                        for (int i = 0; i < n; i += 16) {
+                            int offsets[16] = {0};
+                            int active = n - i < 16 ? n - i : 16;
+                            for (int j = 0; j < active; j++)
+                                offsets[j] = ((start + i + j) % seq) * kv_dim;
+                            __mmask16 mask = (__mmask16)((1u << active) - 1u);
+                            __m512 v = _mm512_mask_i32gather_ps(_mm512_setzero_ps(),
+                                mask, _mm512_loadu_si512((const void *)offsets),
+                                values + prefix + h * head + d, 4);
+                            acc = _mm512_mask3_fmadd_ps(
+                                _mm512_maskz_loadu_ps(mask, att + i), v, acc, mask);
+                        }
+                        expected[h * head + d] = _mm512_reduce_add_ps(acc);
+                    }
+                }
+                assert(memcmp(actual, expected, (size_t)heads * head * sizeof(float)) == 0);
+            }
+        }
+    }
+    free(keys);
+    free(values);
+    printf("PASSED\n");
+#endif
+}
+
 static void test_gqa_neon_small_kv_matches_scalar(void) {
     printf("test_gqa_neon_small_kv_matches_scalar... ");
 #ifdef __ARM_NEON
@@ -8505,10 +9871,322 @@ static void test_gqa_neon_small_kv_matches_scalar(void) {
     printf("PASSED\n");
 }
 
+static void test_attention_sigmoid_gate_reference(void) {
+#if defined(__AVX2__)
+    printf("test_attention_sigmoid_gate_reference... ");
+    const BnCPUBackendOps *ops =
+        bn_transformer_cpu_backend_ops(test_cpu_policy());
+    float gate[259], actual[259], expected[259];
+    const int sizes[] = {256, 0, 1, 7, 8, 9, 15, 16, 17, 257};
+    for (size_t c = 0; c < sizeof(sizes) / sizeof(sizes[0]); c++) {
+        int n = sizes[c];
+        for (int i = 0; i < 259; i++) {
+            gate[i] = sinf(i * 0.13f) * 12.0f;
+            actual[i] = expected[i] = cosf(i * 0.17f);
+        }
+        for (int i = 1; i <= n; i++)
+            expected[i] *= 1.0f / (1.0f + expf(-gate[i]));
+        ops->apply_sigmoid_gate(actual + 1, gate + 1, n);
+        assert(memcmp(actual, expected, sizeof(actual)) == 0);
+    }
+    printf("PASSED\n");
+#endif
+}
+
+static void test_gqa_avx512_matches_scalar(void) {
+    printf("test_gqa_avx512_matches_scalar... ");
+#ifdef __AVX512F__
+    enum { n_heads = 2, head_size = 128, seq_len = 16, kv_dim = 128 };
+    float q[n_heads * head_size];
+    float keys[seq_len * kv_dim];
+    float values[seq_len * kv_dim];
+    uint16_t keys_f16[seq_len * kv_dim];
+    uint16_t values_f16[seq_len * kv_dim];
+    float att[n_heads * seq_len];
+    float scalar_out[n_heads * head_size];
+    float avx512_out[n_heads * head_size];
+    for (int i = 0; i < n_heads * head_size; i++)
+        q[i] = 0.00390625f * (float)(((i * 11 + 3) % 61) - 30);
+    for (int i = 0; i < seq_len * kv_dim; i++) {
+        keys[i] = 0.0078125f * (float)(((i * 7 + 5) % 47) - 23);
+        values[i] = 0.005859375f * (float)(((i * 13 + 1) % 53) - 26);
+        keys_f16[i] = bn_fp32_to_fp16(keys[i]);
+        values_f16[i] = bn_fp32_to_fp16(values[i]);
+    }
+
+    BnRunState s = {0};
+    s.q = q;
+    s.att = att;
+    BnGQACtx ctx = {
+        .s = &s,
+        .loff = 0,
+        .pos = 11,
+        .n_kv = 12,
+        .kv_mul = 2,
+        .head_size = head_size,
+        .kv_dim = kv_dim,
+        .seq_len = seq_len,
+        .attention_scale = 1.0f / sqrtf((float)head_size),
+    };
+
+    for (int fp16 = 0; fp16 <= 1; fp16++) {
+        s.key_cache = fp16 ? (float *)keys_f16 : keys;
+        s.value_cache = fp16 ? (float *)values_f16 : values;
+        ctx.kv_cache_uses_fp16_rows = fp16;
+        s.xb = scalar_out;
+        bn_transformer_gqa_scalar_range(&ctx, 0, n_heads);
+        s.xb = avx512_out;
+        bn_transformer_gqa_avx512_range(&ctx, 0, n_heads);
+        for (int i = 0; i < n_heads * head_size; i++)
+            assert(fabsf(avx512_out[i] - scalar_out[i]) < 1e-6f);
+    }
+#endif
+    printf("PASSED\n");
+}
+
+static void test_prefill_reference_silu_order(void) {
+    printf("test_prefill_reference_silu_order... ");
+#ifdef __AVX512F__
+    float gate_storage[16] = {
+        -3.25f, -1.5f, -0.375f, 0.125f,
+        0.75f, 1.625f, 2.875f, 4.5f
+    };
+    float *gate = gate_storage;
+    const float up[8] = {
+        0.625f, -1.25f, 2.5f, -3.75f,
+        4.125f, -0.875f, 1.75f, -2.25f
+    };
+    float expected_storage[16];
+    __m512 g = _mm512_loadu_ps(gate_storage);
+    __m512 denominator = _mm512_add_ps(
+        _mm512_set1_ps(1.0f),
+        bn_avx512_fast_exp_ps(_mm512_sub_ps(_mm512_setzero_ps(), g)));
+    __m512 up_v = _mm512_maskz_loadu_ps((__mmask16)0xff, up);
+    _mm512_storeu_ps(expected_storage, _mm512_mul_ps(
+        _mm512_div_ps(g, denominator), up_v));
+    float *expected = expected_storage;
+#elif defined(__AVX2__)
+    float gate[8] = {
+        -3.25f, -1.5f, -0.375f, 0.125f,
+        0.75f, 1.625f, 2.875f, 4.5f
+    };
+    const float up[8] = {
+        0.625f, -1.25f, 2.5f, -3.75f,
+        4.125f, -0.875f, 1.75f, -2.25f
+    };
+    float expected[8];
+    __m256 g = _mm256_loadu_ps(gate);
+    __m256 denominator = _mm256_add_ps(
+        _mm256_set1_ps(1.0f),
+        bn_avx2_fast_exp_ps(_mm256_sub_ps(_mm256_setzero_ps(), g)));
+    _mm256_storeu_ps(expected, _mm256_mul_ps(
+        _mm256_div_ps(g, denominator), _mm256_loadu_ps(up)));
+#endif
+#if defined(__AVX512F__) || defined(__AVX2__)
+    BnPrefillFFNActCtx ctx = {
+        gate, up, 8, BN_MODEL_ACTIVATION_SILU, 1
+    };
+    bn_transformer_prefill_cpu_ops()->ffn_activation(&ctx, 0, 1);
+    assert(memcmp(gate, expected, 8 * sizeof(*gate)) == 0);
+#endif
+    printf("PASSED\n");
+}
+
+/* Execute the emitted layer boundary on synthetic activations. Starting with
+ * a stale XB mirrors the fused FFN residual/normalization path. Non-unit and
+ * tiny scales expose both stale normalization and x + (scale - 1) * x. */
+static void test_gpu_layer_output_scale_normalization(void) {
+    const float scales[] = {0.08935546875f, -0.5f, 0.0f, 1.0f, 1.0e-8f};
+    const float input[4] = {1.0f, -2.0f, 3.0f, 4.0f};
+    float weight[4] = {1.0f, 0.5f, -1.0f, 2.0f};
+    const float eps = 0.25f;
+    uint32_t u_eps;
+    memcpy(&u_eps, &eps, sizeof(u_eps));
+    for (size_t c = 0; c < sizeof(scales) / sizeof(scales[0]); c++) {
+        BnGPUOp ops[4];
+        BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx, ops, 4);
+        assert(bn_transformer_gpu_emit_context_layer_output_scale(
+                   &ctx, 4, scales[c], weight, u_eps) == 0);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+        float x[4], xb[4];
+        memcpy(x, input, sizeof(x));
+        for (int j = 0; j < 4; j++)
+            xb[j] = input[j] * weight[j] / sqrtf(7.5f + eps);
+        for (int i = 0; i < ctx.n; i++) {
+            const BnGPUOp *op = &ops[i];
+            assert(op->buf_in == BN_GPU_VALUE_X);
+            assert(op->p[0] == 4);
+            if (op->op_code == BN_GPU_CODE_WEIGHTED_ADD) {
+                assert(op->buf_aux == BN_GPU_VALUE_X);
+                float alpha;
+                memcpy(&alpha, &op->p[1], sizeof(alpha));
+                for (int j = 0; j < 4; j++)
+                    x[j] = op->p[2] ? alpha * x[j] : x[j] + alpha * x[j];
+            } else {
+                assert(op->op_code == BN_GPU_CODE_RMSNORM);
+                assert(op->buf_out == BN_GPU_VALUE_XB);
+                assert(op->W_buf == weight);
+                float op_eps, sum = 0.0f;
+                memcpy(&op_eps, &op->p[1], sizeof(op_eps));
+                for (int j = 0; j < 4; j++) sum += x[j] * x[j];
+                for (int j = 0; j < 4; j++)
+                    xb[j] = x[j] * weight[j] / sqrtf(sum / 4.0f + op_eps);
+            }
+        }
+        for (int j = 0; j < 4; j++) {
+            float expected_x = input[j] * scales[c];
+            float expected_xb = expected_x * weight[j] /
+                sqrtf(7.5f * scales[c] * scales[c] + eps);
+            assert(x[j] == expected_x);
+            assert(fabsf(xb[j] - expected_xb) <=
+                   1.0e-6f * fabsf(expected_xb));
+        }
+        bn_transformer_gpu_emit_context_free(&ctx);
+    }
+    printf("test_gpu_layer_output_scale_normalization... PASSED\n");
+}
+
+static void test_gpu_reference_rmsnorm_emission(void) {
+    int norm_handle = 0;
+    BnGPUOp ops[4] = {{0}};
+    BnTransformerGPUEmitContext ctx;
+    bn_transformer_gpu_emit_context_init(&ctx, ops, 4);
+    ctx.reference_rmsnorm_order = 1;
+    assert(bn_transformer_gpu_emit_context_rmsnorm(
+               &ctx, &norm_handle, BN_GPU_VALUE_X, BN_GPU_VALUE_XB,
+               5120, 0) == 0);
+    assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+    assert(ctx.n == 1);
+    assert(ops[0].op_code == BN_GPU_CODE_RMSNORM);
+    assert(ops[0].flags & BN_GPU_OP_FLAG_RMSNORM_REFERENCE_ORDER);
+    bn_transformer_gpu_emit_context_free(&ctx);
+
+    memset(ops, 0, sizeof(ops));
+    bn_transformer_gpu_emit_context_init(&ctx, ops, 4);
+    ctx.reference_rmsnorm_order = 1;
+    assert(bn_transformer_gpu_emit_context_residual_rmsnorm(
+               &ctx, BN_GPU_VALUE_X, BN_GPU_VALUE_XB,
+               BN_GPU_VALUE_HB, 5120, 0, &norm_handle) == 0);
+    assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+    assert(ctx.n == 1);
+    assert(ops[0].op_code == BN_GPU_CODE_RESIDUAL_RMSNORM);
+    assert(ops[0].p[7] == 1);
+    bn_transformer_gpu_emit_context_free(&ctx);
+    printf("test_gpu_reference_rmsnorm_emission... PASSED\n");
+}
+
+static void test_gpu_recurrent_quant_contract(void) {
+    const int types[] = {BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
+                         BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q8_0,
+                         BN_GGUF_TENSOR_F32};
+    for (int reference = 0; reference < 2; reference++) {
+        for (int block32 = 0; block32 < 2; block32++) {
+            for (size_t t = 0; t < sizeof(types) / sizeof(types[0]); t++) {
+                BnGPUBackend gpu = {0};
+                gpu.caps = BN_GPU_CAP_REFERENCE_RECURRENT |
+                    (block32 ? BN_GPU_CAP_KQUANT_BLOCK32_RECURRENT : 0);
+                BnConfig config = {0};
+                config.dim = 256;
+                config.ssm_group_count = config.ssm_time_step_rank = 1;
+                config.ssm_state_size = config.ssm_inner_size = 128;
+                config.ssm_conv_kernel = 4;
+                config.policy_flags = reference ?
+                    BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT : 0;
+                BnLayerWeights layer = {0};
+                BnQWeight *weights[] = {&layer.ssm.wqkv, &layer.ssm.wz,
+                    &layer.ssm.ssm_alpha, &layer.ssm.ssm_beta, &layer.ssm.ssm_out};
+                const int rows[] = {384, 128, 1, 1, 256};
+                for (int j = 0; j < 5; j++) {
+                    weights[j]->type = types[t]; weights[j]->rows = rows[j];
+                    weights[j]->cols = j == 4 ? 128 : 256;
+                }
+                int handles[9] = {0};
+                BnTransformerGPUSSMResources res = {0};
+                res.gpu = &gpu;
+                res.wqkv = &handles[0]; res.wz = &handles[1];
+                res.ssm_alpha = &handles[2]; res.ssm_beta = &handles[3];
+                res.ssm_out = &handles[4]; res.ssm_conv1d = &handles[5];
+                res.ssm_dt_bias = &handles[6]; res.ssm_a_log = &handles[7];
+                res.ssm_norm = &handles[8];
+                BnLayerShapePlan plan = {0};
+                BnGPUOp ops[32] = {{0}};
+                BnTransformerGPUEmitContext ctx;
+                bn_transformer_gpu_emit_context_init(&ctx, ops, 32);
+                ctx.gpu = &gpu;
+                bn_transformer_gpu_emit_context_ssm(&ctx, &config, &layer,
+                    &plan, &res, 256, 0, 0, 0, 1);
+                assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+                int projections = 0;
+                for (int i = 0; i < ctx.n; i++) {
+                    if (ops[i].op_code != BN_GPU_CODE_MATVEC) continue;
+                    assert(projections < 5);
+                    assert(ops[i].W_buf == &handles[projections]);
+                    uint32_t expected = reference && !block32 && t < 3
+                        ? BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT : 0;
+                    assert(ops[i].flags == expected);
+                    projections++;
+                }
+                assert(projections == 5);
+                bn_transformer_gpu_emit_context_free(&ctx);
+            }
+        }
+    }
+    printf("GPU recurrent quant contract PASSED\n");
+}
+
+static void test_greedy_token_state_preparation(void) {
+    BnModel model = {0};
+    BnSession session = {0};
+    float embeddings[] = {0, 0, 1, -1, 2, -2, 3, -3};
+    float input[2] = {99, 99};
+    int history[4] = {-1, -1, -1, -1};
+    model.config.dim = 2;
+    model.config.vocab_size = 4;
+    model.config.seq_len = 4;
+    model.weights.emb_type = BN_GGUF_TENSOR_F32;
+    model.weights.token_embedding = embeddings;
+    session.state.x = input;
+    session.state.token_history = history;
+    int next = -7;
+    /* Even a declined acceleration attempt prepares the current token before
+     * falling back. Consecutive calls retain the predecessors needed by PLE. */
+    for (int token = 1; token <= 3; token++) {
+        assert(bn_transformer_forward_argmax(&model, &session, token, token + 1,
+            NULL, 0, 1.0f, &next) == -1);
+        assert(next == -7);
+        assert(input[0] == (float)token && input[1] == -(float)token);
+        assert(history[(token + 1) % 4] == token);
+    }
+    const int expected[] = {3, -1, 1, 2};
+    assert(memcmp(history, expected, sizeof(history)) == 0);
+    assert(bn_transformer_forward_argmax(&model, &session, 4, 5,
+        NULL, 0, 1.0f, &next) == -1);
+    assert(bn_transformer_forward_argmax(&model, &session, 0, -1,
+        NULL, 0, 1.0f, &next) == -1);
+    assert(bn_transformer_forward_argmax(&model, &session, 0, 5,
+        NULL, 0, 1.0f, NULL) == -1);
+    assert(memcmp(history, expected, sizeof(history)) == 0);
+    assert(input[0] == 3 && input[1] == -3);
+    printf("Greedy token state preparation PASSED\n");
+}
+
 int main(void) {
+    test_greedy_token_state_preparation();
+    test_prefill_expert_batch_geometry();
+    test_prefill_logical_projection_rows();
+    test_prefill_scaled_norm_raw_weight_contract();
     printf("=== Transformer Tests ===\n");
+    test_gpu_layer_output_scale_normalization();
+    test_gpu_reference_rmsnorm_emission();
+    test_gpu_token_staging_preserves_prepared_rope();
     test_rmsnorm();
+    test_rmsnorm_reference_contract();
     test_rmsnorm_simd_matches_scalar_order();
+    test_sum_products_rounding();
+    test_scaled_silu_order();
+    test_dilated_conv_and_branch_order();
+    test_scaled_residual_rounding();
     test_softmax();
     test_runtime_softmax();
     test_rope();
@@ -8516,14 +10194,25 @@ int main(void) {
     test_fast_silu();
     test_cpu_execution_helpers();
     test_gpu_capability_routing();
+    test_gpu_recurrent_quant_contract();
+    test_prefill_microbatch_policy();
     test_gpu_policy_helpers();
     test_logits_policy_helpers();
     test_gpu_op_kind_mapping();
+    test_gpu_staged_value_normalization();
     test_model_arch_registry();
     test_layer_shape_planning();
     test_block_planning();
+    test_batched_attn_padded_alias();
     test_batched_attn_fp16_kv();
+    test_gpu_attention_window_emission();
+    test_attention_sliding_window();
+    test_batched_attn_fp32_wrapped_kv();
+    test_batched_attn_avx512_value_order();
     test_gqa_neon_small_kv_matches_scalar();
+    test_gqa_avx512_matches_scalar();
+    test_attention_sigmoid_gate_reference();
+    test_prefill_reference_silu_order();
     printf("All transformer tests passed!\n");
     return 0;
 }

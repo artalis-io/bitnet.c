@@ -59,6 +59,12 @@ typedef struct {
     uint8_t  qs[16];  // packed nibbles (2 values per byte)
 } BnBlockQ4_0;
 
+// Backend-owned CPU layout: eight output rows sharing one input block.
+typedef struct {
+    uint16_t d[8];
+    uint8_t qs[8][16];
+} BnBlockQ4_0x8;
+
 // MXFP4: 32 E2M1 values sharing one E8M0 power-of-two scale.
 typedef struct {
     uint8_t e;
@@ -136,6 +142,16 @@ typedef struct {
     uint8_t  qs[BN_QK_K / 2];   // 128 bytes: low 4 bits of each quant
 } BnBlockQ5K;                    // 176 bytes total
 
+// Runtime Q5_K layout interleaving 8 output rows for CPU GEMV/GEMM.
+// This mirrors llama.cpp's Q5_Kx8 repack and is not a GGUF disk format.
+typedef struct {
+    uint16_t d[8];
+    uint16_t dmin[8];
+    uint8_t scales[96];
+    uint8_t qh[256];
+    uint8_t qs[1024];
+} BnBlockQ5Kx8;
+
 // Q6_K: 6-bit k-quant, 256 elements per block
 // 128 bytes ql (lower 4 bits) + 64 bytes qh (upper 2 bits) + 16 int8 scales + FP16 d = 210 bytes
 typedef struct {
@@ -144,6 +160,14 @@ typedef struct {
     int8_t  scales[BN_QK_K / 16]; // 16 bytes: 8-bit sub-block scales
     uint16_t d;                  //   2 bytes: FP16 super-block scale
 } BnBlockQ6K;                    // 210 bytes total
+
+// Runtime Q6_K layout interleaving 8 output rows for CPU prompt matmul.
+typedef struct {
+    uint16_t d[8];
+    int8_t scales[BN_QK_K / 16 * 8];
+    uint8_t ql[BN_QK_K / 2 * 8];
+    uint8_t qh[BN_QK_K / 4 * 8];
+} BnBlockQ6Kx8;
 
 typedef struct {
     float d;
@@ -186,8 +210,8 @@ typedef struct {
     uint8_t  qs[BN_QK_K / 4];      // 64 bytes: 8-bit grid indices
     uint8_t  qh[BN_QK_K / 32];     //  8 bytes: high bits for 9-bit grid indices
     uint8_t  signs[BN_QK_K / 8];   // 32 bytes: sign bits (1 per element)
-    uint8_t  scales[BN_QK_K / 32]; //  8 bytes: 4-bit sub-block scales (nibble-packed)
-} BnBlockIQ3S;                      // 114 bytes total
+    uint8_t  scales[BN_QK_K / 64]; //  4 bytes: 4-bit sub-block scales (nibble-packed)
+} BnBlockIQ3S;                      // 110 bytes total
 
 // IQ2_XXS: 2-bit codebook quantization, 256 elements per block
 typedef struct {
@@ -224,6 +248,9 @@ typedef enum {
     BN_PREPARED_WEIGHT_Q4_K_SCALES = 3,
     BN_PREPARED_WEIGHT_Q6_K_EXPANDED = 4,
     BN_PREPARED_WEIGHT_Q8_0_REPACK = 5,
+    BN_PREPARED_WEIGHT_Q5_K_X8 = 6,
+    BN_PREPARED_WEIGHT_Q6_K_X8 = 7,
+    BN_PREPARED_WEIGHT_Q4_0_X8 = 8,
 } BnPreparedWeightKind;
 
 // Backend/runtime-prepared layout for a quantized weight tensor.
@@ -294,6 +321,56 @@ typedef enum {
 #define BN_QUANT_CAP_GPU_NATIVE_QUANT_SPLIT (UINT64_C(1) << 33)
 #define BN_QUANT_CAP_MOE_ROUTED_LOWBIT_BLOCK32 (UINT64_C(1) << 34)
 #define BN_QUANT_CAP_GPU_REFERENCE_PREPARED_ACCUMULATION (UINT64_C(1) << 35)
+#define BN_QUANT_CAP_GPU_PACKED_CODEBOOK_MATVEC (UINT64_C(1) << 36)
+#define BN_QUANT_CAP_MOE_ROUTED_MIDBIT_BLOCK32_DOWN (UINT64_C(1) << 37)
+#define BN_QUANT_CAP_MOE_ROUTED_MIDBIT_KQUANT_GATEUP (UINT64_C(1) << 38)
+// Native x86 matmul preserves the default zero-flag batched-matvec reduction
+// order. Dispatch must still check runtime diagnostic overrides.
+#define BN_QUANT_CAP_CPU_X86_GEMV_ORDER_MATMUL (UINT64_C(1) << 39)
+// GPU matrix-matrix input uses FP16 block32 scales and original (not
+// quantized) activation sums, with FP16 weight scale/min products.
+#define BN_QUANT_CAP_GPU_MMQ_ORIGINAL_SUM (UINT64_C(1) << 40)
+// GPU matrix-matrix input retains FP32 block32 activation scales.
+#define BN_QUANT_CAP_GPU_MMQ_F32_SCALE (UINT64_C(1) << 41)
+// Signed MMQ weights apply FP32 scales to 16- or 32-element subblocks.
+// These supplement the FP32 activation-scale contract above.
+#define BN_QUANT_CAP_GPU_MMQ_SUBBLOCK16 (UINT64_C(1) << 42)
+#define BN_QUANT_CAP_GPU_MMQ_SUBBLOCK32 (UINT64_C(1) << 43)
+// MMVQ applies integer subblock scales before FP16 weight/input scale products.
+#define BN_QUANT_CAP_GPU_MMVQ_SUBBLOCK32_INT_SCALE (UINT64_C(1) << 44)
+// MMVQ reduces two 16-element codebook dot products per32-element block,
+// using FP16 weight/input scale products and ordered lane accumulation.
+#define BN_QUANT_CAP_GPU_MMVQ_BLOCK32_CODEBOOK_FP16 (UINT64_C(1) << 45)
+// MMVQ accumulates four integer-scaled partials with FP16 input scales
+// before applying the enclosing 256-element weight block scale.
+#define BN_QUANT_CAP_GPU_MMVQ_SUBBLOCK16_INPUT_SCALE (UINT64_C(1) << 46)
+// Block32 E2M1 weights use E8M0 scales; MMVQ inputs use FP16 Q8 scales.
+#define BN_QUANT_CAP_GPU_MMVQ_BLOCK32_E8M0 (UINT64_C(1) << 47)
+// MMQ uses block32 E2M1/E8M0 inputs and native block-scaled FP4 accumulation.
+// Backends must check instruction availability before accepting this format.
+#define BN_QUANT_CAP_GPU_MMQ_BLOCK32_FP4 (UINT64_C(1) << 48)
+// x86 packed projections sum a full block in integers before its scale FMA.
+#define BN_QUANT_CAP_CPU_X86_PACKED_BLOCK32_SUM (UINT64_C(1) << 49)
+// Raw block32 nibble MMVQ uses FP16 original-activation sums for correction.
+#define BN_QUANT_CAP_GPU_MMVQ_BLOCK32_NIBBLE_ORIGINAL_SUM (UINT64_C(1) << 50)
+// Signed block32 nibble MMQ uses FP16 input scales and ordered split-K sums.
+#define BN_QUANT_CAP_GPU_MMQ_BLOCK32_SIGNED_NIBBLE (UINT64_C(1) << 51)
+// Gathered expert projections preserve global routed MMVQ/MMQ geometry.
+#define BN_QUANT_CAP_GPU_ROUTED_BLOCK32_NIBBLE (UINT64_C(1) << 52)
+// MMQ reductions depend on each logical projection's row count.
+#define BN_QUANT_CAP_GPU_MMQ_LOGICAL_PROJECTION_ROWS (UINT64_C(1) << 53)
+#define BN_QUANT_CAP_GPU_ROUTED_MERGED_PROJECTION_ROWS (UINT64_C(1) << 54)
+// Routed E8M0 projections and ordered K-quant expert-down accumulation.
+#define BN_QUANT_CAP_GPU_ROUTED_BLOCK32_E8M0 (UINT64_C(1) << 55)
+#define BN_QUANT_CAP_GPU_ROUTED_KQUANT_ORDERED_DOWN (UINT64_C(1) << 56)
+#define BN_QUANT_CAP_GPU_ROUTED_KQUANT_ORDERED_GATEUP (UINT64_C(1) << 57)
+#define BN_QUANT_CAP_GPU_ROUTED_KQUANT_ORDERED_SIGNED_DOWN (UINT64_C(1) << 58)
+// Routed affine block32 MMVQ preserves original sums and half-product rounding.
+#define BN_QUANT_CAP_GPU_ROUTED_BLOCK32_AFFINE_MMVQ_DOWN (UINT64_C(1) << 59)
+#define BN_QUANT_CAP_GPU_ROUTED_KQUANT_MMVQ_GATEUP (UINT64_C(1) << 60)
+// CPU prompt evaluation must use the format's native matrix reduction order;
+// repeating its decode matvec changes floating-point results.
+#define BN_QUANT_CAP_CPU_NATIVE_PREFILL_ORDER (UINT64_C(1) << 61)
 
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,
                                 int8_t *x_q_buf, BnThreadPool *pool);
@@ -319,6 +396,9 @@ int      bn_quant_format_uses_embedded_scale(int type);
 int      bn_quant_format_has_cpu_matvec(int type);
 int      bn_quant_format_has_cpu_batch(int type);
 int      bn_quant_format_has_cpu_matmul(int type);
+int      bn_quant_format_cpu_matmul_matches_matvec(int type);
+int      bn_quant_format_requires_native_cpu_prefill(int type);
+int      bn_quant_format_cpu_matvec_uses_float_input(int type);
 int      bn_quant_format_supports_prepared_kquant(int type);
 int      bn_quant_format_can_cpu_repack(int type);
 int      bn_quant_format_can_gpu_native(int type);
@@ -382,6 +462,7 @@ int      bn_quant_format_is_q8k(int type);
 int      bn_quant_format_is_q8_0(int type);
 int      bn_quant_format_is_q5_0(int type);
 int      bn_quant_format_supports_f16_float_cache_matvec(int type);
+int      bn_quant_format_supports_packed_codebook_matvec(int type);
 int      bn_quant_format_can_convert_dense_to_f32(int type);
 int      bn_quant_format_convert_dense_to_f32(int type, const void *src,
                                               float *dst, int n);
@@ -408,6 +489,7 @@ int      bn_quant_format_avoids_quant_matmul_on_f16_input(int type);
 int      bn_quant_format_supports_requested_quant_matmul(int type);
 int      bn_quant_format_uses_f16_logits_path(int type);
 int      bn_quant_format_tied_logits_uses_quant_path(int type);
+int      bn_quant_format_tied_logits_uses_prepared_weight(int type);
 int      bn_quant_format_supports_logits_i8_cache(int type);
 int      bn_quant_format_tied_logits_uses_f16_path(int type);
 int      bn_quant_format_tied_logits_i8_weight_type(void);
@@ -421,6 +503,9 @@ int      bn_quant_format_supports_moe_asymmetric_kquant_down_route(
 int      bn_quant_format_supports_moe_routed_kquant_gateup(int gate_type,
                                                             int up_type);
 int      bn_quant_format_supports_moe_direct_routed_down(int type);
+int      bn_quant_format_supports_moe_routed_midbit_block32_down(int type);
+int      bn_quant_format_supports_moe_routed_midbit_kquant_gateup(
+    int gate_type, int up_type);
 int      bn_quant_format_supports_cpu_fused_kquant_gateup_silu(int gate_type,
                                                                int up_type);
 int      bn_quant_format_same_quant_format_pair_stackable(int left_type,
@@ -431,6 +516,14 @@ int      bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
 int      bn_quant_format_supports_moe_native_quant_route(int gate_type,
                                                          int up_type,
                                                          int down_type);
+int      bn_quant_format_prefill_requires_logical_rows(int type, int n_tokens);
+int      bn_quant_format_supports_moe_routed_affine_mmvq(int gate_type, int up_type, int down_type);
+int      bn_quant_format_supports_moe_routed_ordered_kquant(int gate_type, int up_type, int down_type);
+int      bn_quant_format_supports_moe_routed_e8m0(int gate_type, int up_type, int down_type);
+int      bn_quant_format_supports_moe_merged_gateup(int gate_type, int up_type);
+int      bn_quant_format_supports_moe_gathered_expert_batch(int gate_type,
+                                                           int up_type,
+                                                           int down_type);
 int      bn_quant_format_supports_moe_routed_lowbit_block32(int gate_type,
                                                             int up_type,
                                                             int down_type);
@@ -440,6 +533,7 @@ size_t   bn_quant_format_data_size(int type, int rows, int cols);
 
 // Compute raw data size in bytes for a quantized weight tensor.
 size_t bn_qweight_data_size(const BnQWeight *w);
+BnQWeight bn_quant_f32_weight(const float *data, int rows, int cols);
 
 float    bn_fp16_to_fp32(uint16_t h);
 uint16_t bn_fp32_to_fp16(float f);
@@ -520,6 +614,14 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 
 size_t bn_quant_prepared_qweight_size(const BnQWeight *W,
                                       BnPreparedWeightKind *kind);
+// Whether current public matvec dispatch consumes a prepared layout; the
+// ability to construct one alone does not imply that this route uses it.
+int bn_quant_matvec_uses_prepared_weight(const BnQWeight *W, uint32_t flags,
+                                         BnThreadPool *pool);
+// Cost policy for a transient layout used by GEMV-order batching. Cached
+// layouts may still be reused; this does not declare format eligibility.
+int bn_quant_batch_preparation_worthwhile(const BnQWeight *W, int n_tokens,
+                                          BnThreadPool *pool);
 int bn_quant_prepare_qweight(BnPreparedWeight *prepared, const BnQWeight *W,
                              SHArena *arena);
 
@@ -546,6 +648,19 @@ void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
                                     const BnPreparedWeight **prepared, int n,
                                     const float *X, int n_tokens,
                                     int8_t *x_q_buf, BnThreadPool *pool);
+
+// Batched GEMV: same per-token arithmetic as zero-flag matvec_batch tasks.
+// Matrices share cols and X. Packed implementations may share preparation
+// and dispatch, but must not substitute a different GEMM reduction order.
+void bn_quant_matmul_prepared_multi_gemv(
+    float **out, const BnQWeight **W, const BnPreparedWeight **prepared,
+    int n, const float *X, int n_tokens, int8_t *x_q_buf, BnThreadPool *pool);
+
+// Batch float-activation matmul using the format's reference matvec kernel.
+// Each output keeps the kernel's original per-row reduction order.
+void bn_quant_matmul_float_x(float *out, const BnQWeight *W,
+                             const float *X, int n_tokens,
+                             BnThreadPool *pool);
 
 // Matmul with prepared K-quant input (avoids redundant re-quantization).
 // x_q/x_d/x_bsums must be [n_tokens * cols] / [n_tokens * n_bpr] / [n_tokens * n_bpr * 16].
@@ -579,12 +694,13 @@ void bn_quant_matmul_prepared_kquant_input_multi(
 bn_tp_fn bn_quant_get_float_kernel(int type);
 
 // Quantize float vector to int8, returns scale = amax/127.
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
-    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
 float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n);
 
 // Quantize float vector to per-block Q8_0: 32-element blocks with per-block scales.
 void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n);
+
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
 void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
                          int16_t *x_bsums, int n);
 

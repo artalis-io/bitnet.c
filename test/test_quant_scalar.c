@@ -4,6 +4,7 @@
 #include "sh_arena.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,10 +16,8 @@ int main(void) {
     int8_t x_q[cols];
     float x_scales[n_blocks];
     float native[rows];
-    float prepared_out[rows];
 
     memset(native, 0, sizeof(native));
-    memset(prepared_out, 0, sizeof(prepared_out));
     for (int r = 0; r < rows; r++) {
         for (int b = 0; b < n_blocks; b++) {
             BnBlockQ4_0 *blk = &blocks[r * n_blocks + b];
@@ -37,11 +36,7 @@ int main(void) {
     };
     BnPreparedWeightKind kind = BN_PREPARED_WEIGHT_NONE;
     size_t bytes = bn_quant_prepared_qweight_size(&weight, &kind);
-    assert(kind == BN_PREPARED_WEIGHT_Q4_0_REPACK && bytes > 0);
-    SHArena *arena = sh_arena_create(bytes + SH_ARENA_ALIGN);
-    assert(arena != NULL);
-    BnPreparedWeight prepared = {0};
-    assert(bn_quant_prepare_qweight(&prepared, &weight, arena) == 0);
+    assert(kind == BN_PREPARED_WEIGHT_NONE && bytes == 0);
 
     for (int b = 0; b < n_blocks; b++) {
         float amax = 0.0f;
@@ -65,15 +60,24 @@ int main(void) {
     BnQ4SdotCtx native_ctx = {
         native, &weight, x_q, x_scales, NULL
     };
-    BnQ4SdotCtx prepared_ctx = {
-        prepared_out, &weight, x_q, x_scales, &prepared
-    };
     bn_quant_q4_scalar_sdot_range(&native_ctx, 0, rows);
-    bn_quant_q4_repacked_scalar_sdot_range(&prepared_ctx, 0, rows);
-    for (int r = 0; r < rows; r++)
-        assert(prepared_out[r] == native[r]);
+    for (int r = 0; r < rows; r++) {
+        float expected = 0.0f;
+        for (int b = 0; b < n_blocks; b++) {
+            const BnBlockQ4_0 *block = &blocks[r * n_blocks + b];
+            int32_t dot = 0;
+            for (int i = 0; i < 16; i++) {
+                dot += ((int32_t)(block->qs[i] & 0x0f) - 8) *
+                       x_q[b * 32 + i];
+                dot += ((int32_t)(block->qs[i] >> 4) - 8) *
+                       x_q[b * 32 + i + 16];
+            }
+            float scale = bn_fp16_to_fp32(block->d) * x_scales[b];
+            expected = fmaf((float)dot, scale, expected);
+        }
+        assert(native[r] == expected);
+    }
 
-    sh_arena_free(arena);
-    printf("Scalar Q4 prepared-layout test PASSED\n");
+    printf("Scalar Q4 dot test PASSED\n");
     return 0;
 }

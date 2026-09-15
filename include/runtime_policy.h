@@ -3,6 +3,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     char **entries;
     size_t count;
@@ -23,5 +27,9 @@ const char *bn_backend_runtime_policy_get(
     const BnBackendRuntimePolicy *policy, const char *name);
 int bn_backend_runtime_policy_enabled(
     const BnBackendRuntimePolicy *policy, const char *name);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // BN_RUNTIME_POLICY_H

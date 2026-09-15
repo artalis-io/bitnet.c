@@ -1,6 +1,7 @@
 #include "transformer_prefill_internal.h"
 #include "backend_model.h"
 #include "backend_quant.h"
+#include "gpu_policy.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
 #include "transformer_cpu_backend_internal.h"
@@ -11,18 +12,31 @@
 #include <stdlib.h>
 #include <string.h>
 
+int bn_transformer_prefill_host_reference_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *config) {
+    return bn_model_transformer_policy_requires_host_reference_prefill(config) &&
+           !bn_gpu_backend_is_cuda(gpu);
+}
+
 int bn_transformer_prefill_profile_enabled(const BnCPURuntimePolicy *runtime) {
     return runtime && runtime->prefill_profile;
 }
 
 int bn_transformer_prefill_hybrid_batch_allowed(
     const BnCPURuntimePolicy *runtime) {
-    return runtime && runtime->prefill_hybrid_batch;
+    return (runtime && runtime->prefill_hybrid_batch) ||
+           bn_transformer_cpu_backend_supports_hybrid_batch_prefill();
 }
 
 int bn_transformer_prefill_requires_token_attention(
     const BnCPURuntimePolicy *runtime) {
     return runtime && runtime->prefill_force_token_attention;
+}
+
+int bn_transformer_prefill_uses_reference_dot_accumulation(
+    const BnConfig *c) {
+    return bn_model_transformer_policy_requires_reference_attention(c);
 }
 
 BnTransformerPrefillLayerKindPolicy
@@ -36,13 +50,9 @@ BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
 bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     const BnConfig *c,
     int gpu_available) {
+    (void)c;
+    (void)gpu_available;
     BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy policy = {0};
-    BnTransformerMoESharedExpertShapePolicy shared_policy =
-        bn_transformer_moe_shared_expert_shape_policy(c, NULL);
-    policy.enabled =
-        bn_transformer_moe_uses_configured_all_active_two_route(c) &&
-        shared_policy.has_shared_expert &&
-        !gpu_available;
     return policy;
 }
 
@@ -247,13 +257,10 @@ bn_transformer_prefill_stacked_attention_gpu_resource_policy(
     if (!backend)
         return policy;
 
-    BnLayerWeights lw = {0};
-    BnTransformerGPUAttentionResources attn_res =
-        bn_transformer_gpu_resolve_attention_resources(NULL, backend, &lw,
-                                                       layer);
-
-    policy.qk = attn_res.qk_stacked;
-    policy.wv = attn_res.wv_prefill;
+    policy.qk = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
+    policy.wv = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
     policy.qk_rows = attn_types.q_rows + attn_types.k_rows;
     policy.qk_type = attn_types.q_type;
     policy.wv_rows = attn_types.v_rows;
@@ -284,6 +291,7 @@ bn_transformer_prefill_raw_attention_gpu_resource_policy(
     BnTransformerGPULayerValidationResources layer_res =
         bn_transformer_gpu_resolve_layer_validation_resources(backend, layer);
     policy.attn_norm = layer_res.attn_norm;
+    policy.attn_post_norm = layer_res.attn_post_norm;
     policy.q_norm = layer_res.q_norm;
     policy.k_norm = layer_res.k_norm;
     policy.valid = attn.valid;
@@ -364,6 +372,8 @@ bn_transformer_prefill_dense_layer_gpu_resource_policy(
         bn_transformer_gpu_resolve_qkv_resources(NULL, backend, lw, layer);
     policy.attn_norm = layer_res.attn_norm;
     policy.ffn_norm = layer_res.ffn_norm;
+    policy.attn_post_norm = layer_res.attn_post_norm;
+    policy.ffn_post_norm = layer_res.ffn_post_norm;
     policy.q_norm = layer_res.q_norm;
     policy.k_norm = layer_res.k_norm;
     policy.q_bias = qkv_res.q_bias;
@@ -375,6 +385,8 @@ bn_transformer_prefill_dense_layer_gpu_resource_policy(
         ffn.valid &&
         policy.attn_norm &&
         policy.ffn_norm &&
+        (!lw->norm.attn_post_norm || policy.attn_post_norm) &&
+        (!lw->norm.ffn_post_norm || policy.ffn_post_norm) &&
         (!lw->attn.q_bias || policy.q_bias) &&
         (!lw->attn.k_bias || policy.k_bias) &&
         (!lw->attn.v_bias || policy.v_bias);
@@ -575,7 +587,8 @@ int bn_transformer_prefill_buffer_shape_policy(
     int max_q_dim,
     int max_rope_dims) {
     if (!out || !c || n_tokens <= 0 || dim <= 0 || max_q_dim < 0 ||
-        max_rope_dims < 0 || c->kv_dim <= 0 || c->hidden_dim <= 0)
+        max_rope_dims < 0 || c->kv_dim <= 0 || c->hidden_dim < 0 ||
+        (c->hidden_dim == 0 && c->n_experts <= 0))
         return 0;
     if (max_q_dim > dim && max_q_dim > INT_MAX / 2)
         return 0;
@@ -590,6 +603,7 @@ int bn_transformer_prefill_buffer_shape_policy(
     policy.hb_stride = c->hidden_dim;
     policy.hb2_stride = c->hidden_dim;
     policy.half_rope = max_rope_dims / 2;
+    policy.gpu_rope_freq_stride = c->head_size / 2;
 
     if (sequence_policy.uses_hybrid_ssm) {
         BnTransformerSSMShapePolicy ssm_shape;
@@ -674,14 +688,15 @@ bn_transformer_prefill_decode_fallback_policy(
     int small_dense_min_tokens,
     int gpu_hybrid_prefill,
     int large_hybrid_prefill_disabled,
-    int hybrid_batch_allowed) {
+    int hybrid_batch_allowed,
+    int cpu_batch_fallback_allowed) {
     BnTransformerPrefillDecodeFallbackPolicy policy = {0};
     int hybrid_batch_decode =
         sequence.uses_hybrid_ssm &&
         !gpu_hybrid_prefill &&
         !hybrid_batch_allowed;
     policy.decode =
-        (gpu_moe_prefill &&
+        (!cpu_batch_fallback_allowed && gpu_moe_prefill &&
          (!moe_prefill_enabled || n_tokens < moe_min_tokens)) ||
         (small_dense_prefill_chain &&
          n_tokens < small_dense_min_tokens) ||
@@ -714,15 +729,40 @@ bn_transformer_prefill_hybrid_model_chain_policy(
     int gpu_hybrid_prefill,
     int pos0,
     int n_layers,
-    int tq_state_available) {
+    int tq_state_available,
+    int prefix_chain_ready) {
     BnTransformerPrefillHybridModelChainPolicy policy = {0};
     policy.enabled =
         hybrid_chain_enabled &&
         gpu_hybrid_prefill &&
-        pos0 == 0 &&
+        (pos0 == 0 || (pos0 > 0 && prefix_chain_ready)) &&
         n_layers > 0 &&
         !tq_state_available;
     return policy;
+}
+
+int bn_transformer_prefill_microbatch_tokens(const BnGPUBackend *gpu) {
+    if (!bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_PREFILL_PREFIX_KV) ||
+        bn_backend_runtime_policy_enabled(&gpu->runtime_policy,
+                                           "BN_GPU_PREFILL_FULL_PROMPT"))
+        return 0;
+    return 512;
+}
+
+int bn_transformer_prefill_prefix_request_allowed(
+        const BnConfig *c, const BnGPUBackend *gpu, int n_tokens, int pos0) {
+    if (!c || !bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_PREFILL_PREFIX_KV) ||
+        !bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL) ||
+        !c->kv_f16 || c->kv_tq_bits || c->n_layers <= 0 ||
+        c->full_attn_interval <= 0 || c->ssm_state_size <= 0 ||
+        c->n_experts <= 0 || c->n_experts_active <= 0 ||
+        c->hyper_connection_count || c->per_layer_input_dim || c->ple_layer ||
+        c->indexer_head_count || c->kv_unique_layer_count ||
+        n_tokens <= 0 || n_tokens > 2048 || pos0 < 0 ||
+        pos0 > 2048 - n_tokens || pos0 > c->seq_len ||
+        n_tokens > c->seq_len - pos0)
+        return 0;
+    return pos0 == 0 || pos0 + n_tokens > 32;
 }
 
 int bn_transformer_prefill_hybrid_chain_enabled(
@@ -771,6 +811,10 @@ bn_transformer_prefill_dense_layer_batch_policy(
     int uses_post_norm,
     int has_attn_post_norm,
     int has_ffn_post_norm) {
+    (void)has_layer_output_scale;
+    (void)uses_post_norm;
+    (void)has_attn_post_norm;
+    (void)has_ffn_post_norm;
     BnTransformerPrefillDenseLayerBatchPolicy policy = {0};
     policy.enabled =
         gpu_available &&
@@ -778,7 +822,7 @@ bn_transformer_prefill_dense_layer_batch_policy(
         dense_chain_enabled &&
         n_tokens >= min_tokens &&
         pos0 == 0 &&
-        layer_rope_theta == config_rope_theta &&
+        layer_rope_theta > 0.0f && config_rope_theta > 0.0f &&
         !layer_kind.uses_moe &&
         has_ffn_gate &&
         has_ffn_up &&
@@ -786,9 +830,7 @@ bn_transformer_prefill_dense_layer_batch_policy(
         !has_k_bias &&
         !has_v_bias &&
         !has_attn_sub_norm &&
-        !has_ffn_sub_norm &&
-        !has_layer_output_scale &&
-        !(uses_post_norm && (has_attn_post_norm || has_ffn_post_norm));
+        !has_ffn_sub_norm;
     return policy;
 }
 
@@ -811,21 +853,23 @@ bn_transformer_prefill_dense_layer_chain_policy(
     int uses_post_norm,
     int has_attn_post_norm,
     int has_ffn_post_norm) {
+    (void)has_layer_output_scale;
+    (void)uses_post_norm;
+    (void)has_attn_post_norm;
+    (void)has_ffn_post_norm;
     BnTransformerPrefillDenseLayerChainPolicy policy = {0};
     policy.enabled =
         gpu_available &&
         dense_layer_hook_available &&
         !tq_state_available &&
         n_tokens >= min_tokens &&
-        layer_rope_theta == config_rope_theta &&
+        layer_rope_theta > 0.0f && config_rope_theta > 0.0f &&
         is_attn &&
         !layer_kind.uses_moe &&
         has_ffn_gate &&
         has_ffn_up &&
         !has_attn_sub_norm &&
-        !has_ffn_sub_norm &&
-        !has_layer_output_scale &&
-        !(uses_post_norm && (has_attn_post_norm || has_ffn_post_norm));
+        !has_ffn_sub_norm;
     return policy;
 }
 
@@ -879,8 +923,8 @@ int bn_transformer_prefill_dense_ffn_batch_norm_resid_gpu_available(
 }
 
 int bn_transformer_prefill_attention_min_tokens(
-    const BnGPUBackend *gpu) {
-    return bn_transformer_gpu_prefill_attention_min_tokens(gpu);
+    const BnConfig *c, const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_prefill_attention_min_tokens(c, gpu);
 }
 
 int bn_transformer_prefill_attention_enabled(
@@ -1063,12 +1107,44 @@ BnTransformerPrefillSSMStateUploadPolicy
 bn_transformer_prefill_ssm_state_upload_policy(
     const BnConfig *c,
     const BnGPUBackend *gpu,
-    int gpu_attached) {
+    int gpu_attached,
+    int cpu_ssm_fallback) {
     BnTransformerPrefillSSMStateUploadPolicy policy = {0};
     policy.upload = gpu_attached &&
                     bn_transformer_prefill_uses_hybrid_ssm(c) &&
-                    bn_transformer_gpu_prefill_ssm_layer_disabled(gpu);
+                    (cpu_ssm_fallback ||
+                     bn_transformer_gpu_prefill_ssm_layer_disabled(gpu, c));
     return policy;
+}
+
+int bn_transformer_prefill_ssm_gpu_layer_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw) {
+    BnTransformerPrefillSSMProjectionTypes types;
+    return lw && c &&
+           (!bn_model_transformer_policy_requires_reference_recurrent(c) ||
+            bn_gpu_policy_backend_reference_recurrent_prefill_supported(
+                gpu)) &&
+           bn_transformer_prefill_resolve_ssm_projection_types(&types, lw) &&
+           bn_gpu_policy_prefill_ssm_quant_path_enabled(
+               gpu, types.qkv_type, types.z_type, types.out_type);
+}
+
+int bn_transformer_prefill_cpu_ssm_fallback_required(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *weights,
+    int n_layers) {
+    if (!gpu || !weights || !weights->layers || n_layers <= 0)
+        return 0;
+    for (int layer = 0; layer < n_layers; layer++) {
+        const BnLayerWeights *lw = &weights->layers[layer];
+        if (lw->ssm.wqkv.data &&
+            !bn_transformer_prefill_ssm_gpu_layer_enabled(gpu, c, lw))
+            return 1;
+    }
+    return 0;
 }
 
 BnTransformerPrefillEntryPolicy
@@ -1450,11 +1526,14 @@ float bn_transformer_prefill_norm_epsilon(const BnConfig *c) {
 }
 
 BnTransformerPrefillActivationPolicy
-bn_transformer_prefill_activation_policy(int activation,
+bn_transformer_prefill_activation_policy(const BnGPUBackend *gpu,
+                                         int activation,
                                          int uses_reference_activation) {
     BnTransformerPrefillActivationPolicy policy = {
         activation,
-        uses_reference_activation
+        uses_reference_activation &&
+            !(bn_transformer_prefill_activation_is_gelu(activation) &&
+              gpu && (gpu->caps & BN_GPU_CAP_FP32_GELU))
     };
     return policy;
 }
@@ -1495,7 +1574,8 @@ int bn_transformer_prefill_quant_matmul_gpu_available(
     int has_weight,
     int has_weight_buffer,
     int has_input) {
-    return bn_transformer_gpu_prefill_quant_matmul_backend_available(gpu) &&
+    return !bn_gpu_policy_prefill_matmul_disabled(gpu) &&
+           bn_transformer_gpu_prefill_quant_matmul_backend_available(gpu) &&
            has_output && has_weight &&
            has_weight_buffer && has_input;
 }
@@ -1507,7 +1587,8 @@ int bn_transformer_prefill_quant_matmul_batch_gpu_available(
     int has_weights,
     int has_weight_buffers,
     int has_input) {
-    return bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(gpu) &&
+    return !bn_gpu_policy_prefill_matmul_disabled(gpu) &&
+           bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(gpu) &&
            n_tasks > 1 && n_tasks <= 16 &&
            has_outputs && has_weights && has_weight_buffers && has_input;
 }

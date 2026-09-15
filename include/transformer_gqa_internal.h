@@ -22,6 +22,10 @@ typedef struct {
     int seq_len;    // cache size for modular indexing
     float attention_scale;
     int kv_cache_uses_fp16_rows;
+    const BnCPURuntimePolicy *runtime;
+    int layer;
+    int scores_ready;
+    int use_padded_weighted_v_reduction;
 } BnGQACtx;
 
 void bn_transformer_cpu_gqa_dispatch(BnModel *m,
@@ -56,6 +60,7 @@ typedef struct {
 
 void bn_transformer_gqa_neon_range(void *ctx, int start, int end);
 void bn_transformer_gqa_avx2_range(void *ctx, int start, int end);
+void bn_transformer_gqa_avx512_range(void *ctx, int start, int end);
 void bn_transformer_gqa_wasm_range(void *ctx, int start, int end);
 void bn_transformer_gqa_scalar_range(void *ctx, int start, int end);
 void bn_transformer_gqa_tq_neon_range(void *ctx, int start, int end);

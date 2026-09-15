@@ -100,13 +100,19 @@ static void test_conv_silu(void) {
     memcpy(conv_state_test, conv_state_ref, (kern - 1) * qkv_dim * sizeof(float));
 
     // Run scalar reference
-    BnSSMConvCtx ctx_ref = { qkv_ref, conv_state_ref, conv1d_w, qkv_dim, kern };
+    BnSSMConvCtx ctx_ref = {
+        qkv_ref, conv_state_ref, conv1d_w, qkv_dim, kern, 0
+    };
     bn_transformer_ssm_conv_silu_scalar_range(&ctx_ref, 0, qkv_dim);
 
     // Run platform kernel
-    BnSSMConvCtx ctx_test = { qkv_test, conv_state_test, conv1d_w, qkv_dim, kern };
+    BnSSMConvCtx ctx_test = {
+        qkv_test, conv_state_test, conv1d_w, qkv_dim, kern, 0
+    };
 #ifdef __ARM_NEON
     bn_transformer_ssm_conv_silu_neon_range(&ctx_test, 0, qkv_dim);
+#elif defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__FMA__)
+    bn_transformer_ssm_conv_silu_x86_range(&ctx_test, 0, qkv_dim);
 #elif defined(__AVX2__)
     bn_transformer_ssm_conv_silu_avx2_range(&ctx_test, 0, qkv_dim);
 #elif defined(__wasm_simd128__)
@@ -116,7 +122,7 @@ static void test_conv_silu(void) {
 #endif
 
     float d = max_diff(qkv_ref, qkv_test, qkv_dim);
-    // AVX2 uses fast polynomial exp (~1e-5 relative error)
+    // SIMD kernels use ggml's fast polynomial exp.
     assert(d < 1e-4f);
 
     free(qkv_ref); free(qkv_test);
@@ -265,12 +271,18 @@ static void test_gate(void) {
     fill_random(norm_w, head_v_dim, &seed);
     memcpy(out_test, out_ref, total * sizeof(float));
 
-    BnSSMGateCtx ctx_ref = { out_ref, z, norm_w, 1e-5f, head_v_dim };
+    BnSSMGateCtx ctx_ref = {
+        out_ref, z, norm_w, 1e-5f, head_v_dim, 0, num_v_heads
+    };
     bn_transformer_ssm_gate_scalar_range(&ctx_ref, 0, num_v_heads);
 
-    BnSSMGateCtx ctx_test = { out_test, z, norm_w, 1e-5f, head_v_dim };
+    BnSSMGateCtx ctx_test = {
+        out_test, z, norm_w, 1e-5f, head_v_dim, 0, num_v_heads
+    };
 #ifdef __ARM_NEON
     bn_transformer_ssm_gate_neon_range(&ctx_test, 0, num_v_heads);
+#elif defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__FMA__)
+    bn_transformer_ssm_gate_x86_range(&ctx_test, 0, num_v_heads);
 #elif defined(__AVX2__)
     bn_transformer_ssm_gate_avx2_range(&ctx_test, 0, num_v_heads);
 #elif defined(__wasm_simd128__)
@@ -283,15 +295,154 @@ static void test_gate(void) {
     // AVX2 uses fast polynomial exp for SiLU (~1e-5 relative error)
     assert(d < 1e-4f);
 
+    seed = 789;
+    fill_random(out_ref, total, &seed);
+    fill_random(z, total, &seed);
+    fill_random(norm_w, head_v_dim, &seed);
+    memcpy(out_test, out_ref, total * sizeof(float));
+    ctx_ref.sigmoid_gate = 1;
+    ctx_test.sigmoid_gate = 1;
+    bn_transformer_ssm_gate_scalar_range(&ctx_ref, 0, num_v_heads);
+#ifdef __ARM_NEON
+    bn_transformer_ssm_gate_neon_range(&ctx_test, 0, num_v_heads);
+#elif defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__FMA__)
+    bn_transformer_ssm_gate_avx512_range(&ctx_test, 0, num_v_heads);
+#elif defined(__AVX2__)
+    bn_transformer_ssm_gate_avx2_range(&ctx_test, 0, num_v_heads);
+#elif defined(__wasm_simd128__)
+    bn_transformer_ssm_gate_wasm_range(&ctx_test, 0, num_v_heads);
+#else
+    bn_transformer_ssm_gate_scalar_range(&ctx_test, 0, num_v_heads);
+#endif
+    float sigmoid_d = max_diff(out_ref, out_test, total);
+    assert(sigmoid_d < 1e-4f);
+
     free(out_ref); free(out_test);
     free(z); free(norm_w);
-    printf("PASSED (max_diff=%.2e)\n", d);
+    printf("PASSED (silu_diff=%.2e sigmoid_diff=%.2e)\n", d, sigmoid_d);
 }
 
+#if defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__FMA__)
+static void test_conv_native_dispatch(void) {
+    printf("test_ssm_conv_native_dispatch... ");
+    const int dims[] = {1, 15, 16, 17, 33, 8192, 8208};
+    uint32_t seed = 137;
+    for (size_t n = 0; n < sizeof(dims) / sizeof(dims[0]); n++) {
+        int dim = dims[n];
+        float *expected = malloc((size_t)dim * sizeof(float));
+        float *actual = malloc((size_t)dim * sizeof(float));
+        float *state_ref = malloc((size_t)3 * dim * sizeof(float));
+        float *state = malloc((size_t)3 * dim * sizeof(float));
+        float *weights = malloc((size_t)4 * dim * sizeof(float));
+        assert(expected && actual && state_ref && state && weights);
+        for (int sigmoid = 0; sigmoid < 2; sigmoid++) {
+            fill_random(expected, dim, &seed);
+            fill_random(state_ref, 3 * dim, &seed);
+            fill_random(weights, 4 * dim, &seed);
+            memcpy(actual, expected, (size_t)dim * sizeof(float));
+            memcpy(state, state_ref, (size_t)3 * dim * sizeof(float));
+            BnSSMConvCtx ref = {expected, state_ref, weights, dim, 4, sigmoid};
+            BnSSMConvCtx test = {actual, state, weights, dim, 4, sigmoid};
+            /* Dispatch must preserve the native ISA's convolution and SiLU
+             * order regardless of the later output gate or tensor shape. */
+            bn_transformer_ssm_conv_silu_avx512_range(&ref, 0, dim);
+            bn_transformer_ssm_conv_silu_x86_range(&test, 0, dim);
+            assert(memcmp(actual, expected, (size_t)dim * sizeof(float)) == 0);
+            assert(memcmp(state, state_ref, (size_t)3 * dim * sizeof(float)) == 0);
+        }
+        free(expected); free(actual); free(state_ref); free(state); free(weights);
+    }
+    printf("PASSED\n");
+}
+
+static void test_gate_native_dispatch(void) {
+    printf("test_ssm_gate_native_dispatch... ");
+    const int dims[] = {1, 15, 16, 17, 128};
+    uint32_t seed = 173;
+    for (size_t n = 0; n < sizeof(dims) / sizeof(dims[0]); n++) {
+        int dim = dims[n];
+        for (int heads = 32; heads <= 64; heads += 32) {
+            size_t bytes = (size_t)heads * dim * sizeof(float);
+            float *expected = malloc(bytes), *actual = malloc(bytes);
+            float *z = malloc(bytes), *weights = malloc((size_t)dim * sizeof(float));
+            assert(expected && actual && z && weights);
+            for (int sigmoid = 0; sigmoid < 2; sigmoid++) {
+                fill_random(expected, heads * dim, &seed);
+                fill_random(z, heads * dim, &seed);
+                fill_random(weights, dim, &seed);
+                memcpy(actual, expected, bytes);
+                BnSSMGateCtx ref = {expected, z, weights, 1e-5f, dim, sigmoid, heads};
+                BnSSMGateCtx test = {actual, z, weights, 1e-5f, dim, sigmoid, heads};
+                bn_transformer_ssm_gate_avx512_range(&ref, 0, heads);
+                bn_transformer_ssm_gate_x86_range(&test, 0, heads);
+                assert(memcmp(actual, expected, bytes) == 0);
+            }
+            free(expected); free(actual); free(z); free(weights);
+        }
+    }
+    printf("PASSED\n");
+}
+#endif
+
+#ifdef __AVX2__
+static void test_sigmoid_gate_rounding(void) {
+    printf("test_ssm_sigmoid_gate_rounding... ");
+    const int dims[] = {1, 7, 8, 15, 16, 17, 31, 32, 33, 128, 257};
+    uint32_t seed = 27183;
+    for (size_t n = 0; n < sizeof(dims) / sizeof(dims[0]); n++) {
+        int dim = dims[n], count = 3 * dim + 2;
+        size_t bytes = (size_t)count * sizeof(float);
+        float *input = malloc(bytes), *actual = malloc(bytes);
+        float *expected = malloc(bytes), *z = malloc(bytes);
+        float *weights = malloc((size_t)dim * sizeof(float));
+        assert(input && actual && expected && z && weights);
+        fill_random(input, count, &seed);
+        fill_random(z, count, &seed);
+        fill_random(weights, dim, &seed);
+        for (int i = 0; i < count; i++) z[i] *= 8;
+        z[dim + 1] = -INFINITY;
+        if (dim > 1) z[dim + 2] = INFINITY;
+        memcpy(expected, input, bytes);
+        double ss = 0;
+        for (int i = 0; i < dim; i++) {
+            volatile float square = input[dim + 1 + i] * input[dim + 1 + i];
+            ss += (double)square;
+        }
+        float scale = 1.0f / sqrtf((float)(ss / dim) + 1e-5f);
+        for (int i = 0; i < dim; i++) {
+            volatile float norm = input[dim + 1 + i] * scale;
+            volatile float weighted = norm * weights[i];
+            float sigmoid = 1.0f / (1.0f + expf(-z[dim + 1 + i]));
+            expected[dim + 1 + i] = weighted * sigmoid;
+        }
+        BnSSMGateCtx ctx = {actual + 1, z + 1, weights, 1e-5f, dim, 1, 3};
+        memcpy(actual, input, bytes);
+        bn_transformer_ssm_gate_avx2_range(&ctx, 1, 2);
+        assert(memcmp(actual, expected, bytes) == 0);
+#if defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__FMA__)
+        memcpy(actual, input, bytes);
+        bn_transformer_ssm_gate_avx512_range(&ctx, 1, 2);
+        assert(memcmp(actual, expected, bytes) == 0);
+#endif
+        free(input); free(actual); free(expected); free(z); free(weights);
+    }
+    printf("PASSED\n");
+}
+#endif
+
 int main(void) {
+#ifdef __AVX2__
+    test_sigmoid_gate_rounding();
+#endif
+#if defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__FMA__)
+    test_conv_native_dispatch();
+    test_gate_native_dispatch();
+#endif
     printf("=== SSM Kernel Equivalence Tests ===\n");
 #ifdef __ARM_NEON
     printf("Platform: NEON vs scalar\n");
+#elif defined(__AVX512F__) && defined(__AVX512DQ__) && defined(__FMA__)
+    printf("Platform: AVX512 vs scalar\n");
 #elif defined(__AVX2__)
     printf("Platform: AVX2 vs scalar\n");
 #elif defined(__wasm_simd128__)

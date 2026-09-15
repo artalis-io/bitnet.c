@@ -175,10 +175,10 @@ void bn_transformer_ssm_gate_wasm_range(void *ctx, int start, int end) {
             v128_t o = wasm_f32x4_mul(wasm_f32x4_mul(wasm_v128_load(oh + d), scale), wasm_v128_load(nw + d));
             float g0 = zh[d], g1 = zh[d+1], g2 = zh[d+2], g3 = zh[d+3];
             float sv[4] = {
-                g0 / (1.0f + expf(-g0)),
-                g1 / (1.0f + expf(-g1)),
-                g2 / (1.0f + expf(-g2)),
-                g3 / (1.0f + expf(-g3))
+                (c->sigmoid_gate ? 1.0f : g0) / (1.0f + expf(-g0)),
+                (c->sigmoid_gate ? 1.0f : g1) / (1.0f + expf(-g1)),
+                (c->sigmoid_gate ? 1.0f : g2) / (1.0f + expf(-g2)),
+                (c->sigmoid_gate ? 1.0f : g3) / (1.0f + expf(-g3))
             };
             wasm_v128_store(oh + d, wasm_f32x4_mul(o, wasm_v128_load(sv)));
         }

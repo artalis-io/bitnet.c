@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+int bn_transformer_attention_window(const BnConfig *c, int layer) {
+    return bn_model_transformer_policy_attention_window(c, layer);
+}
+
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer) {
     return bn_model_transformer_policy_is_attention_layer(c, layer);
 }
@@ -360,6 +364,9 @@ int bn_transformer_prefill_uses_decode_for_parity(const BnConfig *c) {
 int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     const BnConfig *c,
     int gpu_attached) {
+    if (bn_transformer_uses_hyper_connections(c) &&
+        bn_transformer_cpu_backend_supports_hyper_connection_batch_prefill())
+        return 0;
     return !gpu_attached &&
            bn_transformer_prefill_uses_decode_for_parity(c);
 }
@@ -658,6 +665,18 @@ int bn_transformer_per_layer_embedding_dim(
 int bn_transformer_uses_per_layer_embedding(
     const BnConfig *c) {
     return bn_model_transformer_policy_uses_per_layer_embedding(c);
+}
+
+int bn_transformer_uses_hyper_connections(const BnConfig *c) {
+    return bn_model_transformer_policy_uses_hyper_connections(c);
+}
+
+int bn_transformer_uses_positional_layer_embedding(const BnConfig *c) {
+    return bn_model_transformer_policy_uses_positional_layer_embedding(c);
+}
+
+int bn_transformer_ssm_uses_sigmoid_gate(const BnConfig *c) {
+    return bn_model_transformer_policy_ssm_uses_sigmoid_gate(c);
 }
 
 int bn_transformer_divides_rope_freqs(

@@ -183,7 +183,7 @@ typedef struct {
     int needs_cpu_fallback;
 } BnLogitsPlan;
 
-int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap);
+int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint64_t cap);
 int bn_transformer_gpu_can_native_quant_qkv(int q_type, int k_type, int v_type);
 int bn_transformer_gpu_can_stack_same_quant_format_qk(int q_type, int k_type);
 int bn_transformer_gpu_can_stack_same_quant_format_qk_weights(const BnQWeight *q,
@@ -225,6 +225,17 @@ uint32_t bn_transformer_gpu_moe_expert_projection_matvec_flags(
     const BnMoEExpertMap *map,
     int proj,
     int use_quant_dot);
+uint32_t bn_transformer_gpu_moe_shared_down_matvec_flags(
+    const BnGPUBackend *gpu,
+    int tensor_type,
+    int use_quant_dot,
+    int reference_accumulation,
+    int allow_native_q8);
+uint32_t bn_transformer_gpu_moe_dense_residual_down_matvec_flags(
+    const BnGPUBackend *gpu,
+    int tensor_type,
+    int use_quant_dot,
+    int block_q8_activation);
 int bn_transformer_gpu_float_buffer_type(void);
 uint32_t bn_transformer_gpu_reference_silu_flags(int tensor_type,
                                                   int use_silu);
@@ -281,6 +292,7 @@ int bn_transformer_gpu_dense_ffn_fast_path_run(
     int down_type,
     int act_type);
 
+int bn_transformer_attention_window(const BnConfig *c, int layer);
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer);
 int bn_transformer_attn_index(const BnConfig *c, int layer);
 int bn_transformer_attention_kv_read_index(const BnConfig *c,
@@ -479,6 +491,9 @@ int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c);
 int bn_transformer_uses_per_layer_embedding(
     const BnConfig *c);
+int bn_transformer_uses_hyper_connections(const BnConfig *c);
+int bn_transformer_uses_positional_layer_embedding(const BnConfig *c);
+int bn_transformer_ssm_uses_sigmoid_gate(const BnConfig *c);
 int bn_transformer_divides_rope_freqs(
     const BnConfig *c,
     int layer);

@@ -19,6 +19,10 @@ BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols) {
     return w;
 }
 
+BnQWeight bn_moe_make_f32_weight(const float *data, int rows, int cols) {
+    return bn_quant_f32_weight(data, rows, cols);
+}
+
 // --- Phase 3: SwiGLU range function for parallel dispatch ---
 
 static float moe_gelu_tanh(float x) {
@@ -32,7 +36,17 @@ static float moe_gelu_tanh(float x) {
 }
 
 static float moe_reference_gelu(float x) {
-    float rounded_x = bn_fp16_to_fp32(bn_fp32_to_fp16(x));
+    // The reference uses its FP16 table only inside these FP32 limits.
+    if (x <= -10.0f)
+        return 0.0f;
+    if (x >= 10.0f)
+        return x;
+    uint16_t rounded_bits = bn_fp32_to_fp16(x);
+    // Preserve the reference table entry at this FP16 rounding boundary,
+    // matching the dense CPU activation policy.
+    if (rounded_bits == 0xbfffu)
+        return bn_fp16_to_fp32(0xa9d3u);
+    float rounded_x = bn_fp16_to_fp32(rounded_bits);
     float gelu = moe_gelu_tanh(rounded_x);
     return bn_fp16_to_fp32(bn_fp32_to_fp16(gelu));
 }
@@ -85,8 +99,24 @@ float bn_moe_shared_expert_gate_weight(const BnLayerWeights *lw,
     const float *gate_vector = bn_moe_shared_expert_gate_vector(lw);
     if (!gate_vector || !x || dim <= 0)
         return 1.0f;
-    float gate_dot = 0.0f;
-    for (int d = 0; d < dim; d++)
-        gate_dot += x[d] * gate_vector[d];
+    float gate_dot = bn_moe_dot_row(gate_vector, x, dim);
     return 1.0f / (1.0f + expf(-gate_dot));
+}
+
+void bn_moe_scaled_router_input(float *out, const float *x,
+                                 const float *scale, int size, float eps) {
+    double sum = 0.0;
+    for (int i = 0; i < size; i++)
+        sum += (double)(x[i] * x[i]);
+    float mean = (float)(sum / size);
+    float inv_rms = 1.0f / sqrtf(mean + eps);
+    float inv_sqrt_dim = 1.0f / sqrtf((float)size);
+    for (int i = 0; i < size; i++)
+        out[i] = ((x[i] * inv_rms) * inv_sqrt_dim) *
+                 (scale ? scale[i] : 1.0f);
+}
+
+void bn_moe_scale_expert_output(float *out, float scale, int size) {
+    for (int i = 0; i < size; i++)
+        out[i] *= scale;
 }

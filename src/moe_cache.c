@@ -1,5 +1,6 @@
 #include "moe_internal.h"
 #include "model_internal.h"
+#include "backend_model.h"
 
 // --- Expert LRU Cache (pread pipeline) ---
 #if !defined(__EMSCRIPTEN__)
@@ -66,7 +67,7 @@ static void moe_cache_lru_push_front(BnMoECache *c, int slot) {
     if (c->lru_tail < 0) c->lru_tail = slot;
 }
 
-// Hash table removal with backshift deletion
+// Remove one entry and rebuild the remainder of its linear-probe cluster.
 static void moe_cache_hash_remove(BnMoECache *c, int layer, int expert_idx) {
     uint32_t mask = (uint32_t)(c->hash_size - 1);
     uint32_t h = moe_cache_hash(layer, expert_idx) & mask;
@@ -82,27 +83,17 @@ static void moe_cache_hash_remove(BnMoECache *c, int layer, int expert_idx) {
     }
     if (idx < 0) return;
 
-    // Backshift deletion
     c->hash_table[idx] = -1;
-    for (int i = 1; i < c->hash_size; i++) {
-        int next = (int)(((uint32_t)idx + (uint32_t)i) & mask);
+    int next = (int)(((uint32_t)idx + 1u) & mask);
+    while (c->hash_table[next] >= 0) {
         int slot = c->hash_table[next];
-        if (slot < 0) break;  // chain ended
+        c->hash_table[next] = -1;
         uint32_t natural = moe_cache_hash(c->entries[slot].layer,
-                                            c->entries[slot].expert_idx) & mask;
-        // Check if this element's natural position is at or before the gap
-        int gap = idx;
-        // Element belongs before the gap if moving it wouldn't break its probe chain
-        int should_move;
-        if (next >= gap)
-            should_move = (int)natural <= gap || (int)natural > next;
-        else
-            should_move = (int)natural <= gap && (int)natural > next;
-        if (should_move) {
-            c->hash_table[gap] = slot;
-            c->hash_table[next] = -1;
-            idx = next;  // new gap
-        }
+                                          c->entries[slot].expert_idx) & mask;
+        while (c->hash_table[natural] >= 0)
+            natural = (natural + 1u) & mask;
+        c->hash_table[natural] = slot;
+        next = (next + 1) & (int)mask;
     }
 }
 
@@ -273,6 +264,67 @@ void bn_moe_cache_print_stats(const BnMoEState *ms) {
     SH_LOG_INFO("MoE cache", "hits", hits_s, "misses", misses_s, "hit_rate", rate_s);
 }
 
+const BnPreparedWeight *bn_moe_acquire_prepared_projection(
+    BnModel *model, const BnQWeight *weight) {
+    /* Pread staging addresses can identify different experts over time. */
+    if (!model || !bn_moe_io_has_mmap(bn_model_moe_io(model)))
+        return NULL;
+    /* Prefill touches many experts: misses must not evict decode's working
+     * set. Locally prepared fallbacks already cover uncached projections. */
+    return bn_backend_model_acquire_cached_cpu_prepared(bn_model_backend(model), weight);
+}
+
+void bn_moe_release_prepared_projection(
+    BnModel *model, const BnPreparedWeight *prepared) {
+    if (model)
+        bn_backend_model_release_cpu_prepared(bn_model_backend(model), prepared);
+}
+
+int bn_moe_prepare_mmap_experts(BnModel *m) {
+    if (!m || !bn_moe_io_has_mmap(bn_model_moe_io(m)) ||
+        !bn_model_backend(m))
+        return -1;
+
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
+    int prepared_count = 0;
+    double t0 = bn_platform_time_ms();
+    for (int l = 0; l < m->config.n_layers; l++) {
+        BnMoEExpertMap *map = &m->weights.layers[l].moe.expert_map;
+        for (int expert = 0; expert < route_policy.total_experts; expert++) {
+            for (int proj = 0; proj < 3; proj++) {
+                size_t offset, bytes;
+                if (bn_moe_proj_info(map, expert, proj, &offset, &bytes) != 0 ||
+                    bytes == 0)
+                    continue;
+                const uint8_t *base =
+                    bn_moe_mmap_base_for_proj(bn_model_moe_io(m), map, proj);
+                if (!base)
+                    return -1;
+                BnQWeight weight;
+                if (!bn_moe_expert_projection_weight(&weight, base + offset,
+                                                     map, proj))
+                    return -1;
+                if (bn_quant_prepared_qweight_size(&weight, NULL) == 0)
+                    continue;
+                const BnPreparedWeight *prepared =
+                    bn_backend_model_acquire_cpu_prepared(
+                        bn_model_backend(m), &weight);
+                if (!prepared)
+                    return -1;
+                prepared_count++;
+                bn_backend_model_release_cpu_prepared(bn_model_backend(m),
+                                                       prepared);
+            }
+        }
+    }
+    char count_s[24], ms_s[32];
+    snprintf(count_s, sizeof(count_s), "%d", prepared_count);
+    snprintf(ms_s, sizeof(ms_s), "%.0f", bn_platform_time_ms() - t0);
+    SH_LOG_INFO("CPU expert layouts prepared", "projections", count_s,
+                "ms", ms_s);
+    return 0;
+}
+
 int bn_moe_prefault_mmap(struct BnModel *m) {
     if (!m || !bn_moe_io_has_mmap(bn_model_moe_io(m)) ||
         !bn_moe_policy_uses_expert_weights(&m->config))
@@ -401,9 +453,28 @@ int bn_moe_cache_test(void) {
         if (!moe_cache_lookup(c, 0, i)) { bn_moe_cache_free(c); return -1; }
     }
 
+    // T7: Repeatedly replace the entire resident set. This exercises wrapped
+    // probe clusters after many evictions, where every new key must remain
+    // reachable through the hash table.
+    for (int round = 1; round <= 128; round++) {
+        for (int i = 0; i < 8; i++)
+            moe_cache_insert(c, round, i);
+        for (int i = 0; i < 8; i++) {
+            if (!moe_cache_lookup(c, round, i)) {
+                bn_moe_cache_free(c);
+                return -1;
+            }
+        }
+    }
+
     bn_moe_cache_free(c);
     return 0;
 #else
     return 0;  // no cache on EMSCRIPTEN
 #endif
+}
+
+const BnPreparedWeight *bn_moe_prepared_dense_projection(
+    const BnModel *model, const BnQWeight *weight) {
+    return bn_backend_model_prepared_qweight(bn_model_backend(model), weight);
 }

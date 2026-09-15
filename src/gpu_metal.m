@@ -1458,6 +1458,18 @@ static int metal_init_activations(void *vctx,
         sizes[BN_GPU_BUF_PER_LAYER_INPUT] =
             (size_t)plan->n_layers * (size_t)plan->per_layer_input_dim *
             sizeof(float);
+    if (plan->hyper_connection_count > 1 &&
+        plan->hyper_connection_rank > 0) {
+        size_t wide = (size_t)plan->hyper_connection_count *
+                      (size_t)plan->dim;
+        sizes[BN_GPU_VALUE_HC_RESIDUAL] = wide * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_NORM] = wide * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_GATE] = wide * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_LOW_RANK] =
+            (size_t)plan->hyper_connection_rank * sizeof(float);
+        sizes[BN_GPU_VALUE_HC_INJECT] =
+            (size_t)plan->hyper_connection_count * sizeof(float);
+    }
     {
         size_t qkv_size = (size_t)(q_dim + 2 * plan->kv_dim) * sizeof(float);
         size_t gated_q_size = (size_t)(2 * q_dim) * sizeof(float);
@@ -3902,7 +3914,8 @@ static uint32_t metal_routed_expert_stride(const BnMetalBuf *buf,
 static int metal_moe_routed_ffn_batch(
     void *vctx, float *out,
     void *gate_all_buf, void *up_all_buf, void *down_all_buf,
-    const int *indices, const float *weights, const float *X,
+    const int *indices, const float *weights, const float *output_scales,
+    const float *X,
     int n_tokens, int dim, int hidden_dim, int n_experts, int k,
     int gate_type, int up_type, int down_type, int act_type) {
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
@@ -3958,7 +3971,9 @@ static int metal_moe_routed_ffn_batch(
             ctx->route_history_count++;
         }
         for (int slot = 0; slot < k; slot++) {
-            route[slot] = weights[(size_t)token * k + slot];
+            size_t route_slot = (size_t)token * k + slot;
+            route[slot] = weights[route_slot] *
+                (output_scales ? output_scales[route_slot] : 1.0f);
             route[k + slot] = (float)indices[(size_t)token * k + slot];
         }
         memcpy([ctx->act_bufs[BN_GPU_BUF_XB] contents],
@@ -4210,6 +4225,7 @@ BnGPUBackend *bn_gpu_metal_create_with_policy(
                                     BN_GPU_CAP_SSM_GRAPH |
                                     BN_GPU_CAP_HYBRID_SSM_MOE_GRAPH |
                                     BN_GPU_CAP_REFERENCE_RECURRENT |
+                                    BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL |
                                     BN_GPU_CAP_REFERENCE_ATTENTION |
                                     BN_GPU_CAP_REFERENCE_ATTENTION_FALLBACK |
                                     BN_GPU_CAP_PREPARED_NATIVE_QUANT |

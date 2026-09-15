@@ -34,6 +34,8 @@ int bn_moe_policy_uses_reference_silu(const BnConfig *c) {
 
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {
     BnMoEPrefillPolicy policy = {0};
+    policy.uses_matvec_router =
+        bn_model_moe_policy_prefill_uses_matvec_router(c);
     policy.requires_matvec_prefill =
         bn_model_moe_policy_prefill_requires_matvec(c);
     policy.uses_grouped_expert_route =
@@ -308,6 +310,8 @@ bn_moe_prefill_routed_gpu_resource_policy(
     policy.up_all = resources.up_all;
     policy.down_all = resources.down_all;
     policy.norm = resources.norm;
+    policy.sub_norm = resources.sub_norm;
+    policy.router_scale = resources.router_scale;
     policy.routed_valid = resources.routed_valid;
     policy.norm_resid_valid = resources.norm_resid_valid;
     return policy;
@@ -404,4 +408,18 @@ void bn_moe_quant_matvec_down_gpu_buffer(float *out,
                                          BnThreadPool *pool,
                                          BnGPUBackend *gpu) {
     bn_backend_quant_matvec_gpu_buf(out, W, W_buf, x, quantized_buf, pool, gpu);
+}
+
+BnMoEPrefillDenseGPUResourcePolicy bn_moe_prefill_dense_gpu_resource_policy(
+    const BnBackendModel *backend, int layer, const BnLayerWeights *weights) {
+    BnMoEPrefillDenseGPUResourcePolicy policy = {0};
+    if (!backend || !weights) return policy;
+    policy.gate = bn_backend_model_qweight_buf(backend, &weights->ffn.ffn_gate);
+    policy.up = bn_backend_model_qweight_buf(backend, &weights->ffn.ffn_up);
+    policy.down = bn_backend_model_qweight_buf(backend, &weights->ffn.ffn_down);
+    policy.norm = bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    policy.dense_norm = bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_POST_NORM_1);
+    policy.routed_norm = bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_POST_NORM_2);
+    policy.post_norm = bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_POST_NORM);
+    return policy;
 }

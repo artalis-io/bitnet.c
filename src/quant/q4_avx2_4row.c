@@ -1,6 +1,7 @@
 #include "quant_ctx.h"
 #include "simd_helpers.h"
 #include <immintrin.h>
+#include <math.h>
 
 /* 4-row Q4_0 matvec: signed dot → float accumulation.
  *
@@ -18,8 +19,38 @@ static inline __m256 dot_i8_float(__m256i w, __m256i x) {
     return _mm256_cvtepi32_ps(p32);
 }
 
+static void q4_x8_avx2_range(BnQ4SdotCtx *c, int start, int end) {
+    const BnBlockQ4_0x8 *packed = (const BnBlockQ4_0x8 *)c->prepared->aux;
+    const int blocks = c->W->cols / 32;
+    const __m128i mask = _mm_set1_epi8(15), bias = _mm_set1_epi8(8);
+    for (int g = start; g < end; g++) {
+        float sums[4] = {0};
+        for (int b = 0; b < blocks; b++) {
+            const BnBlockQ4_0x8 *block = packed + (size_t)(g / 2) * blocks + b;
+            __m256i x = _mm256_loadu_si256((const __m256i *)(c->x_q + b * 32));
+            for (int r = 0; r < 4; r++) {
+                int lane = (g % 2) * 4 + r;
+                __m128i raw = _mm_loadu_si128((const __m128i *)block->qs[lane]);
+                __m256i w = _mm256_set_m128i(
+                    _mm_sub_epi8(_mm_and_si128(_mm_srli_epi16(raw, 4), mask), bias),
+                    _mm_sub_epi8(_mm_and_si128(raw, mask), bias));
+                __m256i pair = _mm256_maddubs_epi16(_mm256_sign_epi8(w, w),
+                                                   _mm256_sign_epi8(x, w));
+                int sum = bn_avx2_hsum_epi32(_mm256_madd_epi16(pair, _mm256_set1_epi16(1)));
+                float scale = bn_fp16_to_fp32(block->d[lane]) * c->x_scales[b];
+                sums[r] = fmaf((float)sum, scale, sums[r]);
+            }
+        }
+        for (int r = 0; r < 4; r++) c->out[g * 4 + r] = sums[r];
+    }
+}
+
 void bn_quant_q4_avx2_4row_range(void *ctx, int group_start, int group_end) {
     BnQ4SdotCtx *c = (BnQ4SdotCtx *)ctx;
+    if (c->prepared && c->prepared->kind == BN_PREPARED_WEIGHT_Q4_0_X8) {
+        q4_x8_avx2_range(c, group_start, group_end);
+        return;
+    }
     const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)c->W->data;
     int n_bpr = c->W->cols / 32;
     int rows = c->W->rows;

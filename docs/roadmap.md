@@ -1197,6 +1197,7 @@ ARM NEON / CPU plan:
   proof once the Qwen3.6 sparse, Gemma4 dense, and Gemma4 sparse fixtures are
   present; it checks llama.cpp tools, upstream fixture metadata, all requested
   fixture presence, and known download sizes before building.
+  The required target defaults both families to `full` (16 tokens per prompt).
   `make check-cpu-parity-fixtures` reports
   local fixture status, `make check-cpu-parity-remote-fixtures` verifies the
   current Hugging Face repos, selected filenames, GGUF architectures, and file
@@ -1209,7 +1210,12 @@ ARM NEON / CPU plan:
   gates for every other dense/MoE case. The deeper default is required because
   a Q8_0 reduction-order regression matched the first sparse Qwen3.6 token but
   diverged immediately afterward;
-  `QWEN_CPU_PARITY_LEVEL=full` raises the token budget for deeper checks, and
+  `QWEN_CPU_PARITY_LEVEL=full` now requests 16 tokens per prompt for every
+  case, including sparse models and Qwen3.6/3.8; the former 5-token full
+  checks missed longer-prefix failures. `CPU_PARITY_THREADS` sets the shared
+  thread count (default 1), with `QWEN_CPU_PARITY_THREADS` taking precedence.
+  The top-level matrix collects both families even when Qwen fails.
+  Synthetic argument/exit-status tests run in `make test`.
   `QWEN_CPU_PARITY_CASES=qwen25,qwen3_dense` supports focused reruns. Set
   `QWEN_CPU_PARITY_BACKENDS` or shared `CPU_PARITY_BACKENDS` to select
   `neon,native,scalar,avx2,avx512`; AVX selections build runnable x86 parity
@@ -1225,6 +1231,9 @@ ARM NEON / CPU plan:
   fixtures are now present, and standard coverage uses at least three tokens
   per prompt; the dense five-token sample passes while sparse
   deep-token parity remains open.
+  `GEMMA4_CPU_PARITY_LEVEL=full` now requests 16 tokens per prompt for both
+  dense and sparse cases. `GEMMA4_CPU_PARITY_THREADS` overrides shared
+  `CPU_PARITY_THREADS` for this family.
   The 2026-08-09 strict sampled-ID run passes dense Gemma on both NEON and
   scalar at 23/23 generated IDs across eight prompts. Sparse Gemma reaches
   23/24 on NEON (7/8 first IDs) and 21/24 on scalar (6/8 first IDs), confirming

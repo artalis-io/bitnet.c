@@ -246,8 +246,8 @@ bn_transformer_cpu_matvec_resource_policy(
 
 int bn_transformer_cpu_prefill_uses_float_kquant_fallback(
     const BnConfig *c) {
-    return bn_transformer_requires_float_kquant_fallback(c) &&
-           bn_transformer_cpu_backend_supports_float_kquant_prefill();
+    return bn_transformer_cpu_backend_supports_float_kquant_prefill() &&
+           bn_transformer_requires_float_kquant_fallback(c);
 }
 
 BnTransformerCPUPostNormPolicy

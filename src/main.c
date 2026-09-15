@@ -439,6 +439,11 @@ static CLIArgs parse_args(int argc, char **argv) {
         exit(1);
     }
 
+    if (args.gpu_cpu_logits)
+        setenv("BN_GPU_CPU_LOGITS", "1", 1);
+    if (args.gpu_compare_logits)
+        setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
+
     return args;
 }
 
@@ -483,7 +488,8 @@ static size_t model_moe_entry_bytes(const BnModel *model,
             gate_charge + up_charge > SIZE_MAX - down_charge)
             return 0;
         size_t entry = gate_charge + up_charge + down_charge;
-        size_t cache_bytes = down_charge == em->expert_down_bytes
+        size_t cache_bytes = down_charge == em->expert_down_bytes &&
+                bn_gpu_policy_moe_lazy_aux_cache_enabled(gpu)
             ? bn_gpu_policy_moe_down_aux_cache_bytes(
                   gpu, em->down_type, em->down_rows, em->down_cols)
             : 0;
@@ -645,7 +651,10 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
         } else {
             SH_LOG_WARN("GPU MoE resident preload failed; using lazy cache");
             bn_gpu_moe_cache_free(bn_model_gpu_moe_cache(model));
-            bn_model_set_gpu_moe_cache(model, NULL);
+            size_t lazy_budget =
+                (size_t)args->gpu_cache_mb * 1024u * 1024u;
+            bn_model_set_gpu_moe_cache(model, bn_gpu_moe_cache_create(
+                lazy_budget, entry_bytes, max_entries, gpu));
         }
     }
 }
@@ -717,6 +726,10 @@ static int backend_policy_from_cli(BnBackendRuntimePolicy *policy,
     } while (0)
     if (args->gpu_profile > 0 &&
         backend_policy_set_int(policy, "BN_GPU_PROFILE",
+                               args->gpu_profile) != 0)
+        goto fail;
+    if (args->gpu_profile > 0 &&
+        backend_policy_set_int(policy, "BN_CUDA_PROFILE",
                                args->gpu_profile) != 0)
         goto fail;
     if (args->metal_disable_barriers &&
@@ -1080,7 +1093,18 @@ int main(int argc, char **argv) {
         } else if (gf->n_shards <= 1 && !args.force_pread && mf && mf->data) {
             bn_model_set_moe_mmap_base(&model, mf->data);
         }
-        if (gf->n_shards <= 1 && mf && mf->fd >= 0) {
+        if (gf->n_shards > 1 && gf->owned_maps) {
+            if (bn_model_set_moe_shard_files(&model, gf->owned_maps,
+                                             gf->n_shards) != 0) {
+                SH_LOG_ERROR("Failed to configure sharded expert I/O");
+                bn_model_free(&model);
+                bn_gguf_free(gf);
+#ifdef BN_ENABLE_METAL
+                if (early_metal_gpu) bn_gpu_metal_destroy(early_metal_gpu);
+#endif
+                return 1;
+            }
+        } else if (gf->n_shards <= 1 && mf && mf->fd >= 0) {
             bn_model_set_moe_fd(&model, mf->fd);
         }
 
@@ -1122,6 +1146,19 @@ int main(int argc, char **argv) {
             bn_model_set_moe_cache(&model, bn_moe_cache_create(
                 (size_t)args.cache_mb * 1024 * 1024,
                 layout.gate_bytes, layout.up_bytes, layout.down_bytes));
+        }
+        if (args.cache_mb > 0 && bn_moe_io_has_mmap(moe_io)) {
+            size_t prepared_cache_mb = (size_t)args.cache_mb;
+            const char *prepared_cache_env =
+                getenv("BN_CPU_PREPARED_CACHE_MB");
+            if (prepared_cache_env && prepared_cache_env[0])
+                prepared_cache_mb = (size_t)strtoull(
+                    prepared_cache_env, NULL, 10);
+            bn_model_set_cpu_prepared_cache_budget(
+                &model, prepared_cache_mb * 1024u * 1024u);
+            if (getenv("BN_CPU_PREPARE_ALL_EXPERTS") &&
+                bn_moe_prepare_mmap_experts(&model) != 0)
+                SH_LOG_WARN("Failed to prepare all CPU expert layouts");
         }
     }
 
@@ -1199,10 +1236,6 @@ int main(int argc, char **argv) {
                     owned_gpu = gpu;
                     destroy_owned_gpu = bn_gpu_metal_destroy;
                     SH_LOG_INFO("Metal forward pass ready");
-                    if (args.gpu_cpu_logits)
-                        setenv("BN_GPU_CPU_LOGITS", "1", 1);
-                    if (args.gpu_compare_logits)
-                        setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
                     if (bn_model_uses_moe(&model)) {
                         size_t slab_mb = args.gpu_cache_mb_set
                             ? (size_t)args.gpu_cache_mb

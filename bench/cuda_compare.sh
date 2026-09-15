@@ -7,8 +7,8 @@
 # llama-bench tg. Prompt processing uses bench_kernels' no-logits prefill path,
 # matching llama-bench pp rather than charging bitnet.c for an extra final
 # logits matvec. Set BITNET_TG_MODE=bench to use bench_kernels' random
-# next-token loop instead. Treat the ratio as a directional CUDA backend
-# regression signal, not a formal benchmark.
+# next-token loop instead. MIN_PARITY_RATIO controls the formal throughput
+# gate and defaults to the project's accepted 85% parity floor.
 
 set -uo pipefail
 
@@ -19,20 +19,28 @@ LLAMA_LIB_DIR="${LLAMA_LIB_DIR:-$(dirname "$LLAMA_BENCH")}"
 THREADS="${THREADS:-8}"
 LLAMA_TOKS="${LLAMA_TOKS:-16}"
 TOKS="${TOKS:-$LLAMA_TOKS}"
-PREFILL_TOKS="${PREFILL_TOKS:-16}"
+PREFILL_TOKS="${PREFILL_TOKS:-128}"
 ITERS="${ITERS:-10}"
 CUDA_DEVICE="${BN_CUDA_DEVICE:-auto}"
+LLAMA_CUDA_DEVICE="${LLAMA_CUDA_DEVICE:-${CUDA_VISIBLE_DEVICES:-$CUDA_DEVICE}}"
 MODEL_ROOT="${BN_MODEL_ROOT:-${MODEL_ROOT:-/data/models/gguf}}"
 MAXSEQ="${MAXSEQ:-512}"
 BITNET_TG_MODE="${BITNET_TG_MODE:-generate}"
 REQUIRE_PARITY="${REQUIRE_PARITY:-1}"
+MIN_PARITY_RATIO="${MIN_PARITY_RATIO:-0.85}"
 LLAMA_NGL="${LLAMA_NGL:-99}"
 LLAMA_NGL_SHARDED_RETRY="${LLAMA_NGL_SHARDED_RETRY:-32}"
 BITNET_BENCH_EXTRA_ARGS="${BITNET_BENCH_EXTRA_ARGS:-}"
-BITNET_BENCH_ENV="${BITNET_BENCH_ENV:-BN_CUDA_DISABLE_Q4K_Q8K_DOT=1}"
+BITNET_BENCH_ENV="${BITNET_BENCH_ENV:-}"
 BITNET_CLI_EXTRA_ARGS="${BITNET_CLI_EXTRA_ARGS:---repeat-penalty 1}"
 BITNET_CLI_ENV="${BITNET_CLI_ENV:-BN_DISABLE_LOOP_ABORT=1}"
 LLAMA_BENCH_EXTRA_ARGS="${LLAMA_BENCH_EXTRA_ARGS:-}"
+
+if ! awk -v value="$MIN_PARITY_RATIO" \
+    'BEGIN { exit !(value ~ /^[0-9]+([.][0-9]+)?$/ && value > 0 && value <= 1) }'; then
+    echo "ERROR: MIN_PARITY_RATIO must be a number in (0, 1]" >&2
+    exit 2
+fi
 
 read -r -a BITNET_BENCH_EXTRA <<< "$BITNET_BENCH_EXTRA_ARGS"
 read -r -a BITNET_BENCH_ENV_ARR <<< "$BITNET_BENCH_ENV"
@@ -40,8 +48,8 @@ read -r -a BITNET_CLI_EXTRA <<< "$BITNET_CLI_EXTRA_ARGS"
 read -r -a LLAMA_BENCH_EXTRA <<< "$LLAMA_BENCH_EXTRA_ARGS"
 
 LLAMA_CUDA_ENV=()
-if [ "$CUDA_DEVICE" != "auto" ] && [ -n "$CUDA_DEVICE" ]; then
-    LLAMA_CUDA_ENV=(CUDA_VISIBLE_DEVICES="$CUDA_DEVICE")
+if [ "$LLAMA_CUDA_DEVICE" != "auto" ] && [ -n "$LLAMA_CUDA_DEVICE" ]; then
+    LLAMA_CUDA_ENV=(CUDA_VISIBLE_DEVICES="$LLAMA_CUDA_DEVICE")
 fi
 
 find_first_model() {
@@ -62,6 +70,10 @@ if [ -z "${MODELS:-}" ]; then
         "Qwen3.5-397B-A17B-UD-Q3_K_XL-00001-of-00005.gguf" \
         "Qwen3.6-27B-Q4_K_M.gguf" \
         "qwen3.6*35b*a3b*Q8_0.gguf" \
+        "Qwen3.8-27B-UD-Q4_K_XL.gguf" \
+        "Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-*.gguf" \
+        "gemma-4-31B-it-Q4_K_S.gguf" \
+        "gemma*4*a4b*00001-of-*.gguf" \
         "qwen2.5-0.5b-instruct-q4_k_m.gguf" \
         "qwen2.5-0.5b-instruct-q8_0.gguf"; do
         found=$(find_first_model "$pattern")
@@ -101,12 +113,20 @@ for model in $MODELS; do
     fi
 
     if ! bitnet_out=$(env "${BITNET_BENCH_ENV_ARR[@]}" \
-        BN_CUDA_DEVICE="$CUDA_DEVICE" "$BITNET_BENCH" "$model" \
+        BN_GPU_DEBUG_FALLBACK=1 BN_CUDA_DEVICE="$CUDA_DEVICE" \
+        "$BITNET_BENCH" "$model" \
         --cuda --iters "$ITERS" --toks "$TOKS" --prefill-toks "$PREFILL_TOKS" \
         --prefill-iters 1 --prefill-no-logits --threads "$THREADS" \
         --random-gen "${BITNET_BENCH_EXTRA[@]}" 2>&1); then
         echo -e "$(basename "$model")\tERROR\tbitnet bench failed\t0\tFAIL"
         printf '%s\n' "$bitnet_out" >&2
+        fail=1
+        continue
+    fi
+    if printf '%s\n' "$bitnet_out" | grep -Fq '[gpu:fallback]'; then
+        echo -e "$(basename "$model")\tERROR\tbitnet prefill used CPU fallback\t0\tFAIL"
+        printf '%s\n' "$bitnet_out" >&2
+        fail=1
         continue
     fi
     bitnet_pp=$(printf '%s\n' "$bitnet_out" |
@@ -115,11 +135,19 @@ for model in $MODELS; do
     if [ "$BITNET_TG_MODE" = "generate" ]; then
         read -r -a BITNET_CLI_ENV_ARR <<< "$BITNET_CLI_ENV"
         if ! bitnet_tg_out=$(env "${BITNET_CLI_ENV_ARR[@]}" \
-            BN_CUDA_DEVICE="$CUDA_DEVICE" "$BITNET_CLI" "$model" --cuda \
+            BN_GPU_DEBUG_FALLBACK=1 BN_CUDA_DEVICE="$CUDA_DEVICE" \
+            "$BITNET_CLI" "$model" --cuda \
             -n "$TOKS" -t "$THREADS" --maxseq "$MAXSEQ" --quiet \
             "${BITNET_CLI_EXTRA[@]}" 2>&1); then
             echo -e "$(basename "$model")\t$bitnet_pp\tSKIP\t0\tERROR\tbitnet generate failed\t0\tFAIL"
             printf '%s\n' "$bitnet_tg_out" >&2
+            fail=1
+            continue
+        fi
+        if printf '%s\n' "$bitnet_tg_out" | grep -Fq '[gpu:fallback]'; then
+            echo -e "$(basename "$model")\t$bitnet_pp\tSKIP\t0\tERROR\tbitnet generate used CPU fallback\t0\tFAIL"
+            printf '%s\n' "$bitnet_tg_out" >&2
+            fail=1
             continue
         fi
         bitnet_tps=$(printf '%s\n' "$bitnet_tg_out" |
@@ -132,6 +160,7 @@ for model in $MODELS; do
         if [ -z "$bitnet_generated" ] || [ "$bitnet_generated" -le 0 ] || [ "$bitnet_tps" = "0" ]; then
             echo -e "$(basename "$model")\t$bitnet_pp\tSKIP\t0\tERROR\tbitnet generate invalid\t0\tFAIL"
             printf '%s\n' "$bitnet_tg_out" >&2
+            fail=1
             continue
         fi
     else
@@ -162,11 +191,13 @@ for model in $MODELS; do
     if [ "$llama_rc" -ne 0 ]; then
         echo -e "$(basename "$model")\t$bitnet_pp\tllama-bench failed\t0\t$bitnet_tps\tllama-bench failed\t0\tFAIL"
         printf '%s\n' "$llama_out" >&2
+        fail=1
         continue
     fi
     if printf '%s\n' "$llama_out" | grep -qiE 'cuda init failed|failed to initialize CUDA|no CUDA-capable device'; then
         echo -e "$(basename "$model")\t$bitnet_pp\tllama CUDA unavailable\t0\t$bitnet_tps\tllama CUDA unavailable\t0\tFAIL"
         printf '%s\n' "$llama_out" >&2
+        fail=1
         continue
     fi
     llama_tps=$(printf '%s\n' "$llama_out" |
@@ -178,9 +209,9 @@ for model in $MODELS; do
         'BEGIN { if (l > 0) printf "%.3f", b / l; else print "0" }')
     pp_ratio=$(awk -v b="$bitnet_pp" -v l="$llama_pp" \
         'BEGIN { if (l > 0) printf "%.3f", b / l; else print "0" }')
-    status=$(awk -v p="$pp_ratio" -v t="$tg_ratio" \
+    status=$(awk -v p="$pp_ratio" -v t="$tg_ratio" -v min="$MIN_PARITY_RATIO" \
         'BEGIN {
-            if (p >= 1.0 && t >= 1.0) print "PASS_PARITY";
+            if (p >= min && t >= min) print "PASS_PARITY";
             else if (p >= 0.8 && t >= 0.8) print "WARN_CLOSE";
             else print "FAIL";
         }')

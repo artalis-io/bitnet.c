@@ -458,6 +458,8 @@ static void test_graph_lower_attention_to_shader(void) {
     assert(rope >= 0);
     assert(flash >= 0);
     assert(combine >= 0);
+    graph.ops[1].attention_window = 3;
+    graph.ops[2].attention_window = 4;
     graph.ops[2].flags |= BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
     graph.ops[3].flags |= BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
     graph.ops[4].flags |= BN_GPU_IR_OP_FLAG_REFERENCE_ORDER;
@@ -479,6 +481,10 @@ static void test_graph_lower_attention_to_shader(void) {
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 5,
                                               &n_ops, 0) == 0);
     assert(n_ops == 5);
+    assert(ops[1].attention_window == 3);
+    assert(ops[2].attention_window == 4);
+    assert(ops[0].attention_window == 0 && ops[3].attention_window == 0 &&
+           ops[4].attention_window == 0);
 
     assert(ops[0].op_kind == BN_GPU_OP_ROPE);
     assert(ops[0].op_code == BN_GPU_CODE_ROPE_QK);

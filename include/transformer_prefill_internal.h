@@ -16,6 +16,10 @@ typedef struct BnGPUBackend BnGPUBackend;
 #endif
 typedef struct BnBackendModel BnBackendModel;
 
+int bn_transformer_prefill_host_reference_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *config);
+
 #define BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES 16
 
 typedef struct {
@@ -75,6 +79,7 @@ typedef struct {
     const void *wv;
     const void *wo;
     const void *attn_norm;
+    const void *attn_post_norm;
     const void *q_norm;
     const void *k_norm;
     int qk_rows;
@@ -114,6 +119,8 @@ typedef struct {
     const void *down;
     const void *attn_norm;
     const void *ffn_norm;
+    const void *attn_post_norm;
+    const void *ffn_post_norm;
     const void *q_norm;
     const void *k_norm;
     const void *q_bias;
@@ -225,6 +232,8 @@ typedef struct {
                                    int blocks_per_row, const float *x,
                                    int dim, int n_tokens);
     int supports_prepared_kquant;
+    // Scheduling for independent recurrent-update and output-gate heads.
+    void (*dispatch_ssm_heads)(BnThreadPool *pool, BnTPTask *tasks, int n_tasks);
 } BnPrefillCPUOps;
 
 typedef struct {
@@ -299,6 +308,8 @@ typedef struct {
     int hb_stride;
     int hb2_stride;
     int half_rope;
+    /* GPU frequency tables reserve half the full head width per layer. */
+    int gpu_rope_freq_stride;
     size_t batch_floats;
 } BnTransformerPrefillBufferShapePolicy;
 
@@ -405,6 +416,8 @@ int bn_transformer_prefill_hybrid_batch_allowed(
     const BnCPURuntimePolicy *runtime);
 int bn_transformer_prefill_requires_token_attention(
     const BnCPURuntimePolicy *runtime);
+int bn_transformer_prefill_uses_reference_dot_accumulation(
+    const BnConfig *c);
 BnTransformerPrefillLayerKindPolicy
 bn_transformer_prefill_layer_kind_policy(const BnLayerWeights *lw);
 BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
@@ -536,7 +549,8 @@ bn_transformer_prefill_decode_fallback_policy(
     int small_dense_min_tokens,
     int gpu_hybrid_prefill,
     int large_hybrid_prefill_disabled,
-    int hybrid_batch_allowed);
+    int hybrid_batch_allowed,
+    int cpu_batch_fallback_allowed);
 BnTransformerPrefillDenseModelChainPolicy
 bn_transformer_prefill_dense_model_chain_policy(
     int dense_chain_enabled,
@@ -549,7 +563,13 @@ bn_transformer_prefill_hybrid_model_chain_policy(
     int gpu_hybrid_prefill,
     int pos0,
     int n_layers,
-    int tq_state_available);
+    int tq_state_available,
+    int prefix_chain_ready);
+// Runtime scheduling policy; zero preserves one full prompt batch.
+int bn_transformer_prefill_microbatch_tokens(const BnGPUBackend *gpu);
+// Candidate bounds only. The runtime must preflight every layer/resource.
+int bn_transformer_prefill_prefix_request_allowed(
+    const BnConfig *c, const BnGPUBackend *gpu, int n_tokens, int pos0);
 int bn_transformer_prefill_hybrid_chain_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
@@ -703,7 +723,17 @@ BnTransformerPrefillSSMStateUploadPolicy
 bn_transformer_prefill_ssm_state_upload_policy(
     const BnConfig *c,
     const BnGPUBackend *gpu,
-    int gpu_attached);
+    int gpu_attached,
+    int cpu_ssm_fallback);
+int bn_transformer_prefill_ssm_gpu_layer_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw);
+int bn_transformer_prefill_cpu_ssm_fallback_required(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *weights,
+    int n_layers);
 BnTransformerPrefillEntryPolicy
 bn_transformer_prefill_entry_policy(
     int no_prefill,
@@ -744,7 +774,7 @@ bn_transformer_prefill_raw_attention_policy(
     int uses_post_norm,
     int has_attn_post_norm);
 int bn_transformer_prefill_attention_min_tokens(
-    const BnGPUBackend *gpu);
+    const BnConfig *c, const BnGPUBackend *gpu);
 int bn_transformer_prefill_attention_enabled(const BnGPUBackend *gpu);
 int bn_transformer_prefill_raw_attention_gpu_available(
     const BnGPUBackend *gpu);
@@ -859,7 +889,8 @@ int bn_transformer_prefill_config_activation(const BnConfig *c);
 int bn_transformer_prefill_has_ffn_gate(const BnConfig *c);
 float bn_transformer_prefill_norm_epsilon(const BnConfig *c);
 BnTransformerPrefillActivationPolicy
-bn_transformer_prefill_activation_policy(int activation,
+bn_transformer_prefill_activation_policy(const BnGPUBackend *gpu,
+                                         int activation,
                                          int uses_reference_activation);
 int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,
                                                const BnQWeight *k,
@@ -871,6 +902,7 @@ int bn_transformer_prefill_qkv_stack_batch_compatible(const BnQWeight *q,
                                                       int q_stride,
                                                       int dim);
 int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type);
+int bn_transformer_prefill_quant_matmul_matches_matvec(int tensor_type);
 uint32_t bn_transformer_prefill_float_kquant_fallback_task_flags(int enabled);
 int bn_transformer_prefill_quant_matmul_gpu_available(
     const BnGPUBackend *gpu,
@@ -923,6 +955,7 @@ void bn_transformer_prefill_quant_matmul_prepared(
     int n_tokens,
     int8_t *quantized_buf,
     BnThreadPool *pool);
+int bn_transformer_prefill_quant_requires_native_cpu_prefill(int tensor_type);
 void bn_transformer_prefill_quant_matmul_prepared_multi(
     float **out,
     const BnQWeight **weights,
@@ -931,6 +964,13 @@ void bn_transformer_prefill_quant_matmul_prepared_multi(
     const float *x,
     int n_tokens,
     int8_t *quantized_buf,
+    BnThreadPool *pool);
+
+void bn_transformer_prefill_quant_matmul_float_x(
+    float *out,
+    const BnQWeight *weight,
+    const float *x,
+    int n_tokens,
     BnThreadPool *pool);
 void bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
     float **out,

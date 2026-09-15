@@ -127,6 +127,18 @@ void bn_backend_quant_matmul_batch_gpu_buf(const BnMatvecTask *tasks,
                                         x_cols) == 0)
             return;
     }
+    if (gpu && W_bufs) {
+        /* A declined batch does not imply its individual projections are
+         * unsupported. Preserve backend arithmetic wherever possible. */
+        for (int i = 0; i < n_tasks; i++) {
+            void *buffer = tasks[i].W->cols == x_cols
+                ? (void *)W_bufs[i] : NULL;
+            bn_backend_quant_matmul_gpu_buf(tasks[i].out, tasks[i].W,
+                                             buffer, X, n_tokens, x_q_buf,
+                                             pool, gpu);
+        }
+        return;
+    }
     bn_backend_quant_matmul_batch_cpu(tasks, n_tasks, X, n_tokens, x_q_buf,
                                       pool);
 }

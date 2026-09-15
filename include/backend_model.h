@@ -1,6 +1,8 @@
 #ifndef BN_BACKEND_MODEL_H
 #define BN_BACKEND_MODEL_H
 
+#include <stddef.h>
+
 #ifndef BN_GPU_BACKEND_DECLARED
 #define BN_GPU_BACKEND_DECLARED
 typedef struct BnGPUBackend BnGPUBackend;
@@ -51,6 +53,13 @@ typedef enum {
     BN_BACKEND_HANDLE_MOE_EXPERT_DOWN_SCALE = 38,
     BN_BACKEND_HANDLE_FFN_GATE_REFERENCE = 39,
     BN_BACKEND_HANDLE_FFN_UP_REFERENCE = 40,
+    BN_BACKEND_HANDLE_HC_OUTPUT_NORM = 41,
+    BN_BACKEND_HANDLE_HC_ATTN_NORM = 42,
+    BN_BACKEND_HANDLE_HC_FFN_NORM = 43,
+    BN_BACKEND_HANDLE_PLE_NORM_KEY = 44,
+    BN_BACKEND_HANDLE_PLE_NORM_QUERY = 45,
+    BN_BACKEND_HANDLE_PLE_NORM_CONV = 46,
+    BN_BACKEND_HANDLE_PLE_CONV1D = 47,
 } BnBackendHandleRole;
 
 typedef struct {
@@ -59,6 +68,8 @@ typedef struct {
     void *up_all;
     void *down_all;
     void *norm;
+    void *sub_norm;
+    void *router_scale;
     int routed_valid;
     int norm_resid_valid;
 } BnBackendModelMoEPrefillRoutedResources;
@@ -77,6 +88,15 @@ BnGPUBackend *bn_backend_model_gpu_for_cpu_operations(
     const BnBackendModel *backend);
 void bn_backend_model_bind_gpu(BnBackendModel *backend, BnGPUBackend *gpu);
 void bn_backend_model_release_gpu(BnBackendModel *backend);
+void bn_backend_model_set_cpu_prepared_cache_budget(BnBackendModel *backend,
+                                                     size_t budget_bytes);
+const BnPreparedWeight *bn_backend_model_acquire_cpu_prepared(
+    BnBackendModel *backend, const BnQWeight *weight);
+/* Pin an existing layout without inserting or evicting entries on a miss. */
+const BnPreparedWeight *bn_backend_model_acquire_cached_cpu_prepared(
+    BnBackendModel *backend, const BnQWeight *weight);
+void bn_backend_model_release_cpu_prepared(BnBackendModel *backend,
+                                            const BnPreparedWeight *prepared);
 void bn_backend_model_set_gpu_disabled(BnBackendModel *backend, int disabled);
 int bn_backend_model_register_handle(BnBackendModel *backend,
                                      int layer,

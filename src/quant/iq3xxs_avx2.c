@@ -60,3 +60,70 @@ void bn_quant_iq3xxs_avx2_range(void *ctx, int row_start, int row_end) {
         c->out[row] = row_sum;
     }
 }
+
+void bn_quant_iq3xxs_avx2_q8k_range(void *ctx, int row_start, int row_end) {
+    BnKQuantSdotCtx *c = (BnKQuantSdotCtx *)ctx;
+    const BnBlockIQ3XXS *blocks = (const BnBlockIQ3XXS *)c->W->data;
+    int n_bpr = c->W->cols / BN_QK_K;
+
+    for (int row = row_start; row < row_end; row++) {
+        __m256 accumf = _mm256_setzero_ps();
+        for (int b = 0; b < n_bpr; b++) {
+            const BnBlockIQ3XXS *blk =
+                &blocks[(size_t)row * n_bpr + b];
+            const uint8_t *q3 = blk->qs;
+            const uint8_t *gas = blk->qs + BN_QK_K / 4;
+            const int8_t *q8 = c->x_q + b * BN_QK_K;
+            __m256i sumi1 = _mm256_setzero_si256();
+            __m256i sumi2 = _mm256_setzero_si256();
+
+            for (int ib32 = 0; ib32 < BN_QK_K / 32; ib32 += 2) {
+                uint32_t aux[2];
+                uint8_t grid[2][32];
+                int8_t signs[2][32];
+                memcpy(aux, gas + 4 * ib32, sizeof(aux));
+                for (int half = 0; half < 2; half++) {
+                    for (int l = 0; l < 4; l++) {
+                        uint8_t sign_mask = bn_ksigns_iq2xs[
+                            (aux[half] >> (7 * l)) & 0x7f];
+                        const uint8_t *g0 = (const uint8_t *)
+                            &bn_iq3xxs_grid[q3[half * 8 + 2 * l]];
+                        const uint8_t *g1 = (const uint8_t *)
+                            &bn_iq3xxs_grid[q3[half * 8 + 2 * l + 1]];
+                        for (int j = 0; j < 4; j++) {
+                            grid[half][l * 8 + j] = g0[j];
+                            grid[half][l * 8 + j + 4] = g1[j];
+                            signs[half][l * 8 + j] =
+                                (sign_mask & bn_kmask_iq2xs[j]) ? -1 : 1;
+                            signs[half][l * 8 + j + 4] =
+                                (sign_mask & bn_kmask_iq2xs[j + 4]) ? -1 : 1;
+                        }
+                    }
+                }
+                __m256i w1 = _mm256_loadu_si256((const __m256i *)grid[0]);
+                __m256i w2 = _mm256_loadu_si256((const __m256i *)grid[1]);
+                __m256i x1 = _mm256_loadu_si256(
+                    (const __m256i *)(q8 + ib32 * 32));
+                __m256i x2 = _mm256_loadu_si256(
+                    (const __m256i *)(q8 + (ib32 + 1) * 32));
+                __m256i s1 = _mm256_loadu_si256((const __m256i *)signs[0]);
+                __m256i s2 = _mm256_loadu_si256((const __m256i *)signs[1]);
+                __m256i p1 = _mm256_madd_epi16(
+                    _mm256_maddubs_epi16(w1, _mm256_sign_epi8(x1, s1)),
+                    _mm256_set1_epi16((int16_t)(2 * (aux[0] >> 28) + 1)));
+                __m256i p2 = _mm256_madd_epi16(
+                    _mm256_maddubs_epi16(w2, _mm256_sign_epi8(x2, s2)),
+                    _mm256_set1_epi16((int16_t)(2 * (aux[1] >> 28) + 1)));
+                sumi1 = _mm256_add_epi32(sumi1, p1);
+                sumi2 = _mm256_add_epi32(sumi2, p2);
+                q3 += 16;
+            }
+            float d = bn_fp16_to_fp32(blk->d) * c->x_d[b];
+            accumf = _mm256_fmadd_ps(
+                _mm256_set1_ps(d),
+                _mm256_cvtepi32_ps(_mm256_add_epi32(sumi1, sumi2)),
+                accumf);
+        }
+        c->out[row] = 0.25f * bn_avx2_hsum_ps(accumf);
+    }
+}

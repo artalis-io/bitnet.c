@@ -147,10 +147,11 @@ void bn_transformer_ssm_gate_scalar_range(void *ctx, int start, int end) {
         float scale = 1.0f / sqrtf(mean + c->eps);
         for (int d = 0; d < hd; d++)
             oh[d] = oh[d] * scale * c->norm_w[d];
-        // SiLU gate
+        // Architecture-selected recurrent output gate.
         for (int d = 0; d < hd; d++) {
             float g = zh[d];
-            oh[d] *= ssm_silu_scalar(g);
+            float sigmoid = 1.0f / (1.0f + bn_transformer_fast_exp_scalar(-g));
+            oh[d] *= c->sigmoid_gate ? sigmoid : g * sigmoid;
         }
     }
 }

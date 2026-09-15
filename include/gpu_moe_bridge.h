@@ -14,7 +14,9 @@ typedef struct {
 
 typedef struct {
     BnGPUMoEExpertBuffers buffers;
-    float weight;
+    float weight; // route weight; output_scale is applied separately when present
+    float output_scale;
+    int has_output_scale;
     void *route_gate;
     int route_complement;
 } BnGPUMoEResolvedExpert;

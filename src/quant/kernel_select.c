@@ -44,7 +44,11 @@ bn_tp_fn bn_quant_get_float_kernel(int type) {
     case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_avx2_range;
     case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_avx2_range;
     case BN_GGUF_TENSOR_Q5_0:    return bn_quant_q5_0_scalar_range;
+#ifdef BN_FORCE_SCALAR
     case BN_GGUF_TENSOR_Q5_1:    return bn_quant_q5_1_scalar_range;
+#else
+    case BN_GGUF_TENSOR_Q5_1:    return bn_quant_q5_1_avx2_range;
+#endif
     case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_avx2_range;
     case BN_GGUF_TENSOR_IQ4_XS:  return bn_quant_iq4xs_avx2_range;
     case BN_GGUF_TENSOR_IQ3_XXS: return bn_quant_iq3xxs_avx2_range;

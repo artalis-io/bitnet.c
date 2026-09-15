@@ -177,46 +177,8 @@ int bn_transformer_gpu_stage_token_input(
             return -1;
     }
 
-    int half_head = model->config.head_size / 2;
-    size_t rope_count = (size_t)model->config.n_layers * (size_t)half_head;
-    float *rope_freq = (float *)malloc(rope_count * sizeof(float));
-    if (!rope_freq)
-        return -1;
-    for (int layer = 0; layer < model->config.n_layers; layer++) {
-        const BnLayerWeights *lw = &model->weights.layers[layer];
-        int layer_head_size = lw->attn.head_size > 0
-            ? lw->attn.head_size : model->config.head_size;
-        int rope_dims = bn_transformer_rope_dims_for_head(
-            &model->config, layer_head_size);
-        float theta = bn_transformer_rope_theta_for_head(
-            &model->config, layer_head_size);
-        float layer_freq[half_head];
-        bn_model_transformer_policy_init_rope_frequencies_for_theta(
-            theta, rope_dims, layer_freq, half_head);
-        for (int i = 0; i < half_head; i++) {
-            float freq = i < rope_dims / 2
-                ? layer_freq[i]
-                : 0.0f;
-            if (i < rope_dims / 2 &&
-                bn_transformer_uses_per_layer_embedding(&model->config) &&
-                bn_transformer_rope_uses_base_frequency(
-                    &model->config, layer_head_size) &&
-                model->weights.rope_freqs) {
-                if (bn_transformer_divides_rope_freqs(
-                        &model->config, layer))
-                    freq /= model->weights.rope_freqs[i];
-                else
-                    freq *= model->weights.rope_freqs[i];
-            }
-            rope_freq[(size_t)layer * half_head + i] = freq;
-        }
-    }
-    int rope_rc = bn_gpu_backend_write_activation(
-        gpu, BN_GPU_VALUE_ROPE_FREQ, rope_freq,
-        rope_count * sizeof(float), 0);
-    free(rope_freq);
-    if (rope_rc != 0)
-        return -1;
+    /* RoPE frequencies belong to the backend activation plan. Token staging
+     * must preserve the backend's prepared values and rounding. */
     return 0;
 }
 
@@ -313,6 +275,10 @@ bn_transformer_gpu_resolve_layer_validation_resources(
             backend, layer, BN_BACKEND_HANDLE_ATTN_SUB_NORM),
         .ffn_sub_norm = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_FFN_SUB_NORM),
+        .attn_post_norm = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_ATTN_POST_NORM),
+        .ffn_post_norm = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_FFN_POST_NORM),
     };
 }
 
@@ -565,6 +531,24 @@ bn_transformer_gpu_resolve_moe_shared_resources(
     };
 }
 
+int bn_transformer_gpu_moe_shared_gate_batch(
+    const BnGPUBackend *gpu, const BnModel *model,
+    const BnLayerWeights *layer_weights, int layer,
+    float *out, const float *input, int n_tokens, int dim) {
+    if (!gpu || !model || !layer_weights || !out || !input ||
+        layer < 0 || n_tokens <= 0 || dim <= 0)
+        return -1;
+    BnTransformerGPUMoESharedResources resources =
+        bn_transformer_gpu_resolve_moe_shared_resources(
+            gpu, bn_model_backend(model), layer_weights, layer);
+    if (!bn_transformer_gpu_shared_expert_gate_available(
+            layer_weights, &resources))
+        return -1;
+    return bn_gpu_backend_matmul(
+        gpu, out, resources.shared_expert_gate, input,
+        1, dim, n_tokens, bn_transformer_gpu_float_buffer_type());
+}
+
 int bn_transformer_gpu_resolve_moe_shared_projection_info(
     BnTransformerGPUMoESharedProjectionInfo *out,
     const BnLayerWeights *lw) {
@@ -678,6 +662,136 @@ bn_transformer_gpu_resolve_moe_prefill_ffn_resources(
     return resources;
 }
 
+BnTransformerGPUHyperConnectionResources
+bn_transformer_gpu_resolve_hyper_connection_resources(
+    const BnBackendModel *backend,
+    const BnHyperConnectionWeights *weights,
+    int layer,
+    int norm_role,
+    int require_inject) {
+    BnTransformerGPUHyperConnectionResources resources = {0};
+    if (!backend || !weights)
+        return resources;
+    resources.norm = backend_handle_or(
+        backend, layer, (BnBackendHandleRole)norm_role);
+    resources.down = qweight_backend_buf(backend, &weights->down);
+    resources.up = qweight_backend_buf(backend, &weights->up);
+    resources.inject = qweight_backend_buf(backend, &weights->inject);
+    resources.valid = resources.norm && resources.down && resources.up &&
+                      (!require_inject || resources.inject);
+    return resources;
+}
+
+int bn_transformer_gpu_hyper_connection_grouped_rmsnorm_batch(
+    const BnGPUBackend *gpu, const BnModel *model,
+    const BnHyperConnectionWeights *weights, int layer,
+    int attention_branch, float *out, const float *input,
+    int n_tokens, int streams, int dim, float eps) {
+    if (!gpu || !model || !weights || !out || !input || layer < 0)
+        return -1;
+    BnTransformerGPUHyperConnectionResources resources =
+        bn_transformer_gpu_resolve_hyper_connection_resources(
+            bn_model_backend(model), weights, layer,
+            attention_branch ? BN_BACKEND_HANDLE_HC_ATTN_NORM
+                             : BN_BACKEND_HANDLE_HC_FFN_NORM,
+            0);
+    if (!resources.valid)
+        return -1;
+    return bn_gpu_backend_rmsnorm_grouped_batch(
+        gpu, out, resources.norm, input,
+        n_tokens, streams, dim, eps);
+}
+
+int bn_transformer_gpu_hyper_connection_scaled_silu_batch(
+    const BnGPUBackend *gpu, float *values, int count, float scale) {
+    if (!gpu || !values || count <= 0)
+        return -1;
+    return bn_gpu_backend_hyper_connection_scaled_silu_batch(
+        gpu, values, count, scale);
+}
+
+int bn_transformer_gpu_hyper_connection_mix_batch(
+    const BnGPUBackend *gpu, float *out, const float *norm,
+    const float *gates, int n_tokens, int dim, int streams) {
+    if (!gpu || !out || !norm || !gates)
+        return -1;
+    return bn_gpu_backend_hyper_connection_mix_batch(
+        gpu, out, norm, gates, n_tokens, dim, streams);
+}
+
+int bn_transformer_gpu_ssm_delta_gate_batch(
+    const BnGPUBackend *gpu, const BnModel *model,
+    const BnLayerWeights *weights, int layer, float *out, float *state,
+    const float *qkv, const float *z, const float *alpha,
+    const float *beta, int n_tokens, int num_k_heads, int head_k_dim,
+    int num_v_heads, int head_v_dim, float q_scale, float norm_eps,
+    int sigmoid_gate) {
+    if (!gpu || !model || !weights || layer < 0)
+        return -1;
+    BnTransformerGPUSSMResources resources =
+        bn_transformer_gpu_resolve_ssm_resources(
+            NULL, bn_model_backend(model), weights, layer);
+    if (!resources.ssm_norm || !resources.ssm_dt_bias || !resources.ssm_a_log)
+        return -1;
+    return bn_gpu_backend_ssm_delta_gate_batch(
+        gpu, out, state, qkv, z, alpha, beta, resources.ssm_norm,
+        resources.ssm_dt_bias, resources.ssm_a_log, n_tokens,
+        num_k_heads, head_k_dim, num_v_heads, head_v_dim,
+        q_scale, norm_eps, sigmoid_gate);
+}
+
+int bn_transformer_gpu_ssm_conv_l2norm_batch(
+    const BnGPUBackend *gpu, const BnModel *model,
+    const BnLayerWeights *weights, int layer, float *qkv,
+    float *conv_state, int n_tokens, int qkv_dim, int conv_kernel,
+    int num_k_heads, int head_k_dim, float norm_eps) {
+    if (!gpu || !model || !weights || layer < 0)
+        return -1;
+    BnTransformerGPUSSMResources resources =
+        bn_transformer_gpu_resolve_ssm_resources(
+            NULL, bn_model_backend(model), weights, layer);
+    if (!resources.ssm_conv1d)
+        return -1;
+    return bn_gpu_backend_ssm_conv_l2norm_batch(
+        gpu, qkv, conv_state, resources.ssm_conv1d, n_tokens, qkv_dim,
+        conv_kernel, num_k_heads, head_k_dim, norm_eps);
+}
+
+int bn_transformer_gpu_hyper_connection_combine_batch(
+    const BnGPUBackend *gpu, float *residual, const float *block_out,
+    const float *inject, int n_tokens, int dim, int streams) {
+    if (!gpu || !residual || !block_out || !inject)
+        return -1;
+    return bn_gpu_backend_hyper_connection_combine_batch(
+        gpu, residual, block_out, inject, n_tokens, dim, streams);
+}
+
+int bn_transformer_gpu_resolve_ple_resources(
+    BnTransformerGPUPLEResources *out,
+    const BnModel *model,
+    const BnLayerWeights *lw) {
+    if (!out || !model || !lw)
+        return -1;
+    const BnBackendModel *backend = bn_model_backend(model);
+    int layer = model->config.ple_layer;
+    *out = (BnTransformerGPUPLEResources){
+        .key = qweight_backend_buf(backend, &lw->ple.key),
+        .value = qweight_backend_buf(backend, &lw->ple.value),
+        .norm_key = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_PLE_NORM_KEY),
+        .norm_query = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_PLE_NORM_QUERY),
+        .norm_conv = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_PLE_NORM_CONV),
+        .conv1d = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_PLE_CONV1D),
+    };
+    return out->key && out->value && out->norm_key && out->norm_query &&
+                   out->norm_conv && out->conv1d
+               ? 0
+               : -1;
+}
+
 int bn_transformer_gpu_resolve_model_layer_resources(
     BnTransformerGPULayerResources *out,
     const BnModel *model,
@@ -727,5 +841,9 @@ int bn_transformer_gpu_resolve_model_layer_resources(
         .post_norm = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_PER_LAYER_POST_NORM),
     };
+    out->hc_attn = bn_transformer_gpu_resolve_hyper_connection_resources(
+        backend, &lw->hc_attn, layer, BN_BACKEND_HANDLE_HC_ATTN_NORM, 1);
+    out->hc_ffn = bn_transformer_gpu_resolve_hyper_connection_resources(
+        backend, &lw->hc_ffn, layer, BN_BACKEND_HANDLE_HC_FFN_NORM, 1);
     return 0;
 }

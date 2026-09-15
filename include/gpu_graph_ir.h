@@ -35,6 +35,11 @@ typedef enum {
     BN_GPU_VALUE_SSM_BETA,
     BN_GPU_VALUE_SSM_V,
     BN_GPU_VALUE_PER_LAYER_INPUT,
+    BN_GPU_VALUE_HC_RESIDUAL,
+    BN_GPU_VALUE_HC_NORM,
+    BN_GPU_VALUE_HC_GATE,
+    BN_GPU_VALUE_HC_LOW_RANK,
+    BN_GPU_VALUE_HC_INJECT,
     BN_GPU_VALUE_COUNT,
 } BnGPUValueSlot;
 
@@ -103,6 +108,10 @@ typedef enum {
     BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
     BN_GPU_IR_UTILITY_DEINTERLEAVE_Q,
     BN_GPU_IR_UTILITY_WEIGHTED_ADD_SIGMOID,
+    BN_GPU_IR_UTILITY_HC_STREAM_RMSNORM,
+    BN_GPU_IR_UTILITY_HC_SCALE_SILU,
+    BN_GPU_IR_UTILITY_HC_GATED_REDUCE,
+    BN_GPU_IR_UTILITY_HC_COMBINE,
 } BnGPUIRUtilityKind;
 
 typedef enum {
@@ -145,6 +154,7 @@ typedef struct {
     int aux1;
     int output_offsets[BN_GPU_IR_MAX_OP_OUTPUTS];
     uint32_t params[8];
+    int attention_window; // attention only: 0 = full causal history
     uint32_t flags;
     BnGPUIRFallback fallback;
     const char *label;

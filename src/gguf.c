@@ -602,7 +602,7 @@ int bn_gguf_tensor_size(uint32_t type, uint64_t nelements, size_t *out) {
         case BN_GGUF_TENSOR_IQ4_NL:  return tensor_blocks(nelements, 32, 18, out);
         case BN_GGUF_TENSOR_IQ4_XS:  return tensor_blocks(nelements, 256, 136, out);
         case BN_GGUF_TENSOR_IQ3_XXS: return tensor_blocks(nelements, 256, 98, out);
-        case BN_GGUF_TENSOR_IQ3_S:   return tensor_blocks(nelements, 256, 114, out);
+        case BN_GGUF_TENSOR_IQ3_S:   return tensor_blocks(nelements, 256, 110, out);
         case BN_GGUF_TENSOR_IQ2_XXS: return tensor_blocks(nelements, 256, 66, out);
         case BN_GGUF_TENSOR_IQ2_XS:  return tensor_blocks(nelements, 256, 74, out);
         case BN_GGUF_TENSOR_IQ2_S:   return tensor_blocks(nelements, 256, 82, out);

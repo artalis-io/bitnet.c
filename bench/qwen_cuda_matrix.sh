@@ -26,15 +26,37 @@ CASE_FILTERS=("$@")
 BITNET_CUDA_KV_ARGS="${BITNET_CUDA_KV_ARGS:-}"
 read -r -a BITNET_CUDA_KV_EXTRA <<< "$BITNET_CUDA_KV_ARGS"
 
+PREFILL_MODES=${CUDA_PARITY_PREFILL_MODES:-default,tokenwise}
+if [[ ! "$PREFILL_MODES" =~ ^(default|tokenwise)(,(default|tokenwise))*$ ]]; then
+    echo "ERROR: CUDA_PARITY_PREFILL_MODES must contain default and/or tokenwise" >&2
+    exit 1
+fi
+
+run_llama_case() {
+    local model=$1
+    shift
+    local mode
+    local mode_args=()
+    for mode in ${PREFILL_MODES//,/ }; do
+        mode_args=()
+        [[ "$mode" != tokenwise ]] || mode_args+=(--no-prefill)
+        echo "  prefill=$mode"
+        "$COMPARE_LLAMA" "$model" --cuda --llama-cuda --strict \
+            -n "$N_TOKENS" -t "$THREADS" --maxseq "$MAXSEQ" \
+            "${mode_args[@]}" "$@" || fail=1
+    done
+}
+
 fail=0
 ran=0
 missing=0
 bench_models=""
+gate_phases=$((RUN_COHERENCE + RUN_SHARDED_MOE_SMOKE + RUN_LLAMA_COMPARE + RUN_BENCH))
 
 case_key() {
     printf '%s\n' "$1" |
         tr '[:upper:]' '[:lower:]' |
-        sed 's/qwen 2\.5/qwen25/g; s/qwen 3\.5/qwen35/g; s/qwen 3\.6/qwen36/g; s/qwen 3/qwen3/g; s/[^a-z0-9]/_/g; s/_\+/_/g; s/^_//; s/_$//'
+        sed 's/qwen 2\.5/qwen25/g; s/qwen 3\.5/qwen35/g; s/qwen 3\.6/qwen36/g; s/qwen 3\.8/qwen38/g; s/qwen 3/qwen3/g; s/[^a-z0-9]/_/g; s/_\+/_/g; s/^_//; s/_$//'
 }
 
 case_selected() {
@@ -107,6 +129,9 @@ run_case() {
             elif [ "$RUN_SHARDED_MOE_SMOKE" = "1" ]; then
                 "$BITNET" "$path" --cuda "${case_kv_args[@]}" -n 0 --maxseq 32 --quiet || fail=1
             fi
+            if [ "$RUN_LLAMA_COMPARE" = "1" ]; then
+                run_llama_case "$path" "${case_kv_args[@]}"
+            fi
             return
         fi
         echo "RUN $name: $path"
@@ -119,7 +144,7 @@ run_case() {
             "$COHERENCE" "$path" --cuda "${case_kv_args[@]}" --require-all-tokens || fail=1
         fi
         if [ "$RUN_LLAMA_COMPARE" = "1" ]; then
-            "$COMPARE_LLAMA" "$path" --cuda "${case_kv_args[@]}" --llama-cuda -n "$N_TOKENS" -t "$THREADS" --maxseq "$MAXSEQ" || fail=1
+            run_llama_case "$path" "${case_kv_args[@]}"
         fi
     else
         echo "SKIP $name: set $env_name or BN_MODEL_ROOT=$ROOT"
@@ -152,6 +177,13 @@ run_case "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" \
 run_case "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" \
     "qwen3_6" \
     "Qwen3.6-*A*B*.gguf" "qwen3.6*a*b*.gguf"
+run_case "Qwen 3.8 dense" "BN_MODEL_QWEN38_DENSE" \
+    "qwen3_8/27b" \
+    "Qwen3.8-27B*.gguf" "qwen3.8-27b*.gguf"
+run_case "Qwen 3.8 sparse MoE" "BN_MODEL_QWEN38_MOE" \
+    "qwen3_8/flash_next" \
+    "Qwen3.8-Flash-Next*00001-of-*.gguf" \
+    "qwen3.8-flash-next*00001-of-*.gguf"
 
 if [ "$RUN_BENCH" = "1" ] && [ -n "$bench_models" ]; then
     MODELS="$bench_models" BITNET_BENCH_EXTRA_ARGS="${BITNET_BENCH_EXTRA_ARGS:-$BITNET_CUDA_KV_ARGS}" BITNET_CLI_EXTRA_ARGS="${BITNET_CLI_EXTRA_ARGS:-$BITNET_CUDA_KV_ARGS}" "$CUDA_COMPARE" || fail=1
@@ -167,4 +199,8 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 
-echo "Qwen CUDA matrix PASSED: ran=$ran skipped=$missing"
+if [ "$gate_phases" -eq 0 ]; then
+    echo "Qwen CUDA matrix DISCOVERY PASSED: found=$ran missing=$missing"
+else
+    echo "Qwen CUDA matrix PASSED: ran=$ran skipped=$missing"
+fi

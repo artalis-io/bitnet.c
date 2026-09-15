@@ -11,8 +11,10 @@
 #include "session.h"
 #include "quant.h"
 #include "gpu_backend.h"
+#include "gpu_policy.h"
 #include "transformer.h"
 #include "sampler.h"
+#include "generate.h"
 #include "threadpool.h"
 #include "moe.h"
 #include "../src/gpu_shader_ir_internal.h"
@@ -594,7 +596,10 @@ static int bench_use_gpu_batch_prefill(const BnModel *m) {
     if (c->full_attn_interval > 0)
         return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
     if (c->n_experts > 0)
-        return getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
+        return bn_gpu_policy_moe_prefill_enabled(gpu);
+    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+        bn_gpu_backend_can_prefill_dense_layer(gpu))
+        return 1;
     return c->dim <= 2560;
 }
 
@@ -631,12 +636,10 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters,
             if (bench_sync_gpu_prompt(m) != 0)
                 goto done;
         } else if (no_logits) {
-            if (bn_transformer_prefill_no_logits(m, session, tokens,
-                                                 n_prompt, 0) != 0)
+            if (bn_prefill_no_logits(m, session, tokens, n_prompt, 0, 0) != 0)
                 goto done;
         } else {
-            float *logits = bn_transformer_prefill(m, session, tokens,
-                                                   n_prompt, 0);
+            float *logits = bn_prefill(m, session, tokens, n_prompt, 0, 0);
             if (!logits)
                 goto done;
             bench_sink += logits[tokens[i % n_prompt] % vocab];
@@ -647,10 +650,11 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters,
             goto done_free_tokens;
     }
 
-    double t0 = bn_platform_time_ms();
+    double elapsed = 0.0;
     if (session && session->moe_state)
         bn_moe_reset_stats(session->moe_state);
     for (int i = 0; i < n_iters; i++) {
+        double iter_start = bn_platform_time_ms();
         if (gpu_prompt_path) {
             for (int t = 0; t < n_prompt; t++) {
                 if (bn_transformer_forward_no_logits(
@@ -660,16 +664,15 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters,
             if (bench_sync_gpu_prompt(m) != 0)
                 goto done;
         } else if (no_logits) {
-            if (bn_transformer_prefill_no_logits(m, session, tokens,
-                                                 n_prompt, 0) != 0)
+            if (bn_prefill_no_logits(m, session, tokens, n_prompt, 0, 0) != 0)
                 goto done;
         } else {
-            float *logits = bn_transformer_prefill(m, session, tokens,
-                                                   n_prompt, 0);
+            float *logits = bn_prefill(m, session, tokens, n_prompt, 0, 0);
             if (!logits)
                 goto done;
             bench_sink += logits[tokens[i % n_prompt] % vocab];
         }
+        elapsed += bn_platform_time_ms() - iter_start;
         if (i + 1 < n_iters) {
             bn_session_free(session, NULL);
             session = bn_session_create(m, NULL);
@@ -677,7 +680,6 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters,
                 goto done_free_tokens;
         }
     }
-    double elapsed = bn_platform_time_ms() - t0;
     double toks_per_sec = ((double)n_prompt * n_iters) / (elapsed / 1000.0);
 
     printf("\nPrefill%s: %.1f tok/s  (%d tokens x %d in %.0f ms)\n",
@@ -910,6 +912,20 @@ int main(int argc, char **argv) {
             bn_model_set_moe_fd(&model, mf->fd);
         if (madvise_moe)
             bn_model_set_moe_madvise(&model, 1);
+        if (bn_moe_io_has_mmap(bn_model_moe_io(&model))) {
+            size_t prepared_cache_mb = 4096;
+            const char *prepared_cache_env =
+                getenv("BN_CPU_PREPARED_CACHE_MB");
+            if (prepared_cache_env && prepared_cache_env[0])
+                prepared_cache_mb = (size_t)strtoull(
+                    prepared_cache_env, NULL, 10);
+            bn_backend_model_set_cpu_prepared_cache_budget(
+                bn_model_backend(&model),
+                prepared_cache_mb * 1024u * 1024u);
+            if (getenv("BN_CPU_PREPARE_ALL_EXPERTS") &&
+                bn_moe_prepare_mmap_experts(&model) != 0)
+                fprintf(stderr, "Failed to prepare all CPU expert layouts\n");
+        }
     }
 
 #ifdef BN_ENABLE_WEBGPU
@@ -929,7 +945,7 @@ int main(int argc, char **argv) {
             return 1;
         }
         if (gpu->init_activations &&
-            gpu->init_activations(gpu->ctx, &model.config) != 0) {
+            bn_model_init_gpu_activations(&model, gpu) != 0) {
             fprintf(stderr, "Failed to initialize WebGPU activations\n");
             bn_model_free(&model);
             bn_gpu_wgpu_destroy(gpu);
@@ -958,7 +974,7 @@ int main(int argc, char **argv) {
             return 1;
         }
         if (metal_gpu->init_activations &&
-            metal_gpu->init_activations(metal_gpu->ctx, &model.config) != 0) {
+            bn_model_init_gpu_activations(&model, metal_gpu) != 0) {
             fprintf(stderr, "Failed to initialize Metal activations\n");
             bn_gpu_metal_destroy(metal_gpu);
             bn_model_free(&model);
@@ -985,8 +1001,9 @@ int main(int argc, char **argv) {
             return 1;
         }
         if (cuda_gpu->init_activations &&
-            cuda_gpu->init_activations(cuda_gpu->ctx, &model.config) != 0) {
+            bn_model_init_gpu_activations(&model, cuda_gpu) != 0) {
             fprintf(stderr, "Failed to initialize CUDA activations\n");
+            bn_model_release_gpu(&model);
             bn_gpu_cuda_destroy(cuda_gpu);
             bn_model_free(&model);
             bn_gguf_free(gf);
@@ -1055,6 +1072,8 @@ int main(int argc, char **argv) {
                     bn_model_set_gpu_moe_cache(
                         &model,
                         bn_gpu_moe_cache_create(budget_bytes, entry_bytes,
+                                                moe_layers *
+                                                    model.config.n_experts,
                                                 cuda_gpu));
                     if (auto_resident && bn_model_gpu_moe_cache(&model)) {
                         if (bn_gpu_moe_bridge_preload_all(&model) < 0)

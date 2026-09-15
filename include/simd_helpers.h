@@ -1,6 +1,8 @@
 #ifndef BN_SIMD_HELPERS_H
 #define BN_SIMD_HELPERS_H
 
+#include <stdint.h>
+
 // Shared SIMD helper functions for NEON, AVX2, and WASM SIMD128.
 // Used by quant.c and transformer.c.
 
@@ -92,13 +94,10 @@ static inline int32_t bn_avx2_hsum_epi32(__m256i v) {
 
 // Horizontal sum of 8 floats → scalar float.
 static inline float bn_avx2_hsum_ps(__m256 v) {
-    __m128 lo = _mm256_castps256_ps128(v);
-    __m128 hi = _mm256_extractf128_ps(v, 1);
-    __m128 sum128 = _mm_add_ps(lo, hi);
-    __m128 shuf = _mm_movehdup_ps(sum128);        // [1,1,3,3]
-    sum128 = _mm_add_ps(sum128, shuf);
-    shuf = _mm_movehl_ps(shuf, sum128);            // [2,3,...]
-    sum128 = _mm_add_ss(sum128, shuf);
+    __m128 sum128 = _mm_add_ps(_mm256_extractf128_ps(v, 1),
+                               _mm256_castps256_ps128(v));
+    sum128 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+    sum128 = _mm_add_ss(sum128, _mm_movehdup_ps(sum128));
     return _mm_cvtss_f32(sum128);
 }
 
@@ -125,40 +124,94 @@ static inline __m256i bn_avx2_dpbusd(__m256i acc, __m256i a, __m256i b) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(prod16, _mm256_set1_epi16(1)));
 }
 
-// Fast vectorized exp approximation using range reduction + polynomial.
-// Accurate to ~1e-5 relative error over [-87, 88], sufficient for inference.
-// Method: exp(x) = 2^n * exp(r) where n = floor(x/ln2), r = x - n*ln2.
-// exp(r) approximated by degree-4 polynomial on [-0.5*ln2, 0.5*ln2].
+// Vectorized exp matching ggml's x86 range reduction and polynomial.
 static inline __m256 bn_avx2_fast_exp_ps(__m256 x) {
-    const __m256 log2e   = _mm256_set1_ps(1.4426950409f);   // 1/ln(2)
-    const __m256 ln2     = _mm256_set1_ps(0.6931471806f);   // ln(2)
-    const __m256 half    = _mm256_set1_ps(0.5f);
-    const __m256 one     = _mm256_set1_ps(1.0f);
-    // Minimax coefficients for exp(r) on [-ln2/2, ln2/2]
-    const __m256 p2      = _mm256_set1_ps(0.49999994f);     // ~1/2!
-    const __m256 p3      = _mm256_set1_ps(0.16666667f);     // ~1/3!
-    const __m256 p4      = _mm256_set1_ps(0.04166664f);     // ~1/4!
+    const __m256 r = _mm256_set1_ps(0x1.8p23f);
+    const __m256 z = _mm256_fmadd_ps(
+        x, _mm256_set1_ps(0x1.715476p+0f), r);
+    const __m256 n = _mm256_sub_ps(z, r);
+    const __m256 b = _mm256_fnmadd_ps(
+        n, _mm256_set1_ps(0x1.7f7d1cp-20f),
+        _mm256_fnmadd_ps(n, _mm256_set1_ps(0x1.62e4p-1f), x));
+    const __m256i e = _mm256_slli_epi32(_mm256_castps_si256(z), 23);
+    const __m256 k = _mm256_castsi256_ps(_mm256_add_epi32(
+        e, _mm256_castps_si256(_mm256_set1_ps(1.0f))));
+    const __m256 abs_n = _mm256_andnot_ps(_mm256_set1_ps(-0.0f), n);
+    const __m256i exceptional = _mm256_castps_si256(_mm256_cmp_ps(
+        abs_n, _mm256_set1_ps(126.0f), _CMP_GT_OQ));
+    const __m256 u = _mm256_mul_ps(b, b);
+    const __m256 j = _mm256_fmadd_ps(
+        _mm256_fmadd_ps(
+            _mm256_fmadd_ps(_mm256_set1_ps(0x1.0e4020p-7f), b,
+                            _mm256_set1_ps(0x1.573e2ep-5f)),
+            u,
+            _mm256_fmadd_ps(_mm256_set1_ps(0x1.555e66p-3f), b,
+                            _mm256_set1_ps(0x1.fffdb6p-2f))),
+        u, _mm256_mul_ps(_mm256_set1_ps(0x1.ffffecp-1f), b));
+    if (!_mm256_movemask_ps(_mm256_castsi256_ps(exceptional)))
+        return _mm256_fmadd_ps(j, k, k);
 
-    // Clamp to prevent overflow/underflow
-    x = _mm256_max_ps(_mm256_set1_ps(-87.3f), _mm256_min_ps(_mm256_set1_ps(88.7f), x));
+    const __m256i g = _mm256_and_si256(
+        _mm256_castps_si256(_mm256_cmp_ps(
+            n, _mm256_setzero_ps(), _CMP_LE_OQ)),
+        _mm256_set1_epi32((int)UINT32_C(0x82000000)));
+    const __m256 s1 = _mm256_castsi256_ps(_mm256_add_epi32(
+        g, _mm256_set1_epi32((int)UINT32_C(0x7f000000))));
+    const __m256 s2 = _mm256_castsi256_ps(_mm256_sub_epi32(e, g));
+    const __m256i overflow = _mm256_castps_si256(_mm256_cmp_ps(
+        abs_n, _mm256_set1_ps(192.0f), _CMP_GT_OQ));
+    return _mm256_or_ps(
+        _mm256_and_ps(_mm256_castsi256_ps(overflow),
+                      _mm256_mul_ps(s1, s1)),
+        _mm256_andnot_ps(
+            _mm256_castsi256_ps(overflow),
+            _mm256_or_ps(
+                _mm256_and_ps(_mm256_castsi256_ps(exceptional),
+                              _mm256_mul_ps(
+                                  _mm256_fmadd_ps(s2, j, s2), s1)),
+                _mm256_andnot_ps(
+                    _mm256_castsi256_ps(exceptional),
+                    _mm256_fmadd_ps(k, j, k)))));
+}
 
-    // n = round(x / ln2) = floor(x * log2e + 0.5)
-    __m256 t   = _mm256_fmadd_ps(x, log2e, half);
-    __m256 n   = _mm256_floor_ps(t);
-    __m256i ni = _mm256_cvtps_epi32(n);    // integer n
-
-    // r = x - n * ln2 (reduced argument, |r| <= ln2/2)
-    __m256 r = _mm256_fnmadd_ps(n, ln2, x);
-
-    // Polynomial: exp(r) ≈ 1 + r + r²/2! + r³/3! + r⁴/4! (Horner form)
-    __m256 poly = _mm256_fmadd_ps(p4, r, p3);
-    poly = _mm256_fmadd_ps(poly, r, p2);
-    poly = _mm256_fmadd_ps(poly, r, one);
-    poly = _mm256_fmadd_ps(poly, r, one);
-
-    // Scale by 2^n: add n to IEEE754 exponent field (bias=127)
-    __m256i e2n = _mm256_slli_epi32(_mm256_add_epi32(ni, _mm256_set1_epi32(127)), 23);
-    return _mm256_mul_ps(poly, _mm256_castsi256_ps(e2n));
+/* Reproduce the AVX512 scalef-based polynomial using AVX2 exponent scaling.
+ * Normal softmax and SiLU inputs stay in the range where multiplying by the
+ * exact power of two has the same rounding as VSCALEFPS. */
+static inline __m256 bn_avx2_fast_exp_avx512_ps(__m256 x) {
+    const __m256 r = _mm256_set1_ps(0x1.8p23f);
+    const __m256 z = _mm256_fmadd_ps(
+        x, _mm256_set1_ps(0x1.715476p+0f), r);
+    const __m256 n = _mm256_sub_ps(z, r);
+    const __m256 b = _mm256_fnmadd_ps(
+        n, _mm256_set1_ps(0x1.7f7d1cp-20f),
+        _mm256_fnmadd_ps(n, _mm256_set1_ps(0x1.62e4p-1f), x));
+    const __m256 u = _mm256_mul_ps(b, b);
+    const __m256 j = _mm256_fmadd_ps(
+        _mm256_fmadd_ps(
+            _mm256_fmadd_ps(_mm256_set1_ps(0x1.0e4020p-7f), b,
+                            _mm256_set1_ps(0x1.573e2ep-5f)),
+            u,
+            _mm256_fmadd_ps(_mm256_set1_ps(0x1.555e66p-3f), b,
+                            _mm256_set1_ps(0x1.fffdb6p-2f))),
+        u,
+        _mm256_fmadd_ps(_mm256_set1_ps(0x1.ffffecp-1f), b,
+                        _mm256_set1_ps(1.0f)));
+    const __m256i exponent = _mm256_slli_epi32(
+        _mm256_castps_si256(z), 23);
+    const __m256 scale = _mm256_castsi256_ps(_mm256_add_epi32(
+        exponent, _mm256_set1_epi32((int)UINT32_C(0x3f800000))));
+    const __m256 result = _mm256_mul_ps(j, scale);
+    const __m256 exceptional = _mm256_cmp_ps(
+        _mm256_andnot_ps(_mm256_set1_ps(-0.0f), n),
+        _mm256_set1_ps(192.0f), _CMP_GT_OQ);
+    if (!_mm256_movemask_ps(exceptional))
+        return result;
+    const __m256 nonpositive = _mm256_cmp_ps(
+        n, _mm256_setzero_ps(), _CMP_LE_OQ);
+    const __m256 alternate = _mm256_blendv_ps(
+        _mm256_castsi256_ps(_mm256_set1_epi32((int)UINT32_C(0x7f800000))),
+        _mm256_setzero_ps(), nonpositive);
+    return _mm256_blendv_ps(result, alternate, exceptional);
 }
 
 // Fast vectorized sigmoid: 1 / (1 + exp(-x))
@@ -170,7 +223,10 @@ static inline __m256 bn_avx2_fast_sigmoid_ps(__m256 x) {
 
 // Fast vectorized SiLU: x * sigmoid(x)
 static inline __m256 bn_avx2_fast_silu_ps(__m256 x) {
-    return _mm256_mul_ps(x, bn_avx2_fast_sigmoid_ps(x));
+    const __m256 neg_x = _mm256_sub_ps(_mm256_setzero_ps(), x);
+    return _mm256_div_ps(
+        x, _mm256_add_ps(_mm256_set1_ps(1.0f),
+                         bn_avx2_fast_exp_ps(neg_x)));
 }
 
 static inline __m256 bn_avx2_fast_tanh_ps(__m256 x) {
@@ -195,6 +251,47 @@ static inline __m256 bn_avx2_fast_gelu_ps(__m256 x) {
 
 #ifdef __AVX512F__
 #include <immintrin.h>
+
+#if defined(__AVX512DQ__) && defined(__FMA__)
+// Vectorized exp matching ggml's AVX512 range reduction and scaling.
+static inline __m512 bn_avx512_fast_exp_ps(__m512 x) {
+    const __m512 r = _mm512_set1_ps(0x1.8p23f);
+    const __m512 z = _mm512_fmadd_ps(
+        x, _mm512_set1_ps(0x1.715476p+0f), r);
+    const __m512 n = _mm512_sub_ps(z, r);
+    const __m512 b = _mm512_fnmadd_ps(
+        n, _mm512_set1_ps(0x1.7f7d1cp-20f),
+        _mm512_fnmadd_ps(n, _mm512_set1_ps(0x1.62e4p-1f), x));
+    const __mmask16 exceptional = _mm512_cmp_ps_mask(
+        _mm512_abs_ps(n), _mm512_set1_ps(192.0f), _CMP_GT_OQ);
+    const __m512 u = _mm512_mul_ps(b, b);
+    const __m512 j = _mm512_fmadd_ps(
+        _mm512_fmadd_ps(
+            _mm512_fmadd_ps(_mm512_set1_ps(0x1.0e4020p-7f), b,
+                            _mm512_set1_ps(0x1.573e2ep-5f)),
+            u,
+            _mm512_fmadd_ps(_mm512_set1_ps(0x1.555e66p-3f), b,
+                            _mm512_set1_ps(0x1.fffdb6p-2f))),
+        u,
+        _mm512_fmadd_ps(_mm512_set1_ps(0x1.ffffecp-1f), b,
+                        _mm512_set1_ps(1.0f)));
+    const __m512 result = _mm512_scalef_ps(j, n);
+    if (_mm512_kortestz(exceptional, exceptional))
+        return result;
+    const __m512 alternate = _mm512_mask_blend_ps(
+        _mm512_cmp_ps_mask(n, _mm512_setzero_ps(), _CMP_LE_OQ),
+        _mm512_castsi512_ps(_mm512_set1_epi32(0x7f800000)),
+        _mm512_setzero_ps());
+    return _mm512_mask_blend_ps(exceptional, result, alternate);
+}
+
+static inline __m512 bn_avx512_fast_silu_ps(__m512 x) {
+    const __m512 neg_x = _mm512_sub_ps(_mm512_setzero_ps(), x);
+    return _mm512_div_ps(
+        x, _mm512_add_ps(_mm512_set1_ps(1.0f),
+                         bn_avx512_fast_exp_ps(neg_x)));
+}
+#endif
 
 static inline float bn_avx512_hsum_ps(__m512 v) {
     return _mm512_reduce_add_ps(v);

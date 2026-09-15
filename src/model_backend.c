@@ -43,6 +43,12 @@ void bn_model_backend_prepare(BnModel *model, SHArena *arena) {
     log_prepared_bytes("Q8_0 FP32 scales ready", stats.f32_scale_table_bytes);
 }
 
+void bn_model_set_cpu_prepared_cache_budget(BnModel *model,
+                                            size_t budget_bytes) {
+    bn_backend_model_set_cpu_prepared_cache_budget(bn_model_backend(model),
+                                                   budget_bytes);
+}
+
 void bn_model_backend_free(BnModel *model) {
     if (!model || !model->backend_state) return;
     bn_backend_model_free(model->backend_state->backend);

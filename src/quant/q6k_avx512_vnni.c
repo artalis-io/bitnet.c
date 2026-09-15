@@ -83,6 +83,80 @@ static void q6k_avx512_prepared_4row_range(BnKQuantSdotCtx *c,
     }
 }
 
+#define Q6K_AVX512_MATMUL_TILE_T 4
+
+static void q6k_avx512_prepared_matmul_4row_range(
+    BnKQuantMatmulCtx *c, int group_start, int group_end) {
+    int rows = c->W->rows;
+    int n_bpr = c->cols / BN_QK_K;
+    const BnBlockQ6KPrepared *blocks =
+        (const BnBlockQ6KPrepared *)c->prepared->aux;
+
+    for (int g = group_start; g < group_end; g++) {
+        int row0 = g * 4;
+        int nrows = row0 + 4 <= rows ? 4 : rows - row0;
+        for (int t0 = 0; t0 < c->n_tokens;
+             t0 += Q6K_AVX512_MATMUL_TILE_T) {
+            int tile_n = t0 + Q6K_AVX512_MATMUL_TILE_T <= c->n_tokens
+                ? Q6K_AVX512_MATMUL_TILE_T : c->n_tokens - t0;
+            float acc[4][Q6K_AVX512_MATMUL_TILE_T] = {{0}};
+
+            for (int b = 0; b < n_bpr; b++) {
+                for (int r = 0; r < nrows; r++) {
+                    const BnBlockQ6KPrepared *blk =
+                        &blocks[(size_t)(row0 + r) * n_bpr + b];
+                    __m512i wv[4];
+                    __m512i sv[4];
+                    for (int pair = 0; pair < 4; pair++) {
+                        __m256i w0 = _mm256_loadu_si256(
+                            (const __m256i *)(blk->qs + pair * 64));
+                        __m256i w1 = _mm256_loadu_si256(
+                            (const __m256i *)(blk->qs + pair * 64 + 32));
+                        wv[pair] = q6k_join_256(w0, w1);
+                        sv[pair] = q6k_scale_quad_i32(
+                            blk->scales[pair * 4],
+                            blk->scales[pair * 4 + 1],
+                            blk->scales[pair * 4 + 2],
+                            blk->scales[pair * 4 + 3]);
+                    }
+                    __m256i scales16 = _mm256_cvtepi8_epi16(
+                        _mm_loadu_si128((const __m128i *)blk->scales));
+                    for (int ti = 0; ti < tile_n; ti++) {
+                        int t = t0 + ti;
+                        const int8_t *xb = c->x_q +
+                            (size_t)t * c->cols + b * BN_QK_K;
+                        __m512i sumi = _mm512_setzero_si512();
+                        for (int pair = 0; pair < 4; pair++) {
+                            __m512i prod = _mm512_dpbusd_epi32(
+                                _mm512_setzero_si512(), wv[pair],
+                                _mm512_loadu_si512(
+                                    (const void *)(xb + pair * 64)));
+                            sumi = _mm512_add_epi32(
+                                sumi, _mm512_mullo_epi32(prod, sv[pair]));
+                        }
+                        const int16_t *bsums = c->x_bsums +
+                            ((size_t)t * n_bpr + b) * 16;
+                        int32_t corr = bn_avx2_hsum_epi32(
+                            _mm256_madd_epi16(
+                                scales16,
+                                _mm256_loadu_si256(
+                                    (const __m256i *)bsums)));
+                        int32_t dot =
+                            bn_avx512_hsum_epi32(sumi) - 32 * corr;
+                        float dx = c->x_d[(size_t)t * n_bpr + b];
+                        acc[r][ti] += blk->d * dx * (float)dot;
+                    }
+                }
+            }
+
+            for (int r = 0; r < nrows; r++)
+                for (int ti = 0; ti < tile_n; ti++)
+                    c->out[(size_t)(t0 + ti) * rows + row0 + r] =
+                        acc[r][ti];
+        }
+    }
+}
+
 void bn_quant_q6k_avx512_vnni_4row_range(void *ctx, int group_start, int group_end) {
     BnKQuantSdotCtx *c = (BnKQuantSdotCtx *)ctx;
     int cols = c->W->cols;
@@ -180,5 +254,37 @@ void bn_quant_q6k_avx512_vnni_4row_range(void *ctx, int group_start, int group_e
             c->out[row0 + r] = row_sum[r];
     }
 }
+
+void bn_quant_q6k_avx512_vnni_matmul_4row_range(void *ctx,
+                                                int group_start,
+                                                int group_end) {
+    BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;
+    int n_bpr = c->cols / BN_QK_K;
+
+    if (c->prepared &&
+        c->prepared->kind == BN_PREPARED_WEIGHT_Q6_K_EXPANDED &&
+        c->prepared->aux &&
+        c->prepared->aux_size >=
+            (size_t)c->W->rows * n_bpr * sizeof(BnBlockQ6KPrepared)) {
+        q6k_avx512_prepared_matmul_4row_range(
+            c, group_start, group_end);
+        return;
+    }
+    for (int g = group_start; g < group_end; g++) {
+        for (int t = 0; t < c->n_tokens; t++) {
+            BnKQuantSdotCtx matvec = {
+                c->out + (size_t)t * c->W->rows,
+                c->W,
+                c->x_q + (size_t)t * c->cols,
+                c->x_d + (size_t)t * n_bpr,
+                c->x_bsums + (size_t)t * n_bpr * 16,
+                c->prepared
+            };
+            bn_quant_q6k_avx512_vnni_4row_range(&matvec, g, g + 1);
+        }
+    }
+}
+
+#undef Q6K_AVX512_MATMUL_TILE_T
 
 #endif

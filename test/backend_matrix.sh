@@ -386,6 +386,25 @@ if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/case BN_GPU_CODE_MOE_ROUTED_FFN:/
     fail=1
 fi
 
+if ! awk '
+    /int bn_transformer_gpu_emit_context_moe_routed_ffn\(/ { in_fn=1 }
+    in_fn && /op->p\[3\] = \(uint32_t\)down_type;/ { found=1 }
+    in_fn && /^}/ { exit found ? 0 : 1 }
+    END { if (!in_fn || !found) exit 1 }
+' src/transformer/gpu_emit.c; then
+    echo "GPU routed MoE emission must preserve the down quant type in p[3]"
+    fail=1
+fi
+
+if awk '
+    /int init_out_with_residual =/ { in_init=1 }
+    in_init { print }
+    in_init && /;/ { exit }
+' src/gpu_cuda.cu | grep -q 'down_kquant'; then
+    echo "Asymmetric K-quant MoE prefill must add the residual explicitly"
+    fail=1
+fi
+
 if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/int next_moe_all_active_two_kquant =/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA route-topk dense-F32 policy"
     fail=1
@@ -2425,7 +2444,7 @@ if ! grep -q -- '"--benchmark-runs"' test/compare_llama_topk.py ||
 fi
 
 if ! grep -q 'def benchmark_host_is_idle' test/compare_llama_topk.py ||
-   ! grep -q 'args.benchmark and not benchmark_host_is_idle(args)' \
+   ! grep -q 'args.benchmark_prefill.*benchmark_host_is_idle(args)' \
         test/compare_llama_topk.py ||
    ! grep -q -- '--allow-busy-system' test/compare_llama_topk.py; then
     echo "llama comparison benchmarks must reject contaminated host load"
@@ -2441,11 +2460,19 @@ fi
 
 if ! grep -q 'def validate_bitnet_process' test/compare_llama_topk.py ||
    ! grep -q '\[bn:gpu:metal\] device:' test/compare_llama_topk.py ||
+   ! grep -q 'args.bitnet_runtime == "cuda"' test/compare_llama_topk.py ||
+   ! grep -q 'cmd.append("--cuda")' test/compare_llama_topk.py ||
+   ! grep -q 'CUDA weights uploaded' test/compare_llama_topk.py ||
+   ! grep -q 'def llama_gpu_runtime_requested' test/compare_llama_topk.py ||
+   ! grep -q 'def validate_llama_bench_process' test/compare_llama_topk.py ||
+   ! grep -q 'args.llama_runtime in ("cuda", "metal")' \
+        test/compare_llama_topk.py ||
+   ! grep -q '\\|\\s\*CUDA\\s\*\\|' test/compare_llama_topk.py ||
    ! grep -q 'rejecting CPU fallback as a runtime-axis mismatch' \
         test/compare_llama_topk.py ||
    ! grep -q 'int(token_count) != args.bench_tokens' \
         test/compare_llama_topk.py; then
-    echo "llama comparison must verify runtime activation and complete samples"
+    echo "llama comparison must activate and verify GPU runtimes and complete samples"
     fail=1
 fi
 
@@ -2461,19 +2488,60 @@ if ! grep -q 'bitnet_prefault_moe' test/compare_llama_topk.py ||
     fail=1
 fi
 
-if sed -n '/^llama_generated_ids_csv()/,/^}/p' test/compare_llama.sh |
-        grep -q 'LLAMA_PROBE_EXTRA_BUFTS' ||
-   ! sed -n '/^llama_generated_ids_csv()/,/^}/p' test/compare_llama.sh |
-        grep -q -- '--no-observer' ||
-   ! grep -q 'LLAMA_PROBE_FLASH' test/compare_llama.sh; then
-    echo "Strict llama token oracle must match requested runtime placement and flags"
+if ! grep -q 'LLAMA_TOKEN_TRACE=' test/compare_llama.sh ||
+   ! grep -q 'LD_PRELOAD=.*LLAMA_TOKEN_TRACE' test/compare_llama.sh ||
+   ! grep -q "sed -n 's/\\^llama_token_id=//p'.*llama_stderr" \
+        test/compare_llama.sh; then
+    echo "Strict llama token oracle must trace the requested llama-completion process"
     fail=1
 fi
 
+if ! grep -q 'LLAMA_BIN_DIR_EXPLICIT=' test/compare_llama.sh ||
+   ! grep -q 'LLAMA_BIN_DIR/llama-completion not found' \
+        test/compare_llama.sh; then
+    echo "Explicit llama binary directories must not fall back to PATH"
+    fail=1
+fi
+
+if ! grep -q 'BITNET_BACKEND="cuda"' test/compare_llama.sh ||
+   ! grep -q 'BITNET_BACKEND="metal"' test/compare_llama.sh ||
+   ! grep -q 'BITNET_BACKEND="webgpu"' test/compare_llama.sh ||
+   ! grep -q '^validate_bitnet_backend()' test/compare_llama.sh ||
+   ! sed -n '/^validate_bitnet_backend()/,/^}/p' test/compare_llama.sh |
+        grep -q 'CUDA weights uploaded' ||
+   ! sed -n '/^validate_bitnet_backend()/,/^}/p' test/compare_llama.sh |
+        grep -q '\[bn:gpu:metal\] device:' ||
+   ! sed -n '/^validate_bitnet_backend()/,/^}/p' test/compare_llama.sh |
+        grep -q 'WebGPU weights uploaded' ||
+   ! sed -n '/^validate_bitnet_backend()/,/^}/p' test/compare_llama.sh |
+        grep -q '\[gpu:fallback\]' ||
+   ! grep -q 'BN_GPU_DEBUG_FALLBACK=1' test/compare_llama.sh ||
+   ! grep -q 'BN_GPU_DEBUG_FALLBACK=1' bench/cuda_compare.sh; then
+    echo "FAIL: compare_llama.sh must reject silent requested-backend fallback" >&2
+    exit 1
+fi
+
+if ! grep -q '^validate_llama_backend()' test/compare_llama.sh ||
+   ! sed -n '/^validate_llama_backend()/,/^}/p' test/compare_llama.sh |
+        grep -q 'offloaded \[1-9\]\[0-9\]\*/\[1-9\]\[0-9\]\* layers to GPU' ||
+   ! grep -q 'LLAMA_VERBOSITY=4' test/compare_llama.sh ||
+   ! grep -q 'validate_llama_backend "$llama_stderr"' test/compare_llama.sh; then
+    echo "FAIL: compare_llama.sh must verify requested llama.cpp GPU offload" >&2
+    exit 1
+fi
+
 if ! grep -q 'llama_vocab_is_eog(vocab, next)' test/llama_layer_probe.cpp ||
-   ! awk '/llama_vocab_is_eog\(vocab, next\)/{eog=NR} /llama_token_id=%d/{emit=NR} END{exit !(eog && emit && eog < emit)}' \
+   ! awk '/llama_vocab_is_eog\(vocab, next\)/{eog=NR} /llama_token_id=%d/{emit=NR} END{exit !(eog && emit && emit < eog)}' \
         test/llama_layer_probe.cpp; then
-    echo "Strict llama token oracle must stop before emitting the EOG token"
+    echo "Strict llama token oracle must emit the EOG token before stopping"
+    fail=1
+fi
+
+if ! grep -q 'bool use_extra_bufts = true;' test/llama_layer_probe.cpp ||
+   ! grep -q 'mparams.use_extra_bufts = use_extra_bufts;' \
+        test/llama_layer_probe.cpp ||
+   ! grep -q -- '--no-extra-bufts' test/llama_layer_probe.cpp; then
+    echo "llama layer probe must default to production CPU_REPACK buffer selection"
     fail=1
 fi
 
@@ -3029,8 +3097,16 @@ if grep -n 'bn_gpu_policy_explicit_q5k_fused_gateup_enabled' include/gpu_policy.
     fail=1
 fi
 
-if grep -n 'getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_ATTN")\|getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN")\|getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE")\|getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN")\|getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_ENABLE_MOE_PREFILL")\|getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL")\|getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE")\|getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+if grep -n 'getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_ATTN")\|getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN")\|getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE")\|getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN")\|getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_ENABLE_MOE_PREFILL")\|getenv("BN_CUDA_DISABLE_MOE_PREFILL")\|getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL")\|getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE")\|getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA prefill env vars"
+    fail=1
+fi
+
+if grep -n 'getenv("BN_CUDA_ENABLE_MOE_PREFILL")\|getenv("BN_CUDA_DISABLE_MOE_PREFILL")' \
+        bench/bench_kernels.c >/dev/null 2>&1 ||
+   ! grep -q 'bn_gpu_policy_moe_prefill_enabled(gpu)' \
+        bench/bench_kernels.c; then
+    echo "CUDA MoE prefill benchmarks must use the captured backend policy"
     fail=1
 fi
 
@@ -5702,9 +5778,9 @@ if grep -n 'bn_gpu_backend_is_metal' src/transformer/gpu_policy.c >/dev/null 2>&
     fail=1
 fi
 
-if ! grep -A180 'if (moe_route\.gpu_routed_ffn)' src/transformer/gpu.c |
+if ! grep -A240 'if (moe_route\.gpu_routed_ffn)' src/transformer/gpu.c |
    grep -q 'moe_activation\.uses_dense_residual_branch' ||
-   ! grep -A180 'if (moe_route\.gpu_routed_ffn)' src/transformer/gpu.c |
+   ! grep -A240 'if (moe_route\.gpu_routed_ffn)' src/transformer/gpu.c |
    grep -q 'bn_transformer_gpu_fallback_moe_dense_residual_branch'; then
     echo "Direct routed MoE must compose the model-policy dense residual branch"
     fail=1
@@ -5877,6 +5953,14 @@ fi
 
 if [ "$fail" -ne 0 ]; then
     echo "Backend matrix FAILED"
+    exit 1
+fi
+
+if ! grep -q -- '--benchmark-prefill' test/compare_llama_topk.py ||
+   ! grep -q -- '--min-prefill-throughput-ratio' test/compare_llama_topk.py ||
+   ! grep -q 'def run_bitnet_prefill_bench' test/compare_llama_topk.py ||
+   ! grep -q 'def run_llama_prefill_bench' test/compare_llama_topk.py; then
+    echo "llama comparison must gate prefill throughput independently"
     exit 1
 fi
 

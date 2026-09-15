@@ -82,6 +82,7 @@ static int moe_load_expert_map_gate_up_fused(BnGGUFFile *f, const char *name,
         !bn_gguf_tensor_size(info->type, (uint64_t)fused_elems, &fused_bytes))
         return -1;
 
+    em->gate_up_fused = 1;
     em->gate_type = (int)info->type;
     em->up_type = (int)info->type;
     em->gate_rows = expert_hidden;

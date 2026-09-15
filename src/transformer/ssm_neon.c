@@ -181,9 +181,13 @@ void bn_transformer_ssm_gate_neon_range(void *ctx, int start, int end) {
         // Apply norm weight + SiLU gate: oh = (oh * scale * nw) * silu(z)
         for (int d = 0; d < hd; d += 4) {
             float32x4_t o = vmulq_f32(vmulq_f32(vld1q_f32(oh + d), scale), vld1q_f32(nw + d));
-            float32x4_t silu =
-                bn_neon_fast_silu_f32(vld1q_f32(zh + d));
-            vst1q_f32(oh + d, vmulq_f32(o, silu));
+            float32x4_t z = vld1q_f32(zh + d);
+            float32x4_t gate = c->sigmoid_gate
+                ? vdivq_f32(vdupq_n_f32(1.0f),
+                            vaddq_f32(vdupq_n_f32(1.0f),
+                                     bn_neon_fast_exp_f32(vnegq_f32(z))))
+                : bn_neon_fast_silu_f32(z);
+            vst1q_f32(oh + d, vmulq_f32(o, gate));
         }
     }
 }

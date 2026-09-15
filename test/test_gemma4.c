@@ -84,6 +84,8 @@ static void add_tensors(ModelSpec *s) {
         add_tensor(s, name, hs, 0, 0);
         snprintf(name, sizeof(name), "blk.%d.ffn_norm.weight", l);
         add_tensor(s, name, dim, 0, 0);
+        snprintf(name, sizeof(name), "blk.%d.post_attention_norm.weight", l);
+        add_tensor(s, name, dim, 0, 0);
         if (s->moe) {
             snprintf(name, sizeof(name), "blk.%d.ffn_gate.weight", l);
             add_tensor(s, name, dim, hidden, 0);
@@ -136,6 +138,10 @@ static void write_kvs(WriteBuffer *wb, int moe) {
     int32_t nkv[2] = {2, 1};
     if (moe) kv_i32_arr(wb, "attention.head_count_kv", nkv, 2); else kv_u32(wb, "attention.head_count_kv", 1);
     kv_u32(wb, "context_length", 16);
+    kv_u32(wb, "attention.sliding_window", 2);
+    wb_str(wb, "gemma4.attention.sliding_window_pattern");
+    wb_u32(wb, BN_GGUF_TYPE_ARRAY); wb_u32(wb, BN_GGUF_TYPE_BOOL); wb_u64(wb, 2);
+    const uint8_t pattern[2] = {1, 0}; wb_write(wb, pattern, sizeof(pattern));
     kv_f32(wb, "rope.freq_base", 1000000.0f);
     kv_f32(wb, "attention.layer_norm_rms_epsilon", 1e-6f);
     kv_u32(wb, "attention.key_length", 64);
@@ -152,7 +158,7 @@ static BnGGUFFile *build_gemma4(uint8_t *buf, size_t cap, int moe) {
     WriteBuffer wb = {buf, 0, cap};
     wb_u32(&wb, BN_GGUF_MAGIC); wb_u32(&wb, 3);
     wb_u64(&wb, (uint64_t)spec.n_tensors);
-    wb_u64(&wb, moe ? 15 : 12);
+    wb_u64(&wb, moe ? 17 : 14);
     write_kvs(&wb, moe);
     size_t cursor = 0;
     for (int i = 0; i < spec.n_tensors; i++) {
@@ -249,10 +255,21 @@ static void test_gemma4_dense(void) {
     assert(bn_model_arch_attention_value_shares_key("gemma4") == 1);
     assert(bn_model_arch_rope_text_dims(64, sections, 3) == 32);
     BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
+    assert(m.config.sliding_window == 2);
+    assert(bn_model_arch_attention_window(&m.config, 0) == 2);
+    assert(bn_model_arch_attention_window(&m.config, 1) == 0);
+    assert(bn_model_arch_attention_window(&m.config, -1) == 0);
+    assert(bn_model_arch_attention_window(&m.config, 2) == 0);
     assert(bn_model_backend(&m) != NULL);
     assert(bn_model_gpu(&m) == NULL);
     assert(bn_model_arch_attention_value_shares_key_config(&m.config));
     assert(bn_model_arch_uses_per_layer_embedding(&m.config));
+    assert(bn_model_arch_uses_attention_post_norm(&m.config));
+    for (int l = 0; l < m.config.n_layers; l++) {
+        assert(m.weights.layers[l].norm.attn_post_norm != NULL);
+        assert(m.weights.layers[l].norm.ffn_norm != NULL);
+        assert(m.weights.layers[l].norm.attn_post_norm != m.weights.layers[l].norm.ffn_norm);
+    }
     assert(m.config.head_size == 64);
     assert(m.config.kv_dim == 64);
     assert(m.weights.layers[0].block_kind == BN_LAYER_BLOCK_ATTENTION);

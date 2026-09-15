@@ -25,6 +25,9 @@ static void prepared_stats_add_bytes(BnBackendLayoutPreparedStats *stats,
     if (!stats || bytes == 0) return;
     switch (kind) {
         case BN_PREPARED_WEIGHT_Q4_0_REPACK:
+        case BN_PREPARED_WEIGHT_Q4_0_X8:
+        case BN_PREPARED_WEIGHT_Q5_K_X8:
+        case BN_PREPARED_WEIGHT_Q6_K_X8:
             stats->lowbit_repack_bytes += bytes;
             break;
         case BN_PREPARED_WEIGHT_Q8_0_REPACK:
@@ -319,7 +322,9 @@ size_t bn_backend_layout_prepared_qweights_size(const BnConfig *config,
     for (int i = 0; i < config->n_layers; i++)
         prepared_qweight_size_layer(&weights->layers[i], stats);
     prepared_qweight_size_one(&weights->output_weight, stats);
-    prepared_qweight_size_one(&weights->tied_embedding_weight, stats);
+    if (bn_backend_quant_tied_logits_uses_prepared_weight(
+            weights->tied_embedding_weight.type))
+        prepared_qweight_size_one(&weights->tied_embedding_weight, stats);
 
     return stats->lowbit_repack_bytes + stats->q8_repack_bytes +
            stats->kquant_scale_table_bytes +
@@ -347,6 +352,8 @@ void bn_backend_layout_prepare_qweights(BnBackendModel *backend,
     for (int i = 0; i < config->n_layers; i++)
         prepared_qweight_prepare_layer(backend, &weights->layers[i], arena);
     prepared_qweight_prepare_one(backend, &weights->output_weight, arena);
-    prepared_qweight_prepare_one(backend, &weights->tied_embedding_weight,
-                                 arena);
+    if (bn_backend_quant_tied_logits_uses_prepared_weight(
+            weights->tied_embedding_weight.type))
+        prepared_qweight_prepare_one(backend, &weights->tied_embedding_weight,
+                                     arena);
 }

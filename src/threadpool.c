@@ -27,7 +27,7 @@
 #else
 #define TP_POLL_ITERS_LARGE 5000
 #define TP_POLL_ITERS_SMALL 5000
-#define TP_CPU_DECODE_POLL_ITERS 5000
+#define TP_CPU_DECODE_POLL_ITERS 200000
 #endif
 
 typedef struct {
@@ -43,6 +43,7 @@ struct BnThreadPool {
     int           n_threads;   // n_workers + 1 (main)
     BnTPTask     *tasks;
     int           n_tasks;
+    int           fine_grain;  // immutable until this dispatch completes
     _Atomic int   cursors[TP_MAX_TASKS];  // atomic work-stealing cursors
     pthread_mutex_t mtx;
     pthread_cond_t  work_cond;
@@ -64,7 +65,10 @@ static int tp_env_enabled(const char *a, const char *b, const char *c) {
 
 void bn_quant_runtime_policy_from_env(BnQuantRuntimePolicy *policy) {
     if (!policy) return;
-    *policy = (BnQuantRuntimePolicy){ .avx512_kquant_vnni = -1 };
+    *policy = (BnQuantRuntimePolicy){
+        .avx512_kquant_vnni = -1,
+        .avx2_kquant_float = -1,
+    };
     policy->reference_dot =
         tp_env_enabled("BN_CPU_REFERENCE_DOT", "BN_CPU_LLAMA_DOT", NULL);
     policy->reference_q4_dot = tp_env_enabled(
@@ -81,7 +85,9 @@ void bn_quant_runtime_policy_from_env(BnQuantRuntimePolicy *policy) {
     if (!vnni) vnni = getenv("BN_AVX512_Q5K_VNNI");
     if (vnni) policy->avx512_kquant_vnni = vnni[0] != '\0' && vnni[0] != '0';
     const char *avx2 = getenv("BN_AVX2_KQUANT_FLOAT");
-    policy->avx2_kquant_float = avx2 && avx2[0] != '\0' && avx2[0] != '0';
+    if (avx2)
+        policy->avx2_kquant_float =
+            avx2[0] != '\0' && avx2[0] != '0';
     policy->q4_scalar_dot = tp_env_enabled(
         "BN_CPU_Q4_SCALAR_DOT", "BN_CPU_REFERENCE_Q4_SCALAR_DOT", NULL);
     policy->wasm_q4_canonical4 = tp_env_enabled(
@@ -186,7 +192,7 @@ static void tp_execute(BnThreadPool *pool, int task_offset) {
         int nt4 = nt <= INT_MAX / 4 ? nt * 4 : nt;  // avoid overflow
         int chunk = n / nt4;
         int min_chunk = (n >= 4096) ? TP_CHUNK_MIN_LARGE : TP_CHUNK_MIN;
-        if (n <= nt4) {
+        if (pool->fine_grain || n <= nt4) {
             chunk = 1;
         } else if (chunk < min_chunk) {
             chunk = min_chunk;
@@ -255,7 +261,7 @@ static void *worker_loop(void *arg) {
 }
 
 BnThreadPool *bn_tp_create(int n_workers) {
-    if (n_workers <= 0) return NULL;
+    if (n_workers < 0) return NULL;
 
     BnThreadPool *pool = (BnThreadPool *)calloc(1, sizeof(BnThreadPool));
     if (!pool) return NULL;
@@ -271,8 +277,10 @@ BnThreadPool *bn_tp_create(int n_workers) {
     pthread_cond_init(&pool->work_cond, NULL);
     pthread_cond_init(&pool->done_cond, NULL);
 
-    pool->threads = (pthread_t *)calloc(n_workers, sizeof(pthread_t));
-    if (!pool->threads) {
+    if (n_workers > 0)
+        pool->threads = (pthread_t *)calloc((size_t)n_workers,
+                                            sizeof(*pool->threads));
+    if (n_workers > 0 && !pool->threads) {
         pthread_mutex_destroy(&pool->mtx);
         pthread_cond_destroy(&pool->work_cond);
         pthread_cond_destroy(&pool->done_cond);
@@ -331,7 +339,8 @@ void bn_tp_free(BnThreadPool *pool) {
     free(pool);
 }
 
-void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
+static void tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks,
+                         int fine_grain) {
     if (n_tasks <= 0) return;
 
     // Serial fallback when no pool
@@ -356,6 +365,7 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     pthread_mutex_lock(&pool->mtx);
     pool->tasks = tasks;
     pool->n_tasks = n_tasks;
+    pool->fine_grain = fine_grain;
     atomic_store_explicit(&pool->n_done, 0, memory_order_release);
     int max_n = 0;
     for (int t = 0; t < n_tasks; t++) {
@@ -389,6 +399,14 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     pthread_mutex_unlock(&pool->mtx);
 
     pool->dispatching = 0;
+}
+
+void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
+    tp_dispatch(pool, tasks, n_tasks, 0);
+}
+
+void bn_tp_dispatch_fine(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
+    tp_dispatch(pool, tasks, n_tasks, 1);
 }
 
 int bn_tp_num_threads(const BnThreadPool *pool) {

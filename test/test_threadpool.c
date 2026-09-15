@@ -3,6 +3,61 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdatomic.h>
+
+typedef struct {
+    _Atomic int hits[50];
+    _Atomic int max_span;
+    int n;
+} FineRangeCtx;
+
+static void record_fine_range(void *ctx, int start, int end) {
+    FineRangeCtx *c = ctx;
+    assert(start >= 0 && start < end && end <= c->n);
+    int span = end - start;
+    int old = atomic_load(&c->max_span);
+    while (old < span &&
+           !atomic_compare_exchange_weak(&c->max_span, &old, span)) {}
+    for (int i = start; i < end; i++) atomic_fetch_add(&c->hits[i + 1], 1);
+}
+
+static void test_fine_dispatch_reset(void) {
+    printf("test_fine_dispatch_reset... ");
+    const int workers[] = {-1, 0, 3, 7};
+    for (size_t w = 0; w < sizeof(workers) / sizeof(workers[0]); w++) {
+        BnThreadPool *pool = workers[w] < 0 ? NULL : bn_tp_create(workers[w]);
+        assert(workers[w] < 0 || pool);
+        FineRangeCtx c[2];
+        for (int j = 0; j < 2; j++) {
+            c[j].n = j ? 17 : 48;
+            atomic_init(&c[j].max_span, 0);
+            for (int i = 0; i < 50; i++) atomic_init(&c[j].hits[i], 0);
+        }
+        BnTPTask tasks[] = {{record_fine_range, &c[0], 48},
+            {record_fine_range, &c[1], 17}, {record_fine_range, &c[0], 0}};
+        for (int round = 0; round < 32; round++) {
+            int fine = !(round % 2);
+            for (int j = 0; j < 2; j++) {
+                atomic_store(&c[j].max_span, 0);
+                for (int i = 0; i < 50; i++) atomic_store(&c[j].hits[i], 0);
+            }
+            /* Empty dispatches must not execute a callback or leak policy. */
+            bn_tp_dispatch_fine(pool, NULL, 0);
+            if (fine) bn_tp_dispatch_fine(pool, tasks, 3);
+            else bn_tp_dispatch(pool, tasks, 3);
+            for (int j = 0; j < 2; j++) {
+                for (int i = 0; i < 50; i++)
+                    assert(atomic_load(&c[j].hits[i]) == (i > 0 && i <= c[j].n));
+                int span = atomic_load(&c[j].max_span);
+                if (!pool) assert(span == c[j].n);
+                else if (fine) assert(span == 1);
+                else if (j == 0) assert(span > 1);
+            }
+        }
+        bn_tp_free(pool);
+    }
+    printf("PASSED\n");
+}
 
 // --- Test serial dispatch (pool=NULL) ---
 
@@ -190,8 +245,21 @@ static void test_runtime_policy_snapshot(void) {
 }
 
 int main(void) {
+    setenv("BN_CPU_REFERENCE_MATH", "1", 1);
+    BnThreadPool *serial_pool = bn_tp_create(0);
+    assert(serial_pool != NULL);
+    assert(bn_tp_num_threads(serial_pool) == 1);
+    assert(bn_tp_cpu_policy(serial_pool)->reference_math);
+    int serial_values[17] = {0};
+    BnTPTask serial_task = { add_one, serial_values, 17 };
+    bn_tp_dispatch(serial_pool, &serial_task, 1);
+    for (int i = 0; i < 17; i++) assert(serial_values[i] == 1);
+    bn_tp_free(serial_pool);
+    unsetenv("BN_CPU_REFERENCE_MATH");
+
     printf("=== ThreadPool Tests ===\n");
     test_serial_dispatch();
+    test_fine_dispatch_reset();
     test_threaded_single_task();
     test_multi_task_dispatch();
     test_rapid_dispatch();

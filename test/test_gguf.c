@@ -152,6 +152,14 @@ static void test_parse_synthetic(void) {
     printf("PASSED\n");
 }
 
+static void test_iq3s_serialized_size(void) {
+    printf("test_iq3s_serialized_size... ");
+    size_t bytes = 0;
+    assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_IQ3_S, 512, &bytes));
+    assert(bytes == 220);
+    printf("PASSED\n");
+}
+
 static void test_bad_magic(void) {
     printf("test_bad_magic... ");
 
@@ -246,6 +254,7 @@ static void test_open_shards(void) {
 int main(void) {
     printf("=== GGUF Tests ===\n");
     test_parse_synthetic();
+    test_iq3s_serialized_size();
     test_bad_magic();
     test_find_key();
     test_open_shards();

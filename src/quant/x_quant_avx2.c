@@ -131,7 +131,6 @@ void bn_quant_f16_rows_to_i8(const uint16_t *f16, int8_t *i8_out,
 void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
                          int16_t *x_bsums, int n) {
     assert(n % BN_QK_K == 0 && "bn_quant_x_to_q8k: n must be multiple of BN_QK_K");
-    __m256 sign_mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
     __m256i perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
     __m128i bsum_bias = _mm_set1_epi8((char)0x80);
     __m128i bsum_zero = _mm_setzero_si128();
@@ -141,16 +140,15 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
         const float *xb = x + sb * BN_QK_K;
         int8_t *qb = x_q + sb * BN_QK_K;
 
-        // Find amax over 256 elements
-        __m256 vmax = _mm256_setzero_ps();
-        for (int i = 0; i < BN_QK_K; i += 32) {
-            __m256 v0 = _mm256_and_ps(_mm256_loadu_ps(xb + i), sign_mask);
-            __m256 v1 = _mm256_and_ps(_mm256_loadu_ps(xb + i + 8), sign_mask);
-            __m256 v2 = _mm256_and_ps(_mm256_loadu_ps(xb + i + 16), sign_mask);
-            __m256 v3 = _mm256_and_ps(_mm256_loadu_ps(xb + i + 24), sign_mask);
-            vmax = _mm256_max_ps(vmax, _mm256_max_ps(_mm256_max_ps(v0, v1), _mm256_max_ps(v2, v3)));
+        float max = 0.0f;
+        float amax = 0.0f;
+        for (int i = 0; i < BN_QK_K; i++) {
+            float ax = fabsf(xb[i]);
+            if (ax > amax) {
+                amax = ax;
+                max = xb[i];
+            }
         }
-        float amax = bn_avx2_hmax_ps(vmax);
 
         if (amax == 0.0f) {
             _mm256_storeu_si256((__m256i *)qb, _mm256_setzero_si256());
@@ -166,8 +164,8 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
             continue;
         }
 
-        float inv_scale = 127.0f / amax;
-        x_d[sb] = amax / 127.0f;
+        float inv_scale = -127.0f / max;
+        x_d[sb] = 1.0f / inv_scale;
         __m256 vinv = _mm256_set1_ps(inv_scale);
 
         // Quantize 256 elements in 32-element chunks
@@ -176,13 +174,13 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
             const float *gx = xb + g * 32;
             int8_t *gq = qb + g * 32;
 
-            __m256i i0 = bn_avx2_round_half_away_epi32(
+            __m256i i0 = _mm256_cvtps_epi32(
                 _mm256_mul_ps(_mm256_loadu_ps(gx), vinv));
-            __m256i i1 = bn_avx2_round_half_away_epi32(
+            __m256i i1 = _mm256_cvtps_epi32(
                 _mm256_mul_ps(_mm256_loadu_ps(gx + 8), vinv));
-            __m256i i2 = bn_avx2_round_half_away_epi32(
+            __m256i i2 = _mm256_cvtps_epi32(
                 _mm256_mul_ps(_mm256_loadu_ps(gx + 16), vinv));
-            __m256i i3 = bn_avx2_round_half_away_epi32(
+            __m256i i3 = _mm256_cvtps_epi32(
                 _mm256_mul_ps(_mm256_loadu_ps(gx + 24), vinv));
             __m256i s01 = _mm256_packs_epi32(i0, i1);
             __m256i s23 = _mm256_packs_epi32(i2, i3);
@@ -204,6 +202,85 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
                           + (int32_t)_mm_extract_epi16(hi_sad, 4)
                           - 16 * 128;
             bsums[g * 2 + 1] = (int16_t)bsum1;
+        }
+    }
+}
+
+void bn_quant_q8k_avx2_pack_x4(BnBlockQ8Kx4 *out, const float *x,
+                               int n_tokens, int cols) {
+    const __m256 sign_bit = _mm256_set1_ps(-0.0f);
+    const __m256i perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
+    const int nb = cols / BN_QK_K;
+
+    assert(n_tokens % 4 == 0);
+    assert(cols % BN_QK_K == 0);
+    for (int panel = 0; panel < n_tokens / 4; panel++) {
+        for (int b = 0; b < nb; b++) {
+            BnBlockQ8Kx4 *dst = out + (size_t)panel * nb + b;
+            int8_t q[4][BN_QK_K];
+
+            for (int row = 0; row < 4; row++) {
+                const float *src = x + (size_t)(panel * 4 + row) * cols +
+                                   b * BN_QK_K;
+                __m256 values[32];
+                __m256 max_abs = _mm256_setzero_ps();
+                __m256 signed_max_mask = _mm256_setzero_ps();
+
+                for (int j = 0; j < 32; j++) {
+                    __m256 v = _mm256_loadu_ps(src + j * 8);
+                    __m256 old_max = max_abs;
+                    values[j] = v;
+                    max_abs = _mm256_max_ps(max_abs,
+                                             _mm256_andnot_ps(sign_bit, v));
+                    signed_max_mask = _mm256_and_ps(
+                        signed_max_mask,
+                        _mm256_cmp_ps(old_max, max_abs, _CMP_EQ_OQ));
+                    signed_max_mask = _mm256_or_ps(
+                        signed_max_mask,
+                        _mm256_cmp_ps(max_abs, v, _CMP_EQ_OQ));
+                }
+
+                __m128 max4 = _mm_max_ps(_mm256_extractf128_ps(max_abs, 1),
+                                         _mm256_castps256_ps128(max_abs));
+                max4 = _mm_max_ps(max4, _mm_movehl_ps(max4, max4));
+                max4 = _mm_max_ss(max4, _mm_movehdup_ps(max4));
+                float max_scalar = _mm_cvtss_f32(max4);
+                __m256 final_mask = _mm256_and_ps(
+                    signed_max_mask,
+                    _mm256_cmp_ps(_mm256_set1_ps(max_scalar), max_abs,
+                                  _CMP_EQ_OQ));
+                float iscale = max_scalar != 0.0f ? 127.0f / max_scalar : 0.0f;
+                if (_mm256_movemask_ps(final_mask))
+                    iscale = max_scalar != 0.0f ? -127.0f / max_scalar : 0.0f;
+                dst->d[row] = max_scalar != 0.0f ? 1.0f / iscale : 0.0f;
+
+                __m256 scale = _mm256_set1_ps(iscale);
+                for (int j = 0; j < 32; j += 4) {
+                    __m256i i0 = _mm256_cvtps_epi32(_mm256_round_ps(
+                        _mm256_mul_ps(values[j], scale), _MM_ROUND_NEAREST));
+                    __m256i i1 = _mm256_cvtps_epi32(_mm256_round_ps(
+                        _mm256_mul_ps(values[j + 1], scale), _MM_ROUND_NEAREST));
+                    __m256i i2 = _mm256_cvtps_epi32(_mm256_round_ps(
+                        _mm256_mul_ps(values[j + 2], scale), _MM_ROUND_NEAREST));
+                    __m256i i3 = _mm256_cvtps_epi32(_mm256_round_ps(
+                        _mm256_mul_ps(values[j + 3], scale), _MM_ROUND_NEAREST));
+                    __m256i packed = _mm256_packs_epi16(
+                        _mm256_packs_epi32(i0, i1),
+                        _mm256_packs_epi32(i2, i3));
+                    packed = _mm256_permutevar8x32_epi32(packed, perm);
+                    _mm256_storeu_si256((__m256i *)(q[row] + j * 8), packed);
+                }
+            }
+
+            memset(dst->bsums, 0, sizeof(dst->bsums));
+            for (int j = 0; j < BN_QK_K * 4; j++) {
+                int src_offset = (j / 32) * 8 + j % 8;
+                int src_id = (j % 32) / 8;
+                int index = (((j & 31) >> 3) << 2) +
+                            ((j >> 8) << 4) + ((j >> 6) & 3);
+                dst->qs[j] = q[src_id][src_offset];
+                dst->bsums[index] += dst->qs[j];
+            }
         }
     }
 }
@@ -230,8 +307,9 @@ void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n
             continue;
         }
 
+        float scale = amax / 127.0f;
         float inv_scale = 127.0f / amax;
-        x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(amax / 127.0f));
+        x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(scale));
 
         __m256 vinv = _mm256_set1_ps(inv_scale);
         __m256i i0 = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(xb), vinv));

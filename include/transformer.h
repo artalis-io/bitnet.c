@@ -8,6 +8,12 @@ typedef struct BnSession BnSession;
 // Run one token through the transformer, returns pointer to logits
 float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos);
 
+// Try accelerated greedy decoding after preparing token-local session state.
+// Returns 0 on success; on -1, callers may use bn_transformer_forward instead.
+int bn_transformer_forward_argmax(BnModel *m, BnSession *s,
+    int token, int pos, const int *penalty_tokens, int n_penalty_tokens,
+    float repeat_penalty, int *out_token);
+
 // Run one token and update state/KV without computing logits.
 // Intended for benchmarks/callers that do not sample from model logits.
 // Returns 0 on success, -1 on error.

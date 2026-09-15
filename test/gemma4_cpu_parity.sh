@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=${BN_MODEL_ROOT:-models}
+ROOT=${BN_MODEL_ROOT:-/data/models/gguf}
 LEVEL=${GEMMA4_CPU_PARITY_LEVEL:-standard}
 REQUIRE_MODELS=${REQUIRE_MODELS:-0}
 COMPARE=${COMPARE_LLAMA:-./test/compare_llama.sh}
@@ -9,6 +9,8 @@ NEON_BIN=${BITNET_NEON:-./bitnet}
 SCALAR_BIN=${BITNET_SCALAR:-./bitnet_scalar}
 AVX2_BIN=${BITNET_AVX2:-./bitnet_avx2}
 AVX512_BIN=${BITNET_AVX512:-./bitnet_avx512}
+LLAMA_AVX2_BIN_DIR=${LLAMA_AVX2_BIN_DIR:-}
+LLAMA_AVX512_BIN_DIR=${LLAMA_AVX512_BIN_DIR:-}
 case "$(uname -m)" in
     arm64|aarch64) DEFAULT_BACKENDS=neon,scalar ;;
     x86_64|amd64) DEFAULT_BACKENDS=scalar,avx2,avx512 ;;
@@ -17,6 +19,18 @@ esac
 BACKENDS=${GEMMA4_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-$DEFAULT_BACKENDS}}
 CASES=${GEMMA4_CPU_PARITY_CASES:-all}
 MAXSEQ=${GEMMA4_CPU_PARITY_MAXSEQ:-512}
+THREADS=${GEMMA4_CPU_PARITY_THREADS:-${CPU_PARITY_THREADS:-1}}
+
+if [[ ! "$THREADS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: GEMMA4_CPU_PARITY_THREADS must be a positive integer" >&2
+    exit 1
+fi
+
+PREFILL_MODES=${GEMMA4_CPU_PARITY_PREFILL_MODES:-${CPU_PARITY_PREFILL_MODES:-default,tokenwise}}
+if [[ ! "$PREFILL_MODES" =~ ^(default|tokenwise)(,(default|tokenwise))*$ ]]; then
+    echo "ERROR: GEMMA4_CPU_PARITY_PREFILL_MODES must contain default and/or tokenwise" >&2
+    exit 1
+fi
 
 fail=0
 ran=0
@@ -67,9 +81,30 @@ run_backend() {
 
     echo "RUN $backend $name: $model (-n $tokens --maxseq $MAXSEQ)"
     ran=$((ran + 1))
-    if ! BITNET="$bitnet" "$COMPARE" "$model" -n "$tokens" --strict -t 1 --maxseq "$MAXSEQ" "$@"; then
-        fail=1
-    fi
+    local llama_bin_dir=${LLAMA_BIN_DIR:-}
+    case "$backend" in
+        AVX2)
+            llama_bin_dir=${LLAMA_AVX2_BIN_DIR:-$llama_bin_dir}
+            ;;
+        AVX512)
+            llama_bin_dir=${LLAMA_AVX512_BIN_DIR:-$llama_bin_dir}
+            ;;
+    esac
+    local mode
+    local mode_args=()
+    for mode in ${PREFILL_MODES//,/ }; do
+        mode_args=()
+        if [[ "$mode" == tokenwise ]]; then
+            mode_args+=(--no-prefill)
+        fi
+        echo "  prefill=$mode"
+        if ! LLAMA_BIN_DIR="$llama_bin_dir" \
+            BITNET="$bitnet" \
+            "$COMPARE" "$model" -n "$tokens" --strict -t "$THREADS" \
+            --maxseq "$MAXSEQ" "${mode_args[@]}" "$@"; then
+            fail=1
+        fi
+    done
 }
 
 validate_backends() {
@@ -148,10 +183,10 @@ esac
 
 validate_backends
 
-run_case "gemma4_dense" "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" 3 5 \
+run_case "gemma4_dense" "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" 3 16 \
     "*gemma*4*e*b*q*.gguf" \
     "*gemma*4*31b*q*.gguf"
-run_case "gemma4_moe" "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" 3 5 \
+run_case "gemma4_moe" "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" 3 16 \
     "*gemma*4*26b*q*.gguf" \
     "*gemma*4*a4b*q*.gguf" \
     "*gemma*4*a4b*mxfp4*.gguf"
@@ -166,7 +201,7 @@ if [[ "$fail" -ne 0 ]]; then
     exit 1
 fi
 
-echo "Gemma4 CPU parity PASSED: ran=$ran skipped=$missing level=$LEVEL backends=$BACKENDS"
+echo "Gemma4 CPU parity PASSED: ran=$ran skipped=$missing level=$LEVEL backends=$BACKENDS prefill=$PREFILL_MODES"
 if [[ "$missing_backends" -ne 0 ]]; then
     echo "Gemma4 CPU parity backend skips: $missing_backends"
 fi

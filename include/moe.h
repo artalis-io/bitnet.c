@@ -56,6 +56,7 @@ void bn_moe_cache_print_stats(const BnMoEState *ms);
 // This is a benchmark/server warmup helper: it increases startup time and RSS
 // so generation does not block on expert page faults.
 int bn_moe_prefault_mmap(struct BnModel *m);
+int bn_moe_prepare_mmap_experts(struct BnModel *m);
 
 // Create I/O prefetch thread for pread pipeline (no-op on EMSCRIPTEN).
 // Call after moe_io.fd is set. Safe to call if mmap_base is set (returns immediately).

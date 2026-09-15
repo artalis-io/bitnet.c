@@ -12,6 +12,13 @@
 typedef struct BnGPUBackend BnGPUBackend;
 #endif
 typedef struct BnBackendModel BnBackendModel;
+struct BnModel;
+
+typedef enum {
+    BN_CPU_PREFILL_PROJECTION_REPLAY_NONE = 0,
+    BN_CPU_PREFILL_PROJECTION_REPLAY_FLOAT_KQUANT_TAIL,
+    BN_CPU_PREFILL_PROJECTION_REPLAY_NATIVE_ALL_TOKENS
+} BnCPUPrefillProjectionReplayKind;
 
 typedef struct {
     const char *name;
@@ -20,9 +27,12 @@ typedef struct {
     bn_tp_fn gqa;
     bn_tp_fn flash_gqa;
     bn_tp_fn batched_attn_naive;
+    bn_tp_fn batched_attn_naive_pair;
     bn_tp_fn batched_attn_flash;
     bn_tp_fn batched_attn_flash_pair;
     void (*residual_add)(float *x, const float *r, int dim);
+    void (*scaled_residual_add)(float *x, const float *r, float scale,
+                                int dim, float *scratch);
     bn_tp_fn ssm_conv_silu;
     bn_tp_fn ssm_l2norm;
     bn_tp_fn ssm_delta;
@@ -35,6 +45,10 @@ typedef struct {
                              const float *rs);
     int supports_prepared_kquant;
     int supports_float_kquant_prefill;
+    BnCPUPrefillProjectionReplayKind prefill_projection_replay;
+    int supports_hybrid_batch_prefill;
+    int supports_hyper_connection_batch_prefill;
+    int selects_last_prefill_ffn_row;
     void (*rmsnorm_prepared_kquant)(const float *x, const float *w, int dim,
                                     float eps, float *out,
                                     int8_t *quantized, float *scales,
@@ -172,6 +186,7 @@ float bn_transformer_cpu_norm_epsilon(const BnConfig *c);
 uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled);
 uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
     const BnConfig *c);
+uint32_t bn_transformer_cpu_ssm_out_matvec_task_flags(void);
 BnTransformerCPUMatvecResourcePolicy
 bn_transformer_cpu_matvec_resource_policy(
     const BnCPURuntimePolicy *runtime,
@@ -192,6 +207,18 @@ bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnCPUBackendOps *ops);
 bn_tp_fn bn_transformer_cpu_ssm_delta_op(const BnCPUBackendOps *ops);
 bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnCPUBackendOps *ops);
 int bn_transformer_cpu_backend_supports_float_kquant_prefill(void);
+BnCPUPrefillProjectionReplayKind
+bn_transformer_cpu_backend_prefill_projection_replay(void);
+int bn_transformer_cpu_backend_supports_hybrid_batch_prefill(void);
+int bn_transformer_cpu_backend_supports_hyper_connection_batch_prefill(void);
+int bn_transformer_cpu_backend_selects_last_prefill_ffn_row(void);
+void bn_transformer_cpu_debug_dump_prefill_values(
+    const struct BnModel *model,
+    const float *values,
+    int n_values,
+    const char *tag,
+    int layer,
+    int pos);
 int bn_transformer_cpu_has_native_quant_activation(void);
 int bn_transformer_cpu_weight_uses_native_quant_activation(
     const BnQWeight *weight);

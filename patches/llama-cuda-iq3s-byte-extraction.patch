@@ -1,0 +1,42 @@
+--- a/ggml/src/ggml-cuda/vecdotq.cuh
++++ b/ggml/src/ggml-cuda/vecdotq.cuh
+@@ -1205,7 +1205,6 @@
+     const block_iq3_s * bq3 = (const block_iq3_s *) vbq + kbx;
+
+     const int2      qs_packed = make_int2(get_int_b2(bq3->qs, iqs + 0), get_int_b2(bq3->qs, iqs + 1));
+-    const uint8_t * qs        = (const uint8_t *) &qs_packed;
+
+     const int qh = bq3->qh[iqs/2];
+
+@@ -1216,8 +1215,8 @@
+ #pragma unroll
+     for (int l0 = 0; l0 < 8; l0 += 2) {
+         const int2 grid_pos = make_int2(
+-            iq3s_grid[qs[l0 + 0] | ((qh << (8 - l0)) & 0x100)],
+-            iq3s_grid[qs[l0 + 1] | ((qh << (7 - l0)) & 0x100)]);
++            iq3s_grid[(((uint32_t)(l0 < 4 ? qs_packed.x : qs_packed.y) >> (8 * (l0 % 4))) & 255u) | ((qh << (8 - l0)) & 0x100)],
++            iq3s_grid[(((uint32_t)(l0 < 4 ? qs_packed.x : qs_packed.y) >> (8 * ((l0+1) % 4))) & 255u) | ((qh << (7 - l0)) & 0x100)]);
+
+         const int signs0 = __vcmpne4(((signs_packed_8[l0/2] & 0x03) << 7) | ((signs_packed_8[l0/2] & 0x0C) << 21), 0x00000000);
+         const int signs1 = __vcmpne4(((signs_packed_8[l0/2] & 0x30) << 3) | ((signs_packed_8[l0/2] & 0xC0) << 17), 0x00000000);
+--- a/ggml/src/ggml-cuda/mmq-load-tiles.cuh
++++ b/ggml/src/ggml-cuda/mmq-load-tiles.cuh
+@@ -1387,7 +1387,6 @@
+         const block_iq3_s * bxi = (const block_iq3_s *) x + kbx0 + i*stride;
+
+         const int2      qs_packed = make_int2(get_int_b2(bxi->qs, 2*kqsx+0), get_int_b2(bxi->qs, 2*kqsx+1));
+-        const uint8_t * qs        = (const uint8_t *) &qs_packed;
+
+         const int qh = bxi->qh[kqsx];
+
+@@ -1397,8 +1396,8 @@
+ #pragma unroll
+         for (int l = 0; l < QR3_S; ++l) {
+             const int2 grid_pos = make_int2(
+-                iq3s_grid[qs[2*l+0] | ((qh << (8 - 2*l)) & 0x100)],
+-                iq3s_grid[qs[2*l+1] | ((qh << (7 - 2*l)) & 0x100)]);
++                iq3s_grid[(((uint32_t)(l < 2 ? qs_packed.x : qs_packed.y) >> (8 * (2*l % 4))) & 255u) | ((qh << (8 - 2*l)) & 0x100)],
++                iq3s_grid[(((uint32_t)(l < 2 ? qs_packed.x : qs_packed.y) >> (8 * ((2*l+1) % 4))) & 255u) | ((qh << (7 - 2*l)) & 0x100)]);
+
+             const int signs0 = __vcmpne4(((signs_packed_8[l] & 0x03) << 7) | ((signs_packed_8[l] & 0x0C) << 21), 0x00000000);
+             const int signs1 = __vcmpne4(((signs_packed_8[l] & 0x30) << 3) | ((signs_packed_8[l] & 0xC0) << 17), 0x00000000);

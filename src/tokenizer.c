@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <float.h>
+#include <limits.h>
 
 static const char *BN_TOKENIZER_METASPACE = "\xE2\x96\x81";
 
@@ -60,6 +61,151 @@ static int vocab_lookup(const BnTokenizer *t, const char *str) {
         else lo = mid + 1;
     }
     return -1;
+}
+
+/* Ranked byte BPE uses pair ranks, not the score of the resulting token. */
+struct BnTokenizerMerge { int left, right, token, rank; };
+
+static int tokenizer_merge_compare(const void *a, const void *b) {
+    const struct BnTokenizerMerge *x = a, *y = b;
+    if (x->left != y->left) return x->left < y->left ? -1 : 1;
+    if (x->right != y->right) return x->right < y->right ? -1 : 1;
+    return (x->rank > y->rank) - (x->rank < y->rank);
+}
+
+static const struct BnTokenizerMerge *tokenizer_find_merge(
+        const BnTokenizer *t, int left, int right) {
+    int lo = 0, hi = t->n_merges;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        const struct BnTokenizerMerge *m = &t->merges[mid];
+        if (m->left < left || (m->left == left && m->right < right)) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo == t->n_merges || t->merges[lo].left != left ||
+        t->merges[lo].right != right) return NULL;
+    return &t->merges[lo];
+}
+
+static int tokenizer_load_merges(BnTokenizer *t, BnGGUFFile *f) {
+    int idx = bn_gguf_find_key(f, "tokenizer.ggml.merges");
+    if (idx < 0) return 0;
+    if (f->kvs[idx].type != BN_GGUF_TYPE_ARRAY ||
+        f->kvs[idx].value.arr.elem_type != BN_GGUF_TYPE_STRING ||
+        f->kvs[idx].value.arr.n > INT_MAX ||
+        f->kvs[idx].value.arr.n > SIZE_MAX / sizeof(*t->merges)) return -1;
+    t->ranked_bpe = 1;
+    t->n_merges = (int)f->kvs[idx].value.arr.n;
+    if (!t->n_merges) return 0;
+    t->merges = malloc((size_t)t->n_merges * sizeof(*t->merges));
+    if (!t->merges) return -1;
+    for (int i = 0; i < t->n_merges; ++i) {
+        const char *entry = bn_gguf_get_arr_str(f, "tokenizer.ggml.merges", i);
+        if (!entry || !entry[0]) return -1;
+        char *pair = strdup(entry);
+        if (!pair) return -1;
+        char *sep = strchr(pair + 1, ' ');
+        if (!sep || !sep[1]) { free(pair); return -1; }
+        *sep = 0;
+        int left = vocab_lookup(t, pair), right = vocab_lookup(t, sep + 1);
+        memmove(sep, sep + 1, strlen(sep + 1) + 1);
+        int token = vocab_lookup(t, pair);
+        free(pair);
+        if (left < 0 || right < 0 || token < 0) return -1;
+        t->merges[i] = (struct BnTokenizerMerge){left, right, token, i};
+    }
+    qsort(t->merges, (size_t)t->n_merges, sizeof(*t->merges), tokenizer_merge_compare);
+    return 0;
+}
+
+#include "tokenizer_unicode.h"
+
+enum { TOKENIZER_NUMBER = 2, TOKENIZER_LETTER = 4,
+       TOKENIZER_MARK = 16, TOKENIZER_SPACE = 256 };
+
+/* Invalid UTF-8 advances one byte; byte BPE can still preserve the input. */
+static int tokenizer_codepoint(const char *s, int pos, int len, uint32_t *cp) {
+    if (pos >= len) { *cp = UINT32_MAX; return len; }
+    const unsigned char *p = (const unsigned char *)s;
+    unsigned c = p[pos];
+    int n = c < 0x80 ? 1 : c >= 0xc2 && c < 0xe0 ? 2 :
+            c < 0xf0 && c >= 0xe0 ? 3 : c >= 0xf0 && c <= 0xf4 ? 4 : 1;
+    uint32_t value = n == 1 ? c : c & ((1u << (7 - n)) - 1);
+    if (n > len - pos) n = 1;
+    for (int i = 1; i < n; i++) {
+        if ((p[pos+i] & 0xc0) != 0x80) { n = 1; break; }
+        value = (value << 6) | (p[pos+i] & 0x3f);
+    }
+    if ((n == 2 && value < 0x80) || (n == 3 && value < 0x800) ||
+        (n == 4 && value < 0x10000) || value > 0x10ffff ||
+        (value >= 0xd800 && value <= 0xdfff)) n = 1;
+    *cp = n == 1 ? c : value;
+    return pos + n;
+}
+
+static unsigned tokenizer_char_flags(uint32_t cp) {
+    if (cp > 0x10ffff) return 0;
+    size_t lo = 0, hi = sizeof(tokenizer_unicode_ranges) / sizeof(tokenizer_unicode_ranges[0]);
+    while (lo + 1 < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (tokenizer_unicode_ranges[mid].start <= cp) lo = mid;
+        else hi = mid;
+    }
+    return tokenizer_unicode_ranges[lo].flags;
+}
+
+/* Ordered alternatives of letter-based BPE pretokenizers. Byte offsets keep
+ * UTF-8 codepoints intact before the byte-to-Unicode BPE mapping. */
+static int tokenizer_piece_end(const char *s, int start, int len, int marks) {
+    uint32_t cp, next_cp;
+    int next = tokenizer_codepoint(s, start, len, &cp);
+    tokenizer_codepoint(s, next, len, &next_cp);
+    unsigned flags = tokenizer_char_flags(cp);
+    unsigned word = TOKENIZER_LETTER | (marks ? TOKENIZER_MARK : 0);
+    if (cp == '\'' && next < len) {
+        unsigned a = (unsigned char)s[next] | 32u;
+        if (a == 's' || a == 't' || a == 'm' || a == 'd') return next + 1;
+        if (next + 1 < len) {
+            unsigned b = (unsigned char)s[next+1] | 32u;
+            if ((a == 'r' && b == 'e') || (a == 'v' && b == 'e') ||
+                (a == 'l' && b == 'l')) return next + 2;
+        }
+    }
+    if (cp != '\r' && cp != '\n' && !(flags & TOKENIZER_NUMBER) &&
+        ((flags & word) || (tokenizer_char_flags(next_cp) & word))) {
+        int end = next;
+        while (end < len) {
+            int after = tokenizer_codepoint(s, end, len, &next_cp);
+            if (!(tokenizer_char_flags(next_cp) & word)) break;
+            end = after;
+        }
+        return end;
+    }
+    if (flags & TOKENIZER_NUMBER) return next;
+    unsigned excluded = word | TOKENIZER_NUMBER | TOKENIZER_SPACE;
+    int pos = cp == ' ' ? next : start;
+    int end = pos;
+    while (end < len) {
+        int after = tokenizer_codepoint(s, end, len, &next_cp);
+        if (tokenizer_char_flags(next_cp) & excluded) break;
+        end = after;
+    }
+    if (end > pos) {
+        while (end < len && (s[end] == '\r' || s[end] == '\n')) end++;
+        return end;
+    }
+    int last_newline = start, previous = start;
+    end = start;
+    while (end < len) {
+        int after = tokenizer_codepoint(s, end, len, &next_cp);
+        if (!(tokenizer_char_flags(next_cp) & TOKENIZER_SPACE)) break;
+        if (next_cp == '\r' || next_cp == '\n') last_newline = after;
+        previous = end;
+        end = after;
+    }
+    if (last_newline > start) return last_newline;
+    if (end < len && previous > start) return previous;
+    return end > start ? end : next;
 }
 
 static void tokenizer_add_eog(BnTokenizer *t, int token) {
@@ -169,6 +315,14 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     // #6: Use platform qsort_r to avoid global mutable state
     SORT_VOCAB(t->sorted_indices, t->vocab_size, t->vocab);
 
+    if (tokenizer_load_merges(t, f) != 0) {
+        SH_LOG_ERROR("Invalid tokenizer BPE merges");
+        bn_tokenizer_free(t);
+        return -1;
+    }
+    t->pretokenizer = bn_model_tokenizer_pretokenizer(
+        tokenizer_pre ? tokenizer_pre : model_name);
+
     // Fallback: resolve eot_id from vocab if GGUF metadata didn't provide it
     if (t->eot_id < 0)
         t->eot_id = vocab_lookup(t, "<|eot_id|>");
@@ -207,55 +361,62 @@ void bn_tokenizer_free(BnTokenizer *t) {
         for (int i = 0; i < t->vocab_size; i++) free(t->vocab[i]);
         free(t->vocab);
     }
+    free(t->merges);
     free(t->scores);
     free(t->sorted_indices);
 }
 
 static int tokenizer_init_metaspace_work(const BnTokenizer *t, const char *text,
-                                         int *work, int max_work) {
-    int n_work = 0;
-    int text_len = (int)strlen(text);
-
+                                         int *work, int *groups, int max_work) {
+    int n_work = 0, text_len = (int)strlen(text), piece_end = 0;
     for (int i = 0; i < text_len && n_work < max_work; ) {
-        char piece[8];
-        int piece_len = 1;
-        unsigned char c = (unsigned char)text[i];
-
-        if (c == ' ') {
-            memcpy(piece, BN_TOKENIZER_METASPACE, 3);
-            piece[3] = '\0';
-        } else if (c < 0x80) {
-            piece[0] = (char)c;
-            piece[1] = '\0';
-        } else if ((c & 0xE0) == 0xC0 && i + 1 < text_len) {
-            piece[0] = text[i];
-            piece[1] = text[i + 1];
-            piece[2] = '\0';
-            piece_len = 2;
-        } else if ((c & 0xF0) == 0xE0 && i + 2 < text_len) {
-            piece[0] = text[i];
-            piece[1] = text[i + 1];
-            piece[2] = text[i + 2];
-            piece[3] = '\0';
-            piece_len = 3;
-        } else if ((c & 0xF8) == 0xF0 && i + 3 < text_len) {
-            piece[0] = text[i];
-            piece[1] = text[i + 1];
-            piece[2] = text[i + 2];
-            piece[3] = text[i + 3];
-            piece[4] = '\0';
-            piece_len = 4;
-        } else {
-            piece[0] = (char)c;
-            piece[1] = '\0';
+        if (t->pretokenizer == BN_TOKENIZER_PRE_NEWLINES && i >= piece_end) {
+            piece_end = i + 1;
+            while (piece_end < text_len &&
+                   (text[piece_end] == '\n') == (text[i] == '\n')) piece_end++;
+            /* A whole newline run can be a vocabulary token even though
+             * newline-containing pairs are absent from the merge table. */
+            if (text[i] == '\n' && piece_end - i <= t->max_token_length) {
+                size_t length = (size_t)(piece_end - i);
+                char *run = (char *)malloc(length + 1);
+                if (!run) return n_work;
+                memcpy(run, text + i, length); run[length] = 0;
+                int tok = vocab_lookup(t, run);
+                free(run);
+                if (tok >= 0) {
+                    groups[n_work] = piece_end; work[n_work++] = tok;
+                    i = piece_end;
+                    continue;
+                }
+            }
         }
-
+        char piece[8];
+        uint32_t cp;
+        int next = tokenizer_codepoint(text, i, text_len, &cp);
+        int piece_len = next - i;
+        if (cp == ' ') {
+            memcpy(piece, BN_TOKENIZER_METASPACE, 4);
+        } else {
+            memcpy(piece, text + i, (size_t)piece_len); piece[piece_len] = 0;
+        }
         int tok = vocab_lookup(t, piece);
-        if (tok >= 0)
-            work[n_work++] = tok;
-        i += piece_len;
+        if (tok >= 0) {
+            groups[n_work] = piece_end; work[n_work++] = tok;
+        } else {
+            /* Raw UTF-8 BPE falls back after normalization: an unknown
+             * metaspace itself therefore yields its three UTF-8 bytes. */
+            for (int j = 0; piece[j] && n_work < max_work; j++) {
+                char byte_token[8];
+                snprintf(byte_token, sizeof(byte_token), "<0x%02X>",
+                         (unsigned char)piece[j]);
+                tok = vocab_lookup(t, byte_token);
+                if (tok >= 0) {
+                    groups[n_work] = piece_end; work[n_work++] = tok;
+                }
+            }
+        }
+        i = next;
     }
-
     return n_work;
 }
 
@@ -273,18 +434,28 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
 
     // Initial tokenization: encode each byte/char as individual token
     // For UTF-8 text, first try to find each character as a token
-    int text_len = (int)strlen(text);
+    size_t input_len = strlen(text);
+    size_t expansion = t->metaspace ? 3u : 1u;
+    if (input_len > (INT_MAX - 1) / expansion) return n_tokens;
+    size_t capacity = input_len * expansion + 1;
+    if (capacity > SIZE_MAX / (2 * sizeof(int))) return n_tokens;
+    int text_len = (int)input_len;
     if (text_len == 0) return n_tokens;
 
     // Step 1: Initialize with individual character tokens
     // #17: Check allocations
-    int *work = (int *)malloc((text_len + 1) * sizeof(int));
+    int *work = (int *)calloc(capacity, 2 * sizeof(int));
     if (!work) return n_tokens;
     int n_work = 0;
+    int *groups = work + capacity;
+    int piece_end = 0;
 
     if (t->metaspace) {
-        n_work = tokenizer_init_metaspace_work(t, text, work, text_len + 1);
+        n_work = tokenizer_init_metaspace_work(t, text, work, groups, (int)capacity);
     } else for (int i = 0; i < text_len; ) {
+        if (t->pretokenizer != BN_TOKENIZER_PRE_NONE && i >= piece_end)
+            piece_end = tokenizer_piece_end(text, i, text_len, t->pretokenizer == BN_TOKENIZER_PRE_LETTERS_MARKS);
+        groups[n_work] = piece_end;
         unsigned char byte = (unsigned char)text[i];
         char bpe_char[4];
         int bpe_len;
@@ -341,7 +512,8 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
         i++;
     }
 
-    // Step 2: BPE merge loop — greedily merge the pair with highest score
+    // Step 2: BPE merges within each pretokenizer piece. Ranked BPE uses
+    // the lowest pair rank; legacy score-based tokenizers use the highest score.
     // #17: Check allocation
     char *merge_buf = (char *)malloc(t->max_token_length * 2 + 4);
     if (!merge_buf) {
@@ -355,11 +527,22 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
 
     while (n_work >= 2) {
         float best_score = -FLT_MAX;
+        int best_rank = INT_MAX;
         int best_idx = -1;
         int best_tok = -1;
 
         // Find the best merge pair
         for (int i = 0; i < n_work - 1; i++) {
+            if (groups[i] != groups[i+1]) continue;
+            if (t->ranked_bpe) {
+                const struct BnTokenizerMerge *m = tokenizer_find_merge(t, work[i], work[i+1]);
+                if (m && m->rank < best_rank) {
+                    best_rank = m->rank;
+                    best_idx = i;
+                    best_tok = m->token;
+                }
+                continue;
+            }
             snprintf(merge_buf, t->max_token_length * 2 + 4, "%s%s",
                      t->vocab[work[i]], t->vocab[work[i + 1]]);
             int tok = vocab_lookup(t, merge_buf);
@@ -377,6 +560,7 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
         // Shift remaining tokens
         for (int i = best_idx + 1; i < n_work - 1; i++) {
             work[i] = work[i + 1];
+            groups[i] = groups[i + 1];
         }
         n_work--;
     }
@@ -453,11 +637,27 @@ static int decode_bpe_cp(const unsigned char **p) {
 // The caller must consume or copy the result before the next call.
 static _Thread_local char tl_decode_buf[1024];
 
+static int tokenizer_hex_digit(unsigned char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
 const char *bn_tokenizer_decode(const BnTokenizer *t, int token) {
     if (token < 0 || token >= t->vocab_size) return "";
     const char *raw = t->vocab[token];
 
     if (t->metaspace) {
+        if (strlen(raw) == 6 && strncmp(raw, "<0x", 3) == 0 && raw[5] == '>') {
+            int hi = tokenizer_hex_digit((unsigned char)raw[3]);
+            int lo = tokenizer_hex_digit((unsigned char)raw[4]);
+            if (hi >= 0 && lo >= 0) {
+                tl_decode_buf[0] = (char)((hi << 4) | lo);
+                tl_decode_buf[1] = 0;
+                return tl_decode_buf;
+            }
+        }
         int out_pos = 0;
         for (const unsigned char *p = (const unsigned char *)raw;
              *p && out_pos < (int)sizeof(tl_decode_buf) - 4; ) {

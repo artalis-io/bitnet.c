@@ -34,6 +34,25 @@ typedef struct {
     int ssm_inner_size;             // value_dim = num_v_heads * head_v_dim (4096)
     int ssm_time_step_rank;         // num_v_heads (32)
     int ssm_group_count;            // num_k_heads (16)
+    // Alternative residual and attention topology (zero = ordinary residual/GQA)
+    int hyper_connection_count;
+    int hyper_connection_rank;
+    int indexer_head_count;
+    int indexer_head_size;
+    int indexer_top_k;
+    int attention_compress_ratios[128];
+    // Positional layer embedding (PLE); zero dimensions mean disabled.
+    int ple_layer;
+    int ple_ngram_size;
+    int ple_heads_per_ngram;
+    int ple_head_count;
+    int ple_head_dim;
+    int ple_conv_kernel;
+    int ple_eos_token_id;
+    int ple_image_token_id;
+    uint64_t ple_layer_multipliers[8];
+    uint32_t ple_head_offsets[64];
+    uint32_t ple_head_vocab_sizes[64];
     // MoE config (all zero = dense FFN, backward compatible)
     int n_experts;              // total experts per layer
     int n_experts_active;       // top-K active per token
@@ -45,6 +64,7 @@ typedef struct {
     int shared_expert_intermediate_size; // shared expert hidden dim
     // Shared-KV / per-layer input metadata (zero = disabled)
     int kv_unique_layer_count;  // first N layers own KV cache, later layers reuse
+    int sliding_window; // standard causal window length; 0 disables it
     int sliding_window_pattern[128];
     int per_layer_input_dim;
     float final_logit_softcap;

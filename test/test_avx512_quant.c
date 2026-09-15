@@ -9,8 +9,19 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static uint32_t rng_state = 0x12345678u;
+
+int bn_quant_format_supports_native_quant_logits_refine(int type) {
+    (void)type;
+    return 1;
+}
+
+int bn_quant_format_supports_kquant_logits_refine(int type) {
+    (void)type;
+    return 1;
+}
 
 static uint32_t next_u32(void) {
     uint32_t x = rng_state;
@@ -151,8 +162,52 @@ static void test_q8(void) {
     bn_quant_q8_avx2_4row_range(&c2, 0, (rows + 3) / 4);
     bn_quant_q8_avx512_vnni_4row_range(&c512, 0, (rows + 3) / 4);
     assert_close(scalar, avx512, rows);
-    assert_close(avx2, avx512, rows);
+    assert(memcmp(avx2, avx512, sizeof(avx2)) == 0);
 
+    free(x_q);
+    free(blocks);
+}
+
+static void test_q8_matmul_matches_matvec(void) {
+    enum { rows = 9, n_bpr = 5, cols = n_bpr * 32, n_tokens = 11 };
+    BnBlockQ8_0 *blocks =
+        (BnBlockQ8_0 *)calloc((size_t)rows * n_bpr, sizeof(*blocks));
+    int8_t *x_q =
+        (int8_t *)calloc((size_t)n_tokens * cols, sizeof(*x_q));
+    float *x_scales = (float *)calloc(
+        (size_t)n_tokens * n_bpr, sizeof(*x_scales));
+    float *matvec =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(*matvec));
+    float *matmul =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(*matmul));
+    assert(blocks && x_q && x_scales && matvec && matmul);
+
+    fill_q8(blocks, rows * n_bpr);
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q8_0, rows, cols, 1.0f };
+    for (int t = 0; t < n_tokens; t++) {
+        fill_x32(x_q + (size_t)t * cols,
+                 x_scales + (size_t)t * n_bpr, n_bpr);
+        BnQ8SdotCtx matvec_ctx = {
+            matvec + (size_t)t * rows, &W,
+            x_q + (size_t)t * cols,
+            x_scales + (size_t)t * n_bpr, NULL
+        };
+        bn_quant_q8_avx512_vnni_4row_range(
+            &matvec_ctx, 0, (rows + 3) / 4);
+    }
+
+    BnQ4MatmulCtx matmul_ctx = {
+        matmul, &W, x_q, x_scales, NULL, n_tokens, cols,
+        NULL, NULL, 0
+    };
+    bn_quant_q8_avx512_vnni_matmul_4row_range(
+        &matmul_ctx, 0, (rows + 3) / 4);
+    assert(memcmp(matmul, matvec,
+                  (size_t)n_tokens * rows * sizeof(*matmul)) == 0);
+
+    free(matmul);
+    free(matvec);
+    free(x_scales);
     free(x_q);
     free(blocks);
 }
@@ -164,17 +219,28 @@ static void test_q4(void) {
     float x_scales[n_bpr];
     float ref[rows], avx2[rows], avx512[rows];
 
-    fill_q4(blocks, rows * n_bpr);
-    fill_x32(x_q, x_scales, n_bpr);
-
     BnQWeight W = { blocks, BN_GGUF_TENSOR_Q4_0, rows, cols, 1.0f };
     BnQ4SdotCtx c2 = { avx2, &W, x_q, x_scales, NULL };
     BnQ4SdotCtx c512 = { avx512, &W, x_q, x_scales, NULL };
-    q4_sdot_reference(ref, &W, x_q, x_scales);
-    bn_quant_q4_avx2_4row_range(&c2, 0, (rows + 3) / 4);
-    bn_quant_q4_avx512_vnni_4row_range(&c512, 0, (rows + 3) / 4);
-    assert_close(ref, avx512, rows);
-    assert_close(avx2, avx512, rows);
+    /* Exercise odd block counts and partial row groups under both GCC and
+     * Clang: the AVX512 dot must not reduce undefined upper-half lanes. */
+    for (int count = 1; count <= n_bpr; count++) {
+        W.cols = count * 32;
+        for (int nr = 1; nr <= rows; nr++) {
+            W.rows = nr;
+            fill_q4(blocks, nr * count);
+            fill_x32(x_q, x_scales, count);
+            for (int i = 0; i < rows; i++)
+                ref[i] = avx2[i] = avx512[i] = NAN;
+            q4_sdot_reference(ref, &W, x_q, x_scales);
+            bn_quant_q4_avx2_4row_range(&c2, 0, (nr + 3) / 4);
+            bn_quant_q4_avx512_vnni_4row_range(&c512, 0, (nr + 3) / 4);
+            assert_close(ref, avx512, nr);
+            assert_close(avx2, avx512, nr);
+            for (int i = nr; i < rows; i++)
+                assert(isnan(avx512[i]));
+        }
+    }
 
     free(x_q);
     free(blocks);
@@ -201,6 +267,66 @@ static void test_q4k(void) {
     assert_close(scalar, avx512, rows);
     assert_close(avx2, avx512, rows);
 
+    free(x_q);
+    free(blocks);
+}
+
+static void test_q4k_matmul_matches_matvec(void) {
+    enum {
+        rows = 9,
+        n_bpr = 3,
+        cols = n_bpr * BN_QK_K,
+        n_tokens = 5
+    };
+    BnBlockQ4K *blocks =
+        (BnBlockQ4K *)calloc((size_t)rows * n_bpr, sizeof(*blocks));
+    int8_t *x_q = (int8_t *)calloc((size_t)n_tokens * cols, sizeof(*x_q));
+    float *x_d =
+        (float *)calloc((size_t)n_tokens * n_bpr, sizeof(*x_d));
+    int16_t *x_bsums = (int16_t *)calloc(
+        (size_t)n_tokens * n_bpr * 16, sizeof(*x_bsums));
+    float *matvec =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(*matvec));
+    float *matmul =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(*matmul));
+    assert(blocks && x_q && x_d && x_bsums && matvec && matmul);
+
+    fill_q4k(blocks, rows * n_bpr);
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q4_K, rows, cols, 1.0f };
+    for (int t = 0; t < n_tokens; t++) {
+        fill_x(x_q + (size_t)t * cols,
+               x_d + (size_t)t * n_bpr,
+               x_bsums + (size_t)t * n_bpr * 16, n_bpr);
+        BnKQuantSdotCtx matvec_ctx = {
+            matvec + (size_t)t * rows, &W,
+            x_q + (size_t)t * cols,
+            x_d + (size_t)t * n_bpr,
+            x_bsums + (size_t)t * n_bpr * 16, NULL
+        };
+        bn_quant_q4k_avx512_vnni_4row_range(
+            &matvec_ctx, 0, (rows + 3) / 4);
+    }
+
+    BnKQuantMatmulCtx matmul_ctx = {
+        .out = matmul,
+        .W = &W,
+        .x_q = x_q,
+        .x_d = x_d,
+        .x_bsums = x_bsums,
+        .n_tokens = n_tokens,
+        .cols = cols,
+        .prepared = NULL,
+        .x_q8k_x4 = NULL,
+    };
+    bn_quant_q4k_avx512_vnni_matmul_4row_range(
+        &matmul_ctx, 0, (rows + 3) / 4);
+    assert(memcmp(matmul, matvec,
+                  (size_t)n_tokens * rows * sizeof(*matmul)) == 0);
+
+    free(matmul);
+    free(matvec);
+    free(x_bsums);
+    free(x_d);
     free(x_q);
     free(blocks);
 }
@@ -268,12 +394,75 @@ static void test_q6k(void) {
     free(blocks);
 }
 
+static void test_q6k_matmul_matches_matvec(void) {
+    enum {
+        rows = 9,
+        n_bpr = 3,
+        cols = n_bpr * BN_QK_K,
+        n_tokens = 5
+    };
+    BnBlockQ6K *blocks =
+        (BnBlockQ6K *)calloc((size_t)rows * n_bpr, sizeof(*blocks));
+    int8_t *x_q = (int8_t *)calloc((size_t)n_tokens * cols, sizeof(*x_q));
+    float *x_d =
+        (float *)calloc((size_t)n_tokens * n_bpr, sizeof(*x_d));
+    int16_t *x_bsums = (int16_t *)calloc(
+        (size_t)n_tokens * n_bpr * 16, sizeof(*x_bsums));
+    float *matvec =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(*matvec));
+    float *matmul =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(*matmul));
+    assert(blocks && x_q && x_d && x_bsums && matvec && matmul);
+
+    fill_q6k(blocks, rows * n_bpr);
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q6_K, rows, cols, 1.0f };
+    for (int t = 0; t < n_tokens; t++) {
+        fill_x(x_q + (size_t)t * cols,
+               x_d + (size_t)t * n_bpr,
+               x_bsums + (size_t)t * n_bpr * 16, n_bpr);
+        BnKQuantSdotCtx matvec_ctx = {
+            matvec + (size_t)t * rows, &W,
+            x_q + (size_t)t * cols,
+            x_d + (size_t)t * n_bpr,
+            x_bsums + (size_t)t * n_bpr * 16, NULL
+        };
+        bn_quant_q6k_avx512_vnni_4row_range(
+            &matvec_ctx, 0, (rows + 3) / 4);
+    }
+
+    BnKQuantMatmulCtx matmul_ctx = {
+        .out = matmul,
+        .W = &W,
+        .x_q = x_q,
+        .x_d = x_d,
+        .x_bsums = x_bsums,
+        .n_tokens = n_tokens,
+        .cols = cols,
+        .prepared = NULL,
+        .x_q8k_x4 = NULL,
+    };
+    bn_quant_q6k_avx512_vnni_matmul_4row_range(
+        &matmul_ctx, 0, (rows + 3) / 4);
+    assert(memcmp(matmul, matvec,
+                  (size_t)n_tokens * rows * sizeof(*matmul)) == 0);
+
+    free(matmul);
+    free(matvec);
+    free(x_bsums);
+    free(x_d);
+    free(x_q);
+    free(blocks);
+}
+
 int main(void) {
     test_q8();
+    test_q8_matmul_matches_matvec();
     test_q4();
     test_q4k();
+    test_q4k_matmul_matches_matvec();
     test_q5k();
     test_q6k();
+    test_q6k_matmul_matches_matvec();
     printf("PASSED\n");
     return 0;
 }

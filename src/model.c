@@ -97,6 +97,25 @@ void bn_model_set_moe_fd(BnModel *model, int fd) {
     if (io) io->fd = fd;
 }
 
+int bn_model_set_moe_shard_files(BnModel *model,
+                                 const BnMappedFile *files, size_t n_files) {
+    BnMoEIO *io = bn_model_moe_io(model);
+    if (!io || !files || n_files == 0) return -1;
+    int *fds = (int *)malloc(n_files * sizeof(int));
+    if (!fds) return -1;
+    for (size_t i = 0; i < n_files; i++) {
+        if (files[i].fd < 0) {
+            free(fds);
+            return -1;
+        }
+        fds[i] = files[i].fd;
+    }
+    free(io->shard_fds);
+    io->shard_fds = fds;
+    io->n_shard_fds = n_files;
+    return 0;
+}
+
 void bn_model_set_moe_madvise(BnModel *model, int enabled) {
     BnMoEIO *io = bn_model_moe_io(model);
     if (io) io->madvise_mode = enabled;
@@ -123,6 +142,8 @@ void *bn_model_gpu_moe_cache(const BnModel *model) {
 }
 
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
+
+static float *load_f32_tensor(BnGGUFFile *f, const char *name);
 
 static int qweight_type_supported(int type) {
     return bn_model_load_policy_weight_type_supported(type);
@@ -183,6 +204,43 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
         }
     }
 
+    return 0;
+}
+
+static int load_role_qweight(BnQWeight *w, BnGGUFFile *f,
+                             const BnModelArchOps *ops, int layer,
+                             BnModelTensorRole role) {
+    char weight_name[128], scale_name[128];
+    if (bn_model_arch_tensor_name_for(ops, weight_name, sizeof(weight_name),
+                                      layer, role) != 0 ||
+        bn_model_arch_tensor_scale_name_for(ops, scale_name, sizeof(scale_name),
+                                            layer, role) != 0)
+        return -1;
+    return load_qweight(w, f, weight_name, scale_name);
+}
+
+static int load_hyper_connection(BnHyperConnectionWeights *hc,
+                                 BnGGUFFile *f,
+                                 const BnModelArchOps *ops, int layer,
+                                 BnModelTensorRole norm_role,
+                                 BnModelTensorRole down_role,
+                                 BnModelTensorRole up_role,
+                                 BnModelTensorRole inject_role) {
+    char name[128];
+    if (bn_model_arch_tensor_name_for(ops, name, sizeof(name), layer,
+                                      norm_role) != 0)
+        return -1;
+    hc->norm = load_f32_tensor(f, name);
+    if (!hc->norm) {
+        SH_LOG_ERROR("Hyperconnection norm not found", "name", name);
+        return -1;
+    }
+    if (load_role_qweight(&hc->down, f, ops, layer, down_role) != 0 ||
+        load_role_qweight(&hc->up, f, ops, layer, up_role) != 0)
+        return -1;
+    if (inject_role != BN_MODEL_TENSOR_HC_OUTPUT_NORM &&
+        load_role_qweight(&hc->inject, f, ops, layer, inject_role) != 0)
+        return -1;
     return 0;
 }
 
@@ -344,7 +402,95 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
 
     c->ssm_group_count = bn_model_arch_gguf_u32(f, "ssm.group_count");
 
+    if (bn_model_arch_uses_hyper_connections(c)) {
+        c->hyper_connection_count =
+            bn_model_arch_gguf_u32(f, "hyper_connection.count");
+        c->hyper_connection_rank =
+            bn_model_arch_gguf_u32(f, "hyper_connection.low_rank");
+        if (c->hyper_connection_count <= 1 || c->hyper_connection_rank <= 0) {
+            SH_LOG_ERROR("Invalid hyperconnection config");
+            return -1;
+        }
+    }
+    if (bn_model_arch_uses_query_sparse_attention(c)) {
+        c->indexer_head_count =
+            bn_model_arch_gguf_u32(f, "attention.indexer.head_count");
+        c->indexer_head_size =
+            bn_model_arch_gguf_u32(f, "attention.indexer.key_length");
+        c->indexer_top_k =
+            bn_model_arch_gguf_u32(f, "attention.indexer.top_k");
+        int n = c->n_layers < 128 ? c->n_layers : 128;
+        for (int i = 0; i < n; i++)
+            c->attention_compress_ratios[i] =
+                bn_model_arch_gguf_u32_or_i32_array(
+                    f, "attention.compress_ratios", i);
+        if (c->indexer_head_count <= 0 || c->indexer_head_size <= 0 ||
+            c->indexer_top_k <= 0) {
+            SH_LOG_ERROR("Invalid query sparse attention config");
+            return -1;
+        }
+    }
+    if (bn_model_arch_uses_positional_layer_embedding(c)) {
+        uint64_t n_layers = bn_model_arch_gguf_arr_n(f, "ple.layers");
+        const int32_t *layers =
+            (const int32_t *)bn_model_arch_gguf_arr_data(f, "ple.layers");
+        if (n_layers != 1 || !layers) {
+            SH_LOG_ERROR("PLE requires exactly one layer");
+            return -1;
+        }
+        c->ple_layer = layers[0];
+        c->ple_ngram_size = bn_model_arch_gguf_u32(f, "ple.ngram_size");
+        c->ple_heads_per_ngram =
+            bn_model_arch_gguf_u32(f, "ple.heads_per_ngram");
+        c->ple_conv_kernel = bn_model_arch_gguf_u32(f, "ple.conv_kernel");
+        c->ple_eos_token_id = bn_model_arch_gguf_u32(f, "ple.eos_token_id");
+        c->ple_image_token_id =
+            bn_model_arch_gguf_u32(f, "ple.image_token_id");
+        c->ple_head_dim =
+            bn_model_arch_gguf_u32(f, "embedding_length_per_layer_input");
+        c->ple_head_count =
+            (c->ple_ngram_size - 1) * c->ple_heads_per_ngram;
+        uint64_t n_mul =
+            bn_model_arch_gguf_arr_n(f, "ple.layer_multipliers");
+        uint64_t n_off = bn_model_arch_gguf_arr_n(f, "ple.head_offsets");
+        uint64_t n_vocab =
+            bn_model_arch_gguf_arr_n(f, "ple.head_vocab_sizes");
+        const uint64_t *mul = (const uint64_t *)
+            bn_model_arch_gguf_arr_data(f, "ple.layer_multipliers");
+        const uint64_t *off = (const uint64_t *)
+            bn_model_arch_gguf_arr_data(f, "ple.head_offsets");
+        const uint64_t *vocab = (const uint64_t *)
+            bn_model_arch_gguf_arr_data(f, "ple.head_vocab_sizes");
+        if (c->ple_layer < 0 || c->ple_layer >= c->n_layers ||
+            c->ple_ngram_size < 2 || c->ple_ngram_size > 8 ||
+            c->ple_head_count <= 0 || c->ple_head_count > 64 ||
+            c->ple_head_dim <= 0 || c->ple_conv_kernel <= 0 ||
+            n_mul != (uint64_t)c->ple_ngram_size ||
+            n_off != (uint64_t)c->ple_head_count ||
+            n_vocab != (uint64_t)c->ple_head_count ||
+            !mul || !off || !vocab) {
+            SH_LOG_ERROR("Invalid PLE config");
+            return -1;
+        }
+        for (int i = 0; i < c->ple_ngram_size; i++)
+            c->ple_layer_multipliers[i] = mul[i];
+        for (int i = 0; i < c->ple_head_count; i++) {
+            if (off[i] > UINT32_MAX || vocab[i] == 0 ||
+                vocab[i] > UINT32_MAX || off[i] + vocab[i] > INT32_MAX) {
+                SH_LOG_ERROR("Invalid PLE head range");
+                return -1;
+            }
+            c->ple_head_offsets[i] = (uint32_t)off[i];
+            c->ple_head_vocab_sizes[i] = (uint32_t)vocab[i];
+        }
+    }
+
     if (bn_model_load_policy_loads_extra_metadata(c)) {
+        c->sliding_window = bn_model_arch_gguf_u32(f, "attention.sliding_window");
+        if (c->sliding_window < 0) {
+            SH_LOG_ERROR("Invalid attention sliding window");
+            return -1;
+        }
         int shared_kv_layers =
             bn_model_arch_gguf_u32(f, "attention.shared_kv_layers");
         c->kv_unique_layer_count = c->n_layers - shared_kv_layers;
@@ -492,13 +638,32 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
         w->tied_embedding_weight.scale = 1.0f;
     }
 
-    // #24: Output norm — must exist
-    w->output_norm = load_f32_tensor(f, "output_norm.weight");
-    if (!w->output_norm) {
-        SH_LOG_ERROR("output_norm.weight not found");
-        return -1;
+    if (bn_model_arch_uses_hyper_connections(c)) {
+        if (load_hyper_connection(&w->hc_output, f, arch_ops, -1,
+                                  BN_MODEL_TENSOR_HC_OUTPUT_NORM,
+                                  BN_MODEL_TENSOR_HC_OUTPUT_DOWN,
+                                  BN_MODEL_TENSOR_HC_OUTPUT_UP,
+                                  BN_MODEL_TENSOR_HC_OUTPUT_NORM) != 0)
+            return -1;
+    } else {
+        // #24: Output norm — must exist
+        w->output_norm = load_f32_tensor(f, "output_norm.weight");
+        if (!w->output_norm) {
+            SH_LOG_ERROR("output_norm.weight not found");
+            return -1;
+        }
     }
     w->rope_freqs = load_f32_tensor(f, "rope_freqs.weight");
+    if (bn_model_arch_uses_positional_layer_embedding(c)) {
+        if (load_qweight(&w->ple_token_embd, f,
+                         "per_layer_token_embd.weight",
+                         "per_layer_token_embd.scale") != 0)
+            return -1;
+        if (w->ple_token_embd.cols != c->ple_head_dim) {
+            SH_LOG_ERROR("Invalid PLE embedding width");
+            return -1;
+        }
+    }
     if (bn_model_load_policy_loads_per_layer_input_weights(c)) {
         if (load_qweight(&w->per_layer_model_proj, f,
                          "per_layer_model_proj.weight",
@@ -533,14 +698,49 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
                            ? BN_LAYER_FFN_MOE
                            : BN_LAYER_FFN_DENSE;
 
-        // #25: Attention norms — must exist
-        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
-                                          BN_MODEL_TENSOR_ATTN_NORM) != 0)
-            goto fail_layers;
-        lw->norm.attn_norm = load_f32_tensor(f, wname);
-        if (!lw->norm.attn_norm) {
-            SH_LOG_ERROR("Tensor not found", "name", wname);
-            goto fail_layers;
+        if (bn_model_arch_uses_hyper_connections(c)) {
+            if (load_hyper_connection(&lw->hc_attn, f, arch_ops, i,
+                                      BN_MODEL_TENSOR_HC_ATTN_NORM,
+                                      BN_MODEL_TENSOR_HC_ATTN_DOWN,
+                                      BN_MODEL_TENSOR_HC_ATTN_UP,
+                                      BN_MODEL_TENSOR_HC_ATTN_INJECT) != 0)
+                goto fail_layers;
+        } else {
+            // #25: Attention norms — must exist
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_NORM) != 0)
+                goto fail_layers;
+            lw->norm.attn_norm = load_f32_tensor(f, wname);
+            if (!lw->norm.attn_norm) {
+                SH_LOG_ERROR("Tensor not found", "name", wname);
+                goto fail_layers;
+            }
+        }
+
+        if (bn_model_arch_uses_positional_layer_embedding(c) &&
+            i == c->ple_layer) {
+            BnPositionalLayerEmbeddingWeights *ple = &lw->ple;
+            if (load_role_qweight(&ple->key, f, arch_ops, i,
+                                  BN_MODEL_TENSOR_PLE_KEY) != 0 ||
+                load_role_qweight(&ple->value, f, arch_ops, i,
+                                  BN_MODEL_TENSOR_PLE_VALUE) != 0)
+                goto fail_layers;
+            BnModelTensorRole roles[4] = {
+                BN_MODEL_TENSOR_PLE_NORM_KEY,
+                BN_MODEL_TENSOR_PLE_NORM_QUERY,
+                BN_MODEL_TENSOR_PLE_NORM_CONV,
+                BN_MODEL_TENSOR_PLE_CONV1D,
+            };
+            float **dst[4] = { &ple->norm_key, &ple->norm_query,
+                               &ple->norm_conv, &ple->conv1d };
+            for (int j = 0; j < 4; j++) {
+                if (bn_model_arch_tensor_name_for(arch_ops, wname,
+                                                  sizeof(wname), i,
+                                                  roles[j]) != 0)
+                    goto fail_layers;
+                *dst[j] = load_f32_tensor(f, wname);
+                if (!*dst[j]) goto fail_layers;
+            }
         }
 
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
@@ -548,10 +748,14 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
             goto fail_layers;
         lw->norm.attn_sub_norm = load_f32_tensor(f, wname);  // optional
 
-        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
-                                          BN_MODEL_TENSOR_ATTN_POST_NORM) != 0)
-            goto fail_layers;
-        lw->norm.attn_post_norm = load_f32_tensor(f, wname);  // optional
+        /* Some families use this tensor name for the FFN input norm.
+         * Bind the post-attention role only when the architecture uses it. */
+        if (bn_model_arch_uses_attention_post_norm(c)) {
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_POST_NORM) != 0)
+                goto fail_layers;
+            lw->norm.attn_post_norm = load_f32_tensor(f, wname);  // optional
+        }
 
         if (is_ssm) {
             // --- SSM layer weights ---
@@ -684,6 +888,26 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
                 goto fail_layers;
             lw->attn.k_norm = load_f32_tensor(f, wname);
 
+            if (bn_model_arch_uses_query_sparse_attention(c)) {
+                if (load_role_qweight(&lw->indexer.q, f, arch_ops, i,
+                                      BN_MODEL_TENSOR_INDEXER_Q) != 0 ||
+                    load_role_qweight(&lw->indexer.k, f, arch_ops, i,
+                                      BN_MODEL_TENSOR_INDEXER_K) != 0)
+                    goto fail_layers;
+                if (bn_model_arch_tensor_name_for(
+                        arch_ops, wname, sizeof(wname), i,
+                        BN_MODEL_TENSOR_INDEXER_Q_NORM) != 0)
+                    goto fail_layers;
+                lw->indexer.q_norm = load_f32_tensor(f, wname);
+                if (bn_model_arch_tensor_name_for(
+                        arch_ops, wname, sizeof(wname), i,
+                        BN_MODEL_TENSOR_INDEXER_K_NORM) != 0)
+                    goto fail_layers;
+                lw->indexer.k_norm = load_f32_tensor(f, wname);
+                if (!lw->indexer.q_norm || !lw->indexer.k_norm)
+                    goto fail_layers;
+            }
+
             // Detect per-head vs shared norms (layer 0 only)
             if (i == 0 && lw->attn.q_norm) {
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), 0,
@@ -723,21 +947,30 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
             if (lw->attn.q_dim > max_q_dim) max_q_dim = lw->attn.q_dim;
         }
 
-        // #25: FFN norms — must exist
-        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
-                                          BN_MODEL_TENSOR_FFN_NORM) != 0)
-            goto fail_layers;
-        lw->norm.ffn_norm = load_f32_tensor(f, wname);
-        if (!lw->norm.ffn_norm) {
-            // Some model families use post_attention_norm instead of ffn_norm.
+        if (bn_model_arch_uses_hyper_connections(c)) {
+            if (load_hyper_connection(&lw->hc_ffn, f, arch_ops, i,
+                                      BN_MODEL_TENSOR_HC_FFN_NORM,
+                                      BN_MODEL_TENSOR_HC_FFN_DOWN,
+                                      BN_MODEL_TENSOR_HC_FFN_UP,
+                                      BN_MODEL_TENSOR_HC_FFN_INJECT) != 0)
+                goto fail_layers;
+        } else {
+            // #25: FFN norms — must exist
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
-                                              BN_MODEL_TENSOR_FFN_POST_ATTN_NORM) != 0)
+                                              BN_MODEL_TENSOR_FFN_NORM) != 0)
                 goto fail_layers;
             lw->norm.ffn_norm = load_f32_tensor(f, wname);
-        }
-        if (!lw->norm.ffn_norm) {
-            SH_LOG_ERROR("FFN norm not found for layer");
-            goto fail_layers;
+            if (!lw->norm.ffn_norm) {
+                // Some model families use post_attention_norm instead of ffn_norm.
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_FFN_POST_ATTN_NORM) != 0)
+                    goto fail_layers;
+                lw->norm.ffn_norm = load_f32_tensor(f, wname);
+            }
+            if (!lw->norm.ffn_norm) {
+                SH_LOG_ERROR("FFN norm not found for layer");
+                goto fail_layers;
+            }
         }
 
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
@@ -1062,6 +1295,7 @@ void bn_model_free(BnModel *m) {
         free(m->runtime->tq_state);
     }
     free(m->weights.layers);
+    if (m->io) free(m->io->moe_io.shard_fds);
     if (m->runtime)
         sh_arena_free(m->runtime->weight_arena);
     bn_model_backend_free(m);

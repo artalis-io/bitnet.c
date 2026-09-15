@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_kernels_avx2.h"
 #include "simd_helpers.h"
 #include <immintrin.h>
 #include <string.h>
@@ -188,6 +189,81 @@ void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) 
 
             for (int ti = 0; ti < tile_n; ti++)
                 c->out[(size_t)(t0 + ti) * rows + row] = acc[ti];
+        }
+    }
+}
+
+void bn_quant_q6k_x8_gemm_range(void *ctx, int group_start, int group_end) {
+    BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;
+    if (!c->prepared || c->prepared->kind != BN_PREPARED_WEIGHT_Q6_K_X8 ||
+        !c->prepared->aux || !c->x_q8k_x4 || (c->n_tokens % 4) != 0) {
+        bn_quant_q6k_avx2_sdot_matmul_4row_range(
+            ctx, group_start * 2, group_end * 2);
+        return;
+    }
+
+    const int nb = c->cols / BN_QK_K;
+    const int rows = c->W->rows;
+    const BnBlockQ6Kx8 *weights =
+        (const BnBlockQ6Kx8 *)c->prepared->aux;
+    const BnBlockQ8Kx4 *inputs = c->x_q8k_x4;
+    enum { block_len = 8, blocks_per_half = 64 / block_len };
+
+    for (int panel = 0; panel < c->n_tokens / 4; panel++) {
+        const BnBlockQ8Kx4 *a = inputs + (size_t)panel * nb;
+        for (int group = group_start; group < group_end; group++) {
+            const BnBlockQ6Kx8 *w = weights + (size_t)group * nb;
+            float sum[4][8] = {{0}};
+            for (int b = 0; b < nb; b++) {
+                for (int k = 0; k < BN_QK_K / (2 * block_len); k++) {
+                    int base_l = (k / blocks_per_half) * 128 +
+                                 (k % blocks_per_half) * block_len;
+                    int base_h = base_l + 64;
+                    int scale_l = base_l / 16;
+                    int scale_h = base_h / 16;
+                    int shift_l = ((base_l % 128) / 32) * 2;
+                    int shift_h = ((base_h % 128) / 32) * 2;
+                    int half_l = (base_l / 128) * 32;
+                    int half_h = (base_h / 128) * 32;
+                    int q8_base = (k / blocks_per_half) * 512 +
+                                  (k % blocks_per_half) * (block_len * 4);
+
+                    for (int t = 0; t < 4; t++) {
+                        for (int r = 0; r < 8; r++) {
+                            int dot_l = 0;
+                            int dot_h = 0;
+                            for (int i = 0; i < block_len; i++) {
+                                int ql_pos = k * 8 * block_len +
+                                             r * block_len + i;
+                                int qh_idx_l = half_l + ((base_l + i) % 32);
+                                int qh_idx_h = half_h + ((base_h + i) % 32);
+                                int qh_off_l = (qh_idx_l / block_len) *
+                                    (block_len * 8) + r * block_len +
+                                    qh_idx_l % block_len;
+                                int qh_off_h = (qh_idx_h / block_len) *
+                                    (block_len * 8) + r * block_len +
+                                    qh_idx_h % block_len;
+                                int q_l = (((w[b].qh[qh_off_l] >> shift_l) & 3) << 4) |
+                                          (w[b].ql[ql_pos] & 15);
+                                int q_h = (((w[b].qh[qh_off_h] >> shift_h) & 3) << 4) |
+                                          ((w[b].ql[ql_pos] >> 4) & 15);
+                                int q8_l = a[b].qs[q8_base + t * block_len + i];
+                                int q8_h = a[b].qs[q8_base + t * block_len + i + 256];
+                                dot_l += (q_l - 32) * q8_l;
+                                dot_h += (q_h - 32) * q8_h;
+                            }
+                            int scaled = dot_l * w[b].scales[scale_l * 8 + r] +
+                                         dot_h * w[b].scales[scale_h * 8 + r];
+                            sum[t][r] += (float)scaled *
+                                bn_fp16_to_fp32(w[b].d[r]) * a[b].d[t];
+                        }
+                    }
+                }
+            }
+            for (int t = 0; t < 4; t++)
+                for (int r = 0; r < 8; r++)
+                    c->out[(size_t)(panel * 4 + t) * rows + group * 8 + r] =
+                        sum[t][r];
         }
     }
 }

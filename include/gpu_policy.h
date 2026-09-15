@@ -17,6 +17,10 @@ typedef struct {
 int bn_gpu_policy_moe_resident_routed_ffn_enabled(
     const BnGPUBackend *gpu, int eligible);
 BnBackendPlacement bn_gpu_policy_backend_placement(const BnGPUBackend *gpu);
+int bn_gpu_policy_moe_routed_ordered_supported(
+    const BnGPUBackend *gpu, int gate_type, int up_type, int down_type);
+int bn_gpu_policy_moe_routed_e8m0_supported(
+    const BnGPUBackend *gpu, int gate_type, int up_type, int down_type);
 int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
     int gate_type,
     int up_type,
@@ -25,6 +29,8 @@ int bn_gpu_policy_backend_moe_resident_routed_ffn_eligible(
     const BnGPUBackend *gpu,
     int standard_quant_eligible,
     int metal_quant_eligible,
+    int midbit_block32_down_eligible,
+    int midbit_kquant_gateup_eligible,
     int layout_eligible);
 int bn_gpu_policy_moe_all_f16_cache_forced(const BnGPUBackend *gpu);
 int bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
@@ -42,9 +48,12 @@ int bn_gpu_policy_individual_upload_quant_only_enabled(
 int bn_gpu_policy_logits_kquant_f32_cache_enabled(const BnGPUBackend *gpu,
                                                   int tensor_type);
 int bn_gpu_policy_logits_f16_cache_enabled(const BnGPUBackend *gpu);
-int bn_gpu_policy_cuda_cublas_logits_enabled(const BnGPUBackend *gpu);
-int bn_gpu_policy_cuda_f32_logits_matvec_enabled(const BnGPUBackend *gpu);
-int bn_gpu_policy_cuda_f16_logits_matvec_enabled(const BnGPUBackend *gpu);
+int bn_gpu_policy_cuda_cublas_logits_enabled(
+    const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_f32_logits_matvec_enabled(
+    const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_f16_logits_matvec_enabled(
+    const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_moe_down_kquant_f32_cache_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_moe_down_kquant_f32_cache_forced(const BnBackendRuntimePolicy *policy);
@@ -100,7 +109,12 @@ int bn_gpu_policy_cuda_f16_native_quant_matmul_enabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_native_quant_prepared_input_split_enabled(
     const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_native_quant_prepared_input_split_default_allowed(
+    const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_native_quant_prepared_input_all_enabled(
+    const BnBackendRuntimePolicy *policy);
+// Whether a backend may enable its reference prepared-input default.
+int bn_gpu_policy_cuda_native_quant_prepared_input_default_allowed(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_native_quant_prepared_input_logits_disabled(
     const BnBackendRuntimePolicy *policy);
@@ -341,6 +355,8 @@ int bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled(const BnBackendRuntimePo
 int bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled(const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_kquant_dot_enabled(const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_kquant_dot_forced(const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_asymmetric_kquant_batch_q8k_enabled(
+    const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_kquant_matvec4_enabled(const BnBackendRuntimePolicy *policy, int cols);
 int bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled(const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled(const BnBackendRuntimePolicy *policy);
@@ -431,6 +447,11 @@ int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_prefill_ssm_layer_disabled(
     const BnGPUBackend *gpu);
+int bn_gpu_policy_prefill_ssm_quant_path_enabled(
+    const BnGPUBackend *gpu,
+    int wqkv_type,
+    int wz_type,
+    int out_type);
 int bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_prefill_ssm_fused_asymmetric_kquant_gateup_batch_enabled(
@@ -471,6 +492,11 @@ int bn_gpu_policy_cuda_prefill_gemm_attention_min_tokens_or_default(
     const BnBackendRuntimePolicy *policy, int default_tokens);
 int bn_gpu_policy_cuda_prefill_gemm_attention_enabled(
     const BnBackendRuntimePolicy *policy, int n_tokens, int max_tokens);
+int bn_gpu_policy_cuda_prefill_gemm_attention_enabled_for_shape(
+    const BnBackendRuntimePolicy *policy, int n_tokens, int max_tokens,
+    int kv_f16, int n_heads, int n_kv_heads, int head_size, int kv_mul);
+int bn_gpu_policy_cuda_prefill_mma_attention_disabled(
+    const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_prefill_attention_wo_enabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_prefill_qkv_attention_wo_enabled(
@@ -490,6 +516,7 @@ int bn_gpu_policy_prefill_moe_chain_debug_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_prefill_hybrid_chain_debug_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_moe_prefill_enabled(const BnGPUBackend *gpu);
+int bn_gpu_policy_prefill_moe_layer_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_moe_prefill_min_tokens_configured(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_moe_prefill_min_tokens_or_default(
@@ -609,6 +636,8 @@ int bn_gpu_policy_cpu_ffn_from_layer_or_default(
     const BnGPUBackend *gpu, int default_layer);
 int bn_gpu_policy_cpu_ffn_down_from_layer_or_default(
     const BnGPUBackend *gpu, int default_layer);
+int bn_gpu_policy_reference_qkv_to_layer_or_default(
+    const BnGPUBackend *gpu, int default_layer);
 int bn_gpu_policy_ssm_graph_disabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_cuda_qkv_mixed_fuse_disabled(
     const BnBackendRuntimePolicy *policy);
@@ -627,6 +656,8 @@ int bn_gpu_policy_cuda_decode_graph_default_enabled(
     int default_moe_graph);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(
     const BnBackendRuntimePolicy *policy, int default_mb, int large_budget);
+int bn_gpu_policy_cuda_eager_kquant_aux_cache_enabled(
+    const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(
                                                const BnBackendRuntimePolicy *policy,
                                                int tensor_type,
@@ -761,6 +792,7 @@ int bn_gpu_policy_ssm_qkvz_split_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_ssm_ab_stack_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_split_residual_rmsnorm_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_debug_fallback_enabled(const BnGPUBackend *gpu);
+int bn_gpu_policy_dense_residual_graph_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_metal_cpu_route_resident_moe_enabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_metal_dense_residual_graph_diagnostic_enabled(
@@ -788,6 +820,8 @@ int bn_gpu_policy_backend_reference_attention_native_graph_supported(
 int bn_gpu_policy_backend_reference_attention_token_fallback_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_reference_recurrent_supported(
+    const BnGPUBackend *gpu);
+int bn_gpu_policy_backend_reference_recurrent_prefill_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_reference_attention_fallback_supported(
     const BnGPUBackend *gpu);
@@ -859,6 +893,8 @@ int bn_gpu_policy_moe_routed_ffn_batch_enabled(
 int bn_gpu_policy_moe_routed_ffn_batch_allowed(
                                                 const BnBackendRuntimePolicy *policy,
                                                 int large_moe);
+int bn_gpu_policy_backend_moe_routed_ffn_batch_allowed(
+    const BnGPUBackend *gpu, int large_moe, int default_eligible);
 int bn_gpu_policy_moe_cpu_actual_override_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled(

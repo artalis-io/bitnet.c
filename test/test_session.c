@@ -54,6 +54,7 @@ static void test_session_create_free(void) {
     assert(s1->state.logits != NULL);
     assert(s1->state.key_cache != NULL);
     assert(s1->pos == 0);
+    assert(s1->state.batched_prompt_contract == 0);
 
     BnSession *s2 = bn_session_create(&model, NULL);
     assert(s2 != NULL);
@@ -132,12 +133,14 @@ static void test_session_reset(void) {
         s->state.value_cache[i] = 42.0f;
     }
     s->pos = 10;
+    s->state.batched_prompt_contract = 1;
 
     // Reset
     bn_session_reset(s, &model);
 
     // Verify zeroed
     assert(s->pos == 0);
+    assert(s->state.batched_prompt_contract == 0);
     for (int i = 0; i < kv_dim; i++) {
         assert(s->state.key_cache[i] == 0.0f);
         assert(s->state.value_cache[i] == 0.0f);
@@ -222,6 +225,38 @@ static void test_multiple_sessions(void) {
     for (int i = 0; i < N_SESSIONS; i++)
         bn_session_free(sessions[i], NULL);
 
+    printf("PASSED\n");
+}
+
+static void test_session_ple_state_reset(void) {
+    printf("test_session_ple_state_reset... ");
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    init_test_config(&model.config);
+    model.config.hyper_connection_count = 4;
+    model.config.hyper_connection_rank = 16;
+    model.config.ple_head_count = 16;
+    model.config.ple_head_dim = 4;
+    model.config.ple_ngram_size = 3;
+    model.config.ple_conv_kernel = 4;
+
+    BnSession *s = bn_session_create(&model, NULL);
+    assert(s != NULL);
+    assert(s->state.token_history != NULL);
+    assert(s->state.ple_conv_state != NULL);
+
+    size_t wide = (size_t)model.config.hyper_connection_count *
+                  model.config.dim;
+    size_t history = (size_t)(model.config.ple_conv_kernel - 1) *
+                     model.config.ple_ngram_size * wide;
+    s->state.token_history[3] = 42;
+    s->state.ple_conv_state[history - 1] = 3.0f;
+    bn_session_reset(s, &model);
+    assert(s->state.token_history[3] == 0);
+    assert(s->state.ple_conv_state[history - 1] == 0.0f);
+
+    bn_session_free(s, NULL);
     printf("PASSED\n");
 }
 
@@ -425,6 +460,7 @@ int main(void) {
     test_session_reset_resets_backend_activations();
     test_session_pos_tracking();
     test_multiple_sessions();
+    test_session_ple_state_reset();
     test_session_shared_expert_hidden_buffers();
     test_session_moe_route_buffers();
     test_session_rope_frequency_policy();

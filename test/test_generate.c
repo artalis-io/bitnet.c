@@ -328,10 +328,11 @@ static void test_generate_eos_stop(void) {
     GenCallbackState cb_state = {{0}, 0, -1};
     int pos = 0;
 
-    // Generate — should immediately hit EOS and return 0
+    // Generate — EOS is reported to the callback but is not counted as output.
     int n = bn_generate(&model, &sess, &tok, &sampler, 100, &pos, test_gen_callback, &cb_state, NULL, NULL);
     assert(n == 0);  // EOS sampled first, no tokens generated
-    assert(cb_state.count == 0);
+    assert(cb_state.count == 1);
+    assert(cb_state.tokens[0] == 1);
 
     bn_tokenizer_free(&tok);
     bn_gguf_free(gf);

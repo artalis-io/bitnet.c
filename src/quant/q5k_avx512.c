@@ -205,7 +205,7 @@ void bn_quant_q5k_avx512_vnni_4row_range(void *ctx, int group_start, int group_e
     }
 }
 
-#define Q5K_AVX512_TILE_T 4
+#define Q5K_AVX512_TILE_T 10
 
 void bn_quant_q5k_avx512_vnni_matmul_4row_range(void *ctx, int group_start, int group_end) {
     BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;
@@ -222,7 +222,7 @@ void bn_quant_q5k_avx512_vnni_matmul_4row_range(void *ctx, int group_start, int 
 
     for (int g = group_start; g < group_end; g++) {
         int row0 = g * 4;
-        int nrows = (row0 + 4 <= rows) ? 4 : rows - row0;
+        int nrows = row0 + 4 <= rows ? 4 : rows - row0;
 
         for (int t0 = 0; t0 < n_tokens; t0 += Q5K_AVX512_TILE_T) {
             int tile_n = t0 + Q5K_AVX512_TILE_T <= n_tokens
@@ -230,13 +230,6 @@ void bn_quant_q5k_avx512_vnni_matmul_4row_range(void *ctx, int group_start, int 
             float acc[4][Q5K_AVX512_TILE_T] = {{0}};
 
             for (int b = 0; b < n_bpr; b++) {
-                __m512i xv[Q5K_AVX512_TILE_T][4];
-                for (int ti = 0; ti < tile_n; ti++) {
-                    const int8_t *xb = c->x_q + (size_t)(t0 + ti) * cols + b * BN_QK_K;
-                    for (int p = 0; p < 4; p++)
-                        xv[ti][p] = _mm512_loadu_si512((const void *)(xb + p * 64));
-                }
-
                 for (int r = 0; r < nrows; r++) {
                     const BnBlockQ5K *blk = &blocks[(size_t)(row0 + r) * n_bpr + b];
                     float d = bn_fp16_to_fp32(blk->d);
@@ -298,10 +291,14 @@ void bn_quant_q5k_avx512_vnni_matmul_4row_range(void *ctx, int group_start, int 
                         __m128i ch2 = _mm_hadd_epi32(ch1, ch1);
                         int32_t bsum_corr = _mm_cvtsi128_si32(ch2);
 
+                        const int8_t *xb = c->x_q +
+                            (size_t)t * cols + b * BN_QK_K;
                         __m512i sumi = _mm512_setzero_si512();
                         for (int p = 0; p < 4; p++) {
                             __m512i prod = _mm512_dpbusd_epi32(
-                                _mm512_setzero_si512(), wv[p], xv[ti][p]);
+                                _mm512_setzero_si512(), wv[p],
+                                _mm512_loadu_si512(
+                                    (const void *)(xb + p * 64)));
                             prod = _mm512_mullo_epi32(prod, sv[p]);
                             sumi = _mm512_add_epi32(sumi, prod);
                         }

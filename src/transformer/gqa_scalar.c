@@ -58,6 +58,51 @@ static void gqa_scalar_combine_small_kv_ggml_order(
     }
 }
 
+static void gqa_scalar_combine_mmvf_128_order(
+    float *out, const float *att, const float *value_cache, size_t loff,
+    int start, int n_kv, int seq_len, int kv_dim, int kv_head_offset,
+    int head_size) {
+    for (int d = 0; d < head_size; d++) {
+        float partial[128] = {0.0f};
+        for (int tid = 0; tid < 128; tid++) {
+            int t0 = 2 * tid;
+            if (t0 < n_kv) {
+                int row = (start + t0) % seq_len;
+                partial[tid] = fmaf(
+                    value_cache[loff + (size_t)row * kv_dim +
+                                kv_head_offset + d],
+                    att[t0], partial[tid]);
+            }
+            if (t0 + 1 < n_kv) {
+                int row = (start + t0 + 1) % seq_len;
+                partial[tid] = fmaf(
+                    value_cache[loff + (size_t)row * kv_dim +
+                                kv_head_offset + d],
+                    att[t0 + 1], partial[tid]);
+            }
+        }
+        for (int warp = 0; warp < 4; warp++) {
+            float *w = partial + 32 * warp;
+            for (int offset = 16; offset > 0; offset >>= 1) {
+                float old[32];
+                memcpy(old, w, sizeof(old));
+                for (int lane = 0; lane < 32; lane++)
+                    w[lane] = old[lane] + old[lane ^ offset];
+            }
+        }
+        float warp_sum[32] = {
+            partial[0], partial[32], partial[64], partial[96]
+        };
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            float old[32];
+            memcpy(old, warp_sum, sizeof(old));
+            for (int lane = 0; lane < 32; lane++)
+                warp_sum[lane] = old[lane] + old[lane ^ offset];
+        }
+        out[d] = warp_sum[0];
+    }
+}
+
 void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
     BnGQACtx *g = (BnGQACtx *)ctx;
     BnRunState *s = g->s;
@@ -77,7 +122,7 @@ void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
         int kv_h = h / kv_mul;
         float attn_scale = g->attention_scale;
 
-        for (int i = 0; i < n_kv; i++) {
+        for (int i = 0; !g->scores_ready && i < n_kv; i++) {
             int t = (start + i) % seq_len;
             float k_buf[head_size];
             const float *k_t;
@@ -92,9 +137,16 @@ void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
                      attn_scale;
         }
 
-        bn_transformer_softmax(att, n_kv);
+        if (g->scores_ready != 2)
+            bn_transformer_softmax(att, n_kv);
 
         float *xb_h = s->xb + h * head_size;
+        if (g->scores_ready == 2 && !kv_cache_uses_fp16_rows) {
+            gqa_scalar_combine_mmvf_128_order(
+                xb_h, att, s->value_cache, loff, start, n_kv, seq_len,
+                kv_dim, kv_h * head_size, head_size);
+            continue;
+        }
         if (!kv_cache_uses_fp16_rows && n_kv <= 16) {
             gqa_scalar_combine_small_kv_ggml_order(
                 xb_h, att, s->value_cache, loff, start, n_kv, seq_len,
