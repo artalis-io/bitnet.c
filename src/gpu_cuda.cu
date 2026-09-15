@@ -27746,7 +27746,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (reference_kquant_matvec &&
                 bn_backend_quant_uses_asymmetric_kquant(op->type) &&
                 (op->cols % BN_QK_K) == 0) {
-                int reference_threads = 32;
+                int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q4k_f32_avx2_reference_matvec_kernel,
                     (op->rows * 8 + reference_threads - 1) /
