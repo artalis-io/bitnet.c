@@ -2291,29 +2291,72 @@ static __global__ void q5k_q8k_avx2_reference_matvec_kernel(
 static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ4K *blocks, const BnBlockQ8K *xq,
     const float *bias, int rows, int cols, size_t out_offset) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = global_lane >> 3;
+    int lane = global_lane & 7;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
-    float value = cuda_q4k_q8k_avx2_reference_row(
-        blocks + (size_t)row * n_bpr, xq, n_bpr);
-    if (bias) value = __fadd_rn(value, bias[row]);
-    out[out_offset + row] = value;
+    const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
+    float row_acc = 0.0f;
+    float row_min = 0.0f;
+    unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
+    for (int b = 0; b < n_bpr; b++) {
+        const BnBlockQ4K *blk = row_blocks + b;
+        const BnBlockQ8K *xb = xq + b;
+        int dot = 0;
+        int min_corr = 0;
+        for (int group = 0; group < 8; group++) {
+            int sc = 0;
+            int mn = 0;
+            cuda_kquant_group_scale_min(blk->scales, group, &sc, &mn);
+            int byte_off = (group >> 1) * 32;
+            int shift = (group & 1) ? 4 : 0;
+            int group_dot = 0;
+#pragma unroll
+            for (int i = lane; i < 32; i += 8) {
+                int q = (blk->qs[byte_off + i] >> shift) & 15;
+                group_dot += q * (int)xb->qs[group * 32 + i];
+            }
+            group_dot += __shfl_down_sync(mask, group_dot, 4, 8);
+            group_dot += __shfl_down_sync(mask, group_dot, 2, 8);
+            group_dot += __shfl_down_sync(mask, group_dot, 1, 8);
+            if (lane == 0) {
+                dot += sc * group_dot;
+                min_corr += mn * ((int)xb->bsums[group * 2] +
+                                  (int)xb->bsums[group * 2 + 1]);
+            }
+        }
+        if (lane == 0) {
+            float dx = xb->d;
+            float d = cuda_fp16_to_fp32(blk->d);
+            float dmin = cuda_fp16_to_fp32(blk->dmin);
+            row_acc = fmaf((float)dot, __fmul_rn(d, dx), row_acc);
+            row_min = fmaf((float)min_corr, __fmul_rn(dmin, dx), row_min);
+        }
+    }
+    if (lane == 0) {
+        float value = __fsub_rn(row_acc, row_min);
+        if (bias) value = __fadd_rn(value, bias[row]);
+        out[out_offset + row] = value;
+    }
 }
 
 static __global__ void q6k_f32_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ6K *blocks, const float *x,
     const float *bias, int rows, int cols, size_t out_offset) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = global_lane >> 3;
+    int lane = global_lane & 7;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
     const BnBlockQ6K *row_blocks = blocks + (size_t)row * n_bpr;
     float row_sum = 0.0f;
+    unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
     for (int b = 0; b < n_bpr; b++) {
         const BnBlockQ6K *blk = &row_blocks[b];
         float d = cuda_fp16_to_fp32(blk->d);
         for (int chunk = 0; chunk < 2; chunk++) {
-            float acc[8] = {0.0f, 0.0f, 0.0f, 0.0f,
-                            0.0f, 0.0f, 0.0f, 0.0f};
+            float acc = 0.0f;
             const uint8_t *ql = blk->ql + chunk * 64;
             const uint8_t *qh = blk->qh + chunk * 32;
             const int8_t *sc = blk->scales + chunk * 8;
@@ -2323,39 +2366,48 @@ static __global__ void q6k_f32_avx2_reference_matvec_kernel(
                 float ds = __fmul_rn(d, (float)sc[segment]);
 #pragma unroll
                 for (int half = 0; half < 2; half++) {
-#pragma unroll
-                    for (int lane = 0; lane < 8; lane++) {
-                        int i = segment * 16 + half * 8 + lane;
-                        int l = i & 31;
-                        int q;
-                        if (i < 32)
-                            q = (int)((ql[l] & 15) |
-                                ((qh[l] & 3) << 4)) - 32;
-                        else if (i < 64)
-                            q = (int)((ql[l + 32] & 15) |
-                                (((qh[l] >> 2) & 3) << 4)) - 32;
-                        else if (i < 96)
-                            q = (int)((ql[l] >> 4) |
-                                (((qh[l] >> 4) & 3) << 4)) - 32;
-                        else
-                            q = (int)((ql[l + 32] >> 4) |
-                                (((qh[l] >> 6) & 3) << 4)) - 32;
-                        float w = __fmul_rn((float)q, ds);
-                        acc[lane] = fmaf(w, xb[i], acc[lane]);
-                    }
+                    int i = segment * 16 + half * 8 + lane;
+                    int l = i & 31;
+                    int q;
+                    if (i < 32)
+                        q = (int)((ql[l] & 15) |
+                            ((qh[l] & 3) << 4)) - 32;
+                    else if (i < 64)
+                        q = (int)((ql[l + 32] & 15) |
+                            (((qh[l] >> 2) & 3) << 4)) - 32;
+                    else if (i < 96)
+                        q = (int)((ql[l] >> 4) |
+                            (((qh[l] >> 4) & 3) << 4)) - 32;
+                    else
+                        q = (int)((ql[l + 32] >> 4) |
+                            (((qh[l] >> 6) & 3) << 4)) - 32;
+                    float w = __fmul_rn((float)q, ds);
+                    acc = fmaf(w, xb[i], acc);
                 }
             }
-            float s0 = __fadd_rn(acc[0], acc[4]);
-            float s1 = __fadd_rn(acc[1], acc[5]);
-            float s2 = __fadd_rn(acc[2], acc[6]);
-            float s3 = __fadd_rn(acc[3], acc[7]);
-            float chunk_sum =
-                __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
-            row_sum = __fadd_rn(row_sum, chunk_sum);
+            float a0 = __shfl_sync(mask, acc, 0, 8);
+            float a1 = __shfl_sync(mask, acc, 1, 8);
+            float a2 = __shfl_sync(mask, acc, 2, 8);
+            float a3 = __shfl_sync(mask, acc, 3, 8);
+            float a4 = __shfl_sync(mask, acc, 4, 8);
+            float a5 = __shfl_sync(mask, acc, 5, 8);
+            float a6 = __shfl_sync(mask, acc, 6, 8);
+            float a7 = __shfl_sync(mask, acc, 7, 8);
+            if (lane == 0) {
+                float s0 = __fadd_rn(a0, a4);
+                float s1 = __fadd_rn(a1, a5);
+                float s2 = __fadd_rn(a2, a6);
+                float s3 = __fadd_rn(a3, a7);
+                float chunk_sum =
+                    __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
+                row_sum = __fadd_rn(row_sum, chunk_sum);
+            }
         }
     }
-    if (bias) row_sum = __fadd_rn(row_sum, bias[row]);
-    out[out_offset + row] = row_sum;
+    if (lane == 0) {
+        if (bias) row_sum = __fadd_rn(row_sum, bias[row]);
+        out[out_offset + row] = row_sum;
+    }
 }
 
 /* Match bn_quant_q6k_avx2_4row_range: integer products accumulate into the
@@ -27462,7 +27514,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q4k_q8k_avx2_reference_matvec_kernel,
-                    (op->rows + reference_threads - 1) /
+                    (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ4K *)w->data, xq, bias,
@@ -27517,7 +27569,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q6k_f32_avx2_reference_matvec_kernel,
-                    (op->rows + reference_threads - 1) /
+                    (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ6K *)w->data, in, bias,
