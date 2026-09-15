@@ -25306,11 +25306,30 @@ static int cuda_prefill_dense_layer(
         if (cuda_buffer_row_view(qk, 0, projection_q_rows, &q_view) != 0 ||
             cuda_buffer_row_view(qk, projection_q_rows, kv_dim, &k_view) != 0)
             return -1;
-        if (cuda_matmul_device_out_preconverted_f16(ctx, q_gated ? d_qk : d_q, &q_view,
-                d_attn_norm, attn_norm_f16, projection_q_rows, dim, n_tokens, qk_type) != 0 ||
-            cuda_matmul_device_out_preconverted_f16(ctx, d_k, &k_view,
-                d_attn_norm, attn_norm_f16, kv_dim, dim, n_tokens, qk_type) != 0)
+        if (qk_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16) {
+            if (cuda_ensure_q8_1(ctx, dim * n_tokens) != 0)
+                return -1;
+            BnCudaBlockQ8Mmq *prepared_xq =
+                (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
+            quantize_mmq_input_kernel<<<dim3(dim / 32, n_tokens), 32>>>(
+                prepared_xq, d_attn_norm, dim, 0);
+            if (cudaGetLastError() != cudaSuccess ||
+                cuda_kquant_batch_matmul(ctx, q_gated ? d_qk : d_q,
+                    &q_view, d_attn_norm, projection_q_rows, dim, n_tokens,
+                    qk_type, ctx->exec_stream, prepared_xq) != 0 ||
+                cuda_kquant_batch_matmul(ctx, d_k, &k_view, d_attn_norm,
+                    kv_dim, dim, n_tokens, qk_type, ctx->exec_stream,
+                    prepared_xq) != 0)
+                return -1;
+        } else if (cuda_matmul_device_out_preconverted_f16(ctx,
+                       q_gated ? d_qk : d_q, &q_view, d_attn_norm,
+                       attn_norm_f16, projection_q_rows, dim, n_tokens,
+                       qk_type) != 0 ||
+                   cuda_matmul_device_out_preconverted_f16(ctx, d_k,
+                       &k_view, d_attn_norm, attn_norm_f16, kv_dim, dim,
+                       n_tokens, qk_type) != 0) {
             return -1;
+        }
     } else if (cuda_matmul_device_out_preconverted_f16(
                    ctx, d_qk, qk, d_attn_norm, attn_norm_f16, qk_rows, dim,
                    n_tokens, qk_type) != 0) {
