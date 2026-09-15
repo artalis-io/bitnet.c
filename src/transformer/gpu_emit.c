@@ -1775,6 +1775,11 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     int reference_attention_exact = force_reference_projection ||
         bn_transformer_gpu_reference_attention_exact_enabled(
             res ? res->gpu : NULL, c);
+    if (!force_reference_projection && res &&
+        bn_gpu_backend_is_cuda(res->gpu) &&
+        !bn_transformer_gpu_uses_moe(c) &&
+        !bn_transformer_gpu_uses_hybrid_ssm(c))
+        reference_attention_exact = 0;
     int defer_prepared_qk = force_reference_projection && res && res->gpu &&
         bn_gpu_backend_can_decode_attention_scores_prepared(res->gpu);
     /* CUDA's CPU-attention handoff defers Q/K normalization and RoPE, but its
@@ -2132,6 +2137,10 @@ void bn_transformer_gpu_emit_context_attention_gqa(
     int reference_attention_exact =
         bn_transformer_gpu_reference_attention_exact_enabled(
             res ? res->gpu : NULL, c);
+    if (res && bn_gpu_backend_is_cuda(res->gpu) &&
+        !bn_transformer_gpu_uses_moe(c) &&
+        !bn_transformer_gpu_uses_hybrid_ssm(c))
+        reference_attention_exact = 0;
 
     void *k_bias = res ? res->k_bias : NULL;
     int kv_cache_write_needs_staging =
@@ -2191,6 +2200,11 @@ void bn_transformer_gpu_emit_context_attention_finish(
     int reference_attention_exact = force_reference_projection ||
         bn_transformer_gpu_reference_attention_exact_enabled(
             res ? res->gpu : NULL, c);
+    if (!force_reference_projection && res &&
+        bn_gpu_backend_is_cuda(res->gpu) &&
+        !bn_transformer_gpu_uses_moe(c) &&
+        !bn_transformer_gpu_uses_hybrid_ssm(c))
+        reference_attention_exact = 0;
     int use_attention_native_quant = use_small_dense_native_quant;
     if (bn_transformer_attention_q_projection_is_gated(
             &lw->attn.wq, q_dim)) {

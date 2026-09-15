@@ -2701,7 +2701,8 @@ bn_transformer_gpu_decode_cpu_attention_fallback_policy(
     int dense_cuda_reference_attention =
         !bn_transformer_gpu_uses_moe(c) &&
         !bn_transformer_gpu_uses_hybrid_ssm(c) &&
-        bn_transformer_gpu_reference_dense_ffn_exact_enabled(gpu, c);
+        bn_transformer_gpu_reference_dense_ffn_exact_enabled(gpu, c) &&
+        !bn_gpu_policy_backend_reference_attention_native_graph_supported(gpu);
     int default_cpu_attention =
         bn_transformer_gpu_reference_attention_cpu_fallback_enabled(gpu, c) ||
         dense_cuda_reference_attention ||
