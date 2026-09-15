@@ -30610,7 +30610,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
              * not shared memory proportional to the full context capacity. */
             int flash_scratch = graph_exec ? min(seq_len, 2048) : n_kv;
             size_t shared = (size_t)(flash_scratch + threads) * sizeof(float);
-            if (head_size == 128 && n_kv <= 2048) {
+            if (head_size == 128 && n_kv > 256 && n_kv <= 2048) {
                 int first_key = op->attention_window > 0 &&
                     n_kv > op->attention_window
                     ? n_kv - op->attention_window : 0;
