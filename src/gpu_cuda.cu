@@ -26808,7 +26808,16 @@ static int cuda_prefill_dense_layer(
         if (cuda_buffer_row_view(qk, 0, projection_q_rows, &q_view) != 0 ||
             cuda_buffer_row_view(qk, projection_q_rows, kv_dim, &k_view) != 0)
             return -1;
-        if (qk_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16) {
+        /* Keep long-prompt FP16 KV projections in decode's FP32 order. */
+        if (ctx->kv_f16 && qk_type == BN_GGUF_TENSOR_Q4_K &&
+            n_tokens >= 16) {
+            if (cuda_prefill_q4k_reference_rows(ctx, q_gated ? d_qk : d_q,
+                    &q_view, d_attn_norm, projection_q_rows, dim,
+                    n_tokens) != 0 ||
+                cuda_prefill_q4k_reference_rows(ctx, d_k, &k_view,
+                    d_attn_norm, kv_dim, dim, n_tokens) != 0)
+                return -1;
+        } else if (qk_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16) {
             if (cuda_ensure_q8_1(ctx, dim * n_tokens) != 0)
                 return -1;
             attn_prepared_xq = (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
@@ -26838,7 +26847,12 @@ static int cuda_prefill_dense_layer(
     }
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_QK);
     if (!packed_qkv) {
-        if (attn_prepared_xq &&
+        if (ctx->kv_f16 && qk_type == BN_GGUF_TENSOR_Q4_K &&
+            wv_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16) {
+            if (cuda_prefill_q4k_reference_rows(ctx, d_v, wv,
+                    d_attn_norm, wv_rows, dim, n_tokens) != 0)
+                return -1;
+        } else if (attn_prepared_xq &&
             cuda_kquant_batch_input_enabled(ctx, wv_type, n_tokens) &&
             !bn_quant_format_has_cap(wv_type,
                                      BN_QUANT_CAP_GPU_MMQ_F32_SCALE)) {
