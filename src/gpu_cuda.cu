@@ -309,6 +309,17 @@ typedef struct {
     size_t h_gemm_ptrs_bytes;
     float *d_prefill;
     size_t d_prefill_bytes;
+    /* The reference prefill path calls QKV preparation before attention.
+     * Track that one handoff so attention does not normalize and rotate Q/K
+     * twice when the same host buffers are passed back. */
+    const float *prepared_q;
+    const float *prepared_k;
+    const float *prepared_v;
+    int prepared_tokens;
+    int prepared_pos0;
+    int prepared_heads;
+    int prepared_kv_heads;
+    int prepared_head_size;
     float *d_mmq_fixup;
     size_t d_mmq_fixup_bytes;
     float *act_bufs[BN_GPU_VALUE_COUNT];
@@ -25713,6 +25724,16 @@ static int cuda_prefill_attention_prepared_impl(void *vctx, float *out,
     void *q_norm_buf, void *k_norm_buf, const BnGPUAttentionPrefillPlan *p,
     int prepare_only) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    int inputs_prepared = !prepare_only && ctx && p && !p->q_gated &&
+        p->head_size > 0 && p->n_heads > 0 &&
+        p->n_heads <= INT_MAX / p->head_size &&
+        p->q_row_stride == p->n_heads * p->head_size &&
+        ctx->prepared_q == Q && ctx->prepared_k == K &&
+        ctx->prepared_v == V && ctx->prepared_tokens == p->n_tokens &&
+        ctx->prepared_pos0 == p->pos0 && ctx->prepared_heads == p->n_heads &&
+        ctx->prepared_kv_heads == p->n_kv_heads &&
+        ctx->prepared_head_size == p->head_size;
+    if (ctx) ctx->prepared_q = NULL;
     const BnCudaBuffer *qw = (const BnCudaBuffer *)q_norm_buf;
     const BnCudaBuffer *kw = (const BnCudaBuffer *)k_norm_buf;
     if (!ctx || !p || !out || !K_out || !Q || !K || !V ||
@@ -25786,7 +25807,7 @@ static int cuda_prefill_attention_prepared_impl(void *vctx, float *out,
     if (err == cudaSuccess) err = cudaMemcpy(k, K, nk * sizeof(float), cudaMemcpyHostToDevice);
     if (err == cudaSuccess) err = cudaMemcpy(v, V, nk * sizeof(float), cudaMemcpyHostToDevice);
     if (err != cudaSuccess) return -1;
-    if (V_out) {
+    if (V_out && !inputs_prepared) {
         int v_threads = cuda_rmsnorm_threads(p->head_size);
         if (p->reference_rmsnorm_order) {
             per_token_head_unit_rmsnorm_cpu_reference_kernel<<<
@@ -25804,13 +25825,23 @@ static int cuda_prefill_attention_prepared_impl(void *vctx, float *out,
                          cudaMemcpyDeviceToHost);
         if (err != cudaSuccess) return -1;
     }
-    prefill_unpack_query_kernel<<<(nq + 255u) / 256u, 256>>>(
-        q, gate, raw, p->n_tokens, p->n_heads, p->head_size, p->q_row_stride, p->q_gated);
-    if (cudaGetLastError() != cudaSuccess) return -1;
+    if (inputs_prepared) {
+        err = cudaMemcpy(q, raw, nq * sizeof(float), cudaMemcpyDeviceToDevice);
+        if (err != cudaSuccess) return -1;
+        if (V_out) {
+            err = cudaMemcpy(ctx->h_out + nq + nk, v, nk * sizeof(float),
+                             cudaMemcpyDeviceToHost);
+            if (err != cudaSuccess) return -1;
+        }
+    } else {
+        prefill_unpack_query_kernel<<<(nq + 255u) / 256u, 256>>>(
+            q, gate, raw, p->n_tokens, p->n_heads, p->head_size, p->q_row_stride, p->q_gated);
+        if (cudaGetLastError() != cudaSuccess) return -1;
+    }
     int threads = cuda_rmsnorm_threads(p->head_size);
     const float *q_weight = qw ? (const float *)qw->data : NULL;
     const float *k_weight = kw ? (const float *)kw->data : NULL;
-    if (p->reference_rmsnorm_order) {
+    if (!inputs_prepared && p->reference_rmsnorm_order) {
         if (q_weight) {
             per_token_head_weighted_rmsnorm_cpu_reference_kernel<<<
                 dim3(p->n_heads, p->n_tokens), 1>>>(
@@ -25827,14 +25858,16 @@ static int cuda_prefill_attention_prepared_impl(void *vctx, float *out,
         q_weight = NULL;
         k_weight = NULL;
     }
-    qk_prefill_rmsnorm_rope_kernel<<<
-        dim3(p->n_heads + p->n_kv_heads, p->n_tokens),
-        threads, (size_t)threads * sizeof(float)>>>(
-        q, k, q_weight, k_weight, cuda_act(ctx, BN_GPU_VALUE_ROPE_FREQ),
-        p->n_tokens, p->pos0, p->n_heads, p->n_kv_heads, p->head_size,
-        p->norm_eps, p->qk_norm_per_head, p->rope_dims, p->rope_freq_offset,
-        ctx->separate_rope_norm);
-    if (cudaGetLastError() != cudaSuccess) return -1;
+    if (!inputs_prepared) {
+        qk_prefill_rmsnorm_rope_kernel<<<
+            dim3(p->n_heads + p->n_kv_heads, p->n_tokens),
+            threads, (size_t)threads * sizeof(float)>>>(
+            q, k, q_weight, k_weight, cuda_act(ctx, BN_GPU_VALUE_ROPE_FREQ),
+            p->n_tokens, p->pos0, p->n_heads, p->n_kv_heads, p->head_size,
+            p->norm_eps, p->qk_norm_per_head, p->rope_dims, p->rope_freq_offset,
+            ctx->separate_rope_norm);
+        if (cudaGetLastError() != cudaSuccess) return -1;
+    }
     if (prepare_only) {
         err = cudaMemcpy(ctx->h_out, q, nq * sizeof(float),
                          cudaMemcpyDeviceToHost);
@@ -25849,6 +25882,14 @@ static int cuda_prefill_attention_prepared_impl(void *vctx, float *out,
         memcpy(K_out, ctx->h_out + nq, nk * sizeof(float));
         if (V_out)
             memcpy(V_out, ctx->h_out + nq + nk, nk * sizeof(float));
+        ctx->prepared_q = out;
+        ctx->prepared_k = K_out;
+        ctx->prepared_v = V_out;
+        ctx->prepared_tokens = p->n_tokens;
+        ctx->prepared_pos0 = p->pos0;
+        ctx->prepared_heads = p->n_heads;
+        ctx->prepared_kv_heads = p->n_kv_heads;
+        ctx->prepared_head_size = p->head_size;
         return 0;
     }
     err = cudaMemcpy(k_attn, k, nk * sizeof(float), cudaMemcpyDeviceToDevice);

@@ -82,7 +82,13 @@ static __global__ void q4_mmq(float*out,const BnBlockQ4_0*w,const BnQ4CudaInput*
  int xt=(total_tokens+jwidth-1)/jwidth,tiles=((geometry_rows+127)/128)*xt*experts;
  long long tile=(((row+row_offset)/128)*experts+expert)*xt+t/jwidth,base=tile*nb,total=(long long)tiles*nb;
  float tail=0,prefix=0;bool have=false;
- for(int bid=grid-1;bid>=0;bid--){
+ /* A partition boundary can move left by at most seven blocks below.
+  * Only partitions touching this tile can contribute to its sum. */
+ int first_bid=grid==tiles?(int)tile:(int)((base*grid)/total)-2;
+ int last_bid=grid==tiles?(int)tile:(int)(((base+nb+8)*grid)/total)+2;
+ if(first_bid<0)first_bid=0;
+ if(last_bid>=grid)last_bid=grid-1;
+ for(int bid=last_bid;bid>=first_bid;bid--){
  long long beg=(long long)bid*total/grid,end=(long long)(bid+1)*total/grid;
  beg-=(beg%nb)%8;end-=(end%nb)%8;beg-=base;end-=base;
  int lo=beg<0?0:(int)beg,hi=end>nb?nb:(int)end;if(lo>=hi)continue;
