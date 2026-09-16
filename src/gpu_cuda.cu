@@ -18156,7 +18156,10 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                    n_tokens >= 16 && w->mmq_data) {
             if (type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 128) {
                 int tile_rows = (rows + 127) / 128;
-                int wide_tile = rows >= 12000;
+                /* The 64-token tile keeps enough independent blocks in
+                 * flight for wide FFN projections and reduces shared-memory
+                 * pressure relative to the 128-token variant. */
+                int wide_tile = 0;
                 int tile_tokens = wide_tile
                     ? (n_tokens + 127) / 128
                     : (n_tokens + 63) / 64;
