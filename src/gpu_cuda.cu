@@ -29837,7 +29837,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (fused_q_rope_idx >= 0)
                         skip_ops[fused_q_rope_idx] = 1;
                 } else if (fused_gateup_activation) {
-                    BN_CUDA_LAUNCH(ctx,
+                    BN_CUDA_LAUNCH_STATIC(ctx,
                         q4k_dot_gateup_silu_5warp_exact10_kernel,
                         split0, 160, 0, out0,
                         (const BnBlockQ4K *)w->data, xq, split0, cols,
