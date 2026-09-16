@@ -17901,15 +17901,47 @@ static __device__ float q8_mmq_row(const BnBlockQ8_0 *w,
     return end - first > 2 ? last + fixup : last;
 }
 
-/* Dense MMQ is the same schedule with one expert and token-ordered ranks. */
-static __global__ void q8_mmq_dense_kernel(float *out, const BnBlockQ8_0 *weight,
+/* A lane owns one complete schedule interval.  Lane zero combines those
+ * interval sums in the same last/fixup order as q8_mmq_row. */
+static __global__ void q8_mmq_dense_subwarp_kernel(
+    float *out, const BnBlockQ8_0 *weight,
     const BnCudaBlockQ8_0F32 *input, const int *schedule,
     int rows, int cols, int j, int ntx, size_t out_offset) {
-    int row = blockIdx.x*blockDim.x + threadIdx.x, token = blockIdx.y;
+    int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
+    int lane = threadIdx.x & 7;
+    int token = blockIdx.y;
     if (row >= rows) return;
-    int nb = cols/32, tile = (row/128)*ntx + token/j;
-    out[out_offset + (size_t)token*rows + row] = q8_mmq_row(
-        weight + (size_t)row*nb, input + (size_t)token*nb, schedule, tile);
+    int nb = cols / 32;
+    int tile = (row / 128) * ntx + token / j;
+    int first = schedule[tile], end = schedule[tile + 1];
+    const BnBlockQ8_0 *w = weight + (size_t)row * nb;
+    const BnCudaBlockQ8_0F32 *x = input + (size_t)token * nb;
+    unsigned mask = 0xffu << (threadIdx.x & ~7);
+    float last = 0.0f, fixup = 0.0f;
+    for (int base = first; base < end; base += 16) {
+        int p = base + lane * 2;
+        float partial = 0.0f;
+        if (p < end) {
+            for (int b = schedule[p]; b < schedule[p + 1]; b++) {
+                int dot = cuda_dot_i8x32_dp4a(w[b].qs, x[b].qs);
+                partial = fmaf(
+                    __fmul_rn((float)dot, cuda_fp16_to_fp32(w[b].d)),
+                    x[b].d, partial);
+            }
+        }
+#pragma unroll
+        for (int source = 0; source < 8; source++) {
+            float part = __shfl_sync(mask, partial, source, 8);
+            int part_index = base + source * 2;
+            if (lane == 0 && part_index < end) {
+                if (part_index == first) last = part;
+                else fixup += part;
+            }
+        }
+    }
+    if (lane == 0)
+        out[out_offset + (size_t)token * rows + row] =
+            end - first > 2 ? last + fixup : last;
 }
 
 /* Small dense batches use the MMVQ activation format and reduction table. */
@@ -17956,7 +17988,8 @@ static int cuda_launch_q8_0_matmul(BnCudaCtx *ctx, float *d_dst,
         BnCudaBlockQ8_0F32 *input = (BnCudaBlockQ8_0F32 *)ctx->d_q8_0_f32;
         quantize_q8_mmq_kernel<<<dim3(cols/32, n_tokens),32>>>(input, d_x, cols);
         if (cudaGetLastError() != cudaSuccess) return -1;
-        q8_mmq_dense_kernel<<<dim3(1 + (rows-1)/128, n_tokens),128>>>(
+        q8_mmq_dense_subwarp_kernel<<<
+            dim3((rows + 31) / 32, n_tokens), 256>>>(
             d_dst, blocks, input, plan->data, rows, cols, plan->j, plan->ntx, out_offset);
         return cudaGetLastError() == cudaSuccess ? 0 : -1;
     }
