@@ -17998,6 +17998,54 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
 
 #include "quant/mxfp4_cuda.cuh"
 #include "quant/kquant_routed_cuda.cuh"
+
+/* Gate and up use the same route and quantized input. Keep each projection's
+ * exact MMVQ accumulation order while sharing the block and input traversal. */
+static __global__ void q4k_routed_gateup_mmvq_kernel(
+    float *gate_out, float *up_out, float *mid, const BnBlockQ4K *gate,
+    const BnBlockQ4K *up, const BnCudaBlockQ8_1 *x, int rows, int cols,
+    const int *ids, int repeat, int act_type) {
+    __shared__ float gate_partial[3][32];
+    __shared__ float up_partial[3][32];
+    int row = blockIdx.x;
+    int item = blockIdx.y;
+    int tid = threadIdx.x;
+    int lane = tid & 31;
+    int warp = tid >> 5;
+    int nb = cols / BN_QK_K;
+    float gate_sum = 0.0f;
+    float up_sum = 0.0f;
+    for (int b = tid / 16; b < nb; b += blockDim.x / 16) {
+        size_t wi = ((size_t)ids[item] * rows + row) * nb + b;
+        const BnCudaBlockQ8_1 *xb =
+            x + (size_t)(item / repeat) * (cols / 32) + b * 8;
+        int iqs = 2 * (tid & 15);
+        gate_sum += cuda_vec_dot_q4k_q8_1(gate + wi, xb, iqs);
+        up_sum += cuda_vec_dot_q4k_q8_1(up + wi, xb, iqs);
+    }
+    if (warp) {
+        gate_partial[warp - 1][lane] = gate_sum;
+        up_partial[warp - 1][lane] = up_sum;
+    }
+    __syncthreads();
+    if (!warp) {
+#pragma unroll
+        for (int i = 0; i < 3; i++) {
+            gate_sum += gate_partial[i][lane];
+            up_sum += up_partial[i][lane];
+        }
+        for (int offset = 16; offset; offset >>= 1) {
+            gate_sum += __shfl_xor_sync(0xffffffffu, gate_sum, offset);
+            up_sum += __shfl_xor_sync(0xffffffffu, up_sum, offset);
+        }
+        if (!lane) {
+            size_t oi = (size_t)item * rows + row;
+            gate_out[oi] = gate_sum;
+            up_out[oi] = up_sum;
+            mid[oi] = cuda_ffn_activation(gate_sum, act_type) * up_sum;
+        }
+    }
+}
 #include "quant/q5_1_cuda.cuh"
 #include "quant/q4_cuda.cuh"
 
@@ -22508,6 +22556,7 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
     int gate_width, int gate_grid, int down_width, int down_grid,
     int separate_reduction, int act_type) {
     int items = nt * k;
+    int fused_gateup_activation = 0;
     BN_CUDA_LAUNCH(ctx, moe_routed_inverse_map_kernel, (experts+127)/128, 128, 0,
                    map, nt, k, experts);
     if (bn_quant_format_has_cap(gate->type,
@@ -22534,12 +22583,24 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
     } else if (bn_quant_format_has_cap(gate->type, BN_QUANT_CAP_GPU_ROUTED_KQUANT_MMVQ_GATEUP)) {
         BN_CUDA_LAUNCH(ctx, quantize_q8_1_batch_kernel, dim3(dim/32,nt), 32, 0,
             (BnCudaBlockQ8_1 *)quant, x, dim, nt);
-        BN_CUDA_LAUNCH(ctx, kquant_routed_mmvq_kernel<BN_GGUF_TENSOR_Q4_K>,
-            dim3(hidden,items), nt == 1 ? 128 : 32, 0,
-            g, gate->data, (BnCudaBlockQ8_1 *)quant, hidden, dim, map, k);
-        BN_CUDA_LAUNCH(ctx, kquant_routed_mmvq_kernel<BN_GGUF_TENSOR_Q4_K>,
-            dim3(hidden,items), nt == 1 ? 128 : 32, 0,
-            u, up->data, (BnCudaBlockQ8_1 *)quant, hidden, dim, map, k);
+        if (nt == 1) {
+            BN_CUDA_LAUNCH(ctx, q4k_routed_gateup_mmvq_kernel,
+                dim3(hidden, items), 128, 0, g, u, mid,
+                (const BnBlockQ4K *)gate->data,
+                (const BnBlockQ4K *)up->data,
+                (const BnCudaBlockQ8_1 *)quant, hidden, dim, map, k,
+                act_type);
+            fused_gateup_activation = 1;
+        } else {
+            BN_CUDA_LAUNCH(ctx,
+                kquant_routed_mmvq_kernel<BN_GGUF_TENSOR_Q4_K>,
+                dim3(hidden,items), 32, 0, g, gate->data,
+                (BnCudaBlockQ8_1 *)quant, hidden, dim, map, k);
+            BN_CUDA_LAUNCH(ctx,
+                kquant_routed_mmvq_kernel<BN_GGUF_TENSOR_Q4_K>,
+                dim3(hidden,items), 32, 0, u, up->data,
+                (BnCudaBlockQ8_1 *)quant, hidden, dim, map, k);
+        }
     } else if (bn_quant_format_has_cap(gate->type, BN_QUANT_CAP_GPU_ROUTED_KQUANT_ORDERED_GATEUP)) {
         if(nt<=8) {
             BN_CUDA_LAUNCH(ctx,quantize_q8_1_batch_kernel,dim3(dim/32,nt),32,0,(BnCudaBlockQ8_1*)quant,x,dim,nt);
@@ -22573,9 +22634,10 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
             hidden, dim, nt, k, experts, map, gate_width, gate_grid);
     }
     }
-    BN_CUDA_LAUNCH(ctx, moe_routed_activation_pair_kernel,
-                   (items*hidden+255)/256, 256, 0, mid, g, u,
-                   items*hidden, act_type);
+    if (!fused_gateup_activation)
+        BN_CUDA_LAUNCH(ctx, moe_routed_activation_pair_kernel,
+                       (items*hidden+255)/256, 256, 0, mid, g, u,
+                       items*hidden, act_type);
     cuda_debug_device_vector(
         ctx, nt > 1 && bn_gpu_policy_cuda_prefill_dense_debug_enabled(
                            ctx->runtime_policy),
