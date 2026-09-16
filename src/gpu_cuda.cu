@@ -2228,6 +2228,92 @@ static __global__ void iq4xs_mmq_ordered_t8_kernel(
                 out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
 }
 
+/* Share IQ3_S codebook extraction across eight tokens while retaining the
+ * reference Stream-K partition and per-group FP32 accumulation order. */
+static __global__ void iq3s_mmq_ordered_t8_kernel(
+        float *out, const BnBlockIQ3S *weights,
+        const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
+        int n_tokens, int width, int grid) {
+    int lane = threadIdx.x & 7;
+    int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
+    int token0 = blockIdx.y * 8;
+    if (row >= rows) return;
+    unsigned mask = __activemask();
+    int groups = cols / 32, blocks = cols / 256;
+    int token_tiles = (n_tokens - 1) / width + 1;
+    int64_t tile = (int64_t)(row / 128) * token_tiles + token0 / width;
+    int64_t tile_begin = tile * blocks;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) * token_tiles * blocks;
+    int first = (int)(((tile_begin + 1) * grid + total - 1) / total) - 1;
+    int last = (int)(((tile_begin + blocks) * grid + total - 1) / total) - 1;
+    float tail[8] = {0}, prefix[8] = {0};
+    int have_tail = 0;
+    for (int bid = last; bid >= first; bid--) {
+        int64_t raw_begin = (int64_t)bid * total / grid - tile_begin;
+        int64_t raw_end = (int64_t)(bid + 1) * total / grid - tile_begin;
+        int begin = raw_begin < 0 ? 0 : (int)raw_begin;
+        int end = raw_end > blocks ? blocks : (int)raw_end;
+        if (begin >= end) continue;
+        float acc[8] = {0};
+        for (int b = begin; b < end; b++) {
+            const BnBlockIQ3S *w = weights + (size_t)row * blocks + b;
+            int scale = 1 + 2 * ((w->scales[lane / 2] >>
+                                  (4 * (lane & 1))) & 15);
+            float wd = cuda_fp16_to_fp32(w->d) * scale;
+            uint32_t packed[8];
+#pragma unroll
+            for (int j = 0; j < 8; j++) {
+                int index = w->qs[lane * 8 + j] |
+                            (((w->qh[lane] >> j) & 1) << 8);
+                uint32_t grid_values = bn_iq3s_grid[index];
+                uint32_t qv = 0;
+#pragma unroll
+                for (int k = 0; k < 4; k++) {
+                    int q = (grid_values >> (8 * k)) & 255;
+                    if ((w->signs[lane * 4 + j / 2] >>
+                         ((j & 1) * 4 + k)) & 1)
+                        q = -q;
+                    qv |= (uint32_t)(uint8_t)q << (8 * k);
+                }
+                packed[j] = qv;
+            }
+#pragma unroll
+            for (int t = 0; t < 8; t++) {
+                int token = token0 + t;
+                if (token >= n_tokens) continue;
+                const BnCudaBlockQ8MmqF32 *x =
+                    input + (size_t)token * groups + b * 8 + lane;
+                int dot = 0;
+#pragma unroll
+                for (int j = 0; j < 8; j++) {
+                    uint32_t xv;
+                    memcpy(&xv, x->qs + 4 * j, sizeof(xv));
+                    dot = cuda_dp4a_i32((int)packed[j], (int)xv, dot);
+                }
+                float xd = x->d;
+#pragma unroll
+                for (int l = 0; l < 8; l++) {
+                    int d = __shfl_sync(mask, dot, l, 8);
+                    float dw = __shfl_sync(mask, wd, l, 8);
+                    float dx = __shfl_sync(mask, xd, l, 8);
+                    acc[t] = fmaf((float)d * dw, dx, acc[t]);
+                }
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < 8; t++) {
+            if (!have_tail) tail[t] = acc[t];
+            else prefix[t] += acc[t];
+        }
+        have_tail = 1;
+    }
+    if (lane == 0)
+#pragma unroll
+        for (int t = 0; t < 8; t++)
+            if (token0 + t < n_tokens)
+                out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
+}
+
 /* Q3_K uses the same token tiling while preserving its two 16-value
  * subblock dots and the reference's weighted FP32 reduction order. */
 static __global__ void q3k_mmq_ordered_t8_kernel(
@@ -18093,6 +18179,13 @@ static int cuda_init_activations(void *vctx,
         sizes[BN_GPU_VALUE_SSM_ALPHA] = (size_t)num_v_heads * sizeof(float);
         sizes[BN_GPU_VALUE_SSM_BETA] = (size_t)num_v_heads * sizeof(float);
         sizes[BN_GPU_VALUE_SSM_V] = (size_t)value_dim * sizeof(float);
+        /* SSM comparison snapshots use these shared scratch slots even in
+         * dense models, where the MoE allocation above is absent. */
+        size_t snapshot_bytes = (size_t)value_dim * sizeof(float);
+        if (sizes[BN_GPU_VALUE_MOE_HB] < snapshot_bytes)
+            sizes[BN_GPU_VALUE_MOE_HB] = snapshot_bytes;
+        if (sizes[BN_GPU_VALUE_MOE_HB2] < snapshot_bytes)
+            sizes[BN_GPU_VALUE_MOE_HB2] = snapshot_bytes;
     }
 
     for (int i = 0; i < BN_GPU_VALUE_COUNT; i++) {
@@ -19247,6 +19340,14 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                                 (n_tokens + 7) / 8), 128,
                                            0, stream>>>(
                 out, (const BnBlockIQ4XS *)w->data,
+                (const BnCudaBlockQ8MmqF32 *)xq,
+                rows, cols, n_tokens, jwidth, (int)grid);
+        } else if (type == BN_GGUF_TENSOR_IQ3_S && n_tokens >= 16 &&
+                   cols % 256 == 0) {
+            iq3s_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
+                                              (n_tokens + 7) / 8), 128,
+                                           0, stream>>>(
+                out, (const BnBlockIQ3S *)w->data,
                 (const BnCudaBlockQ8MmqF32 *)xq,
                 rows, cols, n_tokens, jwidth, (int)grid);
         } else if (bn_quant_format_is_q3k(type) && n_tokens >= 16 &&

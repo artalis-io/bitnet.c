@@ -8293,6 +8293,11 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--iq3s-reference") == 0) {
+        run_iq3s_reference_case(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION);
     assert(!(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH));
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_FALLBACK);
@@ -8445,11 +8450,6 @@ int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--q8-reference") == 0) {
         run_q8_reference_case(gpu);
         run_q8_split_reference_case(gpu);
-        bn_gpu_cuda_destroy(gpu);
-        return 0;
-    }
-    if (argc == 2 && strcmp(argv[1], "--iq3s-reference") == 0) {
-        run_iq3s_reference_case(gpu);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
