@@ -28215,6 +28215,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             disable_native_quant_prepared_input_logits);
     int graph_exec = (enable_graph_exec || default_graph_exec) &&
                      n_ops > 10 && !profile;
+    int graph_has_gqa = 0;
+    int graph_has_gelu_gate = 0;
+    for (int gi = 0; gi < n_ops; gi++) {
+        graph_has_gqa |= ops[gi].op_code == BN_GPU_CODE_GQA_SCORES;
+        graph_has_gelu_gate |= ops[gi].op_code == BN_GPU_CODE_GELU_GATE;
+    }
+    if (graph_exec && !enable_graph_exec && graph_has_gqa &&
+        graph_has_gelu_gate)
+        graph_exec = 0;
     int graph_static_params = graph_exec && cuda_ops_have_logits(ops, n_ops);
     if (graph_exec && cuda_ops_have_moe_cublas_decode(ctx, ops, n_ops))
         graph_exec = 0;
