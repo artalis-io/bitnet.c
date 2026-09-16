@@ -2501,6 +2501,165 @@ static __global__ void q6k_f32_avx2_reference_matvec_kernel(
     }
 }
 
+/* Q, K, and V are independent projections of the same activation. Combining
+ * their row domains fills the GPU without changing any row's AVX2 reference
+ * accumulation or horizontal reduction order. */
+static __global__ void qkv_f32_avx2_reference_matvec_kernel(
+    float *q_out, void *k_out, void *v_out,
+    const BnBlockQ4K *q_blocks, const BnBlockQ4K *k_blocks,
+    const void *v_blocks, const float *x,
+    const BnCudaKQuantMmqBlock *q_packed,
+    const BnCudaKQuantMmqBlock *k_packed,
+    const BnCudaKQuantMmqBlock *v_packed,
+    int q_rows, int k_rows, int v_rows, int cols, int v_type,
+    size_t q_offset, size_t k_offset, size_t v_offset, int kv_f16) {
+    int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
+    int joined_row = global_lane >> 3;
+    int lane = global_lane & 7;
+    int total_rows = q_rows + k_rows + v_rows;
+    if (joined_row >= total_rows) return;
+    unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
+    int n_bpr = cols / BN_QK_K;
+    float row_sum = 0.0f;
+
+    if (joined_row < q_rows + k_rows ||
+        v_type == BN_GGUF_TENSOR_Q4_K) {
+        int row;
+        const BnBlockQ4K *blocks;
+        const BnCudaKQuantMmqBlock *packed;
+        void *out;
+        size_t out_offset;
+        if (joined_row < q_rows) {
+            row = joined_row;
+            blocks = q_blocks;
+            packed = q_packed;
+            out = q_out;
+            out_offset = q_offset;
+        } else if (joined_row < q_rows + k_rows) {
+            row = joined_row - q_rows;
+            blocks = k_blocks;
+            packed = k_packed;
+            out = k_out;
+            out_offset = k_offset;
+        } else {
+            row = joined_row - q_rows - k_rows;
+            blocks = (const BnBlockQ4K *)v_blocks;
+            packed = v_packed;
+            out = v_out;
+            out_offset = v_offset;
+        }
+        const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
+        for (int b = 0; b < n_bpr; b++) {
+            float acc = 0.0f;
+            const BnBlockQ4K *blk = row_blocks + b;
+            const BnCudaKQuantMmqBlock *pblk = packed
+                ? packed + (size_t)row * n_bpr + b : NULL;
+            const float *xb = x + (size_t)b * BN_QK_K;
+            float d = cuda_fp16_to_fp32(blk->d);
+            float dmin = cuda_fp16_to_fp32(blk->dmin);
+            for (int group = 0; group < 8; group++) {
+                int sc = 0, mn = 0;
+                if (pblk) {
+                    sc = (int)pblk->scales32[group];
+                    mn = (int)pblk->mins32[group];
+                } else {
+                    cuda_kquant_group_scale_min(
+                        blk->scales, group, &sc, &mn);
+                }
+                float ds = __fmul_rn(d, (float)sc);
+                float dm = __fmul_rn(dmin, (float)mn);
+                int byte_off = (group >> 1) * 32;
+                int shift = (group & 1) ? 4 : 0;
+#pragma unroll
+                for (int quarter = 0; quarter < 4; quarter++) {
+                    int i = quarter * 8 + lane;
+                    int q = (blk->qs[byte_off + i] >> shift) & 15;
+                    float w = fmaf((float)q, ds, -dm);
+                    acc = fmaf(w, xb[(size_t)group * 32 + i], acc);
+                }
+            }
+            float a0 = __shfl_sync(mask, acc, 0, 8);
+            float a1 = __shfl_sync(mask, acc, 1, 8);
+            float a2 = __shfl_sync(mask, acc, 2, 8);
+            float a3 = __shfl_sync(mask, acc, 3, 8);
+            float a4 = __shfl_sync(mask, acc, 4, 8);
+            float a5 = __shfl_sync(mask, acc, 5, 8);
+            float a6 = __shfl_sync(mask, acc, 6, 8);
+            float a7 = __shfl_sync(mask, acc, 7, 8);
+            if (lane == 0) {
+                float s0 = __fadd_rn(a0, a4);
+                float s1 = __fadd_rn(a1, a5);
+                float s2 = __fadd_rn(a2, a6);
+                float s3 = __fadd_rn(a3, a7);
+                row_sum = __fadd_rn(row_sum,
+                    __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3)));
+            }
+        }
+        if (lane == 0) {
+            if (joined_row < q_rows)
+                q_out[out_offset + row] = row_sum;
+            else
+                cuda_kv_store(out, out_offset + row, row_sum, kv_f16);
+        }
+        return;
+    }
+
+    int row = joined_row - q_rows - k_rows;
+    const BnBlockQ6K *row_blocks =
+        (const BnBlockQ6K *)v_blocks + (size_t)row * n_bpr;
+    for (int b = 0; b < n_bpr; b++) {
+        const BnBlockQ6K *blk = row_blocks + b;
+        float d = cuda_fp16_to_fp32(blk->d);
+        for (int chunk = 0; chunk < 2; chunk++) {
+            float acc = 0.0f;
+            const uint8_t *ql = blk->ql + chunk * 64;
+            const uint8_t *qh = blk->qh + chunk * 32;
+            const int8_t *sc = blk->scales + chunk * 8;
+            const float *xb = x + (size_t)b * BN_QK_K + chunk * 128;
+#pragma unroll
+            for (int segment = 0; segment < 8; segment++) {
+                float ds = __fmul_rn(d, (float)sc[segment]);
+#pragma unroll
+                for (int half = 0; half < 2; half++) {
+                    int i = segment * 16 + half * 8 + lane;
+                    int l = i & 31;
+                    int q;
+                    if (i < 32)
+                        q = (int)((ql[l] & 15) | ((qh[l] & 3) << 4)) - 32;
+                    else if (i < 64)
+                        q = (int)((ql[l + 32] & 15) |
+                            (((qh[l] >> 2) & 3) << 4)) - 32;
+                    else if (i < 96)
+                        q = (int)((ql[l] >> 4) |
+                            (((qh[l] >> 4) & 3) << 4)) - 32;
+                    else
+                        q = (int)((ql[l + 32] >> 4) |
+                            (((qh[l] >> 6) & 3) << 4)) - 32;
+                    float w = __fmul_rn((float)q, ds);
+                    acc = fmaf(w, xb[i], acc);
+                }
+            }
+            float a0 = __shfl_sync(mask, acc, 0, 8);
+            float a1 = __shfl_sync(mask, acc, 1, 8);
+            float a2 = __shfl_sync(mask, acc, 2, 8);
+            float a3 = __shfl_sync(mask, acc, 3, 8);
+            float a4 = __shfl_sync(mask, acc, 4, 8);
+            float a5 = __shfl_sync(mask, acc, 5, 8);
+            float a6 = __shfl_sync(mask, acc, 6, 8);
+            float a7 = __shfl_sync(mask, acc, 7, 8);
+            if (lane == 0) {
+                float s0 = __fadd_rn(a0, a4);
+                float s1 = __fadd_rn(a1, a5);
+                float s2 = __fadd_rn(a2, a6);
+                float s3 = __fadd_rn(a3, a7);
+                row_sum = __fadd_rn(row_sum,
+                    __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3)));
+            }
+        }
+    }
+    if (lane == 0) cuda_kv_store(v_out, v_offset + row, row_sum, kv_f16);
+}
+
 /* Match bn_quant_q6k_avx2_4row_range: integer products accumulate into the
  * same eight AVX2 lanes, then each lane follows its own per-block FMA chain
  * before the CPU horizontal reduction order is applied. */
@@ -28164,6 +28323,53 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int reference_block_accumulation =
                 (op->flags &
                  BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) != 0;
+            if (reference_kquant_matvec &&
+                op->type == BN_GGUF_TENSOR_Q4_K && i + 2 < n_ops &&
+                next && next->op_code == BN_GPU_CODE_MATVEC &&
+                ops[i + 2].op_code == BN_GPU_CODE_MATVEC &&
+                next->type == BN_GGUF_TENSOR_Q4_K &&
+                (ops[i + 2].type == BN_GGUF_TENSOR_Q4_K ||
+                 ops[i + 2].type == BN_GGUF_TENSOR_Q6_K) &&
+                (next->flags &
+                 BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0 &&
+                (ops[i + 2].flags &
+                 BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0 &&
+                next->buf_in == op->buf_in &&
+                ops[i + 2].buf_in == op->buf_in &&
+                next->cols == op->cols &&
+                ops[i + 2].cols == op->cols &&
+                bias == NULL && bias_idx < 0 && fused_copy_idx < 0 &&
+                cuda_find_fusable_bias(ops, n_ops, i + 1,
+                                        next->buf_out, next->rows) < 0 &&
+                cuda_find_fusable_bias(ops, n_ops, i + 2,
+                                        ops[i + 2].buf_out,
+                                        ops[i + 2].rows) < 0) {
+                BnCudaBuffer *kw = (BnCudaBuffer *)next->W_buf;
+                BnCudaBuffer *vw = (BnCudaBuffer *)ops[i + 2].W_buf;
+                float *k_out = cuda_act(ctx, next->buf_out);
+                float *v_out = cuda_act(ctx, ops[i + 2].buf_out);
+                if (kw && kw->data && vw && vw->data && k_out && v_out) {
+                    int total_rows = op->rows + next->rows +
+                                     ops[i + 2].rows;
+                    int qkv_threads = 256;
+                    BN_CUDA_LAUNCH(ctx,
+                        qkv_f32_avx2_reference_matvec_kernel,
+                        (total_rows * 8 + qkv_threads - 1) / qkv_threads,
+                        qkv_threads, 0, out, k_out, v_out,
+                        (const BnBlockQ4K *)w->data,
+                        (const BnBlockQ4K *)kw->data, vw->data, in,
+                        (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                        (const BnCudaKQuantMmqBlock *)kw->mmq_data,
+                        (const BnCudaKQuantMmqBlock *)vw->mmq_data,
+                        op->rows, next->rows, ops[i + 2].rows,
+                        op->cols, ops[i + 2].type, out_offset,
+                        (size_t)next->p[5], (size_t)ops[i + 2].p[5],
+                        ctx->kv_f16);
+                    skip_ops[i + 1] = 1;
+                    skip_ops[i + 2] = 1;
+                    break;
+                }
+            }
             if (!direct_kv_f16 && next && i + 2 < n_ops &&
                 !reference_kquant_matvec &&
                 bn_backend_quant_deinterleaved_kquant_pair_matvec(
