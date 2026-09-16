@@ -28365,7 +28365,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     rt.pos = (int)ops[ri].p[2];
                 }
                 if (rt.n_kv < 0 &&
-                    ops[ri].op_code == BN_GPU_CODE_FLASH_ATTN) {
+                    (ops[ri].op_code == BN_GPU_CODE_FLASH_ATTN ||
+                     ops[ri].op_code == BN_GPU_CODE_GQA_SCORES)) {
                     rt.n_kv = (int)ops[ri].p[2];
                     rt.seq_len = (int)ops[ri].p[5];
                 }
