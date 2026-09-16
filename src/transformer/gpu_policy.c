@@ -3343,11 +3343,17 @@ int bn_transformer_gpu_moe_routed_ffn_batch_allowed(
     const BnMoEExpertMap *map) {
     BnTransformerGPUMoEProjectionPolicy types =
         bn_transformer_gpu_moe_projection_policy(map);
+    int cuda_compact_kquant_prefill = types.valid &&
+        bn_gpu_backend_is_cuda(gpu) &&
+        bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_MOE_COMBINED_PREFILL_DEFAULT) &&
+        bn_backend_quant_moe_routed_asymmetric_kquant(
+            types.gate_type, types.up_type, types.down_type);
     int native_quant = types.valid &&
         (bn_backend_quant_moe_routed_native_quant(
             types.gate_type, types.up_type, types.down_type) ||
          bn_gpu_policy_moe_routed_ordered_supported(
-            gpu, types.gate_type, types.up_type, types.down_type));
+            gpu, types.gate_type, types.up_type, types.down_type) ||
+         cuda_compact_kquant_prefill);
     return bn_gpu_policy_backend_moe_routed_ffn_batch_allowed(
         gpu, bn_transformer_moe_uses_grouped_route(c), native_quant);
 }

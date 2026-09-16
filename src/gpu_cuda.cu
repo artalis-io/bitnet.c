@@ -752,9 +752,10 @@ static int cuda_use_optimistic_argmax_penalty(const BnCudaCtx *ctx) {
 
 static int cuda_use_moe_route_routed_ffn_batch(const BnCudaCtx *ctx,
                                                int n_experts,
-                                               int native_quant) {
+                                               int native_quant,
+                                               int compact_kquant) {
     int default_allowed = ctx && ctx->compute_capability == 1200 &&
-                          native_quant;
+                          (native_quant || compact_kquant);
     return bn_gpu_policy_moe_routed_ffn_batch_allowed(
         ctx ? ctx->runtime_policy : NULL,
         bn_gpu_policy_moe_route_expanded_topk(n_experts, 0) &&
@@ -3647,7 +3648,8 @@ static __global__ void q4k_mmq_128xj_kernel(
         size_t out_offset, int split_count,
         const int *route_order = NULL, const int *expert_counts = NULL,
         const int *expert_offsets = NULL, const int *route_schedule = NULL,
-        int experts = 0, int route_k = 0) {
+        int experts = 0, int route_k = 0,
+        int schedule_has_count = 0) {
     enum { I = 128, X_STRIDE = 76, Y_STRIDE = 36 };
     __shared__ __align__(16) int sx[I * X_STRIDE];
     __shared__ __align__(16) int sy[J * Y_STRIDE];
@@ -3661,7 +3663,8 @@ static __global__ void q4k_mmq_128xj_kernel(
                  experts > 0 && route_k > 0;
     int expert = routed ? (int)blockIdx.z : 0;
     if (routed && route_schedule) {
-        int scheduled = route_schedule[blockIdx.z];
+        if (schedule_has_count && blockIdx.z >= route_schedule[0]) return;
+        int scheduled = route_schedule[blockIdx.z + schedule_has_count];
         expert = scheduled & 0xffff;
         token0 = (scheduled >> 16) * J;
     }
@@ -3882,7 +3885,8 @@ static __global__ void q6k_mmq_128x64_kernel(
         int split_count, const BnBlockQ6K *raw = NULL,
         const int *route_order = NULL, const int *expert_counts = NULL,
         const int *expert_offsets = NULL, const int *route_schedule = NULL,
-        int experts = 0, const BnBlockQ8K *xq8k = NULL) {
+        int experts = 0, const BnBlockQ8K *xq8k = NULL,
+        int schedule_has_count = 0) {
     enum { I = 128, J = 64, X_STRIDE = 72, Y_STRIDE = 68 };
     __shared__ __align__(16) int sx[I * X_STRIDE];
     __shared__ __align__(16) int sy[J * Y_STRIDE];
@@ -3899,7 +3903,8 @@ static __global__ void q6k_mmq_128x64_kernel(
                  route_schedule && experts > 0;
     int expert = 0;
     if (routed) {
-        int scheduled = route_schedule[blockIdx.z];
+        if (schedule_has_count && blockIdx.z >= route_schedule[0]) return;
+        int scheduled = route_schedule[blockIdx.z + schedule_has_count];
         expert = scheduled & 0xffff;
         token0 = (scheduled >> 16) * J;
     }
@@ -9792,6 +9797,17 @@ static __global__ void moe_route_fill_slots_kernel(
     if (e < 0 || e >= n_experts) return;
     int pos = atomicAdd(fill + e, 1);
     slot_order[pos] = idx;
+}
+
+/* A fixed upper-bound launch skips unpopulated route tiles on device. */
+static __global__ void moe_route_compact_schedule_kernel(
+        int *schedule, const int *counts, int n_experts) {
+    if (blockIdx.x || threadIdx.x) return;
+    int used = 0;
+    for (int expert = 0; expert < n_experts; expert++)
+        for (int tile = 0; tile * 64 < counts[expert]; tile++)
+            schedule[1 + used++] = expert | (tile << 16);
+    schedule[0] = used;
 }
 
 static __global__ void moe_route_topk_warp_kernel(float *route,
@@ -18773,7 +18789,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
          * Otherwise the reference distributes K work over one SM wave. */
         int64_t grid = 100 * tiles / ((int64_t)nsm * waves) >= 90 ? tiles : nsm;
         if (grid > INT_MAX) return -1;
-        if (type == BN_GGUF_TENSOR_Q6_K && n_tokens >= 16 && w->mmq_data) {
+        if (bn_quant_format_is_q6k(type) && n_tokens >= 16 && w->mmq_data) {
             if (n_tokens >= 64) {
                 int tile_rows = (rows + 127) / 128;
                 int tile_tokens = (n_tokens + 63) / 64;
@@ -18820,10 +18836,10 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                          0, stream>>>(
                 out, w->data, (const BnCudaBlockQ8MmqF32 *)xq,
                 rows, cols, type, n_tokens, jwidth, (int)grid);
-        } else if ((type == BN_GGUF_TENSOR_Q4_K ||
-                    type == BN_GGUF_TENSOR_Q5_K) &&
+        } else if ((bn_quant_format_is_q4k(type) ||
+                    bn_quant_format_is_q5k(type)) &&
                    n_tokens >= 16 && w->mmq_data) {
-            if (type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 128) {
+            if (bn_quant_format_is_q4k(type) && n_tokens >= 128) {
                 int tile_rows = (rows + 127) / 128;
                 /* The 64-token tile keeps enough independent blocks in
                  * flight for wide FFN projections and reduces shared-memory
@@ -18900,7 +18916,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                         (const BnCudaBlockQ8_1 *)xq, rows, cols,
                         n_tokens, 0, jwidth, (int)grid);
             }
-        } else if (type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 4) {
+        } else if (bn_quant_format_is_q4k(type) && n_tokens >= 4) {
             q4k_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
                                                   (n_tokens + 7) / 8), 128,
                                            0, stream>>>(
@@ -24031,7 +24047,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int routed_ordered_quant = cuda_moe_ordered_supported(ctx, gate_type, up_type, down_type, n_tokens);
     if (!cuda_use_moe_route_routed_ffn_batch(ctx, n_experts,
             bn_backend_quant_moe_routed_native_quant(
-                gate_type, up_type, down_type) || routed_ordered_quant))
+                gate_type, up_type, down_type) || routed_ordered_quant,
+            bn_backend_quant_moe_routed_asymmetric_kquant(
+                gate_type, up_type, down_type)))
         return -1;
     int routed_asymmetric_kquant =
         bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
@@ -24139,6 +24157,16 @@ static int cuda_moe_route_routed_ffn_batch_impl(
                         (size_t)hidden_dim;
     size_t moe_scratch_out_bytes = mid_values * sizeof(float);
     size_t moe_scratch_x_bytes = sizeof(float);
+    int use_routed_q4_mmq = ctx->compute_capability == 1200 &&
+        n_tokens >= 64 &&
+        bn_backend_quant_moe_routed_asymmetric_kquant(
+            gate_type, up_type, down_type);
+    if (use_routed_q4_mmq) {
+        size_t gateup_bytes = 2u * mid_values * sizeof(float);
+        size_t down_bytes = (size_t)n_tokens * k * dim * sizeof(float);
+        moe_scratch_x_bytes = gateup_bytes > down_bytes
+            ? gateup_bytes : down_bytes;
+    }
     if (has_shared) {
         /* Shared FFN activation, gate/up projections and final output
          * reuse these buffers after routed execution. Reserve all stages
@@ -24199,12 +24227,18 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     if (routed_asymmetric_kquant && n_tokens > 1 &&
         !use_cublas_all_active_two_fixed)
         use_sorted_slots = 1;
+    if (use_routed_q4_mmq) use_sorted_slots = 1;
     size_t sorted_route_aux_bytes = use_sorted_slots
         ? (route_items * sizeof(int) + (size_t)n_experts * 4u * sizeof(int))
         : 0u;
     size_t decode_route_bytes =
         use_cublas_all_active_two_decode ? 4u * sizeof(float) : 0u;
-    size_t route_aux_bytes = sorted_route_aux_bytes + decode_route_bytes;
+    int routed_schedule_upper = use_routed_q4_mmq
+        ? n_experts + ((int)route_items + 63) / 64 : 0;
+    size_t routed_schedule_bytes = use_routed_q4_mmq
+        ? ((size_t)routed_schedule_upper + 1u) * sizeof(int) : 0u;
+    size_t route_aux_bytes = sorted_route_aux_bytes +
+        routed_schedule_bytes + decode_route_bytes;
 
     int profile_prefill_moe =
         bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled(
@@ -24236,8 +24270,11 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         ? d_expert_offsets + n_experts : NULL;
     int *d_active_experts = use_sorted_slots
         ? d_expert_fill + n_experts : NULL;
+    int *d_routed_schedule = use_routed_q4_mmq
+        ? (int *)(d_route_aux + sorted_route_aux_bytes) : NULL;
     float *d_decode_route = use_cublas_all_active_two_decode
-        ? (float *)(d_route_aux + sorted_route_aux_bytes)
+        ? (float *)(d_route_aux + sorted_route_aux_bytes +
+                    routed_schedule_bytes)
         : NULL;
     double (&profile_totals)[7] = ctx->diagnostics.moe_route_profile_totals;
     unsigned long long (&profile_io_counts)[4] = ctx->diagnostics.moe_route_profile_io_counts;
@@ -24387,6 +24424,12 @@ static int cuda_moe_route_routed_ffn_batch_impl(
                     cudaGetErrorString(err));
             return -1;
         }
+    }
+    if (use_routed_q4_mmq) {
+        moe_route_compact_schedule_kernel<<<1, 1>>>(
+            d_routed_schedule, d_expert_counts, n_experts);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
     }
     if (bn_gpu_policy_cuda_moe_route_dist_profile_enabled(
             ctx->runtime_policy)) {
@@ -24538,7 +24581,31 @@ static int cuda_moe_route_routed_ffn_batch_impl(
                     "[bn:gpu:cuda] grouped cublas moe gate/up failed; falling back\n");
     }
 
-    if (use_routed_mmq) {
+    if (use_routed_q4_mmq) {
+        int x_blocks = dim / 32;
+        if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_mmq_input_kernel<<<dim3(x_blocks, n_tokens), 32>>>(
+            (BnCudaBlockQ8Mmq *)xq, d_full_x, dim, 0);
+        float *gate_out = ctx->d_x;
+        float *up_out = gate_out + mid_values;
+        dim3 grid((hidden_dim + 127) / 128, 1,
+                  routed_schedule_upper);
+        q4k_mmq_128xj_kernel<64, 1><<<grid, 512>>>(
+            gate_out, (const BnBlockQ4K *)gate->data, NULL, xq,
+            hidden_dim, dim, n_tokens, 0, 1, d_slot_order,
+            d_expert_counts, d_expert_offsets, d_routed_schedule,
+            n_experts, k, 1);
+        q4k_mmq_128xj_kernel<64, 1><<<grid, 512>>>(
+            up_out, (const BnBlockQ4K *)up->data, NULL, xq,
+            hidden_dim, dim, n_tokens, 0, 1, d_slot_order,
+            d_expert_counts, d_expert_offsets, d_routed_schedule,
+            n_experts, k, 1);
+        moe_routed_activation_pair_kernel<<<
+            (unsigned)((mid_values + 255u) / 256u), 256>>>(
+                d_mid, gate_out, up_out, (int)mid_values, act_type);
+    } else if (use_routed_mmq) {
         if (cuda_launch_routed_mmq(ctx, d_mid, gate, up, d_full_x,
                 d_indices, d_weights, hidden_dim, dim, n_tokens, n_experts, k, 0) != 0)
             return -1;
@@ -24680,7 +24747,39 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
 
 moe_route_routed_down:
-    if (routed_midbit_down) {
+    if (use_routed_q4_mmq) {
+        int n_mid = n_tokens * k;
+        float *down_values = ctx->d_x;
+        dim3 grid((dim + 127) / 128, 1, routed_schedule_upper);
+        if (down_type == BN_GGUF_TENSOR_Q6_K) {
+            if (cuda_ensure_q8_k(ctx, hidden_dim, n_mid) != 0)
+                return -1;
+            BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
+            quantize_q8k_batch_kernel<<<
+                dim3(hidden_dim / BN_QK_K, n_mid), BN_QK_K>>>(
+                    mid_q, d_mid, hidden_dim, n_mid);
+            q6k_mmq_128x64_kernel<<<grid, 512>>>(
+                down_values, NULL, NULL, dim, hidden_dim, n_mid, 1,
+                (const BnBlockQ6K *)down->data, d_slot_order,
+                d_expert_counts, d_expert_offsets, d_routed_schedule,
+                n_experts, mid_q, 1);
+        } else {
+            int mid_blocks = hidden_dim / 32;
+            if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
+                return -1;
+            BnCudaBlockQ8_1 *mid_q = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+            quantize_mmq_input_kernel<<<dim3(mid_blocks, n_mid), 32>>>(
+                (BnCudaBlockQ8Mmq *)mid_q, d_mid, hidden_dim, 0);
+            q4k_mmq_128xj_kernel<64, 1><<<grid, 512>>>(
+                down_values, (const BnBlockQ4K *)down->data, NULL, mid_q,
+                dim, hidden_dim, n_mid, 0, 1, d_slot_order,
+                d_expert_counts, d_expert_offsets, d_routed_schedule,
+                n_experts, 1, 1);
+        }
+        moe_routed_ordered_reduce_kernel<<<
+            dim3((dim + 255) / 256, n_tokens), 256>>>(
+                d_full_out, down_values, d_weights, NULL, dim, k, 0);
+    } else if (routed_midbit_down) {
         moe_q5_1_down_routed_accum_batch_kernel<<<
             down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ5_1 *)down->data, d_mid,
@@ -26296,7 +26395,9 @@ static int cuda_prefill_moe_layer(
     if (!cuda_use_moe_route_routed_ffn_batch(ctx, n_experts,
             bn_backend_quant_moe_routed_native_quant(
                 gate_type, up_type, down_type) ||
-            cuda_moe_ordered_supported(ctx, gate_type, up_type, down_type, n_tokens)))
+            cuda_moe_ordered_supported(ctx, gate_type, up_type, down_type, n_tokens),
+            bn_backend_quant_moe_routed_asymmetric_kquant(
+                gate_type, up_type, down_type)))
         return -1;
     int debug_prefill =
         bn_gpu_policy_cuda_prefill_dense_debug_enabled(ctx->runtime_policy);
@@ -28823,7 +28924,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 (op->flags &
                  BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) != 0;
             if (reference_kquant_matvec && ctx->kv_f16 &&
-                op->type == BN_GGUF_TENSOR_Q4_K && i + 6 < n_ops &&
+                bn_quant_format_is_q4k(op->type) && i + 6 < n_ops &&
                 next && next->op_code == BN_GPU_CODE_MATVEC &&
                 next->type == BN_GGUF_TENSOR_Q4_K &&
                 ops[i + 2].op_code == BN_GPU_CODE_PER_HEAD_RMSNORM &&
@@ -28876,7 +28977,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             if (reference_kquant_matvec &&
-                op->type == BN_GGUF_TENSOR_Q4_K && i + 2 < n_ops &&
+                bn_quant_format_is_q4k(op->type) && i + 2 < n_ops &&
                 next && next->op_code == BN_GPU_CODE_MATVEC &&
                 ops[i + 2].op_code == BN_GPU_CODE_MATVEC &&
                 next->type == BN_GGUF_TENSOR_Q4_K &&

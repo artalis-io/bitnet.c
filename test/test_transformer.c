@@ -5042,8 +5042,12 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts = 3;
     assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
     gpu.caps |= BN_GPU_CAP_MOE_COMBINED_PREFILL_DEFAULT;
-    assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
-    assert(!bn_transformer_gpu_prefill_moe_layer_backend_available(
+    assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&gpu, &c, &map));
+    BnMoEExpertMap q4_down_map = map;
+    q4_down_map.down_type = BN_GGUF_TENSOR_Q4_K;
+    assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(
+        &gpu, &c, &q4_down_map));
+    assert(bn_transformer_gpu_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
     BnMoEExpertMap native_map = map;
     native_map.gate_type = native_map.up_type = native_map.down_type = BN_GGUF_TENSOR_Q8_0;
