@@ -3879,11 +3879,15 @@ __launch_bounds__(512, 1)
 static __global__ void q6k_mmq_128x64_kernel(
         float *out, const BnCudaQ6KMmqBlock *blocks,
         const BnCudaBlockQ8MmqF32 *xq, int rows, int cols, int n_tokens,
-        int split_count) {
+        int split_count, const BnBlockQ6K *raw = NULL,
+        const int *route_order = NULL, const int *expert_counts = NULL,
+        const int *expert_offsets = NULL, const int *route_schedule = NULL,
+        int experts = 0, const BnBlockQ8K *xq8k = NULL) {
     enum { I = 128, J = 64, X_STRIDE = 72, Y_STRIDE = 68 };
     __shared__ __align__(16) int sx[I * X_STRIDE];
     __shared__ __align__(16) int sy[J * Y_STRIDE];
     __shared__ float xd[J][8];
+    __shared__ int route_ids[J];
     int tid = threadIdx.x;
     int lane = tid & 31;
     int warp = tid >> 5;
@@ -3891,12 +3895,30 @@ static __global__ void q6k_mmq_128x64_kernel(
     int token_phase = warp & 1;
     int row0 = blockIdx.x * I;
     int token0 = blockIdx.y * J;
+    int routed = raw && route_order && expert_counts && expert_offsets &&
+                 route_schedule && experts > 0;
+    int expert = 0;
+    if (routed) {
+        int scheduled = route_schedule[blockIdx.z];
+        expert = scheduled & 0xffff;
+        token0 = (scheduled >> 16) * J;
+    }
+    int local_tokens = routed ? expert_counts[expert] : n_tokens;
+    int route_offset = routed ? expert_offsets[expert] : 0;
     int n_bpr = cols / BN_QK_K;
     int x_blocks = cols / 32;
-    int split = blockIdx.z;
+    int split = routed ? 0 : (int)blockIdx.z;
     int b_begin = (int)((int64_t)split * n_bpr / split_count);
     int b_end = (int)((int64_t)(split + 1) * n_bpr / split_count);
     float sum[16] = {0.0f};
+
+    for (int token = tid; token < J; token += blockDim.x) {
+        int local_token = token0 + token;
+        route_ids[token] = local_token < local_tokens
+            ? (routed ? route_order[route_offset + local_token]
+                      : local_token) : -1;
+    }
+    __syncthreads();
 
     for (int b = b_begin; b < b_end; b++) {
         for (int i = tid; i < I * 64; i += blockDim.x) {
@@ -3905,9 +3927,31 @@ static __global__ void q6k_mmq_128x64_kernel(
             int row = row0 + ri;
             int value = 0;
             if (row < rows) {
-                const BnCudaQ6KMmqBlock *blk =
-                    blocks + (size_t)row * n_bpr + b;
-                memcpy(&value, blk->qs + qword * 4, sizeof(value));
+                if (routed) {
+                    const BnBlockQ6K *blk = raw +
+                        ((size_t)expert * rows + row) * n_bpr + b;
+                    unsigned packed = 0;
+#pragma unroll
+                    for (int v = 0; v < 4; v++) {
+                        int i6 = qword * 4 + v;
+                        int group = i6 >> 5;
+                        int j = i6 & 31;
+                        int chunk = group >> 2;
+                        int segment = group & 3;
+                        int lo = (blk->ql[chunk * 64 +
+                            (segment & 1) * 32 + j] >>
+                            ((segment >> 1) * 4)) & 15;
+                        int hi = (blk->qh[chunk * 32 + j] >>
+                                  (segment * 2)) & 3;
+                        packed |= ((unsigned)((lo | (hi << 4)) - 32) & 0xffu)
+                                  << (v * 8);
+                    }
+                    value = (int)packed;
+                } else {
+                    const BnCudaQ6KMmqBlock *blk =
+                        blocks + (size_t)row * n_bpr + b;
+                    memcpy(&value, blk->qs + qword * 4, sizeof(value));
+                }
             }
             sx[ri * X_STRIDE + qword] = value;
         }
@@ -3917,35 +3961,51 @@ static __global__ void q6k_mmq_128x64_kernel(
             int row = row0 + ri;
             int value = 0;
             if (row < rows) {
-                const BnCudaQ6KMmqBlock *blk =
-                    blocks + (size_t)row * n_bpr + b;
-                if (mi < 4)
-                    memcpy(&value, blk->scales + mi * 4, sizeof(value));
-                else
-                    value = (int)blk->d;
+                if (routed) {
+                    const BnBlockQ6K *blk = raw +
+                        ((size_t)expert * rows + row) * n_bpr + b;
+                    if (mi < 4)
+                        memcpy(&value, blk->scales + mi * 4, sizeof(value));
+                    else value = (int)blk->d;
+                } else {
+                    const BnCudaQ6KMmqBlock *blk =
+                        blocks + (size_t)row * n_bpr + b;
+                    if (mi < 4)
+                        memcpy(&value, blk->scales + mi * 4, sizeof(value));
+                    else value = (int)blk->d;
+                }
             }
             sx[ri * X_STRIDE + 64 + mi] = value;
         }
         for (int i = tid; i < J * 64; i += blockDim.x) {
             int tj = i >> 6;
             int qword = i & 63;
-            int token = token0 + tj;
+            int token = route_ids[tj];
             int value = 0;
-            if (token < n_tokens) {
+            if (token >= 0 && token < n_tokens) {
                 int group = qword >> 3;
                 int word = qword & 7;
-                const BnCudaBlockQ8MmqF32 *xb =
-                    xq + (size_t)token * x_blocks + (size_t)b * 8 + group;
-                memcpy(&value, xb->qs + word * 4, sizeof(value));
+                if (xq8k) {
+                    const BnBlockQ8K *xb =
+                        xq8k + (size_t)token * (cols / BN_QK_K) + b;
+                    memcpy(&value, xb->qs + group * 32 + word * 4,
+                           sizeof(value));
+                } else {
+                    const BnCudaBlockQ8MmqF32 *xb =
+                        xq + (size_t)token * x_blocks + (size_t)b * 8 + group;
+                    memcpy(&value, xb->qs + word * 4, sizeof(value));
+                }
             }
             sy[tj * Y_STRIDE + qword] = value;
         }
         for (int i = tid; i < J * 8; i += blockDim.x) {
             int tj = i >> 3;
             int group = i & 7;
-            int token = token0 + tj;
-            xd[tj][group] = token < n_tokens
-                ? xq[(size_t)token * x_blocks + (size_t)b * 8 + group].d
+            int token = route_ids[tj];
+            xd[tj][group] = token >= 0 && token < n_tokens
+                ? (xq8k
+                    ? xq8k[(size_t)token * (cols / BN_QK_K) + b].d
+                    : xq[(size_t)token * x_blocks + (size_t)b * 8 + group].d)
                 : 0.0f;
         }
         __syncthreads();
@@ -4014,9 +4074,9 @@ static __global__ void q6k_mmq_128x64_kernel(
 #pragma unroll
         for (int l = 0; l < 4; l++) {
             int row = row0 + row_warp * 16 + (l >> 1) * 8 + lane / 4;
-            int token = token0 + token_panel * 8 +
-                        (lane % 4) * 2 + (l & 1);
-            if (row < rows && token < n_tokens)
+            int token = route_ids[token_panel * 8 +
+                                  (lane % 4) * 2 + (l & 1)];
+            if (row < rows && token >= 0 && token < n_tokens)
                 out[((size_t)split * n_tokens + token) * rows + row] =
                     sum[jp * 4 + l];
         }
@@ -23798,6 +23858,27 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+    } else if (use_routed_q4_mmq &&
+               down_type == BN_GGUF_TENSOR_Q6_K) {
+        int n_mid = n_tokens * k;
+        if (cuda_ensure_q8_k(ctx, hidden_dim, n_mid) != 0)
+            return -1;
+        BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
+        quantize_q8k_batch_kernel<<<
+            dim3(hidden_dim / BN_QK_K, n_mid, 1), BN_QK_K>>>(
+                mid_q, d_mid, hidden_dim, n_mid);
+        float *down_values = ctx->d_x;
+        dim3 routed_down_grid((dim + 127) / 128, 1,
+                              routed_q4_schedule_count);
+        q6k_mmq_128x64_kernel<<<routed_down_grid, 512>>>(
+            down_values, NULL, NULL, dim, hidden_dim, n_mid, 1,
+            (const BnBlockQ6K *)down->data, d_slot_order,
+            d_expert_counts, d_expert_offsets, d_route_schedule,
+            n_experts, mid_q);
+        moe_routed_ordered_reduce_kernel<<<
+            dim3((dim + 255) / 256, n_tokens), 256>>>(
+                d_full_out, down_values, d_weights, d_output_scales,
+                dim, k, 0);
     } else if (use_routed_q4_mmq &&
                down_type == BN_GGUF_TENSOR_Q4_K) {
         int n_mid = n_tokens * k;
