@@ -9047,6 +9047,18 @@ static __device__ void cuda_route_softmax_topk_warp(
     if (experts == 512)
         cuda_route_softmax_topk_warp_impl<16>(weights, ids, packed_ids, logits,
             experts, k, norm_topk, scale, separate_routing);
+    else if (experts == 256)
+        cuda_route_softmax_topk_warp_impl<8>(weights, ids, packed_ids, logits,
+            experts, k, norm_topk, scale, separate_routing);
+    else if (experts == 128)
+        cuda_route_softmax_topk_warp_impl<4>(weights, ids, packed_ids, logits,
+            experts, k, norm_topk, scale, separate_routing);
+    else if (experts == 64)
+        cuda_route_softmax_topk_warp_impl<2>(weights, ids, packed_ids, logits,
+            experts, k, norm_topk, scale, separate_routing);
+    else if (experts == 32)
+        cuda_route_softmax_topk_warp_impl<1>(weights, ids, packed_ids, logits,
+            experts, k, norm_topk, scale, separate_routing);
     else
         cuda_route_softmax_topk_warp_impl<8>(weights, ids, packed_ids, logits,
             experts, k, norm_topk, scale, separate_routing);
