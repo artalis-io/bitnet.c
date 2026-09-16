@@ -3639,7 +3639,7 @@ static __global__ void q4k_mmq_split_fixup_kernel(
     out[out_offset + i] = value;
 }
 
-__launch_bounds__(256, 1)
+__launch_bounds__(512, 1)
 static __global__ void q6k_mmq_128x64_kernel(
         float *out, const BnCudaQ6KMmqBlock *blocks,
         const BnCudaBlockQ8MmqF32 *xq, int rows, int cols, int n_tokens,
@@ -3651,6 +3651,8 @@ static __global__ void q6k_mmq_128x64_kernel(
     int tid = threadIdx.x;
     int lane = tid & 31;
     int warp = tid >> 5;
+    int row_warp = warp >> 1;
+    int token_phase = warp & 1;
     int row0 = blockIdx.x * I;
     int token0 = blockIdx.y * J;
     int n_bpr = cols / BN_QK_K;
@@ -3658,7 +3660,7 @@ static __global__ void q6k_mmq_128x64_kernel(
     int split = blockIdx.z;
     int b_begin = (int)((int64_t)split * n_bpr / split_count);
     int b_end = (int)((int64_t)(split + 1) * n_bpr / split_count);
-    float sum[32] = {0.0f};
+    float sum[16] = {0.0f};
 
     for (int b = b_begin; b < b_end; b++) {
         for (int i = tid; i < I * 64; i += blockDim.x) {
@@ -3713,7 +3715,8 @@ static __global__ void q6k_mmq_128x64_kernel(
         __syncthreads();
 
 #pragma unroll
-        for (int jp = 0; jp < 8; jp++) {
+        for (int jp = 0; jp < 4; jp++) {
+            int token_panel = jp * 2 + token_phase;
             float part[2][4] = {{0.0f}};
 #pragma unroll
             for (int group = 0; group < 8; group++) {
@@ -3721,13 +3724,13 @@ static __global__ void q6k_mmq_128x64_kernel(
 #pragma unroll
                 for (int half = 0; half < 2; half++) {
                     int avec[2], bvec;
-                    const int *asrc = sx + (warp * 16 + lane % 16) *
+                    const int *asrc = sx + (row_warp * 16 + lane % 16) *
                         X_STRIDE + group * 8 + half * 4;
                     unsigned ash = (unsigned)__cvta_generic_to_shared(asrc);
                     asm volatile(
                         "ldmatrix.sync.aligned.m8n8.x2.b16 {%0,%1}, [%2];"
                         : "=r"(avec[0]), "=r"(avec[1]) : "r"(ash));
-                    const int *bsrc = sy + (jp * 8 + lane % 8) * Y_STRIDE +
+                    const int *bsrc = sy + (token_panel * 8 + lane % 8) * Y_STRIDE +
                         group * 8 + half * 4;
                     unsigned bsh = (unsigned)__cvta_generic_to_shared(bsrc);
                     asm volatile(
@@ -3740,11 +3743,11 @@ static __global__ void q6k_mmq_128x64_kernel(
                           "+r"(c_half[half][2]), "+r"(c_half[half][3])
                         : "r"(avec[0]), "r"(avec[1]), "r"(bvec));
                 }
-                int token = jp * 8 + (lane % 4) * 2;
+                int token = token_panel * 8 + (lane % 4) * 2;
 #pragma unroll
                 for (int l = 0; l < 4; l++) {
                     int ai = (l >> 1) * 8 + lane / 4;
-                    int rowi = warp * 16 + ai;
+                    int rowi = row_warp * 16 + ai;
                     const int8_t *scales =
                         reinterpret_cast<const int8_t *>(sx +
                             rowi * X_STRIDE + 64);
@@ -3757,7 +3760,7 @@ static __global__ void q6k_mmq_128x64_kernel(
 #pragma unroll
                     for (int l = 0; l < 4; l++) {
                         int ai = (l >> 1) * 8 + lane / 4;
-                        int rowi = warp * 16 + ai;
+                        int rowi = row_warp * 16 + ai;
                         uint16_t dbits = (uint16_t)sx[
                             rowi * X_STRIDE + 68];
                         sum[jp * 4 + l] = fmaf(part[group >> 2][l],
@@ -3770,11 +3773,13 @@ static __global__ void q6k_mmq_128x64_kernel(
     }
 
 #pragma unroll
-    for (int jp = 0; jp < 8; jp++) {
+    for (int jp = 0; jp < 4; jp++) {
+        int token_panel = jp * 2 + token_phase;
 #pragma unroll
         for (int l = 0; l < 4; l++) {
-            int row = row0 + warp * 16 + (l >> 1) * 8 + lane / 4;
-            int token = token0 + jp * 8 + (lane % 4) * 2 + (l & 1);
+            int row = row0 + row_warp * 16 + (l >> 1) * 8 + lane / 4;
+            int token = token0 + token_panel * 8 +
+                        (lane % 4) * 2 + (l & 1);
             if (row < rows && token < n_tokens)
                 out[((size_t)split * n_tokens + token) * rows + row] =
                     sum[jp * 4 + l];
@@ -18112,7 +18117,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                 if (cuda_ensure_mmq_fixup(ctx, partial_values) != 0)
                     return -1;
                 dim3 mmq_grid(tile_rows, tile_tokens, split_count);
-                q6k_mmq_128x64_kernel<<<mmq_grid, 256, 0, stream>>>(
+                q6k_mmq_128x64_kernel<<<mmq_grid, 512, 0, stream>>>(
                     ctx->d_mmq_fixup,
                         (const BnCudaQ6KMmqBlock *)w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
