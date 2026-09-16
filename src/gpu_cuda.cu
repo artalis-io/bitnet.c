@@ -18177,8 +18177,8 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
                             n_tokens, 0, split_count);
                 else
-                    q4k_mmq_128xj_kernel<64, 2>
-                        <<<mmq_grid, 256, 0, stream>>>(
+                    q4k_mmq_128xj_kernel<64, 1>
+                        <<<mmq_grid, 512, 0, stream>>>(
                             ctx->d_mmq_fixup,
                             (const BnBlockQ4K *)w->data,
                             (const BnCudaKQuantMmqBlock *)w->mmq_data,
