@@ -2512,7 +2512,8 @@ static __global__ void qkv_f32_avx2_reference_matvec_kernel(
     const BnCudaKQuantMmqBlock *k_packed,
     const BnCudaKQuantMmqBlock *v_packed,
     int q_rows, int k_rows, int v_rows, int cols, int v_type,
-    size_t q_offset, size_t k_offset, size_t v_offset, int kv_f16) {
+    size_t q_offset, size_t k_offset, size_t v_offset,
+    int k_f16, int v_f16) {
     int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
     int joined_row = global_lane >> 3;
     int lane = global_lane & 7;
@@ -2599,7 +2600,9 @@ static __global__ void qkv_f32_avx2_reference_matvec_kernel(
             if (joined_row < q_rows)
                 q_out[out_offset + row] = row_sum;
             else
-                cuda_kv_store(out, out_offset + row, row_sum, kv_f16);
+                cuda_kv_store(out, out_offset + row, row_sum,
+                              joined_row < q_rows + k_rows
+                                  ? k_f16 : v_f16);
         }
         return;
     }
@@ -2657,7 +2660,7 @@ static __global__ void qkv_f32_avx2_reference_matvec_kernel(
             }
         }
     }
-    if (lane == 0) cuda_kv_store(v_out, v_offset + row, row_sum, kv_f16);
+    if (lane == 0) cuda_kv_store(v_out, v_offset + row, row_sum, v_f16);
 }
 
 /* Match bn_quant_q6k_avx2_4row_range: integer products accumulate into the
@@ -28526,6 +28529,59 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int reference_block_accumulation =
                 (op->flags &
                  BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) != 0;
+            if (reference_kquant_matvec && ctx->kv_f16 &&
+                op->type == BN_GGUF_TENSOR_Q4_K && i + 6 < n_ops &&
+                next && next->op_code == BN_GPU_CODE_MATVEC &&
+                next->type == BN_GGUF_TENSOR_Q4_K &&
+                ops[i + 2].op_code == BN_GPU_CODE_PER_HEAD_RMSNORM &&
+                ops[i + 2].buf_in == next->buf_out &&
+                ops[i + 3].op_code == BN_GPU_CODE_ROPE &&
+                ops[i + 3].buf_in == next->buf_out &&
+                ops[i + 4].op_code == BN_GPU_CODE_COPY &&
+                ops[i + 4].buf_in == next->buf_out &&
+                ops[i + 4].buf_out == BN_GPU_VALUE_KEY_CACHE &&
+                ops[i + 5].op_code == BN_GPU_CODE_MATVEC &&
+                (ops[i + 5].type == BN_GGUF_TENSOR_Q4_K ||
+                 ops[i + 5].type == BN_GGUF_TENSOR_Q6_K) &&
+                ops[i + 6].op_code == BN_GPU_CODE_COPY &&
+                ops[i + 6].buf_in == ops[i + 5].buf_out &&
+                ops[i + 6].buf_out == BN_GPU_VALUE_VALUE_CACHE &&
+                next->buf_in == op->buf_in &&
+                ops[i + 5].buf_in == op->buf_in &&
+                next->cols == op->cols &&
+                ops[i + 5].cols == op->cols &&
+                (next->flags &
+                 BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0 &&
+                (ops[i + 5].flags &
+                 BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0 &&
+                bias == NULL && bias_idx < 0 && fused_copy_idx < 0) {
+                BnCudaBuffer *kw = (BnCudaBuffer *)next->W_buf;
+                BnCudaBuffer *vw = (BnCudaBuffer *)ops[i + 5].W_buf;
+                float *k_out = cuda_act(ctx, next->buf_out);
+                void *v_out = cuda_act(ctx, ops[i + 6].buf_out);
+                if (kw && kw->data && vw && vw->data && k_out && v_out) {
+                    int total_rows = op->rows + next->rows +
+                                     ops[i + 5].rows;
+                    int qkv_threads = 256;
+                    BN_CUDA_LAUNCH(ctx,
+                        qkv_f32_avx2_reference_matvec_kernel,
+                        (total_rows * 8 + qkv_threads - 1) / qkv_threads,
+                        qkv_threads, 0, out, k_out, v_out,
+                        (const BnBlockQ4K *)w->data,
+                        (const BnBlockQ4K *)kw->data, vw->data, in,
+                        (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                        (const BnCudaKQuantMmqBlock *)kw->mmq_data,
+                        (const BnCudaKQuantMmqBlock *)vw->mmq_data,
+                        op->rows, next->rows, ops[i + 5].rows,
+                        op->cols, ops[i + 5].type, out_offset,
+                        (size_t)next->p[5], (size_t)ops[i + 6].p[1],
+                        0, 1);
+                    skip_ops[i + 1] = 1;
+                    skip_ops[i + 5] = 1;
+                    skip_ops[i + 6] = 1;
+                    break;
+                }
+            }
             if (reference_kquant_matvec &&
                 op->type == BN_GGUF_TENSOR_Q4_K && i + 2 < n_ops &&
                 next && next->op_code == BN_GPU_CODE_MATVEC &&
@@ -28567,7 +28623,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         op->rows, next->rows, ops[i + 2].rows,
                         op->cols, ops[i + 2].type, out_offset,
                         (size_t)next->p[5], (size_t)ops[i + 2].p[5],
-                        ctx->kv_f16);
+                        ctx->kv_f16, ctx->kv_f16);
                     skip_ops[i + 1] = 1;
                     skip_ops[i + 2] = 1;
                     break;
