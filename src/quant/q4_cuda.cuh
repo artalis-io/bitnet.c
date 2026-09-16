@@ -103,4 +103,40 @@ static __global__ void q4_mmq(float*out,const BnBlockQ4_0*w,const BnQ4CudaInput*
  out[t*rows+row]=__fadd_rn(tail,prefix);
 }
 
+/* Routed MMQ preserves the per-expert batch partition and accumulation order.
+ * map[items + item] is the token's rank within its selected expert. */
+static __global__ void q4_routed_mmq(float*out,const BnBlockQ4_0*w,
+ const BnQ4CudaInput*x,const int*map,int rows,int cols,int total_tokens,
+ int experts,int k,int input_stride,int jwidth,int grid,
+ int geometry_rows,int row_offset){
+ int row=blockIdx.x*32+threadIdx.x,item=blockIdx.y,nb=cols/32;
+ if(row>=rows)return;
+ int items=total_tokens*k,expert=map[item],rank=map[items+item];
+ int input_token=item/input_stride;
+ const BnBlockQ4_0*ew=w+(size_t)expert*rows*nb;
+ const BnQ4CudaInput*ex=x+(size_t)input_token*nb;
+ int xt=(total_tokens+jwidth-1)/jwidth;
+ int tiles=((geometry_rows+127)/128)*xt*experts;
+ long long tile=(((row+row_offset)/128)*experts+expert)*xt+rank/jwidth;
+ long long base=tile*nb,total=(long long)tiles*nb;
+ int first_bid=grid==tiles?(int)tile:(int)((base*grid)/total)-2;
+ int last_bid=grid==tiles?(int)tile:(int)(((base+nb+8)*grid)/total)+2;
+ if(first_bid<0)first_bid=0;
+ if(last_bid>=grid)last_bid=grid-1;
+ float tail=0,prefix=0;bool have=false;
+ for(int bid=last_bid;bid>=first_bid;bid--){
+  long long beg=(long long)bid*total/grid,end=(long long)(bid+1)*total/grid;
+  beg-=(beg%nb)%8;end-=(end%nb)%8;beg-=base;end-=base;
+  int lo=beg<0?0:(int)beg,hi=end>nb?nb:(int)end;if(lo>=hi)continue;
+  float acc=0;
+  for(int b=lo;b<hi;b++){
+   const BnBlockQ4_0&a=ew[row*nb+b];const BnQ4CudaInput&v=ex[b];int dot=0;
+   for(int j=0;j<16;j++)dot+=((int)(a.qs[j]&15)-8)*(int)v.qs[j]+((int)(a.qs[j]>>4)-8)*(int)v.qs[j+16];
+   acc=fmaf((float)dot*cuda_fp16_to_fp32(a.d),__half2float(v.d),acc);
+  }
+  if(!have)tail=acc;else prefix=__fadd_rn(prefix,acc);have=true;
+ }
+ out[(size_t)item*rows+row]=__fadd_rn(tail,prefix);
+}
+
 #endif

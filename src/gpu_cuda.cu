@@ -23472,24 +23472,41 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
                    map, nt, k, experts);
     if (bn_quant_format_has_cap(gate->type,
                                 BN_QUANT_CAP_GPU_ROUTED_BLOCK32_NIBBLE)) {
-        BN_CUDA_LAUNCH(ctx, q4_quantize_mmvq, dim3(dim/32,nt), 32, 0,
-            (BnQ4CudaInput *)quant, x, dim);
-        if (nt > 1) {
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmvq_2row,
-                dim3((hidden + 1) / 2, items), 32, 0,
+        if (nt > 8) {
+            BN_CUDA_LAUNCH(ctx, q4_quantize_mmq, dim3(dim/32,nt), 32, 0,
+                (BnQ4CudaInput *)quant, x, dim);
+            BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
+                dim3((hidden+31)/32,items), 32, 0,
                 g, (const BnBlockQ4_0 *)gate->data,
-                (BnQ4CudaInput *)quant, map, hidden, dim, k);
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmvq_2row,
-                dim3((hidden + 1) / 2, items), 32, 0,
+                (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
+                gate_width, gate_grid, hidden * 2, 0);
+            BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
+                dim3((hidden+31)/32,items), 32, 0,
                 u, (const BnBlockQ4_0 *)up->data,
-                (BnQ4CudaInput *)quant, map, hidden, dim, k);
+                (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
+                gate_width, gate_grid, hidden * 2, hidden);
         } else {
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmvq, dim3(hidden,items), 128, 0,
-                g, (const BnBlockQ4_0 *)gate->data, (BnQ4CudaInput *)quant,
-                map, hidden, dim, 4, k);
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmvq, dim3(hidden,items), 128, 0,
-                u, (const BnBlockQ4_0 *)up->data, (BnQ4CudaInput *)quant,
-                map, hidden, dim, 4, k);
+            BN_CUDA_LAUNCH(ctx, q4_quantize_mmvq, dim3(dim/32,nt), 32, 0,
+                (BnQ4CudaInput *)quant, x, dim);
+            if (nt > 1) {
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmvq_2row,
+                    dim3((hidden + 1) / 2, items), 32, 0,
+                    g, (const BnBlockQ4_0 *)gate->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, k);
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmvq_2row,
+                    dim3((hidden + 1) / 2, items), 32, 0,
+                    u, (const BnBlockQ4_0 *)up->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, k);
+            } else {
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmvq,
+                    dim3(hidden,items), 128, 0,
+                    g, (const BnBlockQ4_0 *)gate->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, 4, k);
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmvq,
+                    dim3(hidden,items), 128, 0,
+                    u, (const BnBlockQ4_0 *)up->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, 4, k);
+            }
         }
     } else if (bn_quant_format_has_cap(gate->type, BN_QUANT_CAP_GPU_ROUTED_KQUANT_MMVQ_GATEUP)) {
         BN_CUDA_LAUNCH(ctx, quantize_q8_1_batch_kernel, dim3(dim/32,nt), 32, 0,
@@ -23559,17 +23576,30 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
         "moe_mid_token1", mid + (size_t)k * hidden, k * hidden);
     if (bn_quant_format_has_cap(down->type,
                                 BN_QUANT_CAP_GPU_ROUTED_BLOCK32_NIBBLE)) {
-        BN_CUDA_LAUNCH(ctx, q4_quantize_mmvq, dim3(hidden/32,items), 32, 0,
-            (BnQ4CudaInput *)quant, mid, hidden);
-        if (nt > 1) {
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmvq_2row,
-                dim3((dim + 1) / 2, items), 32, 0,
+        if (nt > 8) {
+            BN_CUDA_LAUNCH(ctx, q4_quantize_mmq,
+                dim3(hidden/32,items), 32, 0,
+                (BnQ4CudaInput *)quant, mid, hidden);
+            BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
+                dim3((dim+31)/32,items), 32, 0,
                 down_values, (const BnBlockQ4_0 *)down->data,
-                (BnQ4CudaInput *)quant, map, dim, hidden, 1);
+                (BnQ4CudaInput *)quant, map, dim, hidden, nt, experts, k, 1,
+                down_width, down_grid, dim, 0);
         } else {
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmvq, dim3(dim,items), 128, 0,
-                down_values, (const BnBlockQ4_0 *)down->data,
-                (BnQ4CudaInput *)quant, map, dim, hidden, 4, 1);
+            BN_CUDA_LAUNCH(ctx, q4_quantize_mmvq,
+                dim3(hidden/32,items), 32, 0,
+                (BnQ4CudaInput *)quant, mid, hidden);
+            if (nt > 1) {
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmvq_2row,
+                    dim3((dim + 1) / 2, items), 32, 0,
+                    down_values, (const BnBlockQ4_0 *)down->data,
+                    (BnQ4CudaInput *)quant, map, dim, hidden, 1);
+            } else {
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmvq,
+                    dim3(dim,items), 128, 0,
+                    down_values, (const BnBlockQ4_0 *)down->data,
+                    (BnQ4CudaInput *)quant, map, dim, hidden, 4, 1);
+            }
         }
     } else if (bn_quant_format_has_cap(down->type, BN_QUANT_CAP_GPU_ROUTED_BLOCK32_AFFINE_MMVQ_DOWN)) {
         BN_CUDA_LAUNCH(ctx, q5_1_quantize_mmvq_input_kernel, hidden/32*items, 32, 0,
@@ -23621,8 +23651,9 @@ static int cuda_moe_ordered_supported(const BnCudaCtx *ctx, int gate, int up, in
           (down == BN_GGUF_TENSOR_Q4_K ||
            down == BN_GGUF_TENSOR_Q6_K)) ||
          (nt > 0 && nt <= 8 &&
-          (bn_backend_quant_moe_routed_affine_mmvq(gate,up,down) ||
-           bn_backend_quant_moe_routed_lowbit_block32(gate,up,down))));
+          bn_backend_quant_moe_routed_affine_mmvq(gate,up,down)) ||
+         (nt > 0 &&
+          bn_backend_quant_moe_routed_lowbit_block32(gate,up,down)));
 #else
     (void)ctx; (void)gate; (void)up; (void)down; (void)nt;
     return 0;
@@ -23678,7 +23709,11 @@ static int cuda_moe_ordered_quant_batch(BnCudaCtx *ctx, float *out, BnCudaBuffer
     size_t quant_bytes = quant_values/32 * sizeof(BnCudaBlockQ8MmqF32);
     if (quant_bytes > SIZE_MAX-quant_offset) return -1;
     int gw, gg, dw, dg;
-    if (cuda_moe_ordered_quant_geometry(ctx, hidden, nt, experts, &gw, &gg) != 0 ||
+    int fused_block32 = bn_quant_format_has_cap(gate_type,
+        BN_QUANT_CAP_GPU_ROUTED_BLOCK32_NIBBLE);
+    if (fused_block32 && hidden > INT_MAX / 2) return -1;
+    int gate_geometry = fused_block32 ? 2 * hidden : hidden;
+    if (cuda_moe_ordered_quant_geometry(ctx, gate_geometry, nt, experts, &gw, &gg) != 0 ||
         cuda_moe_ordered_quant_geometry(ctx, dim, nt, experts, &dw, &dg) != 0) return -1;
     BnCudaExecStreamScope scope(ctx, (cudaStream_t)0, 1);
     if (cuda_prefill_enter_default_stream(ctx, scope.prev) != 0 ||
