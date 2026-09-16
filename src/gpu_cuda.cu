@@ -13780,38 +13780,47 @@ static __global__ void moe_q8_0_down_routed_avx2_reference_kernel(
     out[row] = sum;
 }
 
-static __global__ void q8_0_q8_0_avx2_reference_matvec_kernel(
+/* Keep the AVX2 reference's eight independent accumulation streams while
+ * distributing them across lanes.  The final four pairwise sums retain the
+ * reference order, so the output is unchanged by the warp mapping. */
+static __global__ void q8_0_q8_0_avx2_reference_warp_kernel(
     float *out, const BnBlockQ8_0 *weight,
     const BnCudaBlockQ8_1 *input_q, int rows, int cols,
     size_t out_offset) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= rows) return;
+    int lane = threadIdx.x & 7;
+    int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
+    bool valid = row < rows;
     int n_bpr = cols / 32;
     const BnBlockQ8_0 *row_blocks =
-        weight + (size_t)row * (size_t)n_bpr;
-    float acc[8] = {0.0f, 0.0f, 0.0f, 0.0f,
-                    0.0f, 0.0f, 0.0f, 0.0f};
-    for (int b = 0; b < n_bpr; b++) {
+        valid ? weight + (size_t)row * (size_t)n_bpr : weight;
+    float acc = 0.0f;
+    for (int b = 0; valid && b < n_bpr; b++) {
         float scale = __fmul_rn(cuda_fp16_to_fp32(row_blocks[b].d),
                                 cuda_fp16_to_fp32(input_q[b].d));
+        int dot = 0;
 #pragma unroll
-        for (int lane = 0; lane < 8; lane++) {
-            int dot = 0;
-#pragma unroll
-            for (int j = 0; j < 4; j++) {
-                int i = lane * 4 + j;
-                dot += (int)row_blocks[b].qs[i] *
-                       (int)input_q[b].qs[i];
-            }
-            acc[lane] = fmaf(scale, (float)dot, acc[lane]);
+        for (int j = 0; j < 4; j++) {
+            int i = lane * 4 + j;
+            dot += (int)row_blocks[b].qs[i] * (int)input_q[b].qs[i];
         }
+        acc = fmaf(scale, (float)dot, acc);
     }
-    float s0 = __fadd_rn(acc[0], acc[4]);
-    float s1 = __fadd_rn(acc[1], acc[5]);
-    float s2 = __fadd_rn(acc[2], acc[6]);
-    float s3 = __fadd_rn(acc[3], acc[7]);
-    out[out_offset + (size_t)row] =
-        __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
+    float a0 = __shfl_sync(0xffffffffu, acc, 0, 8);
+    float a1 = __shfl_sync(0xffffffffu, acc, 1, 8);
+    float a2 = __shfl_sync(0xffffffffu, acc, 2, 8);
+    float a3 = __shfl_sync(0xffffffffu, acc, 3, 8);
+    float a4 = __shfl_sync(0xffffffffu, acc, 4, 8);
+    float a5 = __shfl_sync(0xffffffffu, acc, 5, 8);
+    float a6 = __shfl_sync(0xffffffffu, acc, 6, 8);
+    float a7 = __shfl_sync(0xffffffffu, acc, 7, 8);
+    if (valid && lane == 0) {
+        float s0 = __fadd_rn(a0, a4);
+        float s1 = __fadd_rn(a1, a5);
+        float s2 = __fadd_rn(a2, a6);
+        float s3 = __fadd_rn(a3, a7);
+        out[out_offset + (size_t)row] =
+            __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
+    }
 }
 
 static __global__ void moe_q8_0_down_routed_reference_batch_kernel(
@@ -30441,8 +30450,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     xq, in, op->cols, 1);
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
-                    q8_0_q8_0_avx2_reference_matvec_kernel,
-                    (op->rows + reference_threads - 1) /
+                    q8_0_q8_0_avx2_reference_warp_kernel,
+                    (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ8_0 *)w->data, xq,
