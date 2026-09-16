@@ -9391,6 +9391,98 @@ static __global__ void moe_route_topk_warp_kernel(float *route,
         route[k + i] = (float)selected[i];
 }
 
+/* Spread the independent exponentials over four warps, then retain the
+ * reference warp's accumulation and selection order for exact routing. */
+static __global__ void moe_route_topk_128_kernel(
+    float *route, const float *logits, int k, int norm_topk,
+    float expert_weights_scale) {
+    __shared__ float probabilities_shared[128];
+    __shared__ float maximum_shared;
+    int tid = threadIdx.x;
+    int lane = tid & 31;
+    int warp = tid >> 5;
+    if (blockIdx.x != 0 || tid >= 128 || k <= 0) return;
+    if (k > BN_MAX_MOE_K) k = BN_MAX_MOE_K;
+
+    if (warp == 0) {
+        float maximum = -INFINITY;
+#pragma unroll
+        for (int i = 0; i < 4; i++)
+            maximum = fmaxf(maximum, logits[lane + i * 32]);
+        for (int offset = 16; offset; offset >>= 1)
+            maximum = fmaxf(maximum,
+                __shfl_xor_sync(0xffffffffu, maximum, offset));
+        if (lane == 0) maximum_shared = maximum;
+    }
+    __syncthreads();
+    probabilities_shared[tid] = __expf(logits[tid] - maximum_shared);
+    __syncthreads();
+    if (warp != 0) return;
+
+    float probabilities[4];
+    float sum = 0.0f;
+#pragma unroll
+    for (int i = 0; i < 4; i++) {
+        probabilities[i] = probabilities_shared[lane + i * 32];
+        sum += probabilities[i];
+    }
+    for (int offset = 16; offset; offset >>= 1)
+        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+    float inverse = __fdividef(1.0f, sum);
+#pragma unroll
+    for (int i = 0; i < 4; i++) {
+        probabilities[i] *= inverse;
+        if (isnan(probabilities[i])) probabilities[i] = -FLT_MAX;
+    }
+
+    float selected_sum = 0.0f;
+    float output_weight = 0.0f;
+    int output_id = 0;
+    for (int selected = 0; selected < k; selected++) {
+        float best_value = probabilities[0];
+        int best_id = lane;
+#pragma unroll
+        for (int i = 1; i < 4; i++) {
+            if (probabilities[i] > best_value) {
+                best_value = probabilities[i];
+                best_id = lane + i * 32;
+            }
+        }
+        for (int offset = 16; offset; offset >>= 1) {
+            float other_value =
+                __shfl_xor_sync(0xffffffffu, best_value, offset);
+            int other_id = __shfl_xor_sync(0xffffffffu, best_id, offset);
+            if (other_value > best_value ||
+                (other_value == best_value && other_id < best_id)) {
+                best_value = other_value;
+                best_id = other_id;
+            }
+        }
+        if ((best_id & 31) == lane) {
+            probabilities[best_id / 32] = -INFINITY;
+            selected_sum += best_value;
+        }
+        if (lane == selected) {
+            output_weight = best_value;
+            output_id = best_id;
+        }
+    }
+    if (norm_topk) {
+        for (int offset = 16; offset; offset >>= 1)
+            selected_sum +=
+                __shfl_xor_sync(0xffffffffu, selected_sum, offset);
+        output_weight *= __fdividef(
+            1.0f, fmaxf(selected_sum, 6.103515625e-5f));
+    }
+    if (lane < k) {
+        if (expert_weights_scale != 0.0f &&
+            expert_weights_scale != 1.0f)
+            output_weight *= expert_weights_scale;
+        route[lane] = output_weight;
+        route[k + lane] = (float)output_id;
+    }
+}
+
 static __global__ void moe_route_fused_warp_topk_kernel(
     float *route, const float *router, const float *x, int n_experts,
     int dim, int k, int norm_topk, float expert_weights_scale) {
@@ -29596,12 +29688,24 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         expert_weights_scale);
                 } else if (bn_gpu_policy_cuda_moe_router_warp_topk_enabled(
                         ctx->runtime_policy, n_experts)) {
-                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                        moe_route_topk_warp_kernel, 1, 32, 0, route, logits,
-                        n_experts, k,
-                        (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0,
-                        expert_weights_scale,
-                        (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK) != 0);
+                    int separate_topk =
+                        (op->flags &
+                         BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK) != 0;
+                    if (n_experts == 128 && !separate_topk) {
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                            moe_route_topk_128_kernel, 1, 128, 0, route,
+                            logits, k,
+                            (op->flags &
+                             BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0,
+                            expert_weights_scale);
+                    } else {
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                            moe_route_topk_warp_kernel, 1, 32, 0, route,
+                            logits, n_experts, k,
+                            (op->flags &
+                             BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0,
+                            expert_weights_scale, separate_topk);
+                    }
                 } else {
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         moe_route_topk_kernel, 1, 1, 0, route, logits,
