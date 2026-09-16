@@ -23428,9 +23428,10 @@ static __global__ void moe_routed_ordered_reduce_kernel(float *out,
                 projected, weights[t * k + j]);
             sum = j == 0 ? weighted : __fadd_rn(sum, weighted);
         } else {
+            /* Per-expert decode uses FMA only with a separate output scale. */
             sum = cuda_scaled_weighted_add(sum,
                 projected, weights[t * k + j],
-                1.0f, j == 0, k > 1 && k < 16);
+                1.0f, j == 0, output_scales && k > 1 && k < 16);
         }
     }
     out[(size_t)t * dim + d] = sum;
@@ -23850,9 +23851,9 @@ static int cuda_moe_ordered_quant_graph_run(BnCudaCtx *ctx, const BnGPUOp *op,
         (op->flags & BN_GPU_OP_FLAG_MOE_SEPARATE_OUTPUT_SCALE) ? route + 2*p.k : NULL,
         map,g,u,cuda_act(ctx,(int)op->p[4]),raw,quant,
         1,p.dim,p.hidden,p.experts,p.k,8,1,8,1,
-        (op->flags & (BN_GPU_OP_FLAG_MOE_SEPARATE_REDUCTION |
-                      BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION)) != 0,
-        BN_MODEL_ACTIVATION_SILU);
+        (op->flags & BN_GPU_OP_FLAG_MOE_SEPARATE_REDUCTION) != 0,
+        (op->flags & BN_GPU_OP_FLAG_MOE_GELU)
+            ? BN_MODEL_ACTIVATION_GELU : BN_MODEL_ACTIVATION_SILU);
 #endif
 }
 
@@ -33498,6 +33499,7 @@ BnGPUBackend *bn_gpu_cuda_create_with_policy(
     if (ctx->compute_capability == 1200)
         gpu->caps |= BN_GPU_CAP_MOE_COMBINED_PREFILL_DEFAULT |
                      BN_GPU_CAP_DENSE_RESIDUAL_LOWBIT_BLOCK32 |
+                     BN_GPU_CAP_MOE_ROUTED_LOWBIT_BLOCK32 |
                      BN_GPU_CAP_PREFILL_LOGICAL_PROJECTION_ROWS;
 #ifdef BN_CUDA_MXFP4_SM120
     if (ctx->compute_capability == 1200)

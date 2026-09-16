@@ -970,7 +970,6 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
         gate_up_expert_stride == 0 || gate_up_expert_stride > UINT32_MAX ||
         down_expert_stride == 0 || down_expert_stride > UINT32_MAX)
         return -1;
-    (void)activation;
     if (bn_transformer_gpu_emit_context_lower_pending(ctx) != 0)
         return -1;
     if (!ctx->lowered_ops || ctx->n < 0 || ctx->n >= ctx->cap)
@@ -989,6 +988,8 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
     op->rows = hidden;
     op->cols = dim;
     op->flags |= bn_transformer_gpu_reference_silu_active_flags(reference_silu);
+    if (activation == BN_MODEL_ACTIVATION_GELU)
+        op->flags |= BN_GPU_OP_FLAG_MOE_GELU;
     if (reference_ffn_activation)
         op->flags |= BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION;
     if (q8_float_down)

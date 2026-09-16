@@ -102,6 +102,7 @@ typedef struct BnGPUOp {
 #define BN_GPU_OP_FLAG_MATVEC_BLOCK_Q8_ACTIVATION 128u
 #define BN_GPU_OP_FLAG_REFERENCE_WIDE_ACCUMULATION 256u
 #define BN_GPU_OP_FLAG_MOE_SEPARATE_OUTPUT_SCALE 512u
+#define BN_GPU_OP_FLAG_MOE_GELU 1024u
 
 static inline int bn_gpu_op_code_is_matvec(int code) {
     return code == BN_GPU_CODE_MATVEC;
