@@ -2184,6 +2184,86 @@ static __global__ void q4k_f32_avx2_reference_matvec_kernel(
     }
 }
 
+/* Batch independent prompt rows while retaining the decode reference's
+ * per-lane FMA and horizontal reduction order. */
+static __global__ void q4k_f32_avx2_reference_matmul_kernel(
+        float *out, const BnBlockQ4K *blocks, const float *x,
+        const BnCudaKQuantMmqBlock *packed, int rows, int cols,
+        int n_tokens) {
+    enum { TOKEN_TILE = 8 };
+    int token0 = blockIdx.y * TOKEN_TILE;
+    int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = global_lane >> 3;
+    int lane = global_lane & 7;
+    if (row >= rows) return;
+    int n_bpr = cols / BN_QK_K;
+    const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
+    const float *xt[TOKEN_TILE];
+#pragma unroll
+    for (int t = 0; t < TOKEN_TILE; t++)
+        xt[t] = x + (size_t)(token0 + (token0 + t < n_tokens ? t : 0)) * cols;
+    float row_sum[TOKEN_TILE] = {0.0f};
+    for (int b = 0; b < n_bpr; b++) {
+        float acc[TOKEN_TILE] = {0.0f};
+        const BnBlockQ4K *blk = &row_blocks[b];
+        const BnCudaKQuantMmqBlock *pblk = packed
+            ? packed + (size_t)row * n_bpr + b : NULL;
+        float d = cuda_fp16_to_fp32(blk->d);
+        float dmin = cuda_fp16_to_fp32(blk->dmin);
+        for (int group = 0; group < 8; group++) {
+            int sc = 0, mn = 0;
+            if (pblk) {
+                sc = (int)pblk->scales32[group];
+                mn = (int)pblk->mins32[group];
+            } else {
+                cuda_kquant_group_scale_min(blk->scales, group, &sc, &mn);
+            }
+            float ds = __fmul_rn(d, (float)sc);
+            float dm = __fmul_rn(dmin, (float)mn);
+            int byte_off = (group >> 1) * 32;
+            int shift = (group & 1) ? 4 : 0;
+#pragma unroll
+            for (int quarter = 0; quarter < 4; quarter++) {
+                int i = quarter * 8 + lane;
+                int q = (blk->qs[byte_off + i] >> shift) & 15;
+                float w = fmaf((float)q, ds, -dm);
+#pragma unroll
+                for (int t = 0; t < TOKEN_TILE; t++)
+                    acc[t] = fmaf(w,
+                        xt[t][(size_t)b * BN_QK_K + group * 32 + i],
+                        acc[t]);
+            }
+        }
+        unsigned mask = 0xffu << ((threadIdx.x & 31) & ~7);
+#pragma unroll
+        for (int t = 0; t < TOKEN_TILE; t++) {
+            float a0 = __shfl_sync(mask, acc[t], 0, 8);
+            float a1 = __shfl_sync(mask, acc[t], 1, 8);
+            float a2 = __shfl_sync(mask, acc[t], 2, 8);
+            float a3 = __shfl_sync(mask, acc[t], 3, 8);
+            float a4 = __shfl_sync(mask, acc[t], 4, 8);
+            float a5 = __shfl_sync(mask, acc[t], 5, 8);
+            float a6 = __shfl_sync(mask, acc[t], 6, 8);
+            float a7 = __shfl_sync(mask, acc[t], 7, 8);
+            if (lane == 0) {
+                float s0 = __fadd_rn(a0, a4);
+                float s1 = __fadd_rn(a1, a5);
+                float s2 = __fadd_rn(a2, a6);
+                float s3 = __fadd_rn(a3, a7);
+                float block_sum =
+                    __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
+                row_sum[t] = __fadd_rn(row_sum[t], block_sum);
+            }
+        }
+    }
+    if (lane == 0) {
+#pragma unroll
+        for (int t = 0; t < TOKEN_TILE; t++)
+            if (token0 + t < n_tokens)
+                out[(size_t)(token0 + t) * rows + row] = row_sum[t];
+    }
+}
+
 /* Reproduce bn_quant_q5k_avx2_range for FP32-input reference FFN
  * projections. One CUDA thread owns a row and carries the AVX2 kernel's
  * eight accumulation lanes in the same group and horizontal-sum order. */
@@ -25933,6 +26013,19 @@ static int cuda_buffer_row_view(const BnCudaBuffer *source, int first,
     return 0;
 }
 
+static int cuda_prefill_q4k_reference_rows(
+        BnCudaCtx *ctx, float *out, const BnCudaBuffer *w,
+        const float *x, int rows, int cols, int n_tokens) {
+    if (!ctx || !out || !w || !w->data || !x || rows <= 0 ||
+        cols <= 0 || n_tokens <= 0) return -1;
+    q4k_f32_avx2_reference_matmul_kernel<<<
+        dim3((rows * 8 + 255) / 256, (n_tokens + 7) / 8), 256, 0,
+        ctx->exec_stream>>>(out, (const BnBlockQ4K *)w->data, x,
+                            (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                            rows, cols, n_tokens);
+    return cudaGetLastError() == cudaSuccess ? 0 : -1;
+}
+
 static int cuda_prefill_qkv_attention_wo_impl(
         void *vctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
         void *attn_norm_buf, void *q_norm_buf, void *k_norm_buf,
@@ -26113,19 +26206,41 @@ static int cuda_prefill_qkv_attention_wo_impl(
     /* Packing Q/K weights is a storage optimization. The model graph still
      * has two projections: combining their row counts changes MMQ StreamK
      * partitions and floating-point accumulation order. */
-    if (separate_qk_projection) {
-        if (cuda_matmul_device_out(ctx, d_qk, &q_view, matmul_x,
-                projection_q_rows, dim, n_tokens, qk_type) != 0 ||
-            cuda_matmul_device_out(ctx, d_k, &k_view, matmul_x,
-                kv_dim, dim, n_tokens, qk_type) != 0)
+    /* From 16 prompt tokens, Q4_K MMQ quantizes the activation and can shift
+     * FP16 KV values enough to change greedy tokens. The shorter path already
+     * matches the reference; retain it. For longer prompts, keep the batch
+     * on device and use decode's F32 accumulation for Q/K and Q4_K V. */
+    int reference_qkv = ctx->kv_f16 && n_tokens >= 16 &&
+        qk_type == BN_GGUF_TENSOR_Q4_K && separate_qk_projection;
+    if (reference_qkv) {
+        if (cuda_prefill_q4k_reference_rows(ctx, d_qk, &q_view,
+                matmul_x, projection_q_rows, dim, n_tokens) != 0 ||
+            cuda_prefill_q4k_reference_rows(ctx, d_k, &k_view,
+                matmul_x, kv_dim, dim, n_tokens) != 0)
             return -1;
-    } else if (cuda_matmul_device_out(ctx, d_qk, qk, matmul_x, qk_rows, dim,
-                n_tokens, qk_type) != 0) {
-        return -1;
-    }
-    if (cuda_matmul_device_out(ctx, d_v, wv, matmul_x, wv_rows, dim,
+        if (wv_type == BN_GGUF_TENSOR_Q4_K) {
+            if (cuda_prefill_q4k_reference_rows(ctx, d_v, wv,
+                    matmul_x, wv_rows, dim, n_tokens) != 0)
+                return -1;
+        } else if (cuda_matmul_device_out(ctx, d_v, wv, matmul_x,
+                       wv_rows, dim, n_tokens, wv_type) != 0) {
+            return -1;
+        }
+    } else {
+        if (separate_qk_projection) {
+            if (cuda_matmul_device_out(ctx, d_qk, &q_view, matmul_x,
+                    projection_q_rows, dim, n_tokens, qk_type) != 0 ||
+                cuda_matmul_device_out(ctx, d_k, &k_view, matmul_x,
+                    kv_dim, dim, n_tokens, qk_type) != 0)
+                return -1;
+        } else if (cuda_matmul_device_out(ctx, d_qk, qk, matmul_x,
+                   qk_rows, dim, n_tokens, qk_type) != 0) {
+            return -1;
+        }
+        if (cuda_matmul_device_out(ctx, d_v, wv, matmul_x, wv_rows, dim,
                 n_tokens, wv_type) != 0)
-        return -1;
+            return -1;
+    }
 
     int threads = 256;
     int total_qk = n_tokens * (q_dim + (q_gated ? q_dim : 0) + kv_dim);
