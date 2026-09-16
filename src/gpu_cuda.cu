@@ -3672,6 +3672,13 @@ static __global__ void q4k_mmq_128xj_kernel(
         ? expert_counts[expert] : n_tokens;
     int route_offset = routed && expert < experts
         ? expert_offsets[expert] : 0;
+    int tile_tokens = local_tokens - token0;
+    if (tile_tokens < 0) tile_tokens = 0;
+    if (tile_tokens > J) tile_tokens = J;
+    /* Routed experts usually fill only part of a 64-token tile. Stage and
+     * multiply only live 16-token MMA panels; preserve each live panel's
+     * accumulation order. */
+    int staged_tokens = routed ? ((tile_tokens + 15) & ~15) : J;
     int n_bpr = cols / BN_QK_K;
     int x_blocks = cols / 32;
     int split = routed ? 0 : (int)blockIdx.z;
@@ -3734,7 +3741,7 @@ static __global__ void q4k_mmq_128xj_kernel(
 
 #pragma unroll
         for (int kh = 0; kh < 2; kh++) {
-            for (int i = tid; i < J * 32; i += blockDim.x) {
+            for (int i = tid; i < staged_tokens * 32; i += blockDim.x) {
                 int tj = i >> 5;
                 int qi = i & 31;
                 int route = route_ids[tj];
@@ -3750,7 +3757,7 @@ static __global__ void q4k_mmq_128xj_kernel(
                 }
                 sy[tj * Y_STRIDE + 4 + qi] = value;
             }
-            for (int i = tid; i < J * 4; i += blockDim.x) {
+            for (int i = tid; i < staged_tokens * 4; i += blockDim.x) {
                 int tj = i >> 2;
                 int group = i & 3;
                 int route = route_ids[tj];
@@ -3801,6 +3808,8 @@ static __global__ void q4k_mmq_128xj_kernel(
 
 #pragma unroll
             for (int jp = 0; jp < J / 16; jp++) {
+                if (routed && token0 + jp * 16 >= local_tokens)
+                    break;
 #pragma unroll
                 for (int k = 0; k < 4; k++) {
                     int bj0 = jp * 16 + warp_token_phase * 8;
@@ -3910,6 +3919,10 @@ static __global__ void q6k_mmq_128x64_kernel(
     }
     int local_tokens = routed ? expert_counts[expert] : n_tokens;
     int route_offset = routed ? expert_offsets[expert] : 0;
+    int tile_tokens = local_tokens - token0;
+    if (tile_tokens < 0) tile_tokens = 0;
+    if (tile_tokens > J) tile_tokens = J;
+    int staged_tokens = routed ? ((tile_tokens + 15) & ~15) : J;
     int n_bpr = cols / BN_QK_K;
     int x_blocks = cols / 32;
     int split = routed ? 0 : (int)blockIdx.z;
@@ -3982,7 +3995,7 @@ static __global__ void q6k_mmq_128x64_kernel(
             }
             sx[ri * X_STRIDE + 64 + mi] = value;
         }
-        for (int i = tid; i < J * 64; i += blockDim.x) {
+        for (int i = tid; i < staged_tokens * 64; i += blockDim.x) {
             int tj = i >> 6;
             int qword = i & 63;
             int token = route_ids[tj];
@@ -4003,7 +4016,7 @@ static __global__ void q6k_mmq_128x64_kernel(
             }
             sy[tj * Y_STRIDE + qword] = value;
         }
-        for (int i = tid; i < J * 8; i += blockDim.x) {
+        for (int i = tid; i < staged_tokens * 8; i += blockDim.x) {
             int tj = i >> 3;
             int group = i & 7;
             int token = route_ids[tj];
@@ -4017,6 +4030,8 @@ static __global__ void q6k_mmq_128x64_kernel(
 
 #pragma unroll
         for (int jp = 0; jp < 4; jp++) {
+            if (routed && token0 + jp * 16 >= local_tokens)
+                break;
             int token_panel = jp * 2 + token_phase;
             float part[2][4] = {{0.0f}};
 #pragma unroll
