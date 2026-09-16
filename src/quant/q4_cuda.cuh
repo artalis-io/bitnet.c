@@ -77,8 +77,11 @@ static __global__ void q4_quantize_mmq(BnQ4CudaInput*out,const float*x,int cols)
  float inv=__fdividef(127.f,a),d=__fdividef(1.f,inv);out[t*(cols/32)+b].qs[lane]=a==0?0:(int8_t)roundf(v*inv);
  if(!lane){out[t*(cols/32)+b].d=__float2half(d);out[t*(cols/32)+b].s=__float2half(0.f);}
 }
-static __global__ void q4_mmq(float*out,const BnBlockQ4_0*w,const BnQ4CudaInput*x,int rows,int cols,int jwidth,int grid,int total_tokens,int expert,int experts,int geometry_rows,int row_offset){
- int row=blockIdx.x*32+threadIdx.x,t=blockIdx.y,nb=cols/32;if(row>=rows)return;
+static __global__ void q4_mmq(float*out,const BnBlockQ4_0*w,const BnQ4CudaInput*x,int rows,int cols,int batch_tokens,int jwidth,int grid,int total_tokens,int expert,int experts,int geometry_rows,int row_offset){
+ /* Four neighboring lanes process tokens for the same row, sharing weight
+  * fetches without changing each token's partitioned FMA sequence. */
+ int row=blockIdx.x*8+threadIdx.x/4,t=blockIdx.y*4+threadIdx.x%4,nb=cols/32;
+ if(row>=rows||t>=batch_tokens)return;
  int xt=(total_tokens+jwidth-1)/jwidth,tiles=((geometry_rows+127)/128)*xt*experts;
  long long tile=(((row+row_offset)/128)*experts+expert)*xt+t/jwidth,base=tile*nb,total=(long long)tiles*nb;
  float tail=0,prefix=0;bool have=false;
@@ -103,15 +106,17 @@ static __global__ void q4_mmq(float*out,const BnBlockQ4_0*w,const BnQ4CudaInput*
  out[t*rows+row]=__fadd_rn(tail,prefix);
 }
 
-/* Routed MMQ preserves the per-expert batch partition and accumulation order.
- * map[items + item] is the token's rank within its selected expert. */
+/* Route-ranked warps share expert weights across four tokens while retaining
+ * each token's per-expert partition and accumulation order. */
 static __global__ void q4_routed_mmq(float*out,const BnBlockQ4_0*w,
  const BnQ4CudaInput*x,const int*map,int rows,int cols,int total_tokens,
  int experts,int k,int input_stride,int jwidth,int grid,
  int geometry_rows,int row_offset){
- int row=blockIdx.x*32+threadIdx.x,item=blockIdx.y,nb=cols/32;
- if(row>=rows)return;
- int items=total_tokens*k,expert=map[item],rank=map[items+item];
+ int row=blockIdx.x*8+threadIdx.x/4,rank=blockIdx.y*4+threadIdx.x%4;
+ int expert=blockIdx.z,nb=cols/32,items=total_tokens*k;
+ if(row>=rows||rank>=total_tokens)return;
+ int item=map[2*items+expert*total_tokens+rank];
+ if(item<0)return;
  int input_token=item/input_stride;
  const BnBlockQ4_0*ew=w+(size_t)expert*rows*nb;
  const BnQ4CudaInput*ex=x+(size_t)input_token*nb;

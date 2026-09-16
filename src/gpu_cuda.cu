@@ -18987,8 +18987,8 @@ static int cuda_q4_batch_matmul(BnCudaCtx *ctx, float *out,
         int64_t grid=100*tiles/((int64_t)nsm*waves)>=90?tiles:nsm;
         if(grid>INT_MAX) return -1;
         q4_quantize_mmq<<<dim3(cols/32,nt),32,0,stream>>>(xq,input,cols);
-        q4_mmq<<<dim3((rows+31)/32,nt),32,0,stream>>>(out,
-            (const BnBlockQ4_0 *)w->data,xq,rows,cols,jwidth,(int)grid,total_tokens,expert,experts,geometry_rows,row_offset);
+        q4_mmq<<<dim3((rows+7)/8,(nt+3)/4),32,0,stream>>>(out,
+            (const BnBlockQ4_0 *)w->data,xq,rows,cols,nt,jwidth,(int)grid,total_tokens,expert,experts,geometry_rows,row_offset);
     }
     return cudaGetLastError()==cudaSuccess?0:-1;
 }
@@ -23477,12 +23477,12 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
             BN_CUDA_LAUNCH(ctx, q4_quantize_mmq, dim3(dim/32,nt), 32, 0,
                 (BnQ4CudaInput *)quant, x, dim);
             BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
-                dim3((hidden+31)/32,items), 32, 0,
+                dim3((hidden+7)/8,(nt+3)/4,experts), 32, 0,
                 g, (const BnBlockQ4_0 *)gate->data,
                 (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
                 gate_width, gate_grid, hidden * 2, 0);
             BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
-                dim3((hidden+31)/32,items), 32, 0,
+                dim3((hidden+7)/8,(nt+3)/4,experts), 32, 0,
                 u, (const BnBlockQ4_0 *)up->data,
                 (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
                 gate_width, gate_grid, hidden * 2, hidden);
@@ -23582,7 +23582,7 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
                 dim3(hidden/32,items), 32, 0,
                 (BnQ4CudaInput *)quant, mid, hidden);
             BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
-                dim3((dim+31)/32,items), 32, 0,
+                dim3((dim+7)/8,(nt+3)/4,experts), 32, 0,
                 down_values, (const BnBlockQ4_0 *)down->data,
                 (BnQ4CudaInput *)quant, map, dim, hidden, nt, experts, k, 1,
                 down_width, down_grid, dim, 0);
