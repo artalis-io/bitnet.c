@@ -18989,8 +18989,14 @@ static int cuda_q4_batch_matmul(BnCudaCtx *ctx, float *out,
         int64_t grid=100*tiles/((int64_t)nsm*waves)>=90?tiles:nsm;
         if(grid>INT_MAX) return -1;
         q4_quantize_mmq<<<dim3(cols/32,nt),32,0,stream>>>(xq,input,cols);
-        q4_mmq<<<dim3((rows+31)/32,(nt+3)/4),128,0,stream>>>(out,
-            (const BnBlockQ4_0 *)w->data,xq,rows,cols,nt,jwidth,(int)grid,total_tokens,expert,experts,geometry_rows,row_offset);
+        if (nt >= 128 && jwidth % 64 == 0)
+            q4_mmq_mma_tile<false,8><<<dim3((rows+15)/16,(nt+63)/64),256,0,stream>>>(
+                out,(const BnBlockQ4_0 *)w->data,xq,NULL,rows,cols,nt,
+                total_tokens,expert,experts,1,1,jwidth,(int)grid,
+                geometry_rows,row_offset);
+        else
+            q4_mmq<<<dim3((rows+31)/32,(nt+3)/4),128,0,stream>>>(out,
+                (const BnBlockQ4_0 *)w->data,xq,rows,cols,nt,jwidth,(int)grid,total_tokens,expert,experts,geometry_rows,row_offset);
     }
     return cudaGetLastError()==cudaSuccess?0:-1;
 }
@@ -23478,16 +23484,29 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
         if (nt > 8) {
             BN_CUDA_LAUNCH(ctx, q4_quantize_mmq, dim3(dim/32,nt), 32, 0,
                 (BnQ4CudaInput *)quant, x, dim);
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
-                dim3((hidden+31)/32,(nt+3)/4,experts), 128, 0,
-                g, (const BnBlockQ4_0 *)gate->data,
-                (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
-                gate_width, gate_grid, hidden * 2, 0);
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
-                dim3((hidden+31)/32,(nt+3)/4,experts), 128, 0,
-                u, (const BnBlockQ4_0 *)up->data,
-                (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
-                gate_width, gate_grid, hidden * 2, hidden);
+            if (nt >= 128 && gate_width % 16 == 0) {
+                BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,2>),
+                    dim3((hidden+15)/16,(nt+15)/16,experts), 64, 0,
+                    g, (const BnBlockQ4_0 *)gate->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, nt, nt, 0,
+                    experts, k, k, gate_width, gate_grid, hidden * 2, 0);
+                BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,2>),
+                    dim3((hidden+15)/16,(nt+15)/16,experts), 64, 0,
+                    u, (const BnBlockQ4_0 *)up->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, nt, nt, 0,
+                    experts, k, k, gate_width, gate_grid, hidden * 2, hidden);
+            } else {
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
+                    dim3((hidden+31)/32,(nt+3)/4,experts), 128, 0,
+                    g, (const BnBlockQ4_0 *)gate->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
+                    gate_width, gate_grid, hidden * 2, 0);
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
+                    dim3((hidden+31)/32,(nt+3)/4,experts), 128, 0,
+                    u, (const BnBlockQ4_0 *)up->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, nt, experts, k, k,
+                    gate_width, gate_grid, hidden * 2, hidden);
+            }
         } else {
             BN_CUDA_LAUNCH(ctx, q4_quantize_mmvq, dim3(dim/32,nt), 32, 0,
                 (BnQ4CudaInput *)quant, x, dim);
@@ -23583,11 +23602,19 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
             BN_CUDA_LAUNCH(ctx, q4_quantize_mmq,
                 dim3(hidden/32,items), 32, 0,
                 (BnQ4CudaInput *)quant, mid, hidden);
-            BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
-                dim3((dim+31)/32,(nt+3)/4,experts), 128, 0,
-                down_values, (const BnBlockQ4_0 *)down->data,
-                (BnQ4CudaInput *)quant, map, dim, hidden, nt, experts, k, 1,
-                down_width, down_grid, dim, 0);
+            if (nt >= 128 && down_width % 16 == 0) {
+                BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,2>),
+                    dim3((dim+15)/16,(nt+15)/16,experts), 64, 0,
+                    down_values, (const BnBlockQ4_0 *)down->data,
+                    (BnQ4CudaInput *)quant, map, dim, hidden, nt, nt, 0,
+                    experts, k, 1, down_width, down_grid, dim, 0);
+            } else {
+                BN_CUDA_LAUNCH(ctx, q4_routed_mmq,
+                    dim3((dim+31)/32,(nt+3)/4,experts), 128, 0,
+                    down_values, (const BnBlockQ4_0 *)down->data,
+                    (BnQ4CudaInput *)quant, map, dim, hidden, nt, experts, k, 1,
+                    down_width, down_grid, dim, 0);
+            }
         } else {
             BN_CUDA_LAUNCH(ctx, q4_quantize_mmvq,
                 dim3(hidden/32,items), 32, 0,
