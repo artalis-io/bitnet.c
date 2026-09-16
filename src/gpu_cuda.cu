@@ -26662,13 +26662,11 @@ static int cuda_prefill_dense_layer(
             quantize_mmq_input_kernel<<<dim3(dim / 32, n_tokens), 32>>>(
                 prepared_xq, d_ffn_norm, dim, 0);
             if (cudaGetLastError() != cudaSuccess ||
-                cuda_kquant_batch_matmul(ctx, d_gateup, &gate_view,
-                    d_ffn_norm, hidden_dim, dim, n_tokens, gate_type,
-                    ctx->exec_stream, prepared_xq) != 0 ||
-                cuda_kquant_batch_matmul(ctx, d_gateup + hidden_values,
-                    &up_view, d_ffn_norm, hidden_dim, dim, n_tokens,
+                cuda_kquant_batch_matmul(ctx, d_gateup, gate,
+                    d_ffn_norm, hidden_dim * 2, dim, n_tokens,
                     gate_type, ctx->exec_stream, prepared_xq) != 0)
                 return -1;
+            separate_gateup = 0;
         } else if (cuda_matmul_device_out(ctx, d_gateup, &gate_view,
                        d_ffn_norm, hidden_dim, dim, n_tokens,
                        gate_type) != 0 ||
