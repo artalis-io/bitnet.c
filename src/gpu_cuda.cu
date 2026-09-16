@@ -2229,21 +2229,22 @@ static __global__ void iq4xs_mmq_ordered_t8_kernel(
                 out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
 }
 
-/* Each warp computes 16 rows by 8 tokens. The integer tensor-core dot is
- * exact; scale application keeps GGML's group and Stream-K order. */
-template <bool Packed>
+/* Four warps compute the same 16 rows across 32 tokens. When all warps share
+ * a Stream-K tile, stage each weight group once for their integer MMA dots;
+ * scale application retains GGML's group and reduction order. */
+template <bool Packed, bool ShareA>
 static __global__ __launch_bounds__(128, 4)
 void iq4xs_mmq_mma_ordered_t8_kernel(
         float *out, const void *weights,
         const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
         int n_tokens, int width, int grid) {
 #if __CUDA_ARCH__ >= 800
-    __shared__ int8_t tile_a[4][16][32];
+    __shared__ int8_t tile_a[ShareA ? 1 : 4][16][32];
     __shared__ int8_t tile_b[4][8][32];
     const int warp = threadIdx.x >> 5;
     const int lane = threadIdx.x & 31;
-    const int row0 = blockIdx.x * 64 + warp * 16;
-    const int token0 = blockIdx.y * 8;
+    const int row0 = blockIdx.x * 16;
+    const int token0 = blockIdx.y * 32 + warp * 8;
     const int blocks = cols / 256;
     const int groups = cols / 32;
     const int token_tiles = (n_tokens - 1) / width + 1;
@@ -2266,7 +2267,8 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
 #pragma unroll
             for (int group = 0; group < 8; group++) {
 #pragma unroll
-                for (int i = lane; i < 16 * 32; i += 32) {
+                for (int i = ShareA ? threadIdx.x : lane;
+                     i < 16 * 32; i += ShareA ? 128 : 32) {
                     int row = row0 + i / 32;
                     int k = i & 31;
                     int8_t qv = 0;
@@ -2285,7 +2287,7 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
                             qv = bn_kvalues_iq4nl[q];
                         }
                     }
-                    tile_a[warp][i / 32][k] = qv;
+                    tile_a[ShareA ? 0 : warp][i / 32][k] = qv;
                 }
 #pragma unroll
                 for (int i = lane; i < 8 * 32; i += 32) {
@@ -2299,10 +2301,11 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
                     }
                     tile_b[warp][i / 32][k] = qv;
                 }
-                __syncwarp();
+                if (ShareA) __syncthreads();
+                else __syncwarp();
 
                 int a[4], bv[2], dots[4] = {0, 0, 0, 0};
-                const int *asrc = (const int *)tile_a[warp] +
+                const int *asrc = (const int *)tile_a[ShareA ? 0 : warp] +
                     (lane % 16) * 8 + (lane / 16) * 4;
                 const int *bsrc = (const int *)tile_b[warp] +
                     (lane % 8) * 8 + ((lane / 8) * 4) % 8;
@@ -2349,7 +2352,8 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
                     }
                     acc[l] = fmaf((float)dots[l] * wd, x->d, acc[l]);
                 }
-                __syncwarp();
+                if (ShareA) __syncthreads();
+                else __syncwarp();
             }
         }
 #pragma unroll
@@ -19518,16 +19522,32 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                    n_tokens >= 16 &&
                    cols % 256 == 0) {
             if (ctx->compute_capability >= 800) {
-                if (w->mmq_data)
-                    iq4xs_mmq_mma_ordered_t8_kernel<true><<<
-                        dim3((rows + 63) / 64, (n_tokens + 7) / 8), 128,
+                /* A multiple-of-32 width keeps all four token warps in the
+                 * same Stream-K partition, so their A tile may be shared. */
+                if (w->mmq_data && jwidth >= 32 && jwidth % 32 == 0)
+                    iq4xs_mmq_mma_ordered_t8_kernel<true, true><<<
+                        dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
                         0, stream>>>(
                         out, w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq,
                         rows, cols, n_tokens, jwidth, (int)grid);
+                else if (w->mmq_data)
+                    iq4xs_mmq_mma_ordered_t8_kernel<true, false><<<
+                        dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
+                        0, stream>>>(
+                        out, w->mmq_data,
+                        (const BnCudaBlockQ8MmqF32 *)xq,
+                        rows, cols, n_tokens, jwidth, (int)grid);
+                else if (jwidth >= 32 && jwidth % 32 == 0)
+                    iq4xs_mmq_mma_ordered_t8_kernel<false, true><<<
+                        dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
+                        0, stream>>>(
+                        out, w->data,
+                        (const BnCudaBlockQ8MmqF32 *)xq,
+                        rows, cols, n_tokens, jwidth, (int)grid);
                 else
-                    iq4xs_mmq_mma_ordered_t8_kernel<false><<<
-                        dim3((rows + 63) / 64, (n_tokens + 7) / 8), 128,
+                    iq4xs_mmq_mma_ordered_t8_kernel<false, false><<<
+                        dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
                         0, stream>>>(
                         out, w->data,
                         (const BnCudaBlockQ8MmqF32 *)xq,
