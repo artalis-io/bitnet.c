@@ -3505,6 +3505,12 @@ int bn_gpu_policy_cuda_moe_routed_dense_residual_batch_enabled(
         policy, "BN_CUDA_DISABLE_MOE_ROUTED_DENSE_RESIDUAL_BATCH");
 }
 
+int bn_gpu_policy_cuda_iq4nl_t8_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return !bn_backend_runtime_policy_enabled(
+        policy, "BN_CUDA_DISABLE_IQ4NL_T8");
+}
+
 int bn_gpu_policy_cuda_prefill_dense_layer_disabled(
     const BnBackendRuntimePolicy *policy) {
     return gpu_policy_cuda_prefill_dense_layer_disabled(policy);

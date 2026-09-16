@@ -2143,6 +2143,8 @@ static __global__ void signed_mmq_ordered_kernel(
     if (lane == 0) out[(size_t)token * rows + row] = tail + prefix;
 }
 
+#include "quant/iq4nl_cuda.cuh"
+
 /* IQ4_XS keeps its reference Stream-K reduction, but shares each decoded
  * 32-value weight group across eight prompt tokens. The integer dot is exact;
  * every token retains the original FP32 FMA sequence. */
@@ -19208,6 +19210,17 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
                         n_tokens, jwidth, (int)grid);
             }
+        } else if (bn_quant_format_has_cap(type,
+                       BN_QUANT_CAP_GPU_MMVQ_BLOCK32_CODEBOOK_FP16) &&
+                   n_tokens >= 16 && cols % 256 == 0 &&
+                   bn_gpu_policy_cuda_iq4nl_t8_enabled(
+                       ctx->runtime_policy)) {
+            iq4nl_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
+                                                (n_tokens + 7) / 8), 128,
+                                           0, stream>>>(
+                out, (const BnBlockIQ4NL *)w->data,
+                (const BnCudaBlockQ8MmqF32 *)xq,
+                rows, cols, n_tokens, jwidth, (int)grid);
         } else if (bn_quant_format_supports_packed_codebook_matvec(type) &&
                    n_tokens >= 16 &&
                    cols % 256 == 0) {
