@@ -23438,8 +23438,13 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             routed_q4_schedule_count += (count + 63) / 64;
         }
     }
+    size_t routed_q4_scratch_bytes = 2u * mid_bytes;
+    size_t routed_q4_down_bytes = (size_t)n_tokens * (size_t)k *
+                                  (size_t)dim * sizeof(float);
+    if (routed_q4_down_bytes > routed_q4_scratch_bytes)
+        routed_q4_scratch_bytes = routed_q4_down_bytes;
     if (cuda_ensure_scratch(ctx,
-            use_routed_q4_mmq ? 2u * mid_bytes : sizeof(float),
+            use_routed_q4_mmq ? routed_q4_scratch_bytes : sizeof(float),
             mid_bytes) != 0)
         return -1;
     if (cuda_ensure_prefill(ctx, full_values * 2u) != 0)
@@ -23793,6 +23798,27 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+    } else if (use_routed_q4_mmq &&
+               down_type == BN_GGUF_TENSOR_Q4_K) {
+        int n_mid = n_tokens * k;
+        int mid_blocks = hidden_dim / 32;
+        if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *mid_q = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_mmq_input_kernel<<<dim3(mid_blocks, n_mid, 1), 32, 0>>>(
+            (BnCudaBlockQ8Mmq *)mid_q, d_mid, hidden_dim, 0);
+        float *down_values = ctx->d_x;
+        dim3 routed_down_grid((dim + 127) / 128, 1,
+                              routed_q4_schedule_count);
+        q4k_mmq_128xj_kernel<64, 1><<<routed_down_grid, 512>>>(
+            down_values, (const BnBlockQ4K *)down->data, NULL, mid_q,
+            dim, hidden_dim, n_mid, 0, 1, d_slot_order,
+            d_expert_counts, d_expert_offsets, d_route_schedule,
+            n_experts, 1);
+        moe_routed_ordered_reduce_kernel<<<
+            dim3((dim + 255) / 256, n_tokens), 256>>>(
+                d_full_out, down_values, d_weights, d_output_scales,
+                dim, k, 0);
     } else {
         int n_mid = n_tokens * k;
         if (cuda_ensure_q8_k(ctx, hidden_dim, n_mid) != 0)
