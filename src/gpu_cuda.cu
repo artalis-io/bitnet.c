@@ -2232,7 +2232,8 @@ static __global__ void iq4xs_mmq_ordered_t8_kernel(
 /* Each warp computes 16 rows by 8 tokens. The integer tensor-core dot is
  * exact; scale application keeps GGML's group and Stream-K order. */
 template <bool Packed>
-static __global__ void iq4xs_mmq_mma_ordered_t8_kernel(
+static __global__ __launch_bounds__(128, 4)
+void iq4xs_mmq_mma_ordered_t8_kernel(
         float *out, const void *weights,
         const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
         int n_tokens, int width, int grid) {
