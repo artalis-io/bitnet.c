@@ -2758,8 +2758,12 @@ static void run_q5_decode_reference_case(BnGPUBackend *gpu) {
         {3072, 23, UINT64_C(0xaaf0d57a36e4f44a)},
         {4096, 0, UINT64_C(0xf0e51f2eae7d2690)},
         {4096, 23, UINT64_C(0x5fe8cd58afc37495)},
+        {5120, 0, UINT64_C(0x143d776bc2113c42)},
+        {5120, 23, UINT64_C(0x4e6c71f48dd13158)},
         {5376, 0, UINT64_C(0x9c114e79b73ccde7)},
         {5376, 23, UINT64_C(0x0bf660e238afb530)},
+        {6144, 0, UINT64_C(0x936be6b127771765)},
+        {6144, 23, UINT64_C(0xa58d6ad65b595bc3)},
         {8192, 0, UINT64_C(0x4a1230e169a628cd)},
         {8192, 23, UINT64_C(0xdf1304312214717b)},
         {8448, 0, UINT64_C(0x791e4c0b66e43b22)},
@@ -2768,12 +2772,16 @@ static void run_q5_decode_reference_case(BnGPUBackend *gpu) {
         {8960, 23, UINT64_C(0x65ffa4d591c0e6f0)},
         {9728, 0, UINT64_C(0x9204bc103dc165bc)},
         {9728, 23, UINT64_C(0x1a0c7afd1d415ab6)},
+        {10240, 0, UINT64_C(0x22adb9e55b06c5be)},
+        {10240, 23, UINT64_C(0x388d05f5e33c8374)},
         {12288, 0, UINT64_C(0xe3810a71fa47e5c8)},
         {12288, 23, UINT64_C(0x978c46d372a727c3)},
         {14336, 0, UINT64_C(0x26d4af716d2035e1)},
         {14336, 23, UINT64_C(0x97204a2c580fcfab)},
         {16384, 0, UINT64_C(0x8a86fff1edbce49e)},
         {16384, 23, UINT64_C(0x708da1a476e0fd61)},
+        {17408, 0, UINT64_C(0xad0a29f950dc0f1b)},
+        {17408, 23, UINT64_C(0xf3b24faf2b7b4849)},
         {21504, 0, UINT64_C(0x08117181ccf0ae54)},
         {21504, 23, UINT64_C(0x8221e1f039432473)},
         {28672, 0, UINT64_C(0x3dcfb7a894579867)},
@@ -8280,6 +8288,11 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--q5-decode-reference") == 0) {
+        run_q5_decode_reference_case(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION);
     assert(!(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH));
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_FALLBACK);
@@ -8531,11 +8544,6 @@ int main(int argc, char **argv) {
     }
     if (argc == 2 && strcmp(argv[1], "--norm-residual-reference") == 0) {
         run_norm_residual_reference_case(gpu);
-        bn_gpu_cuda_destroy(gpu);
-        return 0;
-    }
-    if (argc == 2 && strcmp(argv[1], "--q5-decode-reference") == 0) {
-        run_q5_decode_reference_case(gpu);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
