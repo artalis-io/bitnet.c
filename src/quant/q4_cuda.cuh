@@ -80,7 +80,7 @@ static __global__ void q4_quantize_mmq(BnQ4CudaInput*out,const float*x,int cols)
 static __global__ void q4_mmq(float*out,const BnBlockQ4_0*w,const BnQ4CudaInput*x,int rows,int cols,int batch_tokens,int jwidth,int grid,int total_tokens,int expert,int experts,int geometry_rows,int row_offset){
  /* Four neighboring lanes process tokens for the same row, sharing weight
   * fetches without changing each token's partitioned FMA sequence. */
- int row=blockIdx.x*8+threadIdx.x/4,t=blockIdx.y*4+threadIdx.x%4,nb=cols/32;
+ int row=blockIdx.x*32+threadIdx.x/4,t=blockIdx.y*4+threadIdx.x%4,nb=cols/32;
  if(row>=rows||t>=batch_tokens)return;
  int xt=(total_tokens+jwidth-1)/jwidth,tiles=((geometry_rows+127)/128)*xt*experts;
  long long tile=(((row+row_offset)/128)*experts+expert)*xt+t/jwidth,base=tile*nb,total=(long long)tiles*nb;
@@ -112,7 +112,7 @@ static __global__ void q4_routed_mmq(float*out,const BnBlockQ4_0*w,
  const BnQ4CudaInput*x,const int*map,int rows,int cols,int total_tokens,
  int experts,int k,int input_stride,int jwidth,int grid,
  int geometry_rows,int row_offset){
- int row=blockIdx.x*8+threadIdx.x/4,rank=blockIdx.y*4+threadIdx.x%4;
+ int row=blockIdx.x*32+threadIdx.x/4,rank=blockIdx.y*4+threadIdx.x%4;
  int expert=blockIdx.z,nb=cols/32,items=total_tokens*k;
  if(row>=rows||rank>=total_tokens)return;
  int item=map[2*items+expert*total_tokens+rank];
