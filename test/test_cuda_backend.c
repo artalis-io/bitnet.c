@@ -8136,6 +8136,119 @@ static void run_moe_dense_residual_composition_case(BnGPUBackend *gpu) {
     printf("CUDA MoE dense-residual composition PASSED\n");
 }
 
+static void run_moe_routed_dense_residual_case(BnGPUBackend *gpu) {
+    enum { nt = 3, dim = 32, hidden = 32, experts = 2, k = 2,
+           count = nt * dim, blocks = experts * dim * hidden / 32 };
+    BnBlockQ4_0 weights[3][blocks];
+    float act[count], input[count], routed[count], expected[count], actual[count];
+    float normalized[count], dense[count], combined[count];
+    float norm[dim], dense_norm[dim], routed_norm[dim], output_norm[dim];
+    int indices[nt * k] = {0, 1, 1, 0, 0, 1};
+    float route[nt * k] = {0.7f, 0.3f, 0.6f, 0.4f, 0.8f, 0.2f};
+    float scales[nt * k] = {1.1f, 0.9f, 0.9f, 1.1f, 1.1f, 0.9f};
+    for (int m = 0; m < 3; m++)
+        for (int b = 0; b < blocks; b++) {
+            weights[m][b].d = bn_fp32_to_fp16(0.03f + 0.001f * m);
+            for (int j = 0; j < 16; j++) {
+                int lo = (b * 7 + j * 3 + m) & 15;
+                int hi = (b * 11 + j * 5 + m) & 15;
+                weights[m][b].qs[j] = (uint8_t)(lo | (hi << 4));
+            }
+        }
+    for (int i = 0; i < count; i++) {
+        act[i] = (float)((i * 13) % 41 - 20) / 32.0f;
+        input[i] = (float)((i * 17) % 47 - 23) / 32.0f;
+    }
+    for (int i = 0; i < dim; i++) {
+        norm[i] = 0.7f + 0.01f * (i % 5);
+        dense_norm[i] = 0.8f + 0.01f * (i % 7);
+        routed_norm[i] = 0.9f + 0.01f * (i % 3);
+        output_norm[i] = 1.0f + 0.01f * (i % 11);
+    }
+    void *rg = gpu->buffer_create(gpu->ctx, weights[0], sizeof(weights[0]),
+                                    BN_GGUF_TENSOR_Q4_0, experts * hidden, dim);
+    void *ru = gpu->buffer_create(gpu->ctx, weights[1], sizeof(weights[1]),
+                                    BN_GGUF_TENSOR_Q4_0, experts * hidden, dim);
+    void *rd = gpu->buffer_create(gpu->ctx, weights[2], sizeof(weights[2]),
+                                    BN_GGUF_TENSOR_Q4_0, experts * dim, hidden);
+    void *dg = gpu->buffer_create(gpu->ctx, weights[0],
+                                    sizeof(weights[0]) / experts,
+                                    BN_GGUF_TENSOR_Q4_0, hidden, dim);
+    void *du = gpu->buffer_create(gpu->ctx, weights[1],
+                                    sizeof(weights[1]) / experts,
+                                    BN_GGUF_TENSOR_Q4_0, hidden, dim);
+    void *dd = gpu->buffer_create(gpu->ctx, weights[2],
+                                    sizeof(weights[2]) / experts,
+                                    BN_GGUF_TENSOR_Q4_0, dim, hidden);
+    void *n = gpu->buffer_create(gpu->ctx, norm, sizeof(norm),
+                                  BN_GGUF_TENSOR_F32, 1, dim);
+    void *dn = gpu->buffer_create(gpu->ctx, dense_norm, sizeof(dense_norm),
+                                   BN_GGUF_TENSOR_F32, 1, dim);
+    void *rn = gpu->buffer_create(gpu->ctx, routed_norm, sizeof(routed_norm),
+                                   BN_GGUF_TENSOR_F32, 1, dim);
+    void *on = gpu->buffer_create(gpu->ctx, output_norm, sizeof(output_norm),
+                                   BN_GGUF_TENSOR_F32, 1, dim);
+    assert(rg && ru && rd && dg && du && dd && n && dn && rn && on);
+    assert(gpu->moe_routed_dense_residual_batch);
+    for (int raw = 0; raw < 2; raw++) {
+        assert(gpu->moe_routed_ffn_batch(gpu->ctx, routed, rg, ru, rd,
+            indices, route, scales, input, nt, dim, hidden, experts, k,
+            BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0,
+            BN_GGUF_TENSOR_Q4_0, BN_MODEL_ACTIVATION_GELU) == 0);
+        assert(gpu->rmsnorm_batch(gpu->ctx, normalized, n, act,
+                                  nt, dim, 1e-6f) == 0);
+        assert(gpu->dense_ffn_batch(gpu->ctx, dense, dg, du, dd, normalized,
+            nt, dim, hidden, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0,
+            BN_GGUF_TENSOR_Q4_0, BN_MODEL_ACTIVATION_GELU) == 0);
+        assert(gpu->rmsnorm_batch(gpu->ctx, dense, dn, dense,
+                                  nt, dim, 1e-6f) == 0);
+        assert(gpu->rmsnorm_residual_batch(gpu->ctx, combined, rn, routed,
+                                            dense, nt, dim, 1e-6f) == 0);
+        if (raw)
+            assert(gpu->rmsnorm_batch(gpu->ctx, expected, on, combined,
+                                      nt, dim, 1e-6f) == 0);
+        else
+            assert(gpu->rmsnorm_residual_batch(gpu->ctx, expected, on,
+                                                combined, act, nt, dim,
+                                                1e-6f) == 0);
+        BnGPUMoERoutedDenseResidualBatch batch = {0};
+        batch.dense = (BnGPUMoEDenseResidualBatch) {
+            .out = actual, .act = act,
+            .gate_buf = dg, .up_buf = du, .down_buf = dd,
+            .input_norm_buf = n, .dense_post_norm_buf = dn,
+            .routed_post_norm_buf = rn, .output_norm_buf = on,
+            .n_tokens = nt, .dim = dim, .hidden_dim = hidden,
+            .gate_type = BN_GGUF_TENSOR_Q4_0,
+            .up_type = BN_GGUF_TENSOR_Q4_0,
+            .down_type = BN_GGUF_TENSOR_Q4_0,
+            .act_type = BN_MODEL_ACTIVATION_GELU,
+            .norm_eps = 1e-6f, .raw_output = raw,
+        };
+        batch.input = input;
+        batch.indices = indices;
+        batch.weights = route;
+        batch.output_scales = scales;
+        batch.routed_gate_buf = rg;
+        batch.routed_up_buf = ru;
+        batch.routed_down_buf = rd;
+        batch.moe_hidden_dim = hidden;
+        batch.n_experts = experts;
+        batch.k = k;
+        batch.routed_gate_type = BN_GGUF_TENSOR_Q4_0;
+        batch.routed_up_type = BN_GGUF_TENSOR_Q4_0;
+        batch.routed_down_type = BN_GGUF_TENSOR_Q4_0;
+        assert(bn_gpu_backend_moe_routed_dense_residual_batch(gpu, &batch) == 0);
+        expect_close(actual, expected, count);
+        batch.n_experts = 0;
+        assert(bn_gpu_backend_moe_routed_dense_residual_batch(gpu, &batch) != 0);
+        expect_close(actual, expected, count);
+    }
+    void *buffers[] = {rg, ru, rd, dg, du, dd, n, dn, rn, on};
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        gpu->buffer_destroy(gpu->ctx, buffers[i]);
+    printf("CUDA MoE routed dense-residual composition PASSED\n");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
 #ifndef BN_ENABLE_CUDA
@@ -8149,6 +8262,11 @@ int main(int argc, char **argv) {
     }
     if (argc == 2 && strcmp(argv[1], "--moe-dense-residual-composition") == 0) {
         run_moe_dense_residual_composition_case(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--moe-routed-dense-residual") == 0) {
+        run_moe_routed_dense_residual_case(gpu);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
@@ -8851,6 +8969,7 @@ int main(int argc, char **argv) {
     run_f32_matrix_reference_case(gpu);
     run_f32_ffn_entry_reference_case(gpu);
     run_moe_dense_residual_composition_case(gpu);
+    run_moe_routed_dense_residual_case(gpu);
     run_shared_batch_reference_case(gpu);
     run_rmsnorm_batch_reference_case(gpu);
     run_standalone_ffn_reference_case(gpu);

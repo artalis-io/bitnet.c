@@ -437,6 +437,8 @@ int bn_gpu_policy_cuda_prefill_moe_layer_disabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_moe_dense_residual_batch_enabled(
     const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_moe_routed_dense_residual_batch_enabled(
+    const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_prefill_dense_layer_disabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_prefill_dense_debug_enabled(

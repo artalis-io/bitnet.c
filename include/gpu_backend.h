@@ -83,6 +83,25 @@ typedef struct {
     int raw_output;
 } BnGPUMoEDenseResidualBatch;
 
+// Compose an ordered routed MoE projection and its dense residual branch
+// while the routed output is still device-resident. All pointers are borrowed.
+typedef struct {
+    BnGPUMoEDenseResidualBatch dense;
+    const float *input;
+    const int *indices;
+    const float *weights;
+    const float *output_scales;
+    void *routed_gate_buf;
+    void *routed_up_buf;
+    void *routed_down_buf;
+    int moe_hidden_dim;
+    int n_experts;
+    int k;
+    int routed_gate_type;
+    int routed_up_type;
+    int routed_down_type;
+} BnGPUMoERoutedDenseResidualBatch;
+
 typedef enum {
     BN_GPU_ROPE_FACTOR_NONE = 0,
     BN_GPU_ROPE_FACTOR_MULTIPLY,
@@ -336,6 +355,8 @@ struct BnGPUBackend {
     // Compose the routed and dense FFN branches on the device in one call.
     int (*moe_dense_residual_batch)(
         void *ctx, const BnGPUMoEDenseResidualBatch *batch);
+    int (*moe_routed_dense_residual_batch)(
+        void *ctx, const BnGPUMoERoutedDenseResidualBatch *batch);
 
     // Batched dense FFN with input RMSNorm fused into the backend. Optional.
     // This is used by prompt processing to avoid a per-layer CPU norm pass
@@ -903,6 +924,13 @@ static inline int bn_gpu_backend_moe_dense_residual_batch(
     const BnGPUBackend *gpu, const BnGPUMoEDenseResidualBatch *batch) {
     if (!gpu || !gpu->moe_dense_residual_batch) return -1;
     return gpu->moe_dense_residual_batch(gpu->ctx, batch);
+}
+
+static inline int bn_gpu_backend_moe_routed_dense_residual_batch(
+    const BnGPUBackend *gpu,
+    const BnGPUMoERoutedDenseResidualBatch *batch) {
+    if (!gpu || !gpu->moe_routed_dense_residual_batch) return -1;
+    return gpu->moe_routed_dense_residual_batch(gpu->ctx, batch);
 }
 
 static inline int bn_gpu_backend_can_rmsnorm_grouped_batch(

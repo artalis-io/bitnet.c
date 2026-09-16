@@ -22362,20 +22362,18 @@ static int cuda_dense_ffn_batch_device(BnCudaCtx *ctx, float *d_out,
                                   dim, hidden_dim, n_tokens, down_type);
 }
 
-static int cuda_moe_dense_residual_batch(
-    void *vctx, const BnGPUMoEDenseResidualBatch *batch) {
-    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (!ctx || !bn_gpu_policy_cuda_moe_dense_residual_batch_enabled(
-            ctx->runtime_policy))
-        return -1;
-    if (!batch || !batch->out || !batch->act || !batch->routed ||
+static int cuda_moe_dense_residual_valid(
+    BnCudaCtx *ctx, const BnGPUMoEDenseResidualBatch *batch,
+    int require_routed) {
+    if (!ctx || !batch || !batch->out || !batch->act ||
+        (require_routed && !batch->routed) ||
         !batch->gate_buf || !batch->up_buf || !batch->down_buf ||
         !batch->input_norm_buf || !batch->dense_post_norm_buf ||
         !batch->routed_post_norm_buf || !batch->output_norm_buf ||
         batch->n_tokens <= 0 || batch->dim <= 0 || batch->hidden_dim <= 0 ||
         batch->n_tokens > INT_MAX / batch->dim ||
         batch->n_tokens > INT_MAX / batch->hidden_dim)
-        return -1;
+        return 0;
     BnCudaBuffer *norm = (BnCudaBuffer *)batch->input_norm_buf;
     BnCudaBuffer *dense_norm = (BnCudaBuffer *)batch->dense_post_norm_buf;
     BnCudaBuffer *routed_norm = (BnCudaBuffer *)batch->routed_post_norm_buf;
@@ -22391,31 +22389,25 @@ static int cuda_moe_dense_residual_batch(
         output_norm->size < (size_t)batch->dim * sizeof(float) ||
         !cuda_dense_ffn_activation_supported(ctx, batch->gate_type,
             batch->up_type, batch->down_type, batch->act_type))
-        return -1;
+        return 0;
     size_t full = (size_t)batch->n_tokens * (size_t)batch->dim;
     size_t mid = (size_t)batch->n_tokens * (size_t)batch->hidden_dim;
     if (full > SIZE_MAX / (4u * sizeof(float)) ||
         mid > SIZE_MAX / (2u * sizeof(float)))
-        return -1;
-    size_t bytes = full * sizeof(float);
-    size_t scratch_x = (mid > full ? mid : full) * sizeof(float);
-    size_t scratch_out = (2u * mid > full ? 2u * mid : full) * sizeof(float);
-    BnCudaExecStreamScope scope(ctx, (cudaStream_t)0, 1);
-    if (cuda_prefill_enter_default_stream(ctx, scope.prev) != 0 ||
-        cuda_ensure_prefill(ctx, 4u * full) != 0 ||
-        cuda_ensure_scratch(ctx, scratch_x, scratch_out) != 0 ||
-        cuda_ensure_host_out(ctx, bytes) != 0)
-        return -1;
-    float *d_act = ctx->d_prefill;
-    float *d_routed = d_act + full;
-    float *d_input = d_routed + full;
-    float *d_dense = d_input + full;
-    cudaError_t err = cudaMemcpy(d_act, batch->act, bytes,
-                                 cudaMemcpyHostToDevice);
-    if (err == cudaSuccess)
-        err = cudaMemcpy(d_routed, batch->routed, bytes,
-                         cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) return -1;
+        return 0;
+    return 1;
+}
+
+static int cuda_moe_dense_residual_device(
+    BnCudaCtx *ctx, const BnGPUMoEDenseResidualBatch *batch,
+    float *d_act, float *d_routed, float *d_input, float *d_dense) {
+    BnCudaBuffer *norm = (BnCudaBuffer *)batch->input_norm_buf;
+    BnCudaBuffer *dense_norm = (BnCudaBuffer *)batch->dense_post_norm_buf;
+    BnCudaBuffer *routed_norm = (BnCudaBuffer *)batch->routed_post_norm_buf;
+    BnCudaBuffer *output_norm = (BnCudaBuffer *)batch->output_norm_buf;
+    BnCudaBuffer *gate = (BnCudaBuffer *)batch->gate_buf;
+    BnCudaBuffer *up = (BnCudaBuffer *)batch->up_buf;
+    BnCudaBuffer *down = (BnCudaBuffer *)batch->down_buf;
     int threads = cuda_rmsnorm_threads(batch->dim);
     size_t shared = (size_t)(threads / 32) * sizeof(float);
     rmsnorm_batch_kernel<<<batch->n_tokens, threads, shared>>>(
@@ -22446,7 +22438,39 @@ static int cuda_moe_dense_residual_batch(
             d_routed, d_routed, (const float *)output_norm->data,
             d_act, batch->dim, batch->n_tokens, batch->norm_eps);
     }
-    if (cudaGetLastError() != cudaSuccess ||
+    return cudaGetLastError() == cudaSuccess ? 0 : -1;
+}
+
+static int cuda_moe_dense_residual_batch(
+    void *vctx, const BnGPUMoEDenseResidualBatch *batch) {
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    if (!ctx || !bn_gpu_policy_cuda_moe_dense_residual_batch_enabled(
+            ctx->runtime_policy) ||
+        !cuda_moe_dense_residual_valid(ctx, batch, 1))
+        return -1;
+    size_t full = (size_t)batch->n_tokens * (size_t)batch->dim;
+    size_t mid = (size_t)batch->n_tokens * (size_t)batch->hidden_dim;
+    size_t bytes = full * sizeof(float);
+    size_t scratch_x = (mid > full ? mid : full) * sizeof(float);
+    size_t scratch_out = (2u * mid > full ? 2u * mid : full) * sizeof(float);
+    BnCudaExecStreamScope scope(ctx, (cudaStream_t)0, 1);
+    if (cuda_prefill_enter_default_stream(ctx, scope.prev) != 0 ||
+        cuda_ensure_prefill(ctx, 4u * full) != 0 ||
+        cuda_ensure_scratch(ctx, scratch_x, scratch_out) != 0 ||
+        cuda_ensure_host_out(ctx, bytes) != 0)
+        return -1;
+    float *d_act = ctx->d_prefill;
+    float *d_routed = d_act + full;
+    float *d_input = d_routed + full;
+    float *d_dense = d_input + full;
+    cudaError_t err = cudaMemcpy(d_act, batch->act, bytes,
+                                 cudaMemcpyHostToDevice);
+    if (err == cudaSuccess)
+        err = cudaMemcpy(d_routed, batch->routed, bytes,
+                         cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) return -1;
+    if (cuda_moe_dense_residual_device(
+            ctx, batch, d_act, d_routed, d_input, d_dense) != 0 ||
         cudaMemcpy(ctx->h_out, d_routed, bytes, cudaMemcpyDeviceToHost) !=
             cudaSuccess ||
         cuda_prefill_leave_default_stream(ctx, scope.prev) != 0)
@@ -23787,11 +23811,12 @@ static int cuda_moe_ordered_quant_batch(BnCudaCtx *ctx, float *out, BnCudaBuffer
     BnCudaBuffer *up, BnCudaBuffer *down, const int *indices, const float *weights,
     const float *output_scales,
     const float *x, int nt, int dim, int hidden, int experts, int k,
-    int gate_type, int up_type, int down_type, int act_type) {
+    int gate_type, int up_type, int down_type, int act_type,
+    const BnGPUMoEDenseResidualBatch *compose) {
 #ifndef BN_CUDA_MXFP4_SM120
     (void)ctx; (void)out; (void)gate; (void)up; (void)down; (void)indices;
     (void)weights; (void)output_scales; (void)x; (void)nt; (void)dim; (void)hidden; (void)experts;
-    (void)k; (void)gate_type; (void)up_type; (void)down_type; (void)act_type;
+    (void)k; (void)gate_type; (void)up_type; (void)down_type; (void)act_type; (void)compose;
     return -1;
 #else
     if (!ctx || ctx->compute_capability != 1200 || !out || !x || !indices ||
@@ -23811,6 +23836,10 @@ static int cuda_moe_ordered_quant_batch(BnCudaCtx *ctx, float *out, BnCudaBuffer
         gate->rows < hidden*experts || up->rows < hidden*experts ||
         down->rows < dim*experts || gate->cols != dim || up->cols != dim ||
         down->cols != hidden)
+        return -1;
+    if (compose && (!cuda_moe_dense_residual_valid(ctx, compose, 0) ||
+                    compose->out != out || compose->n_tokens != nt ||
+                    compose->dim != dim))
         return -1;
     size_t gate_bytes = bn_quant_format_data_size(gate->type,hidden*experts,dim);
     size_t down_bytes = bn_quant_format_data_size(down->type,dim*experts,hidden);
@@ -23838,24 +23867,49 @@ static int cuda_moe_ordered_quant_batch(BnCudaCtx *ctx, float *out, BnCudaBuffer
     int gate_geometry = fused_block32 ? 2 * hidden : hidden;
     if (cuda_moe_ordered_quant_geometry(ctx, gate_geometry, nt, experts, &gw, &gg) != 0 ||
         cuda_moe_ordered_quant_geometry(ctx, dim, nt, experts, &dw, &dg) != 0) return -1;
+    size_t dense_mid = compose
+        ? (size_t)nt * (size_t)compose->hidden_dim : 0u;
+    size_t scratch_x = quant_offset + quant_bytes;
+    size_t scratch_out = full * sizeof(float);
+    if (compose) {
+        size_t dense_x = (dense_mid > full ? dense_mid : full) * sizeof(float);
+        size_t dense_out = (2u * dense_mid > full ? 2u * dense_mid : full) *
+                           sizeof(float);
+        if (dense_x > scratch_x) scratch_x = dense_x;
+        if (dense_out > scratch_out) scratch_out = dense_out;
+    }
     BnCudaExecStreamScope scope(ctx, (cudaStream_t)0, 1);
     if (cuda_prefill_enter_default_stream(ctx, scope.prev) != 0 ||
-        cuda_ensure_scratch(ctx, quant_offset+quant_bytes, full*sizeof(float)) != 0 ||
+        cuda_ensure_scratch(ctx, scratch_x, scratch_out) != 0 ||
+        (compose && cuda_ensure_prefill(ctx, 4u * full) != 0) ||
         cuda_ensure_host_out(ctx, full*sizeof(float)) != 0) return -1;
     float *input = ctx->d_x, *g = input+full, *u = g+mid_count;
     float *mid = u+mid_count, *raw = mid+mid_count, *routes = raw+raw_count;
     float *scales = output_scales ? routes+items : NULL;
     int *map = (int *)(routes+items+(output_scales ? items : 0));
     void *quant = (char *)ctx->d_x+quant_offset;
+    float *d_result = compose ? ctx->d_prefill + full : ctx->d_out;
     if (cudaMemcpy(input,x,full*sizeof(float),cudaMemcpyHostToDevice) != cudaSuccess ||
         cudaMemcpy(routes,weights,items*sizeof(float),cudaMemcpyHostToDevice) != cudaSuccess ||
         (output_scales && cudaMemcpy(scales,output_scales,items*sizeof(float),
                                     cudaMemcpyHostToDevice) != cudaSuccess) ||
         cudaMemcpy(map,indices,items*sizeof(int),cudaMemcpyHostToDevice) != cudaSuccess ||
-        cuda_moe_ordered_quant_device(ctx,0,0,ctx->d_out,gate,up,down,input,routes,scales,map,
+        cuda_moe_ordered_quant_device(ctx,0,0,d_result,gate,up,down,input,routes,scales,map,
             g,u,mid,raw,quant,nt,dim,hidden,experts,k,gw,gg,dw,dg,0,
-            act_type) != 0 ||
-        cudaMemcpy(ctx->h_out,ctx->d_out,full*sizeof(float),cudaMemcpyDeviceToHost)
+            act_type) != 0) return -1;
+    if (compose) {
+        float *d_act = ctx->d_prefill;
+        float *d_routed = d_result;
+        float *d_input = d_routed + full;
+        float *d_dense = d_input + full;
+        if (cudaMemcpy(d_act, compose->act, full * sizeof(float),
+                       cudaMemcpyHostToDevice) != cudaSuccess ||
+            cuda_moe_dense_residual_device(ctx, compose, d_act, d_routed,
+                                           d_input, d_dense) != 0)
+            return -1;
+        d_result = d_routed;
+    }
+    if (cudaMemcpy(ctx->h_out,d_result,full*sizeof(float),cudaMemcpyDeviceToHost)
             != cudaSuccess ||
         cuda_prefill_leave_default_stream(ctx,scope.prev) != 0) return -1;
     memcpy(out,ctx->h_out,full*sizeof(float));
@@ -23979,6 +24033,27 @@ static int cuda_moe_ordered_quant_graph_run(BnCudaCtx *ctx, const BnGPUOp *op,
 #endif
 }
 
+static int cuda_moe_routed_dense_residual_batch(
+    void *vctx, const BnGPUMoERoutedDenseResidualBatch *batch) {
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    if (!ctx || !batch || !batch->input || !batch->indices ||
+        !batch->weights || !batch->routed_gate_buf ||
+        !batch->routed_up_buf || !batch->routed_down_buf ||
+        !cuda_use_moe_routed_ffn_batch(ctx) ||
+        !bn_gpu_policy_cuda_moe_routed_dense_residual_batch_enabled(
+            ctx->runtime_policy))
+        return -1;
+    return cuda_moe_ordered_quant_batch(ctx, batch->dense.out,
+        (BnCudaBuffer *)batch->routed_gate_buf,
+        (BnCudaBuffer *)batch->routed_up_buf,
+        (BnCudaBuffer *)batch->routed_down_buf,
+        batch->indices, batch->weights, batch->output_scales,
+        batch->input, batch->dense.n_tokens, batch->dense.dim,
+        batch->moe_hidden_dim, batch->n_experts, batch->k,
+        batch->routed_gate_type, batch->routed_up_type,
+        batch->routed_down_type, batch->dense.act_type, &batch->dense);
+}
+
 static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                                      void *gate_all_buf, void *up_all_buf,
                                      void *down_all_buf,
@@ -24000,7 +24075,8 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         return cuda_moe_ordered_quant_batch(ctx, out, gate, up, down, indices, weights,
                                    output_scales,
                                    X, n_tokens, dim, hidden_dim, n_experts, k,
-                                   gate_type, up_type, down_type, act_type);
+                                   gate_type, up_type, down_type, act_type,
+                                   NULL);
     int scaled_q4 = output_scales &&
         gate_type == BN_GGUF_TENSOR_Q4_K &&
         up_type == BN_GGUF_TENSOR_Q4_K &&
@@ -33536,6 +33612,8 @@ BnGPUBackend *bn_gpu_cuda_create_with_policy(
     gpu->dense_ffn = cuda_dense_ffn;
     gpu->dense_ffn_batch = cuda_dense_ffn_batch;
     gpu->moe_dense_residual_batch = cuda_moe_dense_residual_batch;
+    gpu->moe_routed_dense_residual_batch =
+        cuda_moe_routed_dense_residual_batch;
     gpu->dense_ffn_batch_norm = cuda_dense_ffn_batch_norm;
     gpu->dense_ffn_batch_norm_resid = cuda_dense_ffn_batch_norm_resid;
     gpu->moe_ffn_batch = cuda_moe_ffn_batch;

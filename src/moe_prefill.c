@@ -630,6 +630,7 @@ int bn_moe_forward_batch_observed(struct BnModel *m, BnSession *sess,
     // 5. Per-expert batch compute
     int used_gpu_moe_batch = 0;
     int used_gpu_shared_batch = 0;
+    int routed_composed_on_gpu = 0;
     BnGPUBackend *gpu_batch = prefill_gpu;
     int resident_batch_available =
         bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
@@ -684,7 +685,51 @@ int bn_moe_forward_batch_observed(struct BnModel *m, BnSession *sess,
             bn_moe_prefill_resident_gpu_resource_policy(backend, l);
         if (resident_resources.valid) {
             t0 = bn_moe_time_ms();
-            if (bn_transformer_gpu_moe_prefill_resident_expert_batch_backend_run(
+            if (exec_policy.uses_dense_residual_branch && !observe &&
+                !shared_policy.has_loaded_path) {
+                BnMoEPrefillDenseGPUResourcePolicy dense_resources =
+                    bn_moe_prefill_dense_gpu_resource_policy(backend, l, lw);
+                BnGPUMoERoutedDenseResidualBatch batch = {0};
+                batch.dense = (BnGPUMoEDenseResidualBatch) {
+                    .out = moe_out, .act = act,
+                    .gate_buf = dense_resources.gate,
+                    .up_buf = dense_resources.up,
+                    .down_buf = dense_resources.down,
+                    .input_norm_buf = dense_resources.norm,
+                    .dense_post_norm_buf = dense_resources.dense_norm,
+                    .routed_post_norm_buf = dense_resources.routed_norm,
+                    .output_norm_buf = dense_resources.post_norm,
+                    .n_tokens = n_tokens, .dim = dim,
+                    .hidden_dim = c->hidden_dim,
+                    .gate_type = lw->ffn.ffn_gate.type,
+                    .up_type = lw->ffn.ffn_up.type,
+                    .down_type = lw->ffn.ffn_down.type,
+                    .act_type = exec_policy.activation,
+                    .norm_eps = exec_policy.norm_eps,
+                    .raw_output = (flags & BN_MOE_BATCH_OUTPUT_RAW) != 0,
+                };
+                batch.input = Xb;
+                batch.indices = all_indices;
+                batch.weights = all_weights;
+                batch.output_scales = reduction_scales;
+                batch.routed_gate_buf = resident_resources.gate_all;
+                batch.routed_up_buf = resident_resources.up_all;
+                batch.routed_down_buf = resident_resources.down_all;
+                batch.moe_hidden_dim = moe_hidden;
+                batch.n_experts = n_experts;
+                batch.k = K;
+                batch.routed_gate_type = routed_types.gate_type;
+                batch.routed_up_type = routed_types.up_type;
+                batch.routed_down_type = routed_types.down_type;
+                if (bn_gpu_backend_moe_routed_dense_residual_batch(
+                        gpu_batch, &batch) == 0) {
+                    used_gpu_moe_batch = 1;
+                    routed_composed_on_gpu = 1;
+                    ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+                }
+            }
+            if (!used_gpu_moe_batch &&
+                bn_transformer_gpu_moe_prefill_resident_expert_batch_backend_run(
                     gpu_batch, moe_out, resident_resources.gate_all,
                     resident_resources.up_all, resident_resources.down_all,
                     all_indices, all_weights, reduction_scales, Xb,
@@ -1115,14 +1160,14 @@ int bn_moe_forward_batch_observed(struct BnModel *m, BnSession *sess,
     }
 
     int result = 0;
-    int composed_on_gpu = 0;
+    int composed_on_gpu = routed_composed_on_gpu;
     // 7. Return either the raw block output or its residual sum.
     if (observe)
         for (int t = 0; t < n_tokens; t++)
             observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_OUTPUT, t, -1, -1,
                     moe_out + (size_t)t * dim, dim);
     if (exec_policy.uses_dense_residual_branch) {
-        composed_on_gpu = !force_host &&
+        if (!routed_composed_on_gpu) composed_on_gpu = !force_host &&
             moe_batch_dense_gpu(m, l, lw, &exec_policy,
                 act, Xb, moe_out, n_tokens, flags & BN_MOE_BATCH_OUTPUT_RAW,
                 observe, observe_ctx) == 0;
