@@ -2394,29 +2394,24 @@ static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
         const BnBlockQ8K *xb = xq + b;
         int dot = 0;
         int min_corr = 0;
+#pragma unroll
         for (int group = 0; group < 8; group++) {
             int sc = 0;
             int mn = 0;
             cuda_kquant_group_scale_min(blk->scales, group, &sc, &mn);
             int byte_off = (group >> 1) * 32;
             int shift = (group & 1) ? 4 : 0;
-            int group_dot = 0;
-#pragma unroll
-            for (int i = lane; i < 32; i += 32) {
-                int q = (blk->qs[byte_off + i] >> shift) & 15;
-                group_dot += q * (int)xb->qs[group * 32 + i];
-            }
-            group_dot += __shfl_down_sync(mask, group_dot, 16);
-            group_dot += __shfl_down_sync(mask, group_dot, 8);
-            group_dot += __shfl_down_sync(mask, group_dot, 4);
-            group_dot += __shfl_down_sync(mask, group_dot, 2);
-            group_dot += __shfl_down_sync(mask, group_dot, 1);
-            if (lane == 0) {
-                dot += sc * group_dot;
+            int q = (blk->qs[byte_off + lane] >> shift) & 15;
+            dot += sc * q * (int)xb->qs[group * 32 + lane];
+            if (lane == 0)
                 min_corr += mn * ((int)xb->bsums[group * 2] +
                                   (int)xb->bsums[group * 2 + 1]);
-            }
         }
+        dot += __shfl_down_sync(mask, dot, 16);
+        dot += __shfl_down_sync(mask, dot, 8);
+        dot += __shfl_down_sync(mask, dot, 4);
+        dot += __shfl_down_sync(mask, dot, 2);
+        dot += __shfl_down_sync(mask, dot, 1);
         if (lane == 0) {
             float dx = xb->d;
             float d = cuda_fp16_to_fp32(blk->d);
