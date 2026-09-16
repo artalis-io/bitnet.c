@@ -1941,6 +1941,91 @@ static __global__ void q4k_mmq_ordered_t8_kernel(
                 out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
 }
 
+/* Q5_K prompt tiles share the decoded 5-bit weights while retaining the
+ * reference's half-rounded scale/min and per-token FMA order. */
+static __global__ void q5k_mmq_ordered_t8_kernel(
+    float *out, const BnBlockQ5K *weights, const BnCudaBlockQ8Mmq *input,
+    int rows, int cols, int nt, int jwidth, int grid) {
+    int lane = threadIdx.x & 7;
+    int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
+    int token0 = blockIdx.y * 8;
+    if (row >= rows) return;
+    unsigned mask = __activemask();
+    int groups = cols / 32, nb = cols / 256;
+    int token_tiles = (nt - 1) / jwidth + 1;
+    int64_t tile = (int64_t)(row / 128) * token_tiles + token0 / jwidth;
+    int64_t tile_begin = tile * nb;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) * token_tiles * nb;
+    int first = (int)(((tile_begin + 1) * grid + total - 1) / total) - 1;
+    int last = (int)(((tile_begin + nb) * grid + total - 1) / total) - 1;
+    float tail[8] = {0}, prefix[8] = {0};
+    int have_tail = 0;
+    for (int bid = last; bid >= first; bid--) {
+        int64_t raw_begin = (int64_t)bid * total / grid - tile_begin;
+        int64_t raw_end = (int64_t)(bid + 1) * total / grid - tile_begin;
+        int begin = raw_begin < 0 ? 0 : (int)raw_begin;
+        int end = raw_end > nb ? nb : (int)raw_end;
+        if (begin >= end) continue;
+        float acc[8] = {0};
+        for (int base = begin * 8; base < end * 8; base += 8) {
+            int g = base + lane, group = g & 7;
+            const BnBlockQ5K *w = weights + (size_t)row * nb + g / 8;
+            int sc, mn;
+            cuda_kquant_group_scale_min(w->scales, group, &sc, &mn);
+            float wd = cuda_fp16_to_fp32(cuda_fp32_to_fp16_bits(
+                cuda_fp16_to_fp32(w->d) * sc));
+            float wm = cuda_fp16_to_fp32(cuda_fp32_to_fp16_bits(
+                cuda_fp16_to_fp32(w->dmin) * mn));
+            uint32_t packed[8];
+#pragma unroll
+            for (int j = 0; j < 8; j++) {
+                uint32_t lo, hi;
+                memcpy(&lo, w->qs + (group / 2) * 32 + 4 * j, 4);
+                memcpy(&hi, w->qh + 4 * j, 4);
+                packed[j] = ((lo >> ((group & 1) * 4)) & 0x0f0f0f0fu) |
+                            (((hi >> group) & 0x01010101u) << 4);
+            }
+#pragma unroll
+            for (int t = 0; t < 8; t++) {
+                int token = token0 + t;
+                if (token >= nt) continue;
+                const BnCudaBlockQ8Mmq *x =
+                    input + (size_t)token * groups + g;
+                int dot = 0;
+#pragma unroll
+                for (int j = 0; j < 8; j++) {
+                    uint32_t xv;
+                    memcpy(&xv, x->qs + 4 * j, 4);
+                    dot = cuda_dp4a_i32((int)packed[j], (int)xv, dot);
+                }
+                float xd = cuda_fp16_to_fp32(x->d);
+                float xs = cuda_fp16_to_fp32(x->original_sum);
+#pragma unroll
+                for (int i = 0; i < 8; i++) {
+                    int d = __shfl_sync(mask, dot, i, 8);
+                    float dw = __shfl_sync(mask, wd, i, 8);
+                    float dm = __shfl_sync(mask, wm, i, 8);
+                    float dx = __shfl_sync(mask, xd, i, 8);
+                    float sx = __shfl_sync(mask, xs, i, 8);
+                    acc[t] = fmaf(dw * dx, (float)d, acc[t]);
+                    acc[t] = fmaf(-dm, sx, acc[t]);
+                }
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < 8; t++) {
+            if (!have_tail) tail[t] = acc[t];
+            else prefix[t] += acc[t];
+        }
+        have_tail = 1;
+    }
+    if (lane == 0)
+#pragma unroll
+        for (int t = 0; t < 8; t++)
+            if (token0 + t < nt)
+                out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
+}
+
 /* Each eight-lane group owns one output row. Integer dots are independent;
  * floating-point weighting follows the reference's ordered MMQ subblocks. */
 static __global__ void signed_mmq_ordered_kernel(
@@ -19202,6 +19287,12 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                                   (n_tokens + 7) / 8), 128,
                                            0, stream>>>(
                 out, (const BnBlockQ4K *)w->data, xq, rows, cols, n_tokens,
+                jwidth, (int)grid);
+        } else if (bn_quant_format_is_q5k(type) && n_tokens >= 8) {
+            q5k_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
+                                              (n_tokens + 7) / 8), 128,
+                                         0, stream>>>(
+                out, (const BnBlockQ5K *)w->data, xq, rows, cols, n_tokens,
                 jwidth, (int)grid);
         } else {
             kquant_mmq_ordered_kernel<<<dim3((rows + 15) / 16, n_tokens), 128,
