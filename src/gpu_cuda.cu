@@ -15057,6 +15057,8 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
 }
 static __device__ __forceinline__ float cuda_attention_f16_contract_load(
         const void *cache, size_t index, int kv_f16) {
+    if (kv_f16)
+        return __half2float(((const __half *)cache)[index]);
     float value = cuda_kv_load(cache, index, kv_f16);
     return __half2float(__float2half_rn(value));
 }
