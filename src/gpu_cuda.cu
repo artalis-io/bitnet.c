@@ -15376,8 +15376,11 @@ static __global__ void flash_attention_kernel(float *out, const float *q,
         return;
     }
 #endif
+    /* The 2:1 grouped-query layout needs the generic flash reduction to
+     * preserve sampled-token parity with llama.cpp. */
     int decode256_parts = (head_size == 256 && blockDim.x == 256 &&
-                           ((kv_f16 && (n_kv <= 256 || kv_mul == 2 || kv_mul == 16)) ||
+                           kv_mul != 2 &&
+                           ((kv_f16 && (n_kv <= 256 || kv_mul == 16)) ||
                             (!kv_f16 && kv_mul == 6 && n_kv <= 256)))
         ? cuda_decode256_partitions(n_kv, n_heads, attention_reference_max_blocks) : 0;
     if (decode256_parts) {
