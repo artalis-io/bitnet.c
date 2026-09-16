@@ -4459,6 +4459,52 @@ static __global__ void q4k_dot_gateup_silu_5warp_exact10_kernel(
     }
 }
 
+static __global__ void q4k_dot_gateup_gelu_4warp_exact_kernel(
+    float *out, const BnBlockQ4K *blocks, const BnCudaBlockQ8_1 *xq,
+    int rows, int cols, uint32_t flags) {
+    __shared__ float gate_partial[3][32];
+    __shared__ float up_partial[3][32];
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int row = blockIdx.x;
+    if (row >= rows || warp >= 4) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    const BnBlockQ4K *gate_blocks = blocks + (size_t)row * n_bpr;
+    const BnBlockQ4K *up_blocks =
+        blocks + (size_t)(rows + row) * n_bpr;
+    float gate = 0.0f;
+    float up = 0.0f;
+    for (int b = warp * 2 + kbx; b < n_bpr; b += 8) {
+        const BnCudaBlockQ8_1 *xqb = xq + (size_t)b * 8;
+        gate += cuda_vec_dot_q4k_q8_1(gate_blocks + b, xqb, iqs);
+        up += cuda_vec_dot_q4k_q8_1(up_blocks + b, xqb, iqs);
+    }
+    if (warp > 0) {
+        gate_partial[warp - 1][lane] = gate;
+        up_partial[warp - 1][lane] = up;
+    }
+    __syncthreads();
+    if (warp > 0) return;
+
+#pragma unroll
+    for (int w = 0; w < 3; w++) {
+        gate += gate_partial[w][lane];
+        up += up_partial[w][lane];
+    }
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        gate += __shfl_xor_sync(0xffffffffu, gate, offset);
+        up += __shfl_xor_sync(0xffffffffu, up, offset);
+    }
+    if (lane == 0) {
+        float gelu = (flags & BN_GPU_OP_FLAG_REFERENCE_ACTIVATION) != 0
+            ? cuda_reference_gelu(gate) : cuda_gelu(gate);
+        out[row] = __fmul_rn(gelu, up);
+    }
+}
+
 static __global__ void q4k_dot_matvec_split_k_rope_cache_kernel(
     float *out0, void *key_cache, const BnBlockQ4K *blocks,
     const BnCudaBlockQ8_1 *xq, const float *bias0, const float *bias1,
@@ -29766,6 +29812,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     next->buf_in == op->buf_out &&
                     next->buf_aux == op->buf_aux &&
                     (int)next->p[0] == split0 && (int)next->p[1] == 0;
+                int fused_gelu_gateup =
+                    ctx->compute_capability == 1200 &&
+                    total_rows == 2 * split0 && split1 <= split0 &&
+                    bias0 == NULL && op->p[6] == 0 && op->p[7] == 0 &&
+                    next && next->op_code == BN_GPU_CODE_GELU_GATE &&
+                    next->buf_in == op->buf_out &&
+                    next->buf_aux == op->buf_aux &&
+                    (int)next->p[0] == split0 && (int)next->p[1] == 0;
                 if (fused_k_rope_cache) {
                     skip_ops[k_bias_idx] = 1;
                     skip_ops[i + 3] = 1;
@@ -29776,6 +29830,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_LAUNCH(ctx,
                         q4k_dot_gateup_silu_5warp_exact10_kernel,
                         split0, 160, 0, out0,
+                        (const BnBlockQ4K *)w->data, xq, split0, cols,
+                        next->flags);
+                    skip_ops[i + 1] = 1;
+                } else if (fused_gelu_gateup) {
+                    BN_CUDA_LAUNCH(ctx,
+                        q4k_dot_gateup_gelu_4warp_exact_kernel,
+                        split0, 128, 0, out0,
                         (const BnBlockQ4K *)w->data, xq, split0, cols,
                         next->flags);
                     skip_ops[i + 1] = 1;
