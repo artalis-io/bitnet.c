@@ -18533,21 +18533,26 @@ static int cuda_buffer_create_iq_f16_cache(const BnCudaCtx *ctx,
     return 0;
 }
 
+#include "quant/iq4xs_cuda.cuh"
+
 static size_t cuda_buffer_kquant_mmq_bytes(const BnCudaCtx *ctx, int type,
                                            int rows, int cols) {
     int asymmetric = type == BN_GGUF_TENSOR_Q4_K ||
                      type == BN_GGUF_TENSOR_Q5_K;
     int q6 = type == BN_GGUF_TENSOR_Q6_K && ctx &&
              ctx->compute_capability == 1200;
-    if (!ctx || (!asymmetric && !q6) || rows <= 0 || cols <= 0 ||
+    int iq4xs = bn_backend_quant_supports_packed_codebook_matvec(type) && ctx &&
+                bn_gpu_policy_cuda_iq4xs_packed_enabled(ctx->runtime_policy);
+    if (!ctx || (!asymmetric && !q6 && !iq4xs) || rows <= 0 || cols <= 0 ||
         (cols % BN_QK_K) != 0 ||
         (asymmetric &&
          !bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled(
              ctx->runtime_policy)))
         return 0;
     size_t blocks_per_row = (size_t)cols / BN_QK_K;
-    size_t block_bytes = q6 ? sizeof(BnCudaQ6KMmqBlock)
-                            : sizeof(BnCudaKQuantMmqBlock);
+    size_t block_bytes = iq4xs ? sizeof(BnCudaIQ4XSPackedBlock) :
+                         q6 ? sizeof(BnCudaQ6KMmqBlock) :
+                              sizeof(BnCudaKQuantMmqBlock);
     if ((size_t)rows > SIZE_MAX / blocks_per_row / block_bytes)
         return SIZE_MAX;
     return (size_t)rows * blocks_per_row * block_bytes;
@@ -18614,6 +18619,10 @@ static void cuda_buffer_create_kquant_mmq(BnCudaCtx *ctx, BnCudaBuffer *buf) {
         pack_q5k_mmq_kernel<<<n_blocks, BN_QK_K>>>(
             (BnCudaKQuantMmqBlock *)buf->mmq_data,
             (const BnBlockQ5K *)buf->data, n_blocks);
+    else if (bn_backend_quant_supports_packed_codebook_matvec(buf->type))
+        iq4xs_pack_decode_kernel<<<n_blocks, BN_QK_K>>>(
+            (BnCudaIQ4XSPackedBlock *)buf->mmq_data,
+            (const BnBlockIQ4XS *)buf->data, n_blocks);
     else
         pack_q6k_mmq_kernel<<<n_blocks, BN_QK_K>>>(
             (BnCudaQ6KMmqBlock *)buf->mmq_data,
@@ -19120,7 +19129,17 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
     if (bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_MMVQ_SUBBLOCK32_INT_SCALE) && n_tokens <= 8) {
         BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
         quantize_q8_1_batch_kernel<<<dim3(cols / 32, n_tokens), 32, 0, stream>>>(xq, input, cols, n_tokens);
-        scaled_subblock_dot_matvec_mmvq_kernel<<<dim3(rows, n_tokens), n_tokens <= 4 ? 128 : 64, 0, stream>>>(out, w->data, xq, rows, cols, type, NULL, 0);
+        if (bn_backend_quant_supports_packed_codebook_matvec(type) &&
+            w->mmq_data)
+            iq4xs_dot_matvec_packed_kernel
+                <<<dim3(rows, n_tokens), n_tokens <= 4 ? 128 : 64,
+                   0, stream>>>(out,
+                (const BnCudaIQ4XSPackedBlock *)w->mmq_data,
+                xq, rows, cols, NULL, 0);
+        else
+            scaled_subblock_dot_matvec_mmvq_kernel
+                <<<dim3(rows, n_tokens), n_tokens <= 4 ? 128 : 64,
+                   0, stream>>>(out, w->data, xq, rows, cols, type, NULL, 0);
         return cudaGetLastError() == cudaSuccess ? 0 : -1;
     }
     /* Small Q6_K batches use the same FP16-scale input and accumulation
@@ -30168,10 +30187,18 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                     quantize_q8_1_kernel, op->cols / 32, 32, 0,
                     xq, in, op->cols);
-                BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
-                    scaled_subblock_dot_matvec_mmvq_kernel, op->rows, 128, 0,
-                    out, w->data, xq,
-                    op->rows, op->cols, op->type, bias, out_offset);
+                if (bn_backend_quant_supports_packed_codebook_matvec(
+                        op->type) && w->mmq_data) {
+                    BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
+                        iq4xs_dot_matvec_packed_kernel, op->rows, 128, 0,
+                        out, (const BnCudaIQ4XSPackedBlock *)w->mmq_data,
+                        xq, op->rows, op->cols, bias, out_offset);
+                } else {
+                    BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
+                        scaled_subblock_dot_matvec_mmvq_kernel, op->rows, 128, 0,
+                        out, w->data, xq,
+                        op->rows, op->cols, op->type, bias, out_offset);
+                }
             } else if (bn_backend_quant_supports_legacy_block_matvec(op->type) &&
                 (op->cols & 31) == 0 && enable_legacy_block_matvec4) {
                 BN_CUDA_LAUNCH(ctx, q5_0_matvec4_kernel,

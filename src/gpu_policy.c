@@ -3511,6 +3511,12 @@ int bn_gpu_policy_cuda_iq4nl_t8_enabled(
         policy, "BN_CUDA_DISABLE_IQ4NL_T8");
 }
 
+int bn_gpu_policy_cuda_iq4xs_packed_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return !bn_backend_runtime_policy_enabled(
+        policy, "BN_CUDA_DISABLE_IQ4XS_PACKED");
+}
+
 int bn_gpu_policy_cuda_prefill_dense_layer_disabled(
     const BnBackendRuntimePolicy *policy) {
     return gpu_policy_cuda_prefill_dense_layer_disabled(policy);
