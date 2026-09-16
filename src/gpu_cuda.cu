@@ -2999,6 +2999,44 @@ static __global__ void q4k_dot_matvec_4warp_kernel(float *out,
     }
 }
 
+static __global__ void q4k_dot_matvec_5warp_exact10_kernel(
+    float *out, const BnBlockQ4K *blocks, const BnCudaBlockQ8_1 *xq,
+    const float *bias, int rows, int cols, size_t out_offset) {
+    __shared__ float partial[3][32];
+    __shared__ float tail[32];
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int row = blockIdx.x;
+    if (row >= rows || warp >= 5) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    int b = (warp < 4 ? warp * 2 : 8) + kbx;
+    float sum = 0.0f;
+    if (b < n_bpr) {
+        const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
+        sum = cuda_vec_dot_q4k_q8_1(
+            row_blocks + b, xq + (size_t)b * 8, iqs);
+    }
+    if (warp == 4)
+        tail[lane] = sum;
+    else if (warp > 0)
+        partial[warp - 1][lane] = sum;
+    __syncthreads();
+    if (warp > 0) return;
+
+    sum += tail[lane];
+#pragma unroll
+    for (int w = 0; w < 3; w++) sum += partial[w][lane];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+    if (lane == 0) {
+        if (bias) sum += bias[row];
+        out[out_offset + row] = sum;
+    }
+}
+
 static __global__ void q4k_dot_matvec_4warp_residual_kernel(
                                                    float *x,
                                                    const BnBlockQ4K *blocks,
@@ -4309,6 +4347,54 @@ static __global__ void q4k_dot_matvec_split_4warp_kernel(
     } else if (split1 > split0 && row >= split1) {
         if (out2)
             out2[out2_offset + (size_t)(row - split1)] = sum;
+    } else {
+        out1[out1_offset + (size_t)(row - split0)] = sum;
+    }
+}
+
+/* Ten Q4_K blocks normally leave warp zero with a second iteration. A fifth
+ * warp computes that iteration in parallel; warp zero then adds its per-lane
+ * result at the original point in the reference accumulation sequence. */
+static __global__ void q4k_dot_matvec_split_5warp_exact10_kernel(
+    float *out0, float *out1, float *out2, const BnBlockQ4K *blocks,
+    const BnCudaBlockQ8_1 *xq, const float *bias0, int total_rows, int cols,
+    int split0, int split1, size_t out1_offset, size_t out2_offset) {
+    __shared__ float partial[3][32];
+    __shared__ float tail[32];
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int row = blockIdx.x;
+    if (row >= total_rows || warp >= 5) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    int b = (warp < 4 ? warp * 2 : 8) + kbx;
+    float sum = 0.0f;
+    if (b < n_bpr) {
+        const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
+        sum = cuda_vec_dot_q4k_q8_1(
+            row_blocks + b, xq + (size_t)b * 8, iqs);
+    }
+    if (warp == 4)
+        tail[lane] = sum;
+    else if (warp > 0)
+        partial[warp - 1][lane] = sum;
+    __syncthreads();
+    if (warp > 0) return;
+
+    sum += tail[lane];
+#pragma unroll
+    for (int w = 0; w < 3; w++) sum += partial[w][lane];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+    if (lane != 0) return;
+
+    if (row < split0) {
+        if (bias0) sum += bias0[row];
+        out0[row] = sum;
+    } else if (split1 > split0 && row >= split1) {
+        if (out2) out2[out2_offset + (size_t)(row - split1)] = sum;
     } else {
         out1[out1_offset + (size_t)(row - split0)] = sum;
     }
@@ -29068,11 +29154,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             op->rows, cuda_u32_to_f32(next->p[1]));
                         i++;
                     } else {
-                        BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
-                            q4k_dot_matvec_4warp_kernel,
-                            op->rows, 128, 0,
-                            out, (const BnBlockQ4K *)w->data, xq, bias,
-                            op->rows, op->cols, out_offset);
+                        if (op->cols == 2560) {
+                            BN_CUDA_LAUNCH_STABLE(ctx,
+                                stable_decode_matvec,
+                                q4k_dot_matvec_5warp_exact10_kernel,
+                                op->rows, 160, 0, out,
+                                (const BnBlockQ4K *)w->data, xq, bias,
+                                op->rows, op->cols, out_offset);
+                        } else {
+                            BN_CUDA_LAUNCH_STABLE(ctx,
+                                stable_decode_matvec,
+                                q4k_dot_matvec_4warp_kernel,
+                                op->rows, 128, 0, out,
+                                (const BnBlockQ4K *)w->data, xq, bias,
+                                op->rows, op->cols, out_offset);
+                        }
                     }
                 } else {
                     int asymmetric_kquant_threads = 256;
@@ -29494,6 +29590,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     skip_ops[i + 4] = 1;
                     if (fused_q_rope_idx >= 0)
                         skip_ops[fused_q_rope_idx] = 1;
+                } else if (cols == 2560) {
+                    BN_CUDA_LAUNCH(ctx,
+                        q4k_dot_matvec_split_5warp_exact10_kernel,
+                        total_rows, 160, 0,
+                        out0, out1, out2,
+                        (const BnBlockQ4K *)w->data, xq, bias0,
+                        total_rows, cols, split0, split1,
+                        (size_t)op->p[6], (size_t)op->p[7]);
                 } else if (bn_gpu_policy_cuda_asymmetric_kquant_split_4warp_enabled(ctx->runtime_policy, cols)) {
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_4warp_kernel,
                         total_rows, 128, 0,
@@ -29567,11 +29671,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             vw->rows >= vop->rows) {
                             if (bn_backend_quant_supports_split_value_4warp_dot(
                                     vop->type)) {
-                                BN_CUDA_LAUNCH(ctx,
-                                    q4k_dot_matvec_4warp_kernel, vop->rows,
-                                    128, 0, vout,
-                                    (const BnBlockQ4K *)vw->data, xq,
-                                    vbias, vop->rows, vop->cols, voffset);
+                                if (vop->cols == 2560) {
+                                    BN_CUDA_LAUNCH(ctx,
+                                        q4k_dot_matvec_5warp_exact10_kernel,
+                                        vop->rows, 160, 0, vout,
+                                        (const BnBlockQ4K *)vw->data, xq,
+                                        vbias, vop->rows, vop->cols,
+                                        voffset);
+                                } else {
+                                    BN_CUDA_LAUNCH(ctx,
+                                        q4k_dot_matvec_4warp_kernel,
+                                        vop->rows, 128, 0, vout,
+                                        (const BnBlockQ4K *)vw->data, xq,
+                                        vbias, vop->rows, vop->cols,
+                                        voffset);
+                                }
                             } else {
                                 BN_CUDA_LAUNCH(ctx,
                                     q6k_dot_matvec_mmvq_kernel, vop->rows,
