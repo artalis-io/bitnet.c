@@ -1,8 +1,8 @@
 #ifndef BN_QUANT_IQ4XS_CUDA_CUH
 #define BN_QUANT_IQ4XS_CUDA_CUH
 
-/* Backend-owned decode layout: expand the nonlinear codebook once during
- * upload. The original GGUF block remains resident for exact MMQ prefill. */
+/* Backend-owned layout: expand the nonlinear codebook once during upload.
+ * The original GGUF block remains available for quant-only fallback. */
 typedef struct {
     uint16_t d;
     int8_t scales[8];
