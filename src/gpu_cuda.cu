@@ -2047,6 +2047,181 @@ static __global__ void signed_mmq_ordered_kernel(
     if (lane == 0) out[(size_t)token * rows + row] = tail + prefix;
 }
 
+/* IQ4_XS keeps its reference Stream-K reduction, but shares each decoded
+ * 32-value weight group across eight prompt tokens. The integer dot is exact;
+ * every token retains the original FP32 FMA sequence. */
+static __global__ void iq4xs_mmq_ordered_t8_kernel(
+        float *out, const BnBlockIQ4XS *weights,
+        const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
+        int n_tokens, int width, int grid) {
+    int lane = threadIdx.x & 7;
+    int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
+    int token0 = blockIdx.y * 8;
+    if (row >= rows) return;
+    unsigned mask = __activemask();
+    int groups = cols / 32, blocks = cols / 256;
+    int token_tiles = (n_tokens - 1) / width + 1;
+    int64_t tile = (int64_t)(row / 128) * token_tiles + token0 / width;
+    int64_t tile_begin = tile * blocks;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) * token_tiles * blocks;
+    int first = (int)(((tile_begin + 1) * grid + total - 1) / total) - 1;
+    int last = (int)(((tile_begin + blocks) * grid + total - 1) / total) - 1;
+    float tail[8] = {0}, prefix[8] = {0};
+    int have_tail = 0;
+    for (int bid = last; bid >= first; bid--) {
+        int64_t raw_begin = (int64_t)bid * total / grid - tile_begin;
+        int64_t raw_end = (int64_t)(bid + 1) * total / grid - tile_begin;
+        int begin = raw_begin < 0 ? 0 : (int)raw_begin;
+        int end = raw_end > blocks ? blocks : (int)raw_end;
+        if (begin >= end) continue;
+        float acc[8] = {0};
+        for (int b = begin; b < end; b++) {
+            const BnBlockIQ4XS *w = weights + (size_t)row * blocks + b;
+            int scale = ((w->scales_l[lane / 2] >> (4 * (lane & 1))) & 15) |
+                        (((w->scales_h >> (2 * lane)) & 3) << 4);
+            float wd = cuda_fp16_to_fp32(w->d) * (scale - 32);
+            uint32_t packed[8];
+#pragma unroll
+            for (int j = 0; j < 8; j++) {
+                uint32_t qv = 0;
+#pragma unroll
+                for (int k = 0; k < 4; k++) {
+                    int at = 4 * j + k;
+                    int q = (w->qs[lane * 16 + at % 16] >>
+                             (4 * (at / 16))) & 15;
+                    qv |= (uint32_t)(uint8_t)bn_kvalues_iq4nl[q] << (8 * k);
+                }
+                packed[j] = qv;
+            }
+#pragma unroll
+            for (int t = 0; t < 8; t++) {
+                int token = token0 + t;
+                if (token >= n_tokens) continue;
+                const BnCudaBlockQ8MmqF32 *x =
+                    input + (size_t)token * groups + b * 8 + lane;
+                int dot = 0;
+#pragma unroll
+                for (int j = 0; j < 8; j++) {
+                    uint32_t xv;
+                    memcpy(&xv, x->qs + 4 * j, sizeof(xv));
+                    dot = cuda_dp4a_i32((int)packed[j], (int)xv, dot);
+                }
+                float xd = x->d;
+#pragma unroll
+                for (int l = 0; l < 8; l++) {
+                    int d = __shfl_sync(mask, dot, l, 8);
+                    float dw = __shfl_sync(mask, wd, l, 8);
+                    float dx = __shfl_sync(mask, xd, l, 8);
+                    acc[t] = fmaf((float)d * dw, dx, acc[t]);
+                }
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < 8; t++) {
+            if (!have_tail) tail[t] = acc[t];
+            else prefix[t] += acc[t];
+        }
+        have_tail = 1;
+    }
+    if (lane == 0)
+#pragma unroll
+        for (int t = 0; t < 8; t++)
+            if (token0 + t < n_tokens)
+                out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
+}
+
+/* Q3_K uses the same token tiling while preserving its two 16-value
+ * subblock dots and the reference's weighted FP32 reduction order. */
+static __global__ void q3k_mmq_ordered_t8_kernel(
+        float *out, const BnBlockQ3K *weights,
+        const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
+        int n_tokens, int width, int grid) {
+    int lane = threadIdx.x & 7;
+    int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
+    int token0 = blockIdx.y * 8;
+    if (row >= rows) return;
+    unsigned mask = __activemask();
+    int groups = cols / 32, blocks = cols / 256;
+    int token_tiles = (n_tokens - 1) / width + 1;
+    int64_t tile = (int64_t)(row / 128) * token_tiles + token0 / width;
+    int64_t tile_begin = tile * blocks;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) * token_tiles * blocks;
+    int first = (int)(((tile_begin + 1) * grid + total - 1) / total) - 1;
+    int last = (int)(((tile_begin + blocks) * grid + total - 1) / total) - 1;
+    float tail[8] = {0}, prefix[8] = {0};
+    int have_tail = 0;
+    for (int bid = last; bid >= first; bid--) {
+        int64_t raw_begin = (int64_t)bid * total / grid - tile_begin;
+        int64_t raw_end = (int64_t)(bid + 1) * total / grid - tile_begin;
+        int begin = raw_begin < 0 ? 0 : (int)raw_begin;
+        int end = raw_end > blocks ? blocks : (int)raw_end;
+        if (begin >= end) continue;
+        float acc[8] = {0};
+        for (int b = begin; b < end; b++) {
+            const BnBlockQ3K *w = weights + (size_t)row * blocks + b;
+            float scale[2];
+#pragma unroll
+            for (int half = 0; half < 2; half++) {
+                int g = 2 * lane + half;
+                int s = ((w->scales[g % 8] >> (4 * (g / 8))) & 15) |
+                        (((w->scales[8 + g % 4] >> (2 * (g / 4))) & 3) << 4);
+                scale[half] = cuda_fp16_to_fp32(w->d) * (s - 32);
+            }
+            uint32_t packed[8];
+#pragma unroll
+            for (int j = 0; j < 8; j++) {
+                uint32_t qv = 0;
+#pragma unroll
+                for (int k = 0; k < 4; k++) {
+                    int i = lane * 32 + j * 4 + k;
+                    int q = ((w->qs[(i / 128) * 32 + i % 32] >>
+                              (2 * ((i % 128) / 32))) & 3) -
+                            ((w->hmask[i % 32] & (1 << (i / 32))) ? 0 : 4);
+                    qv |= (uint32_t)(uint8_t)q << (8 * k);
+                }
+                packed[j] = qv;
+            }
+#pragma unroll
+            for (int t = 0; t < 8; t++) {
+                int token = token0 + t;
+                if (token >= n_tokens) continue;
+                const BnCudaBlockQ8MmqF32 *x =
+                    input + (size_t)token * groups + b * 8 + lane;
+                int dot0 = 0, dot1 = 0;
+#pragma unroll
+                for (int j = 0; j < 8; j++) {
+                    uint32_t xv;
+                    memcpy(&xv, x->qs + 4 * j, sizeof(xv));
+                    if (j < 4) dot0 = cuda_dp4a_i32((int)packed[j], (int)xv, dot0);
+                    else dot1 = cuda_dp4a_i32((int)packed[j], (int)xv, dot1);
+                }
+                float xd = x->d;
+#pragma unroll
+                for (int l = 0; l < 8; l++) {
+                    int d0 = __shfl_sync(mask, dot0, l, 8);
+                    int d1 = __shfl_sync(mask, dot1, l, 8);
+                    float w0 = __shfl_sync(mask, scale[0], l, 8);
+                    float w1 = __shfl_sync(mask, scale[1], l, 8);
+                    float dx = __shfl_sync(mask, xd, l, 8);
+                    float part = fmaf((float)d0, w0, (float)d1 * w1);
+                    acc[t] = fmaf(dx, part, acc[t]);
+                }
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < 8; t++) {
+            if (!have_tail) tail[t] = acc[t];
+            else prefix[t] += acc[t];
+        }
+        have_tail = 1;
+    }
+    if (lane == 0)
+#pragma unroll
+        for (int t = 0; t < 8; t++)
+            if (token0 + t < n_tokens)
+                out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
+}
+
 static __device__ __forceinline__ float cuda_vec_dot_q4k_q8k(
     const BnBlockQ4K *blk, const BnBlockQ8K *xq) {
     float xd = cuda_fp16_to_fp32(blk->d);
@@ -18926,6 +19101,23 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
                         n_tokens, jwidth, (int)grid);
             }
+        } else if (bn_quant_format_supports_packed_codebook_matvec(type) &&
+                   n_tokens >= 16 &&
+                   cols % 256 == 0) {
+            iq4xs_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
+                                                (n_tokens + 7) / 8), 128,
+                                           0, stream>>>(
+                out, (const BnBlockIQ4XS *)w->data,
+                (const BnCudaBlockQ8MmqF32 *)xq,
+                rows, cols, n_tokens, jwidth, (int)grid);
+        } else if (bn_quant_format_is_q3k(type) && n_tokens >= 16 &&
+                   cols % 256 == 0) {
+            q3k_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
+                                              (n_tokens + 7) / 8), 128,
+                                         0, stream>>>(
+                out, (const BnBlockQ3K *)w->data,
+                (const BnCudaBlockQ8MmqF32 *)xq,
+                rows, cols, n_tokens, jwidth, (int)grid);
         } else if (signed_subblocks) {
             signed_mmq_ordered_kernel<<<dim3((rows + 15) / 16, n_tokens), 128,
                                          0, stream>>>(
