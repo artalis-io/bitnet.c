@@ -8048,6 +8048,94 @@ static void run_q8_routed_reference_case(int calibrated) {
            calibrated ? "calibrated" : "default");
 }
 
+static void run_moe_dense_residual_composition_case(BnGPUBackend *gpu) {
+    enum { nt = 3, dim = 32, hidden = 32, count = nt * dim };
+    float gate[dim * hidden], up[dim * hidden], down[dim * hidden];
+    float norm[dim], dense_norm[dim], routed_norm[dim], output_norm[dim];
+    float act[count], routed[count], input[count], dense[count];
+    float combined[count], expected[count], actual[count];
+    for (int i = 0; i < dim * hidden; i++) {
+        gate[i] = (float)((i * 13) % 37 - 18) / 256.0f;
+        up[i] = (float)((i * 17) % 41 - 20) / 256.0f;
+        down[i] = (float)((i * 19) % 43 - 21) / 256.0f;
+    }
+    for (int i = 0; i < dim; i++) {
+        norm[i] = 0.6f + 0.01f * (float)(i % 11);
+        dense_norm[i] = 0.7f + 0.01f * (float)(i % 7);
+        routed_norm[i] = 0.8f + 0.01f * (float)(i % 5);
+        output_norm[i] = 0.9f + 0.01f * (float)(i % 3);
+    }
+    for (int i = 0; i < count; i++) {
+        act[i] = (float)((i * 23) % 59 - 29) / 32.0f;
+        routed[i] = (float)((i * 29) % 61 - 30) / 64.0f;
+    }
+    void *bg = gpu->buffer_create(gpu->ctx, gate, sizeof(gate),
+                                   BN_GGUF_TENSOR_F32, hidden, dim);
+    void *bu = gpu->buffer_create(gpu->ctx, up, sizeof(up),
+                                   BN_GGUF_TENSOR_F32, hidden, dim);
+    void *bd = gpu->buffer_create(gpu->ctx, down, sizeof(down),
+                                   BN_GGUF_TENSOR_F32, dim, hidden);
+    void *bn = gpu->buffer_create(gpu->ctx, norm, sizeof(norm),
+                                   BN_GGUF_TENSOR_F32, 1, dim);
+    void *bdn = gpu->buffer_create(gpu->ctx, dense_norm,
+                                    sizeof(dense_norm), BN_GGUF_TENSOR_F32,
+                                    1, dim);
+    void *brn = gpu->buffer_create(gpu->ctx, routed_norm,
+                                    sizeof(routed_norm), BN_GGUF_TENSOR_F32,
+                                    1, dim);
+    void *bon = gpu->buffer_create(gpu->ctx, output_norm,
+                                    sizeof(output_norm), BN_GGUF_TENSOR_F32,
+                                    1, dim);
+    assert(bg && bu && bd && bn && bdn && brn && bon);
+    assert(gpu->moe_dense_residual_batch);
+    for (int raw = 0; raw < 2; raw++) {
+        assert(gpu->rmsnorm_batch(gpu->ctx, input, bn, act,
+                                  nt, dim, 1e-6f) == 0);
+        assert(gpu->dense_ffn_batch(gpu->ctx, dense, bg, bu, bd, input,
+                                     nt, dim, hidden, BN_GGUF_TENSOR_F32,
+                                     BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32,
+                                     BN_MODEL_ACTIVATION_SILU) == 0);
+        assert(gpu->rmsnorm_batch(gpu->ctx, dense, bdn, dense,
+                                  nt, dim, 1e-6f) == 0);
+        assert(gpu->rmsnorm_residual_batch(gpu->ctx, combined, brn,
+                                            routed, dense, nt, dim,
+                                            1e-6f) == 0);
+        if (raw)
+            assert(gpu->rmsnorm_batch(gpu->ctx, expected, bon, combined,
+                                      nt, dim, 1e-6f) == 0);
+        else
+            assert(gpu->rmsnorm_residual_batch(gpu->ctx, expected, bon,
+                                                combined, act, nt, dim,
+                                                1e-6f) == 0);
+        memcpy(actual, routed, sizeof(actual));
+        BnGPUMoEDenseResidualBatch batch = {
+            .out = actual, .act = act, .routed = actual,
+            .gate_buf = bg, .up_buf = bu, .down_buf = bd,
+            .input_norm_buf = bn, .dense_post_norm_buf = bdn,
+            .routed_post_norm_buf = brn, .output_norm_buf = bon,
+            .n_tokens = nt, .dim = dim, .hidden_dim = hidden,
+            .gate_type = BN_GGUF_TENSOR_F32,
+            .up_type = BN_GGUF_TENSOR_F32,
+            .down_type = BN_GGUF_TENSOR_F32,
+            .act_type = BN_MODEL_ACTIVATION_SILU,
+            .norm_eps = 1e-6f, .raw_output = raw,
+        };
+        assert(bn_gpu_backend_moe_dense_residual_batch(gpu, &batch) == 0);
+        expect_close(actual, expected, count);
+        batch.hidden_dim = -1;
+        assert(bn_gpu_backend_moe_dense_residual_batch(gpu, &batch) != 0);
+        expect_close(actual, expected, count);
+    }
+    gpu->buffer_destroy(gpu->ctx, bg);
+    gpu->buffer_destroy(gpu->ctx, bu);
+    gpu->buffer_destroy(gpu->ctx, bd);
+    gpu->buffer_destroy(gpu->ctx, bn);
+    gpu->buffer_destroy(gpu->ctx, bdn);
+    gpu->buffer_destroy(gpu->ctx, brn);
+    gpu->buffer_destroy(gpu->ctx, bon);
+    printf("CUDA MoE dense-residual composition PASSED\n");
+}
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
 #ifndef BN_ENABLE_CUDA
@@ -8057,6 +8145,11 @@ int main(int argc, char **argv) {
     BnGPUBackend *gpu = bn_gpu_cuda_create();
     if (!gpu) {
         printf("CUDA backend test skipped: no CUDA device\n");
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--moe-dense-residual-composition") == 0) {
+        run_moe_dense_residual_composition_case(gpu);
+        bn_gpu_cuda_destroy(gpu);
         return 0;
     }
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION);
@@ -8757,6 +8850,7 @@ int main(int argc, char **argv) {
     run_q8_mmq_reference_case(gpu);
     run_f32_matrix_reference_case(gpu);
     run_f32_ffn_entry_reference_case(gpu);
+    run_moe_dense_residual_composition_case(gpu);
     run_shared_batch_reference_case(gpu);
     run_rmsnorm_batch_reference_case(gpu);
     run_standalone_ffn_reference_case(gpu);

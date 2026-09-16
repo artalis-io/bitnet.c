@@ -97,6 +97,26 @@ static int moe_batch_dense_gpu(BnModel *m, int layer, BnLayerWeights *lw,
         !bn_gpu_backend_can_rmsnorm_residual_batch(gpu))
         return -1;
     int dim = m->config.dim;
+    if (!observe) {
+        BnGPUMoEDenseResidualBatch batch = {
+            .out = out, .act = act, .routed = out,
+            .gate_buf = r.gate, .up_buf = r.up, .down_buf = r.down,
+            .input_norm_buf = r.norm,
+            .dense_post_norm_buf = r.dense_norm,
+            .routed_post_norm_buf = r.routed_norm,
+            .output_norm_buf = r.post_norm,
+            .n_tokens = tokens, .dim = dim,
+            .hidden_dim = m->config.hidden_dim,
+            .gate_type = lw->ffn.ffn_gate.type,
+            .up_type = lw->ffn.ffn_up.type,
+            .down_type = lw->ffn.ffn_down.type,
+            .act_type = policy->activation,
+            .norm_eps = policy->norm_eps,
+            .raw_output = raw,
+        };
+        if (bn_gpu_backend_moe_dense_residual_batch(gpu, &batch) == 0)
+            return 0;
+    }
     size_t bytes = (size_t)tokens * dim * sizeof(float);
     BnAllocator a = bn_allocator_default();
     float *dense = bn_malloc(&a, bytes);

@@ -22362,6 +22362,99 @@ static int cuda_dense_ffn_batch_device(BnCudaCtx *ctx, float *d_out,
                                   dim, hidden_dim, n_tokens, down_type);
 }
 
+static int cuda_moe_dense_residual_batch(
+    void *vctx, const BnGPUMoEDenseResidualBatch *batch) {
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    if (!ctx || !bn_gpu_policy_cuda_moe_dense_residual_batch_enabled(
+            ctx->runtime_policy))
+        return -1;
+    if (!batch || !batch->out || !batch->act || !batch->routed ||
+        !batch->gate_buf || !batch->up_buf || !batch->down_buf ||
+        !batch->input_norm_buf || !batch->dense_post_norm_buf ||
+        !batch->routed_post_norm_buf || !batch->output_norm_buf ||
+        batch->n_tokens <= 0 || batch->dim <= 0 || batch->hidden_dim <= 0 ||
+        batch->n_tokens > INT_MAX / batch->dim ||
+        batch->n_tokens > INT_MAX / batch->hidden_dim)
+        return -1;
+    BnCudaBuffer *norm = (BnCudaBuffer *)batch->input_norm_buf;
+    BnCudaBuffer *dense_norm = (BnCudaBuffer *)batch->dense_post_norm_buf;
+    BnCudaBuffer *routed_norm = (BnCudaBuffer *)batch->routed_post_norm_buf;
+    BnCudaBuffer *output_norm = (BnCudaBuffer *)batch->output_norm_buf;
+    BnCudaBuffer *gate = (BnCudaBuffer *)batch->gate_buf;
+    BnCudaBuffer *up = (BnCudaBuffer *)batch->up_buf;
+    BnCudaBuffer *down = (BnCudaBuffer *)batch->down_buf;
+    if (!norm->data || !dense_norm->data || !routed_norm->data ||
+        !output_norm->data || !gate->data || !up->data || !down->data ||
+        norm->size < (size_t)batch->dim * sizeof(float) ||
+        dense_norm->size < (size_t)batch->dim * sizeof(float) ||
+        routed_norm->size < (size_t)batch->dim * sizeof(float) ||
+        output_norm->size < (size_t)batch->dim * sizeof(float) ||
+        !cuda_dense_ffn_activation_supported(ctx, batch->gate_type,
+            batch->up_type, batch->down_type, batch->act_type))
+        return -1;
+    size_t full = (size_t)batch->n_tokens * (size_t)batch->dim;
+    size_t mid = (size_t)batch->n_tokens * (size_t)batch->hidden_dim;
+    if (full > SIZE_MAX / (4u * sizeof(float)) ||
+        mid > SIZE_MAX / (2u * sizeof(float)))
+        return -1;
+    size_t bytes = full * sizeof(float);
+    size_t scratch_x = (mid > full ? mid : full) * sizeof(float);
+    size_t scratch_out = (2u * mid > full ? 2u * mid : full) * sizeof(float);
+    BnCudaExecStreamScope scope(ctx, (cudaStream_t)0, 1);
+    if (cuda_prefill_enter_default_stream(ctx, scope.prev) != 0 ||
+        cuda_ensure_prefill(ctx, 4u * full) != 0 ||
+        cuda_ensure_scratch(ctx, scratch_x, scratch_out) != 0 ||
+        cuda_ensure_host_out(ctx, bytes) != 0)
+        return -1;
+    float *d_act = ctx->d_prefill;
+    float *d_routed = d_act + full;
+    float *d_input = d_routed + full;
+    float *d_dense = d_input + full;
+    cudaError_t err = cudaMemcpy(d_act, batch->act, bytes,
+                                 cudaMemcpyHostToDevice);
+    if (err == cudaSuccess)
+        err = cudaMemcpy(d_routed, batch->routed, bytes,
+                         cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) return -1;
+    int threads = cuda_rmsnorm_threads(batch->dim);
+    size_t shared = (size_t)(threads / 32) * sizeof(float);
+    rmsnorm_batch_kernel<<<batch->n_tokens, threads, shared>>>(
+        d_input, d_act, (const float *)norm->data, batch->dim,
+        batch->n_tokens, batch->norm_eps);
+    if (cudaGetLastError() != cudaSuccess ||
+        cuda_dense_ffn_batch_device(ctx, d_dense, gate, up, down, d_input,
+            batch->n_tokens, batch->dim, batch->hidden_dim,
+            batch->gate_type, batch->up_type, batch->down_type,
+            batch->act_type) != 0)
+        return -1;
+    rmsnorm_batch_kernel<<<batch->n_tokens, threads, shared>>>(
+        d_dense, d_dense, (const float *)dense_norm->data,
+        batch->dim, batch->n_tokens, batch->norm_eps);
+    if (cudaGetLastError() != cudaSuccess) return -1;
+    rmsnorm_separate_residual_batch_kernel<<<
+        batch->n_tokens, threads, shared>>>(
+        d_routed, d_routed, (const float *)routed_norm->data,
+        d_dense, batch->dim, batch->n_tokens, batch->norm_eps);
+    if (cudaGetLastError() != cudaSuccess) return -1;
+    if (batch->raw_output) {
+        rmsnorm_batch_kernel<<<batch->n_tokens, threads, shared>>>(
+            d_routed, d_routed, (const float *)output_norm->data,
+            batch->dim, batch->n_tokens, batch->norm_eps);
+    } else {
+        rmsnorm_separate_residual_batch_kernel<<<
+            batch->n_tokens, threads, shared>>>(
+            d_routed, d_routed, (const float *)output_norm->data,
+            d_act, batch->dim, batch->n_tokens, batch->norm_eps);
+    }
+    if (cudaGetLastError() != cudaSuccess ||
+        cudaMemcpy(ctx->h_out, d_routed, bytes, cudaMemcpyDeviceToHost) !=
+            cudaSuccess ||
+        cuda_prefill_leave_default_stream(ctx, scope.prev) != 0)
+        return -1;
+    memcpy(batch->out, ctx->h_out, bytes);
+    return 0;
+}
+
 static int cuda_buffer_row_view(const BnCudaBuffer *source, int first,
                                 int rows, BnCudaBuffer *view);
 
@@ -33442,6 +33535,7 @@ BnGPUBackend *bn_gpu_cuda_create_with_policy(
     gpu->matvec_batch = cuda_matvec_batch;
     gpu->dense_ffn = cuda_dense_ffn;
     gpu->dense_ffn_batch = cuda_dense_ffn_batch;
+    gpu->moe_dense_residual_batch = cuda_moe_dense_residual_batch;
     gpu->dense_ffn_batch_norm = cuda_dense_ffn_batch_norm;
     gpu->dense_ffn_batch_norm_resid = cuda_dense_ffn_batch_norm_resid;
     gpu->moe_ffn_batch = cuda_moe_ffn_batch;

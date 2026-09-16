@@ -59,6 +59,30 @@ typedef struct {
     int gate_up_fused;
 } BnGPUMoEExpertBatchPlan;
 
+// Complete dense-residual MoE composition after routed experts have been
+// reduced on the host. Borrowed buffers remain valid for this call only.
+typedef struct {
+    float *out;
+    const float *act;
+    const float *routed;
+    void *gate_buf;
+    void *up_buf;
+    void *down_buf;
+    void *input_norm_buf;
+    void *dense_post_norm_buf;
+    void *routed_post_norm_buf;
+    void *output_norm_buf;
+    int n_tokens;
+    int dim;
+    int hidden_dim;
+    int gate_type;
+    int up_type;
+    int down_type;
+    int act_type;
+    float norm_eps;
+    int raw_output;
+} BnGPUMoEDenseResidualBatch;
+
 typedef enum {
     BN_GPU_ROPE_FACTOR_NONE = 0,
     BN_GPU_ROPE_FACTOR_MULTIPLY,
@@ -308,6 +332,10 @@ struct BnGPUBackend {
                            int dim, int hidden_dim,
                            int gate_type, int up_type, int down_type,
                            int act_type);
+
+    // Compose the routed and dense FFN branches on the device in one call.
+    int (*moe_dense_residual_batch)(
+        void *ctx, const BnGPUMoEDenseResidualBatch *batch);
 
     // Batched dense FFN with input RMSNorm fused into the backend. Optional.
     // This is used by prompt processing to avoid a per-layer CPU norm pass
@@ -869,6 +897,12 @@ static inline int bn_gpu_backend_can_rmsnorm_scaled_batch(const BnGPUBackend *gp
 
 static inline int bn_gpu_backend_can_rmsnorm_batch(const BnGPUBackend *gpu) {
     return gpu && gpu->rmsnorm_batch;
+}
+
+static inline int bn_gpu_backend_moe_dense_residual_batch(
+    const BnGPUBackend *gpu, const BnGPUMoEDenseResidualBatch *batch) {
+    if (!gpu || !gpu->moe_dense_residual_batch) return -1;
+    return gpu->moe_dense_residual_batch(gpu->ctx, batch);
 }
 
 static inline int bn_gpu_backend_can_rmsnorm_grouped_batch(
