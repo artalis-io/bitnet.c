@@ -28280,7 +28280,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     quantize_q8k_batch_kernel,
                     dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                     xq, in, op->cols, 1);
-                int reference_threads = 256;
+                int reference_threads =
+                    op->rows == 2048 && op->cols == 4096 ? 128 : 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q4k_q8k_avx2_reference_matvec_kernel,
                     (op->rows * 32 + reference_threads - 1) /
@@ -28335,7 +28336,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (reference_kquant_matvec &&
                 bn_backend_quant_uses_down_kquant(op->type) &&
                 (op->cols % BN_QK_K) == 0) {
-                int reference_threads = 256;
+                int reference_threads =
+                    op->rows == 512 && op->cols == 2048 ? 128 : 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q6k_f32_avx2_reference_matvec_kernel,
                     (op->rows * 8 + reference_threads - 1) /
