@@ -19328,6 +19328,17 @@ static int cuda_kquant_batch_input_enabled(const BnCudaCtx *ctx, int type,
     return n_tokens > 0 && (f32_scale || n_tokens > max_mmvq);
 }
 
+/* Quant-only handles stay cache-free. A stream-ordered temporary layout lets
+ * prefill reuse the packed tensor-core path without attaching backend state
+ * to the immutable weight handle. */
+struct BnCudaMmqScratch {
+    void *data;
+    cudaStream_t stream;
+    ~BnCudaMmqScratch() {
+        if (data) (void)cudaFreeAsync(data, stream);
+    }
+};
+
 static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                   const BnCudaBuffer *w, const float *input,
                                   int rows, int cols, int n_tokens, int type,
@@ -19404,6 +19415,33 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
         quantize_mmq_input_kernel<<<dim3(cols / 32, n_tokens), 32,
                                            0, stream>>>(xq, input, cols,
                 bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_MMQ_F32_SCALE));
+    BnCudaMmqScratch scratch = {NULL, stream};
+    BnCudaBuffer packed_view;
+    if (ctx->compute_capability == 1200 && n_tokens >= 16 &&
+        !w->mmq_data &&
+        (bn_quant_format_is_q4k(type) || bn_quant_format_is_q5k(type))) {
+        size_t bytes = cuda_buffer_kquant_mmq_bytes(ctx, type, rows, cols);
+        if (bytes && bytes != SIZE_MAX &&
+            cudaMallocAsync(&scratch.data, bytes, stream) == cudaSuccess) {
+            size_t blocks = (size_t)rows * (size_t)cols / BN_QK_K;
+            if (bn_quant_format_is_q4k(type))
+                pack_q4k_mmq_kernel<<<blocks, BN_QK_K, 0, stream>>>(
+                    (BnCudaKQuantMmqBlock *)scratch.data,
+                    (const BnBlockQ4K *)w->data, blocks);
+            else
+                pack_q5k_mmq_kernel<<<blocks, BN_QK_K, 0, stream>>>(
+                    (BnCudaKQuantMmqBlock *)scratch.data,
+                    (const BnBlockQ5K *)w->data, blocks);
+            if (cudaGetLastError() != cudaSuccess) return -1;
+            packed_view = *w;
+            packed_view.mmq_data = scratch.data;
+            packed_view.mmq_size = bytes;
+            w = &packed_view;
+        } else {
+            scratch.data = NULL;
+            (void)cudaGetLastError();
+        }
+    }
     if (ctx->compute_capability == 1200) {
         const int widths[] = {8, 16, 24, 32, 40, 48, 64, 80, 96, 112, 128};
         int jwidth = 8, token_tiles = INT_MAX, nsm = 0;
