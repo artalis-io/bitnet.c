@@ -14321,7 +14321,9 @@ static __global__ void gqa_combine_kernel(float *out, const float *att,
                                           int n_heads, int head_size,
                                           int n_kv, int kv_mul, int kv_dim,
                                           int seq_len, uint32_t loff,
-                                          int kv_f16) {
+                                          int kv_f16,
+                                          const BnCudaRuntimeParams *runtime) {
+    if (runtime) n_kv = runtime->n_kv;
     int output = blockIdx.x;
     int h = output / head_size;
     int i = output - h * head_size;
@@ -31885,10 +31887,19 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     out, att, (const uint16_t *)value, n_heads, head_size,
                     n_kv, kv_mul, kv_dim, seq_len, op->p[6]);
             } else {
-                BN_CUDA_LAUNCH(ctx, gqa_combine_kernel,
-                    n_heads * head_size, 128, 0,
-                    out, att, value, n_heads, head_size, n_kv, kv_mul,
-                    kv_dim, seq_len, op->p[6], ctx->kv_f16);
+                if (graph_exec) {
+                    BN_CUDA_LAUNCH_STATIC(ctx, gqa_combine_kernel,
+                        n_heads * head_size, 128, 0,
+                        out, att, value, n_heads, head_size, n_kv, kv_mul,
+                        kv_dim, seq_len, op->p[6], ctx->kv_f16,
+                        (const BnCudaRuntimeParams *)ctx->d_runtime);
+                } else {
+                    BN_CUDA_LAUNCH(ctx, gqa_combine_kernel,
+                        n_heads * head_size, 128, 0,
+                        out, att, value, n_heads, head_size, n_kv, kv_mul,
+                        kv_dim, seq_len, op->p[6], ctx->kv_f16,
+                        (const BnCudaRuntimeParams *)NULL);
+                }
             }
             break;
         }
