@@ -6301,6 +6301,62 @@ static __global__ void q6k_dot_matvec_mmvq_kernel(float *out,
     }
 }
 
+/* Split long rows across two groups of four warps without changing the
+ * per-warp accumulation order used by the four-warp reference kernel. */
+static __global__ void q6k_dot_matvec_mmvq_8warp_exact_kernel(
+    float *out, const BnBlockQ6K *blocks, const BnCudaBlockQ8_1 *xq,
+    const float *bias, int rows, int cols, size_t out_offset) {
+    __shared__ float partial[3][32];
+    __shared__ float tail[4][5][32];
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int row = blockIdx.x;
+    if (row >= rows || warp >= 8) return;
+
+    int n_bpr = cols / BN_QK_K;
+    const BnBlockQ6K *row_blocks = blocks + (size_t)row * n_bpr;
+    if (warp >= 4) {
+        int reference_warp = warp - 4;
+#pragma unroll
+        for (int i = 0; i < 5; i++) {
+            int b = reference_warp + (i + 5) * 4;
+            tail[reference_warp][i][lane] = b < n_bpr
+                ? cuda_vec_dot_q6k_q8_1_mmvq(
+                    &row_blocks[b], xq + (size_t)b * 8, lane)
+                : 0.0f;
+        }
+    }
+
+    float sum = 0.0f;
+    if (warp < 4) {
+#pragma unroll
+        for (int i = 0; i < 5; i++) {
+            int b = warp + i * 4;
+            if (b < n_bpr)
+                sum += cuda_vec_dot_q6k_q8_1_mmvq(
+                    &row_blocks[b], xq + (size_t)b * 8, lane);
+        }
+    }
+    __syncthreads();
+    if (warp >= 4) return;
+
+#pragma unroll
+    for (int i = 0; i < 5; i++) sum += tail[warp][i][lane];
+    if (warp > 0) partial[warp - 1][lane] = sum;
+    __syncthreads();
+    if (warp > 0) return;
+
+    sum += partial[0][lane];
+    sum += partial[1][lane];
+    sum += partial[2][lane];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+    if (lane == 0) {
+        if (bias) sum += bias[row];
+        out[out_offset + row] = sum;
+    }
+}
+
 static __global__ void q6k_dot_matvec_mmvq_2warp_kernel(float *out,
                                                         const BnBlockQ6K *blocks,
                                                         const BnCudaBlockQ8_1 *xq,
@@ -28925,8 +28981,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         quantize_q8_1_kernel, (op->cols + 31) / 32, 32, 0,
                         xq, in, op->cols);
-                    /* SM120 uses four warps for every single-column Q6 MMVQ. */
-                    if (ctx->compute_capability != 1200 &&
+                    int q6_blocks_per_row = op->cols / BN_QK_K;
+                    if (ctx->compute_capability == 1200 &&
+                        q6_blocks_per_row > 20 && q6_blocks_per_row <= 40) {
+                        BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
+                            q6k_dot_matvec_mmvq_8warp_exact_kernel, op->rows,
+                            256, 0, out, (const BnBlockQ6K *)w->data, xq,
+                            bias, op->rows, op->cols, out_offset);
+                    } else if (ctx->compute_capability != 1200 &&
                         bn_gpu_policy_cuda_down_kquant_mmvq_2warp_logits_enabled(ctx->runtime_policy,
                             op->rows, op->cols, is_logits_op)) {
                         BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
