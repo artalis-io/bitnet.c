@@ -3443,8 +3443,8 @@ static __global__ void kquant_mmq_packed_kernel(
  * by the CUDA reference implementation. Packed backend weights already hold
  * signed-byte MMA operands and FP16 (scale, minimum) pairs; stage those into
  * a padded row layout and retain the reference pairwise FP32 accumulation. */
-template <int J>
-__launch_bounds__(256, 1)
+template <int J, int ROW_FRAGS>
+__launch_bounds__(512, 1)
 static __global__ void q4k_mmq_128xj_kernel(
         float *out, const BnBlockQ4K *blocks,
         const BnCudaKQuantMmqBlock *prepared,
@@ -3463,7 +3463,7 @@ static __global__ void q4k_mmq_128xj_kernel(
     int split = blockIdx.z;
     int b_begin = (int)((int64_t)split * n_bpr / split_count);
     int b_end = (int)((int64_t)(split + 1) * n_bpr / split_count);
-    float sum[J / 2] = {0.0f};
+    float sum[J * ROW_FRAGS / 4] = {0.0f};
 
     for (int b = b_begin; b < b_end; b++) {
         for (int i = tid; i < I * 32; i += blockDim.x) {
@@ -3529,12 +3529,12 @@ static __global__ void q4k_mmq_128xj_kernel(
             }
             __syncthreads();
 
-            int warp_row0 = (warp >> 1) * 32;
+            int warp_row0 = (warp >> 1) * (ROW_FRAGS * 16);
             int warp_token_phase = warp & 1;
-            int avec[2][4][4];
-            float2 adm[2][2][4];
+            int avec[ROW_FRAGS][4][4];
+            float2 adm[ROW_FRAGS][2][4];
 #pragma unroll
-            for (int n = 0; n < 2; n++) {
+            for (int n = 0; n < ROW_FRAGS; n++) {
 #pragma unroll
                 for (int k = 0; k < 4; k++) {
                     int k0 = kh * 32 + k * 8;
@@ -3581,7 +3581,7 @@ static __global__ void q4k_mmq_128xj_kernel(
                             *reinterpret_cast<const __half2 *>(&bits));
                     }
 #pragma unroll
-                    for (int n = 0; n < 2; n++) {
+                    for (int n = 0; n < ROW_FRAGS; n++) {
                         int c[4] = {0, 0, 0, 0};
                         asm volatile(
                             "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
@@ -3596,7 +3596,7 @@ static __global__ void q4k_mmq_128xj_kernel(
                         for (int l = 0; l < 4; l++) {
                             float2 da = adm[n][l >> 1][k];
                             float2 db = bdm[l & 1];
-                            int si = (jp * 2 + n) * 4 + l;
+                            int si = (jp * ROW_FRAGS + n) * 4 + l;
                             sum[si] = fmaf(da.x * db.x, (float)c[l],
                                            sum[si]);
                             sum[si] = fmaf(da.y, db.y, sum[si]);
@@ -3611,17 +3611,17 @@ static __global__ void q4k_mmq_128xj_kernel(
 #pragma unroll
     for (int jp = 0; jp < J / 16; jp++) {
 #pragma unroll
-        for (int n = 0; n < 2; n++) {
+        for (int n = 0; n < ROW_FRAGS; n++) {
 #pragma unroll
             for (int l = 0; l < 4; l++) {
-                int row = row0 + (warp >> 1) * 32 + n * 16 +
+                int row = row0 + (warp >> 1) * (ROW_FRAGS * 16) + n * 16 +
                           (l >> 1) * 8 + lane / 4;
                 int token = token0 + jp * 16 + (warp & 1) * 8 +
                             (lane % 4) * 2 + (l & 1);
                 if (row < rows && token < n_tokens)
                     out[out_offset + ((size_t)split * n_tokens + token) *
                         rows + row] =
-                        sum[(jp * 2 + n) * 4 + l];
+                        sum[(jp * ROW_FRAGS + n) * 4 + l];
             }
         }
     }
@@ -18169,15 +18169,15 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     return -1;
                 dim3 mmq_grid(tile_rows, tile_tokens, split_count);
                 if (wide_tile)
-                    q4k_mmq_128xj_kernel<128>
-                        <<<mmq_grid, 256, 0, stream>>>(
+                    q4k_mmq_128xj_kernel<128, 1>
+                        <<<mmq_grid, 512, 0, stream>>>(
                             ctx->d_mmq_fixup,
                             (const BnBlockQ4K *)w->data,
                             (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
                             n_tokens, 0, split_count);
                 else
-                    q4k_mmq_128xj_kernel<64>
+                    q4k_mmq_128xj_kernel<64, 2>
                         <<<mmq_grid, 256, 0, stream>>>(
                             ctx->d_mmq_fixup,
                             (const BnBlockQ4K *)w->data,
