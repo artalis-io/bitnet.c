@@ -3446,7 +3446,8 @@ static __global__ void kquant_mmq_packed_kernel(
 template <int J>
 __launch_bounds__(256, 1)
 static __global__ void q4k_mmq_128xj_kernel(
-        float *out, const BnCudaKQuantMmqBlock *blocks,
+        float *out, const BnBlockQ4K *blocks,
+        const BnCudaKQuantMmqBlock *prepared,
         const BnCudaBlockQ8_1 *xq, int rows, int cols, int n_tokens,
         size_t out_offset, int split_count) {
     enum { I = 128, X_STRIDE = 76, Y_STRIDE = 36 };
@@ -3465,17 +3466,21 @@ static __global__ void q4k_mmq_128xj_kernel(
     float sum[J / 2] = {0.0f};
 
     for (int b = b_begin; b < b_end; b++) {
-        for (int i = tid; i < I * 64; i += blockDim.x) {
-            int ri = i >> 6;
-            int qword = i & 63;
+        for (int i = tid; i < I * 32; i += blockDim.x) {
+            int ri = i >> 5;
+            int packed_word = i & 31;
             int row = row0 + ri;
             int value = 0;
             if (row < rows) {
-                const BnCudaKQuantMmqBlock *blk =
+                const BnBlockQ4K *blk =
                     blocks + (size_t)row * n_bpr + b;
-                memcpy(&value, blk->qs + qword * 4, sizeof(value));
+                memcpy(&value, blk->qs + packed_word * 4, sizeof(value));
             }
-            sx[ri * X_STRIDE + qword] = value;
+            int pair = packed_word >> 3;
+            int qword = (pair << 4) + (packed_word & 7);
+            sx[ri * X_STRIDE + qword] = value & 0x0f0f0f0f;
+            sx[ri * X_STRIDE + qword + 8] =
+                ((unsigned)value >> 4) & 0x0f0f0f0f;
         }
         for (int i = tid; i < I * 8; i += blockDim.x) {
             int ri = i >> 3;
@@ -3484,7 +3489,7 @@ static __global__ void q4k_mmq_128xj_kernel(
             uint32_t value = 0;
             if (row < rows) {
                 const BnCudaKQuantMmqBlock *blk =
-                    blocks + (size_t)row * n_bpr + b;
+                    prepared + (size_t)row * n_bpr + b;
                 value = (uint32_t)blk->ds[group] |
                         ((uint32_t)blk->ms[group] << 16);
             }
@@ -18167,6 +18172,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     q4k_mmq_128xj_kernel<128>
                         <<<mmq_grid, 256, 0, stream>>>(
                             ctx->d_mmq_fixup,
+                            (const BnBlockQ4K *)w->data,
                             (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
                             n_tokens, 0, split_count);
@@ -18174,6 +18180,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     q4k_mmq_128xj_kernel<64>
                         <<<mmq_grid, 256, 0, stream>>>(
                             ctx->d_mmq_fixup,
+                            (const BnBlockQ4K *)w->data,
                             (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
                             n_tokens, 0, split_count);
