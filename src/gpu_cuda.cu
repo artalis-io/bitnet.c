@@ -25953,17 +25953,21 @@ moe_route_routed_down:
         float *down_values = ctx->d_x;
         dim3 grid((dim + 127) / 128, 1, routed_schedule_upper);
         if (down_type == BN_GGUF_TENSOR_Q6_K) {
-            if (cuda_ensure_q8_k(ctx, hidden_dim, n_mid) != 0)
+            /* Reference MMQ uses 32-value input blocks with FP32 scales. */
+            int mid_blocks = hidden_dim / 32;
+            if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
                 return -1;
-            BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
-            quantize_q8k_batch_kernel<<<
-                dim3(hidden_dim / BN_QK_K, n_mid), BN_QK_K>>>(
-                    mid_q, d_mid, hidden_dim, n_mid);
+            BnCudaBlockQ8Mmq *mid_q =
+                (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
+            quantize_mmq_input_kernel<<<dim3(mid_blocks, n_mid), 32>>>(
+                mid_q, d_mid, hidden_dim, 1);
             q6k_mmq_128x64_kernel<<<grid, 512>>>(
-                down_values, NULL, NULL, dim, hidden_dim, n_mid, 1,
+                down_values, NULL,
+                (const BnCudaBlockQ8MmqF32 *)mid_q,
+                dim, hidden_dim, n_mid, 1,
                 (const BnBlockQ6K *)down->data, d_slot_order,
                 d_expert_counts, d_expert_offsets, d_routed_schedule,
-                n_experts, mid_q, 1);
+                n_experts, NULL, 1);
         } else {
             int mid_blocks = hidden_dim / 32;
             if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
@@ -27262,8 +27266,8 @@ static int cuda_prefill_qkv_attention_wo_impl(
     size_t qk_values = (size_t)n_tokens * (size_t)qk_rows;
     int use_mma = prefix || cuda_prefill_attention_mma_enabled(ctx, n_tokens, n_heads,
         n_kv_heads, head_size, kv_mul, kv_dim, 0);
-    int use_mmf128 = !use_mma && !ctx->kv_f16 && ctx->compute_capability >= 800 &&
-        head_size == 128 && n_tokens <= 256;
+    int use_mmf128 = !use_mma && ctx->compute_capability >= 800 &&
+        head_size == 128 && n_tokens >= 128 && n_tokens <= 256;
     int use_gemm_attention = !use_mma && !use_mmf128 &&
         bn_gpu_policy_cuda_prefill_gemm_attention_enabled_for_shape(
             ctx->runtime_policy, n_tokens, 512, ctx->kv_f16, n_heads,
@@ -27354,11 +27358,9 @@ static int cuda_prefill_qkv_attention_wo_impl(
     /* Packing Q/K weights is a storage optimization. The model graph still
      * has two projections: combining their row counts changes MMQ StreamK
      * partitions and floating-point accumulation order. */
-    /* From 16 prompt tokens, Q4_K MMQ quantizes the activation and can shift
-     * FP16 KV values enough to change greedy tokens. The shorter path already
-     * matches the reference; retain it. For longer prompts, keep the batch
-     * on device and use decode's F32 accumulation for Q/K and Q4_K V. */
-    int reference_qkv = ctx->kv_f16 && n_tokens >= 16 &&
+    /* Keep reference rows for short FP16-KV batches. Larger batches use
+     * matrix projections whose Q/K/V results match reference MMQ. */
+    int reference_qkv = ctx->kv_f16 && n_tokens >= 16 && n_tokens < 128 &&
         qk_type == BN_GGUF_TENSOR_Q4_K && separate_qk_projection;
     if (reference_qkv) {
         if (cuda_prefill_q4k_reference_rows(ctx, d_qk, &q_view,
