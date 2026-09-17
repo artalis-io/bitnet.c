@@ -27301,9 +27301,14 @@ static int cuda_prefill_qkv_attention_wo_impl(
         n_kv_heads, head_size, kv_mul, kv_dim, 0);
     int use_mmf128 = !use_mma && ctx->compute_capability >= 800 &&
         head_size == 128 && n_tokens >= 128 && n_tokens <= 256;
+    /* This GQA8 F16 layout retains sampled-token parity with batched GEMM
+     * beyond the general 512-token prefill cap. */
+    const int gemm_max_tokens = ctx->kv_f16 && n_heads == 32 &&
+        n_kv_heads == 4 && head_size == 128 && kv_mul == 8
+        ? 1792 : 512;
     int use_gemm_attention = !use_mma && !use_mmf128 &&
         bn_gpu_policy_cuda_prefill_gemm_attention_enabled_for_shape(
-            ctx->runtime_policy, n_tokens, 512, ctx->kv_f16, n_heads,
+            ctx->runtime_policy, n_tokens, gemm_max_tokens, ctx->kv_f16, n_heads,
             n_kv_heads, head_size, kv_mul);
     size_t score_values =
         use_mmf128
