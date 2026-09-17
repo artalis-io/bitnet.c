@@ -753,6 +753,8 @@ static int backend_policy_from_cli(BnBackendRuntimePolicy *policy,
                         "BN_GPU_DISABLE_GATEUP_SPLIT");
     BN_SET_BACKEND_FLAG(args->gpu_disable_fused_gateup,
                         "BN_GPU_DISABLE_FUSED_GATEUP");
+    BN_SET_BACKEND_FLAG(args->cuda && args->flash_attn,
+                        "BN_CUDA_FLASH_ATTN");
     BN_SET_BACKEND_FLAG(args->gpu_split_residual_rmsnorm,
                         "BN_GPU_SPLIT_RESIDUAL_RMSNORM");
     if (args->metal_disable_small_dense_native_quant &&

@@ -27551,7 +27551,11 @@ static int cuda_prefill_qkv_attention_wo_impl(
         ctx, debug_prefill, "qkv_v",
         d_v + (size_t)(n_tokens - 1) * kv_dim, kv_dim);
 
-    if (cuda_prefill_prepare_kv(ctx, d_k, d_v, kv_values) != 0)
+    /* llama.cpp's flash prefill consumes the current batch's FP32 K/V;
+     * non-flash attention consumes values rounded through the F16 cache. */
+    if (!bn_backend_runtime_policy_get(ctx->runtime_policy,
+                                       "BN_CUDA_FLASH_ATTN") &&
+        cuda_prefill_prepare_kv(ctx, d_k, d_v, kv_values) != 0)
         return -1;
 
     if (prefix) {
@@ -33661,7 +33665,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int flash_threads = head_size == 512 && kv_mul == 8 &&
                                 ctx->kv_f16 ? 1024 : threads;
             size_t shared = (size_t)(flash_scratch + flash_threads) * sizeof(float);
-            if (head_size == 128 && n_kv > 256 && n_kv <= 2048) {
+            if (head_size == 128 && n_kv > 0 && n_kv <= 2048) {
                 int first_key = op->attention_window > 0 &&
                     n_kv > op->attention_window
                     ? n_kv - op->attention_window : 0;
