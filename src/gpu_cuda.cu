@@ -15517,6 +15517,99 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
         out[(size_t)h * 128 + d] = value;
     }
 }
+
+/* Independent key partitions expose enough CTAs for decode without repeating
+ * the score calculation for each value tile. */
+static __global__ void flash_attention_partition_128_kernel(
+        float *scratch, const float *q, const void *key_cache,
+        const void *value_cache, int n_kv, int kv_mul, int kv_dim,
+        uint32_t loff, float scale, int kv_f16, int first_key, int parts) {
+    const int h = blockIdx.x;
+    const int part = blockIdx.y;
+    const int tid = threadIdx.x;
+    const int kh = h / kv_mul;
+    const int start = n_kv * part / parts;
+    const int end = n_kv * (part + 1) / parts;
+    const int count = end - start;
+    const float *qh = q + (size_t)h * 128;
+    float *result = scratch + ((size_t)h * parts + part) * 130;
+    __shared__ float scores[256];
+    __shared__ float reduction[16];
+    __shared__ float value_lanes[4][128];
+
+    for (int t = start + (tid >> 5); t < end;
+         t += blockDim.x / 32) {
+        int lane = tid & 31;
+        size_t koff = (size_t)loff + (size_t)t * kv_dim + kh * 128;
+        float dot = 0.0f;
+#pragma unroll
+        for (int d = lane; d < 128; d += 32)
+            dot = fmaf(qh[d], cuda_kv_load(key_cache, koff + d, kv_f16), dot);
+        for (int offset = 16; offset; offset >>= 1)
+            dot += __shfl_down_sync(0xffffffffu, dot, offset);
+        if (lane == 0)
+            scores[t - start] = t >= first_key ? dot * scale : -INFINITY;
+    }
+    __syncthreads();
+    float local_max = -INFINITY;
+    for (int i = tid; i < count; i += blockDim.x)
+        local_max = fmaxf(local_max, scores[i]);
+    float maximum = cuda_block_reduce_max_all(local_max, reduction);
+    float local_sum = 0.0f;
+    for (int i = tid; i < count; i += blockDim.x) {
+        float probability = isfinite(maximum)
+            ? expf(scores[i] - maximum) : 0.0f;
+        scores[i] = probability;
+        local_sum += probability;
+    }
+    float denominator = cuda_block_reduce_sum_all(local_sum, reduction);
+    if (tid == 0) {
+        result[128] = maximum;
+        result[129] = denominator;
+    }
+    __syncthreads();
+    const int value_lane = tid >> 7;
+    const int d = tid & 127;
+    float value = 0.0f;
+    if (denominator > 0.0f) {
+        for (int t = start + value_lane; t < end; t += 4) {
+            size_t voff = (size_t)loff + (size_t)t * kv_dim + kh * 128 + d;
+            value = fmaf(scores[t - start],
+                cuda_kv_load(value_cache, voff, kv_f16), value);
+        }
+    }
+    value_lanes[value_lane][d] = value;
+    __syncthreads();
+    if (tid < 128)
+        result[tid] = value_lanes[0][tid] + value_lanes[1][tid] +
+                      value_lanes[2][tid] + value_lanes[3][tid];
+}
+
+static __global__ void flash_attention_combine_128_kernel(
+        float *out, const float *scratch, int parts) {
+    const int h = blockIdx.x;
+    const int d = threadIdx.x;
+    const float *head = scratch + (size_t)h * parts * 130;
+    __shared__ float maximum, inverse;
+    if (d == 0) {
+        float m = -INFINITY;
+        for (int p = 0; p < parts; p++)
+            m = fmaxf(m, head[p * 130 + 128]);
+        maximum = m;
+        float sum = 0.0f;
+        for (int p = 0; p < parts; p++)
+            if (head[p * 130 + 129] > 0.0f)
+                sum += expf(head[p * 130 + 128] - m) * head[p * 130 + 129];
+        inverse = sum > 0.0f ? 1.0f / sum : 0.0f;
+    }
+    __syncthreads();
+    float value = 0.0f;
+    for (int p = 0; p < parts; p++)
+        if (head[p * 130 + 129] > 0.0f)
+            value = fmaf(expf(head[p * 130 + 128] - maximum),
+                         head[p * 130 + d], value);
+    out[(size_t)h * 128 + d] = value * inverse;
+}
 static __device__ __forceinline__ float cuda_attention_f16_contract_load(
         const void *cache, size_t index, int kv_f16) {
     if (kv_f16)
@@ -33685,6 +33778,23 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int first_key = op->attention_window > 0 &&
                     n_kv > op->attention_window
                     ? n_kv - op->attention_window : 0;
+                int partitions = min(8, seq_len / 256);
+                float *partition_scratch = cuda_act(ctx, BN_GPU_VALUE_ATT);
+                if (ctx->compute_capability >= 1200 &&
+                    ctx->kv_f16 && partitions > 1 &&
+                    (n_kv + partitions - 1) / partitions <= 256 &&
+                    partition_scratch &&
+                    (size_t)n_heads * partitions * 130 * sizeof(float) <=
+                        ctx->act_sizes[BN_GPU_VALUE_ATT]) {
+                    BN_CUDA_LAUNCH(ctx, flash_attention_partition_128_kernel,
+                        dim3(n_heads, partitions), 512, 0,
+                        partition_scratch, q, key, value, n_kv, kv_mul,
+                        kv_dim, op->p[6], cuda_u32_to_f32(op->p[7]),
+                        ctx->kv_f16, first_key, partitions);
+                    BN_CUDA_LAUNCH(ctx, flash_attention_combine_128_kernel,
+                        n_heads, 128, 0, out, partition_scratch, partitions);
+                    break;
+                }
                 if (ctx->compute_capability >= 1200) {
                     BN_CUDA_LAUNCH(ctx,
                         flash_attention_avx2_reference_128_kernel<true>,
