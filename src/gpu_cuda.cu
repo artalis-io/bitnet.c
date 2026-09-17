@@ -15324,17 +15324,19 @@ static __device__ __forceinline__ float cuda_softmax_hsum8_avx2(
     return __fadd_rn(__fadd_rn(a0, a2), __fadd_rn(a1, a3));
 }
 
+template<bool SplitValueTiles>
 static __global__ void flash_attention_avx2_reference_128_kernel(
         float *out, const float *q, const void *key_cache,
         const void *value_cache, int n_heads, int n_kv, int kv_mul,
         int kv_dim, uint32_t loff, float scale, int kv_f16,
         int first_key, int parallel_scores) {
-    const int h = blockIdx.x;
+    const int h = SplitValueTiles ? blockIdx.x >> 2 : blockIdx.x;
     const int tid = threadIdx.x;
-    /* Four 32-value tiles share one score/softmax pass. The eight AVX2
-     * accumulation lanes within each tile retain their original order. */
+    /* The four 32-value tiles have independent AVX2 accumulation lanes.
+     * SM120 gives each tile a block; other devices keep one block per head. */
     const int value_subtile = tid >> 8;
     const int value_tile = value_subtile;
+    const int selected_value_tile = blockIdx.x & 3;
     if (h >= n_heads) return;
     const int kh = h / kv_mul;
     const float *qh = q + (size_t)h * 128;
@@ -15342,6 +15344,10 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
     __shared__ float maximum_shared;
     __shared__ float inverse_shared;
     __shared__ float value_lanes[4][8][32];
+    /* Parallelize the independent AVX2 blocks; the final double sum still
+     * visits their float results in the original ascending key order. */
+    __shared__ float reduction_blocks[2048 / 16];
+    const int reduction_count = (n_kv + 15) / 16;
 
     if (parallel_scores) {
         /* Eight CUDA lanes follow the eight independent AVX2 accumulation
@@ -15400,10 +15406,22 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
     }
     __syncthreads();
 
+    if (tid < reduction_count) {
+        int first = tid * 16;
+        float maximum = -INFINITY;
+#pragma unroll
+        for (int i = 0; i < 16; i++) {
+            if (first + i < n_kv && probabilities[first + i] > maximum)
+                maximum = probabilities[first + i];
+        }
+        reduction_blocks[tid] = maximum;
+    }
+    __syncthreads();
     if (tid == 0) {
         float maximum = probabilities[0];
-        for (int t = 1; t < n_kv; t++)
-            if (probabilities[t] > maximum) maximum = probabilities[t];
+        for (int block = 0; block < reduction_count; block++)
+            if (reduction_blocks[block] > maximum)
+                maximum = reduction_blocks[block];
         maximum_shared = maximum;
     }
     __syncthreads();
@@ -15412,33 +15430,24 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
             __fsub_rn(probabilities[t], maximum_shared));
     __syncthreads();
 
+    if (tid < reduction_count) {
+        int first = tid * 16;
+        float values[16];
+#pragma unroll
+        for (int lane = 0; lane < 16; lane++)
+            values[lane] = first + lane < n_kv
+                ? probabilities[first + lane] : 0.0f;
+        float lanes[8];
+#pragma unroll
+        for (int lane = 0; lane < 8; lane++)
+            lanes[lane] = __fadd_rn(values[lane], values[lane + 8]);
+        reduction_blocks[tid] = cuda_softmax_hsum8_avx2(lanes);
+    }
+    __syncthreads();
     if (tid == 0) {
         double denominator = 0.0;
-        int t = 0;
-        for (; t + 15 < n_kv; t += 16) {
-            float values[16];
-#pragma unroll
-            for (int lane = 0; lane < 16; lane++)
-                values[lane] = probabilities[t + lane];
-            float lanes[8];
-#pragma unroll
-            for (int lane = 0; lane < 8; lane++)
-                lanes[lane] = __fadd_rn(values[lane], values[lane + 8]);
-            denominator += (double)cuda_softmax_hsum8_avx2(lanes);
-        }
-        if (t < n_kv) {
-            float values[16];
-#pragma unroll
-            for (int lane = 0; lane < 16; lane++) {
-                values[lane] = lane < n_kv - t
-                    ? probabilities[t + lane] : 0.0f;
-            }
-            float lanes[8];
-#pragma unroll
-            for (int lane = 0; lane < 8; lane++)
-                lanes[lane] = __fadd_rn(values[lane], values[lane + 8]);
-            denominator += (double)cuda_softmax_hsum8_avx2(lanes);
-        }
+        for (int block = 0; block < reduction_count; block++)
+            denominator += (double)reduction_blocks[block];
         inverse_shared = (float)(1.0 / denominator);
     }
     __syncthreads();
@@ -15453,20 +15462,23 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
     const int d = value_tile * 32 + value_lane;
     float sums[4] = {0.0f};
     int t = 0;
-    for (; t + 31 < n_kv; t += 32) {
+    if (!SplitValueTiles || value_subtile == selected_value_tile) {
+        for (; t + 31 < n_kv; t += 32) {
 #pragma unroll
-        for (int group = 0; group < 4; group++) {
-            int key = t + group * 8 + avx_lane;
-            size_t voff = (size_t)loff + (size_t)key * kv_dim +
-                          kh * 128 + d;
-            sums[group] = fmaf(probabilities[key],
-                cuda_kv_load(value_cache, voff, kv_f16), sums[group]);
+            for (int group = 0; group < 4; group++) {
+                int key = t + group * 8 + avx_lane;
+                size_t voff = (size_t)loff + (size_t)key * kv_dim +
+                              kh * 128 + d;
+                sums[group] = fmaf(probabilities[key],
+                    cuda_kv_load(value_cache, voff, kv_f16), sums[group]);
+            }
         }
+        value_lanes[value_subtile][avx_lane][value_lane] = __fadd_rn(
+            __fadd_rn(sums[0], sums[2]), __fadd_rn(sums[1], sums[3]));
     }
-    value_lanes[value_subtile][avx_lane][value_lane] = __fadd_rn(
-        __fadd_rn(sums[0], sums[2]), __fadd_rn(sums[1], sums[3]));
     __syncthreads();
-    if (avx_lane == 0) {
+    if ((!SplitValueTiles || value_subtile == selected_value_tile) &&
+        avx_lane == 0) {
         float lanes[8];
 #pragma unroll
         for (int lane = 0; lane < 8; lane++)
@@ -33638,12 +33650,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int first_key = op->attention_window > 0 &&
                     n_kv > op->attention_window
                     ? n_kv - op->attention_window : 0;
-                BN_CUDA_LAUNCH(ctx,
-                    flash_attention_avx2_reference_128_kernel,
-                    n_heads, 1024, (size_t)n_kv * sizeof(float),
-                    out, q, key, value, n_heads, n_kv, kv_mul, kv_dim,
-                    op->p[6], cuda_u32_to_f32(op->p[7]), ctx->kv_f16,
-                    first_key, n_kv > 512);
+                if (ctx->compute_capability >= 1200) {
+                    BN_CUDA_LAUNCH(ctx,
+                        flash_attention_avx2_reference_128_kernel<true>,
+                        n_heads * 4, 1024, (size_t)n_kv * sizeof(float),
+                        out, q, key, value, n_heads, n_kv, kv_mul, kv_dim,
+                        op->p[6], cuda_u32_to_f32(op->p[7]), ctx->kv_f16,
+                        first_key, n_kv > 512);
+                } else {
+                    BN_CUDA_LAUNCH(ctx,
+                        flash_attention_avx2_reference_128_kernel<false>,
+                        n_heads, 1024, (size_t)n_kv * sizeof(float),
+                        out, q, key, value, n_heads, n_kv, kv_mul, kv_dim,
+                        op->p[6], cuda_u32_to_f32(op->p[7]), ctx->kv_f16,
+                        first_key, n_kv > 512);
+                }
                 break;
             }
             BN_CUDA_LAUNCH(ctx, flash_attention_kernel, n_heads, flash_threads,
