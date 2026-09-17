@@ -71,4 +71,63 @@ static __global__ void iq4xs_dot_matvec_packed_kernel(float *out,
     }
 }
 
+/* Expand eight IQ4_XS nibbles into two signed-byte dot operands using
+ * byte permutations. The codebook values are the constants in iq_tables.h. */
+static __device__ __forceinline__ int2 iq4xs_expand_codes(uint32_t q4) {
+    const uint32_t t0 = 0xbfad9881u, t1 = 0xf6eaddcfu;
+    const uint32_t t2 = 0x26190d01u, t3 = 0x71594535u;
+    uint32_t selector = 0x32103210u | ((q4 & 0x88888888u) >> 1);
+    uint32_t low0 = __byte_perm(t0, t1, q4);
+    uint32_t high0 = __byte_perm(t2, t3, q4);
+    uint32_t low1 = __byte_perm(t0, t1, q4 >> 16);
+    uint32_t high1 = __byte_perm(t2, t3, q4 >> 16);
+    uint32_t words0 = __byte_perm(low0, high0, selector);
+    uint32_t words1 = __byte_perm(low1, high1, selector >> 16);
+    return make_int2(__byte_perm(words0, words1, 0x6420),
+                     __byte_perm(words0, words1, 0x7531));
+}
+
+static __global__ void iq4xs_dot_matvec_compact_perm_kernel(float *out,
+        const BnBlockIQ4XS *weights, const BnCudaBlockQ8_1 *input,
+        int rows, int cols, const float *bias, size_t out_offset) {
+    __shared__ float partial[3][32];
+    int tid = threadIdx.x, lane = tid & 31, warp = tid / 32;
+    int row = blockIdx.x, token = blockIdx.y;
+    int blocks = cols / 256, group = tid & 7;
+    float sum = 0.0f;
+    for (int b = tid / 8; b < blocks; b += blockDim.x / 8) {
+        const BnBlockIQ4XS *w = weights + (size_t)row * blocks + b;
+        const BnCudaBlockQ8_1 *x =
+            input + (size_t)token * (cols / 32) + b * 8 + group;
+        int dot = 0;
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            uint32_t codes, u0, u1;
+            memcpy(&codes, w->qs + group * 16 + j * 4, sizeof(codes));
+            int2 q = iq4xs_expand_codes(codes);
+            memcpy(&u0, x->qs + j * 4, sizeof(u0));
+            memcpy(&u1, x->qs + 16 + j * 4, sizeof(u1));
+            dot = cuda_dp4a_i32(q.x, (int)u0, dot);
+            dot = cuda_dp4a_i32(q.y, (int)u1, dot);
+        }
+        int scale = ((w->scales_l[group / 2] >> (4 * (group & 1))) & 15) |
+                    (((w->scales_h >> (2 * group)) & 3) << 4);
+        dot *= scale - 32;
+        float d = cuda_fp16_to_fp32(w->d) * cuda_fp16_to_fp32(x->d);
+        sum = fmaf(d, (float)dot, sum);
+    }
+    if (warp) partial[warp - 1][lane] = sum;
+    __syncthreads();
+    if (!warp) {
+        for (int i = 0; i < blockDim.x / 32 - 1; i++)
+            sum += partial[i][lane];
+        for (int i = 16; i > 0; i /= 2)
+            sum += __shfl_xor_sync(0xffffffffu, sum, i);
+        if (!lane) {
+            if (bias) sum += bias[row];
+            out[out_offset + (size_t)token * rows + row] = sum;
+        }
+    }
+}
+
 #endif
