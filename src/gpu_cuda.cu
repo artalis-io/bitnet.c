@@ -15677,7 +15677,9 @@ static __device__ void attention_mma_f16_512(float *out, const float *q,
     const int tiles=partitions>0?((nt+255)/256)*8:(nt+31)/32;
     const int nb=partitions>0?partitions:-partitions;
     __shared__ __half chunk_scale512[BN_CUDA_DECODE512_MAX_KEYS/16];
-    if(warp==0) for(int base=0;base<nt;base+=16){
+    /* KQ tiles are independent. Distribute them across the block's warps
+     * while retaining each tile's MMA accumulation order. */
+    for(int base=warp*16;base<nt;base+=(blockDim.x/32)*16){
         int row=base+lane/4,col=2*(lane%4);
         float z0=0,z1=0,z2=0,z3=0;
         for(int off=0;off<512;off+=16){
@@ -15703,10 +15705,9 @@ static __device__ void attention_mma_f16_512(float *out, const float *q,
         if(lane%4==0){scores512[row]=row<nt && row>=first_key?z0:-INFINITY;scores512[row+8]=row+8<nt && row+8>=first_key?z2:-INFINITY;}
     }
     __syncthreads();
-    /* Each partition processes chunks forward. Keep eight lane-local sums
-     * until its last chunk, and retain the FP16 numerator across PV MMAs. */
-    if(warp==0){
-        for(int block=0;block<nb;block++) for(int ip=0;ip<2;ip++) {
+    /* Partitions are independent; assign them to warps without changing the
+     * forward chunk order within a partition or its FP16 PV accumulation. */
+    for(int block=warp;block<nb;block+=blockDim.x/32) for(int ip=0;ip<2;ip++) {
             float mx=-FLT_MAX/2.f,sum=0.f;
             const int first=block*tiles/nb,last=(block+1)*tiles/nb;
             for(int chunk=first;chunk<last;chunk++) {
@@ -15724,7 +15725,6 @@ static __device__ void attention_mma_f16_512(float *out, const float *q,
             for(int off=4;off;off/=2)sum+=__shfl_xor_sync(0xffffffffu,sum,off);
             if(lane==0){maxima512[2*block+ip]=mx;sums512[2*block+ip]=sum;}
         }
-    }
     __syncthreads();
     if(tid<nb){
         int p=2*tid;float mx=fmaxf(maxima512[p],maxima512[p+1]);
