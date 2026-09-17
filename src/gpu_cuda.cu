@@ -19804,10 +19804,9 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
             if (bn_quant_format_is_q4k(type) && n_tokens >= 128 &&
                 ref_split_bound <= cols / BN_QK_K) {
                 int tile_rows = (rows + 127) / 128;
-                /* The 64-token tile keeps enough independent blocks in
-                 * flight for wide FFN projections and reduces shared-memory
-                 * pressure relative to the 128-token variant. */
-                int wide_tile = 0;
+                /* Wide projections amortize the larger 128-token tile;
+                 * narrower projections retain the 64-token tile's occupancy. */
+                int wide_tile = rows >= 8192;
                 int tile_tokens = wide_tile
                     ? (n_tokens + 127) / 128
                     : (n_tokens + 63) / 64;
