@@ -144,24 +144,25 @@ static __global__ void q4_routed_mmq(float*out,const BnBlockQ4_0*w,
  out[(size_t)item*rows+row]=__fadd_rn(tail,prefix);
 }
 
-/* One warp computes a 16-row by 8-token tile with integer MMA. Each Q4_0
- * block still contributes one FP32 FMA in the reference partition order. */
-template <bool ROUTED, int WARPS>
+/* Each warp computes consecutive 16-row by 8-token tiles with integer MMA.
+ * The row groups share quantized inputs while each Q4_0 block retains one
+ * FP32 FMA in the reference partition order. */
+template <bool ROUTED, int WARPS, int ROW_GROUPS = 1>
 static __global__ void q4_mmq_mma_tile(float *out, const BnBlockQ4_0 *w,
     const BnQ4CudaInput *x, const int *map, int rows, int cols,
     int batch_tokens, int total_tokens, int expert_index, int experts,
     int k, int input_stride, int jwidth, int grid, int geometry_rows,
     int row_offset) {
-    __shared__ __align__(16) int8_t sa[2][16][32];
+    __shared__ __align__(16) int8_t sa[2][ROW_GROUPS * 16][32];
     __shared__ __align__(16) int8_t sb[2][WARPS * 8][32];
-    __shared__ uint16_t wd[2][16];
+    __shared__ uint16_t wd[2][ROW_GROUPS * 16];
     __shared__ half xd[2][WARPS * 8];
     __shared__ int route[WARPS * 8];
     __shared__ int active;
     int tid = threadIdx.x;
     int lane = tid & 31;
     int warp = tid >> 5;
-    int row0 = (int)blockIdx.x * 16;
+    int row0 = (int)blockIdx.x * (ROW_GROUPS * 16);
     int token0 = (int)blockIdx.y * (WARPS * 8);
     int expert = ROUTED ? (int)blockIdx.z : expert_index;
     int nb = cols / 32;
@@ -196,8 +197,8 @@ static __global__ void q4_mmq_mma_tile(float *out, const BnBlockQ4_0 *w,
         : (int)(((base + nb + 8) * grid) / total) + 2;
     if (first_bid < 0) first_bid = 0;
     if (last_bid >= grid) last_bid = grid - 1;
-    float tail[4] = {0.f, 0.f, 0.f, 0.f};
-    float prefix[4] = {0.f, 0.f, 0.f, 0.f};
+    float tail[ROW_GROUPS][4] = {};
+    float prefix[ROW_GROUPS][4] = {};
     bool have = false;
     for (int bid = last_bid; bid >= first_bid; bid--) {
         long long beg = (long long)bid * total / grid;
@@ -209,14 +210,14 @@ static __global__ void q4_mmq_mma_tile(float *out, const BnBlockQ4_0 *w,
         int lo = beg < 0 ? 0 : (int)beg;
         int hi = end > nb ? nb : (int)end;
         if (lo >= hi) continue;
-        float acc[4] = {0.f, 0.f, 0.f, 0.f};
+        float acc[ROW_GROUPS][4] = {};
         for (int b = lo; b < hi; b += 2) {
             int n_stage = hi - b < 2 ? 1 : 2;
             /* Stage adjacent blocks together while retaining the reference
              * FP32 accumulation order within each partition. */
             for (int stage = 0; stage < n_stage; stage++) {
                 int block = b + stage;
-                for (int i = tid; i < 16 * 32; i += blockDim.x) {
+                for (int i = tid; i < ROW_GROUPS * 16 * 32; i += blockDim.x) {
                     int ri = i / 32;
                     int col = i & 31;
                     int row = row0 + ri;
@@ -228,9 +229,9 @@ static __global__ void q4_mmq_mma_tile(float *out, const BnBlockQ4_0 *w,
                     }
                     sa[stage][ri][col] = (int8_t)value;
                 }
-                if (tid < 16) {
-                    int row = row0 + tid;
-                    wd[stage][tid] = row < rows ? ew[(size_t)row * nb + block].d : 0;
+                for (int ri = tid; ri < ROW_GROUPS * 16; ri += blockDim.x) {
+                    int row = row0 + ri;
+                    wd[stage][ri] = row < rows ? ew[(size_t)row * nb + block].d : 0;
                 }
                 for (int i = tid; i < WARPS * 8 * 32; i += blockDim.x) {
                     int ti = i / 32;
@@ -248,47 +249,53 @@ static __global__ void q4_mmq_mma_tile(float *out, const BnBlockQ4_0 *w,
             }
             __syncthreads();
             for (int stage = 0; stage < n_stage; stage++) {
-                int a[4], bv[2], c[4] = {0, 0, 0, 0};
-                unsigned ash = (unsigned)__cvta_generic_to_shared(
-                    &sa[stage][lane % 16][(lane / 16) * 16]);
-                unsigned bsh = (unsigned)__cvta_generic_to_shared(
-                    &sb[stage][warp * 8 + lane % 8][((lane / 8) * 16) % 32]);
-                asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 "
-                    "{%0,%1,%2,%3}, [%4];"
-                    : "=r"(a[0]), "=r"(a[1]), "=r"(a[2]), "=r"(a[3])
-                    : "r"(ash));
-                asm volatile("ldmatrix.sync.aligned.m8n8.x2.b16 "
-                    "{%0,%1}, [%2];"
-                    : "=r"(bv[0]), "=r"(bv[1]) : "r"(bsh));
-                asm volatile("mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
-                    "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
-                    "{%0,%1,%2,%3};"
-                    : "+r"(c[0]), "+r"(c[1]), "+r"(c[2]), "+r"(c[3])
-                    : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]),
-                      "r"(bv[0]), "r"(bv[1]));
-                for (int l = 0; l < 4; l++) {
-                    int ri = (l / 2) * 8 + lane / 4;
-                    int ti = warp * 8 + (lane % 4) * 2 + (l & 1);
-                    acc[l] = fmaf((float)c[l] * cuda_fp16_to_fp32(wd[stage][ri]),
-                                  __half2float(xd[stage][ti]), acc[l]);
+                for (int group = 0; group < ROW_GROUPS; group++) {
+                    int a[4], bv[2], c[4] = {0, 0, 0, 0};
+                    unsigned ash = (unsigned)__cvta_generic_to_shared(
+                        &sa[stage][group * 16 + lane % 16][(lane / 16) * 16]);
+                    unsigned bsh = (unsigned)__cvta_generic_to_shared(
+                        &sb[stage][warp * 8 + lane % 8][((lane / 8) * 16) % 32]);
+                    asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 "
+                        "{%0,%1,%2,%3}, [%4];"
+                        : "=r"(a[0]), "=r"(a[1]), "=r"(a[2]), "=r"(a[3])
+                        : "r"(ash));
+                    asm volatile("ldmatrix.sync.aligned.m8n8.x2.b16 "
+                        "{%0,%1}, [%2];"
+                        : "=r"(bv[0]), "=r"(bv[1]) : "r"(bsh));
+                    asm volatile("mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
+                        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
+                        "{%0,%1,%2,%3};"
+                        : "+r"(c[0]), "+r"(c[1]), "+r"(c[2]), "+r"(c[3])
+                        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]),
+                          "r"(bv[0]), "r"(bv[1]));
+                    for (int l = 0; l < 4; l++) {
+                        int ri = group * 16 + (l / 2) * 8 + lane / 4;
+                        int ti = warp * 8 + (lane % 4) * 2 + (l & 1);
+                        acc[group][l] = fmaf(
+                            (float)c[l] * cuda_fp16_to_fp32(wd[stage][ri]),
+                            __half2float(xd[stage][ti]), acc[group][l]);
+                    }
                 }
             }
             __syncthreads();
         }
-        for (int l = 0; l < 4; l++) {
-            if (!have) tail[l] = acc[l];
-            else prefix[l] = __fadd_rn(prefix[l], acc[l]);
-        }
+        for (int group = 0; group < ROW_GROUPS; group++)
+            for (int l = 0; l < 4; l++) {
+                if (!have) tail[group][l] = acc[group][l];
+                else prefix[group][l] = __fadd_rn(prefix[group][l], acc[group][l]);
+            }
         have = true;
     }
-    for (int l = 0; l < 4; l++) {
-        int ri = (l / 2) * 8 + lane / 4;
-        int ti = warp * 8 + (lane % 4) * 2 + (l & 1);
-        int row = row0 + ri;
-        int item = route[ti];
-        if (row < rows && item >= 0)
-            out[(size_t)item * rows + row] = __fadd_rn(tail[l], prefix[l]);
-    }
+    for (int group = 0; group < ROW_GROUPS; group++)
+        for (int l = 0; l < 4; l++) {
+            int ri = group * 16 + (l / 2) * 8 + lane / 4;
+            int ti = warp * 8 + (lane % 4) * 2 + (l & 1);
+            int row = row0 + ri;
+            int item = route[ti];
+            if (row < rows && item >= 0)
+                out[(size_t)item * rows + row] =
+                    __fadd_rn(tail[group][l], prefix[group][l]);
+        }
 }
 
 #endif
