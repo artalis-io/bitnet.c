@@ -19726,13 +19726,22 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
             } else {
                 /* Pad short batches to one 32-token tile: fewer wide FFN
                  * blocks and better occupancy than two 16-token tiles. */
-                dim3 mmq_grid((rows + 127) / 128,
-                              (n_tokens + 31) / 32, 1);
-                kquant_mmq_packed_kernel<128, 32, 2, true>
-                    <<<mmq_grid, 512, 0, stream>>>(
-                        out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
-                        (const BnCudaBlockQ8_1 *)xq, rows, cols,
-                        n_tokens, 0, jwidth, (int)grid);
+                if (bn_quant_format_is_q4k(type) && n_tokens < 16) {
+                    dim3 mmq_grid((rows + 31) / 32, 1, 1);
+                    kquant_mmq_packed_kernel<32, 32, 2, true>
+                        <<<mmq_grid, 128, 0, stream>>>(
+                            out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                            (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                            n_tokens, 0, jwidth, (int)grid);
+                } else {
+                    dim3 mmq_grid((rows + 127) / 128,
+                                  (n_tokens + 31) / 32, 1);
+                    kquant_mmq_packed_kernel<128, 32, 2, true>
+                        <<<mmq_grid, 512, 0, stream>>>(
+                            out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                            (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                            n_tokens, 0, jwidth, (int)grid);
+                }
             }
         } else if (bn_quant_format_is_q4k(type) && n_tokens >= 4) {
             q4k_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,

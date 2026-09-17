@@ -514,12 +514,16 @@ static void run_q4k_mmq_original_sum_case(BnGPUBackend *gpu) {
     assert(bn_gpu_backend_matmul_batch(gpu, ops, 2, input, tokens, cols) == 0);
     expect_close(batched[0], output, tokens * rows);
     expect_close(batched[1], output, tokens * rows);
-    /* A short prompt uses the padded packed MMQ tile as well. Its first
-     * fourteen rows must agree with the independently checked full tile. */
+    /* Short prompts use the padded packed MMQ tile as well. Their rows must
+     * agree with the independently checked full tile. */
     float short_output[14 * rows];
-    assert(gpu->matmul(gpu->ctx, short_output, weight, input, rows, cols,
-                       14, BN_GGUF_TENSOR_Q4_K) == 0);
-    expect_close(short_output, output, 14 * rows);
+    const int short_counts[] = {8, 14};
+    for (size_t i = 0; i < sizeof(short_counts) / sizeof(short_counts[0]); i++) {
+        int n = short_counts[i];
+        assert(gpu->matmul(gpu->ctx, short_output, weight, input, rows, cols,
+                           n, BN_GGUF_TENSOR_Q4_K) == 0);
+        expect_close(short_output, output, n * rows);
+    }
     gpu->buffer_destroy(gpu->ctx, weight);
 }
 
