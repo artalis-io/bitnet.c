@@ -2264,6 +2264,29 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
         if (begin >= end) continue;
         float acc[4] = {0};
         for (int b = begin; b < end; b++) {
+            /* Each lane owns two rows and two tokens. Keep the row scale
+             * across groups and reuse each input scale for both rows. */
+            const BnCudaIQ4XSPackedBlock *packed_row[2] = {NULL, NULL};
+            const BnBlockIQ4XS *raw_row[2] = {NULL, NULL};
+            float row_d[2] = {0.0f, 0.0f};
+#pragma unroll
+            for (int row_pair = 0; row_pair < 2; row_pair++) {
+                int row = row0 + (lane / 4) + row_pair * 8;
+                if (row >= rows) continue;
+                if (Packed) {
+                    packed_row[row_pair] =
+                        (const BnCudaIQ4XSPackedBlock *)weights +
+                        (size_t)row * blocks + b;
+                    row_d[row_pair] =
+                        cuda_fp16_to_fp32(packed_row[row_pair]->d);
+                } else {
+                    raw_row[row_pair] =
+                        (const BnBlockIQ4XS *)weights +
+                        (size_t)row * blocks + b;
+                    row_d[row_pair] =
+                        cuda_fp16_to_fp32(raw_row[row_pair]->d);
+                }
+            }
 #pragma unroll
             for (int group = 0; group < 8; group++) {
 #pragma unroll
@@ -2328,29 +2351,41 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
                     : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]),
                       "r"(bv[0]), "r"(bv[1]));
 
+                int token_base = token0 + (lane % 4) * 2;
+                float dx[2] = {0.0f, 0.0f};
 #pragma unroll
-                for (int l = 0; l < 4; l++) {
-                    int row = row0 + (lane / 4) + (l / 2) * 8;
-                    int token = token0 + (lane % 4) * 2 + (l & 1);
-                    if (row >= rows || token >= n_tokens) continue;
-                    const BnCudaBlockQ8MmqF32 *x =
-                        input + (size_t)token * groups + b * 8 + group;
+                for (int token_pair = 0; token_pair < 2; token_pair++) {
+                    int token = token_base + token_pair;
+                    if (token < n_tokens) {
+                        const BnCudaBlockQ8MmqF32 *x =
+                            input + (size_t)token * groups + b * 8 + group;
+                        dx[token_pair] = x->d;
+                    }
+                }
+#pragma unroll
+                for (int row_pair = 0; row_pair < 2; row_pair++) {
+                    int row = row0 + (lane / 4) + row_pair * 8;
+                    if (row >= rows) continue;
                     float wd;
                     if (Packed) {
-                        const BnCudaIQ4XSPackedBlock *w =
-                            (const BnCudaIQ4XSPackedBlock *)weights +
-                            (size_t)row * blocks + b;
-                        wd = cuda_fp16_to_fp32(w->d) * w->scales[group];
+                        wd = row_d[row_pair] *
+                             packed_row[row_pair]->scales[group];
                     } else {
-                        const BnBlockIQ4XS *w =
-                            (const BnBlockIQ4XS *)weights +
-                            (size_t)row * blocks + b;
+                        const BnBlockIQ4XS *w = raw_row[row_pair];
                         int scale = ((w->scales_l[group / 2] >>
                                       (4 * (group & 1))) & 15) |
                                     (((w->scales_h >> (2 * group)) & 3) << 4);
-                        wd = cuda_fp16_to_fp32(w->d) * (scale - 32);
+                        wd = row_d[row_pair] * (scale - 32);
                     }
-                    acc[l] = fmaf((float)dots[l] * wd, x->d, acc[l]);
+#pragma unroll
+                    for (int token_pair = 0; token_pair < 2;
+                         token_pair++) {
+                        int l = row_pair * 2 + token_pair;
+                        int token = token_base + token_pair;
+                        if (token >= n_tokens) continue;
+                        acc[l] = fmaf((float)dots[l] * wd,
+                                      dx[token_pair], acc[l]);
+                    }
                 }
                 if (ShareA) __syncthreads();
                 else __syncwarp();
