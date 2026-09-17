@@ -30015,6 +30015,22 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int reference_block_accumulation =
                 (op->flags &
                  BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) != 0;
+            /* Gated Q5_K queries use native CUDA MMVQ arithmetic. */
+            if (bn_quant_format_is_q5k(op->type) &&
+                op->buf_out == BN_GPU_VALUE_QKV &&
+                next && next->op_code == BN_GPU_CODE_DEINTERLEAVE_Q) {
+                reference_kquant_matvec = 0;
+                reference_block_accumulation = 0;
+            }
+            /* The 1024x5120 Qwen3.8 cache projections also need native
+             * MMVQ to retain greedy decode parity with llama.cpp. */
+            if ((bn_quant_format_is_q4k(op->type) ||
+                 bn_quant_format_is_q5k(op->type)) &&
+                op->buf_out == BN_GPU_VALUE_SCRATCH &&
+                op->rows == 1024 && op->cols == 5120) {
+                reference_kquant_matvec = 0;
+                reference_block_accumulation = 0;
+            }
             if (reference_kquant_matvec && ctx->kv_f16 &&
                 bn_quant_format_is_q4k(op->type) && i + 6 < n_ops &&
                 next && next->op_code == BN_GPU_CODE_MATVEC &&
