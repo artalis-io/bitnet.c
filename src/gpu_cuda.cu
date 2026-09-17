@@ -15329,16 +15329,19 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
         const void *value_cache, int n_heads, int n_kv, int kv_mul,
         int kv_dim, uint32_t loff, float scale, int kv_f16,
         int first_key) {
-    const int h = blockIdx.x >> 2;
-    const int value_tile = blockIdx.x & 3;
+    const int h = blockIdx.x >> 1;
     const int tid = threadIdx.x;
+    /* Two 32-value tiles share one score/softmax pass. The eight AVX2
+     * accumulation lanes within each tile retain their original order. */
+    const int value_subtile = tid >> 8;
+    const int value_tile = (blockIdx.x & 1) * 2 + value_subtile;
     if (h >= n_heads) return;
     const int kh = h / kv_mul;
     const float *qh = q + (size_t)h * 128;
     extern __shared__ float probabilities[];
     __shared__ float maximum_shared;
     __shared__ float inverse_shared;
-    __shared__ float value_lanes[8][32];
+    __shared__ float value_lanes[2][8][32];
 
     for (int t = tid; t < n_kv; t += blockDim.x) {
         float sums[4][8] = {{0.0f}};
@@ -15415,7 +15418,7 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
     /* Each warp owns one of the eight independent AVX2 accumulation lanes.
      * Combine them in the original order after the parallel key traversal. */
     const int value_lane = tid & 31;
-    const int avx_lane = tid >> 5;
+    const int avx_lane = (tid >> 5) & 7;
     const int d = value_tile * 32 + value_lane;
     float sums[4] = {0.0f};
     int t = 0;
@@ -15429,14 +15432,14 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
                 cuda_kv_load(value_cache, voff, kv_f16), sums[group]);
         }
     }
-    value_lanes[avx_lane][value_lane] = __fadd_rn(
+    value_lanes[value_subtile][avx_lane][value_lane] = __fadd_rn(
         __fadd_rn(sums[0], sums[2]), __fadd_rn(sums[1], sums[3]));
     __syncthreads();
     if (avx_lane == 0) {
         float lanes[8];
 #pragma unroll
         for (int lane = 0; lane < 8; lane++)
-            lanes[lane] = value_lanes[lane][value_lane];
+            lanes[lane] = value_lanes[value_subtile][lane][value_lane];
         float value = cuda_attention_hsum8_avx2(lanes);
         for (; t < n_kv; t++) {
             size_t voff = (size_t)loff + (size_t)t * kv_dim + kh * 128 + d;
@@ -33592,7 +33595,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     ? n_kv - op->attention_window : 0;
                 BN_CUDA_LAUNCH(ctx,
                     flash_attention_avx2_reference_128_kernel,
-                    n_heads * 4, 256, (size_t)n_kv * sizeof(float),
+                    n_heads * 2, 512, (size_t)n_kv * sizeof(float),
                     out, q, key, value, n_heads, n_kv, kv_mul, kv_dim,
                     op->p[6], cuda_u32_to_f32(op->p[7]), ctx->kv_f16,
                     first_key);
