@@ -1676,9 +1676,10 @@ static __device__ __forceinline__ int cuda_q4k_dot_32(const uint8_t *qs,
 
 static __global__ void quantize_mmq_input_kernel(
     BnCudaBlockQ8Mmq *out, const float *input, int cols, int f32_scale) {
-    int lane = threadIdx.x;
-    int group = blockIdx.x;
+    int lane = threadIdx.x & 31;
+    int group = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32;
     int token = blockIdx.y;
+    if (group >= cols / 32) return;
     float values[4] = {0, 0, 0, 0};
     if (lane < 8) {
         for (int j = 0; j < 4; j++)
@@ -28020,7 +28021,7 @@ static int cuda_prefill_dense_layer(
             if (cuda_ensure_q8_1(ctx, dim * n_tokens) != 0)
                 return -1;
             attn_prepared_xq = (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
-            quantize_mmq_input_kernel<<<dim3(dim / 32, n_tokens), 32>>>(
+            quantize_mmq_input_kernel<<<dim3((dim / 32 + 15) / 16, n_tokens), 512>>>(
                 attn_prepared_xq, d_attn_norm, dim, 0);
             if (cudaGetLastError() != cudaSuccess ||
                 cuda_kquant_batch_matmul(ctx, q_gated ? d_qk : d_q,
@@ -28353,7 +28354,7 @@ static int cuda_prefill_dense_layer(
                 return -1;
             BnCudaBlockQ8Mmq *prepared_xq =
                 (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
-            quantize_mmq_input_kernel<<<dim3(dim / 32, n_tokens), 32>>>(
+            quantize_mmq_input_kernel<<<dim3((dim / 32 + 15) / 16, n_tokens), 512>>>(
                 prepared_xq, d_ffn_norm, dim, 0);
             if (cudaGetLastError() != cudaSuccess ||
                 cuda_kquant_batch_matmul(ctx, d_gateup, gate,
