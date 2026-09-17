@@ -28037,8 +28037,14 @@ static int cuda_prefill_dense_layer(
     }
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_QK);
     if (!packed_qkv) {
+        /* The 5376-wide GELU layout retains sampled-token parity with MMQ
+         * for medium V batches; longer batches use reference accumulation. */
+        const int medium_v_mmq = dim == 5376 && n_heads == 32 &&
+            cuda_activation_is_gelu(act_type) &&
+            n_tokens >= 128 && n_tokens <= 768;
         if (ctx->kv_f16 && qk_type == BN_GGUF_TENSOR_Q4_K &&
-            wv_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16) {
+            wv_type == BN_GGUF_TENSOR_Q4_K && n_tokens >= 16 &&
+            !medium_v_mmq) {
             if (cuda_prefill_q4k_reference_rows(ctx, d_v, wv,
                     d_attn_norm, wv_rows, dim, n_tokens) != 0)
                 return -1;
