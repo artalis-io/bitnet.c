@@ -4271,7 +4271,8 @@ static __global__ void q4k_mmq_128xj_kernel(
         const int *route_order = NULL, const int *expert_counts = NULL,
         const int *expert_offsets = NULL, const int *route_schedule = NULL,
         int experts = 0, int route_k = 0,
-        int schedule_has_count = 0) {
+        int schedule_has_count = 0, int jwidth = 0,
+        int ref_grid = 0) {
     enum { I = 128, X_STRIDE = 76, Y_STRIDE = 36 };
     __shared__ __align__(16) int sx[I * X_STRIDE];
     __shared__ __align__(16) int sy[J * Y_STRIDE];
@@ -4306,6 +4307,30 @@ static __global__ void q4k_mmq_128xj_kernel(
     int split = routed ? 0 : (int)blockIdx.z;
     int b_begin = (int)((int64_t)split * n_bpr / split_count);
     int b_end = (int)((int64_t)(split + 1) * n_bpr / split_count);
+    /* GGML distributes whole K-blocks across a global Stream-K grid. */
+    if (ref_grid > 0 && jwidth > 0) {
+        int token_tiles = (n_tokens - 1) / jwidth + 1;
+        int64_t tile = (int64_t)(row0 / I) * token_tiles +
+                       token0 / jwidth;
+        int64_t tile_begin = tile * n_bpr;
+        int64_t total = (int64_t)((rows - 1) / I + 1) *
+                        token_tiles * n_bpr;
+        int first = (int)(((tile_begin + 1) * ref_grid + total - 1) /
+                          total) - 1;
+        int last = (int)(((tile_begin + n_bpr) * ref_grid + total - 1) /
+                         total) - 1;
+        int bid = first + split;
+        if (bid <= last) {
+            int64_t raw_begin = (int64_t)bid * total / ref_grid -
+                                tile_begin;
+            int64_t raw_end = (int64_t)(bid + 1) * total / ref_grid -
+                              tile_begin;
+            b_begin = raw_begin < 0 ? 0 : (int)raw_begin;
+            b_end = raw_end > n_bpr ? n_bpr : (int)raw_end;
+        } else {
+            b_begin = b_end = 0;
+        }
+    }
     float sum[J * ROW_FRAGS / 4] = {0.0f};
 
     for (int token = tid; token < J; token += blockDim.x) {
@@ -4509,6 +4534,33 @@ static __global__ void q4k_mmq_split_fixup_kernel(
     out[out_offset + i] = value;
 }
 
+static __global__ void kquant_mmq_reference_fixup_kernel(
+        float *out, const float *partials, int rows, int cols,
+        int n_tokens, int jwidth, int ref_grid) {
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n = (size_t)rows * n_tokens;
+    if (i >= n) return;
+    int token = (int)(i / rows);
+    int row = (int)(i - (size_t)token * rows);
+    int n_bpr = cols / BN_QK_K;
+    int token_tiles = (n_tokens - 1) / jwidth + 1;
+    int64_t tile = (int64_t)(row / 128) * token_tiles +
+                   token / jwidth;
+    int64_t tile_begin = tile * n_bpr;
+    int64_t total = (int64_t)((rows - 1) / 128 + 1) *
+                    token_tiles * n_bpr;
+    int first = (int)(((tile_begin + 1) * ref_grid + total - 1) /
+                      total) - 1;
+    int last = (int)(((tile_begin + n_bpr) * ref_grid + total - 1) /
+                     total) - 1;
+    int count = last - first + 1;
+    /* The reference combines partials from the final partition backward. */
+    float prefix = 0.0f;
+    for (int split = count - 2; split >= 0; split--)
+        prefix += partials[(size_t)split * n + i];
+    out[i] = partials[(size_t)(count - 1) * n + i] + prefix;
+}
+
 __launch_bounds__(512, 1)
 static __global__ void q6k_mmq_128x64_kernel(
         float *out, const BnCudaQ6KMmqBlock *blocks,
@@ -4517,7 +4569,8 @@ static __global__ void q6k_mmq_128x64_kernel(
         const int *route_order = NULL, const int *expert_counts = NULL,
         const int *expert_offsets = NULL, const int *route_schedule = NULL,
         int experts = 0, const BnBlockQ8K *xq8k = NULL,
-        int schedule_has_count = 0) {
+        int schedule_has_count = 0, int jwidth = 0,
+        int ref_grid = 0) {
     enum { I = 128, J = 64, X_STRIDE = 72, Y_STRIDE = 68 };
     __shared__ __align__(16) int sx[I * X_STRIDE];
     __shared__ __align__(16) int sy[J * Y_STRIDE];
@@ -4551,6 +4604,27 @@ static __global__ void q6k_mmq_128x64_kernel(
     int b_begin = (int)((int64_t)split * n_bpr / split_count);
     int b_end = (int)((int64_t)(split + 1) * n_bpr / split_count);
     float sum[16] = {0.0f};
+    float tail[16] = {0.0f};
+    float prefix[16] = {0.0f};
+    int have_tail = 0;
+    int first = 0, last = 0;
+    int64_t tile_begin = 0, total = 0;
+    if (ref_grid > 0 && jwidth > 0) {
+        int token_tiles = (n_tokens - 1) / jwidth + 1;
+        int64_t tile = (int64_t)(row0 / I) * token_tiles +
+                       token0 / jwidth;
+        tile_begin = tile * n_bpr;
+        total = (int64_t)((rows - 1) / I + 1) * token_tiles * n_bpr;
+        first = (int)(((tile_begin + 1) * ref_grid + total - 1) /
+                      total) - 1;
+        last = (int)(((tile_begin + n_bpr) * ref_grid + total - 1) /
+                     total) - 1;
+        if (split_count > 1) {
+            int final_bid = last;
+            first += split;
+            last = first <= final_bid ? first : first - 1;
+        }
+    }
 
     for (int token = tid; token < J; token += blockDim.x) {
         int local_token = token0 + token;
@@ -4560,6 +4634,18 @@ static __global__ void q6k_mmq_128x64_kernel(
     }
     __syncthreads();
 
+    /* Reproduce each reference partition's local FP32 accumulation order. */
+    for (int bid = last; bid >= first; bid--) {
+        if (ref_grid > 0) {
+            int64_t raw_begin = (int64_t)bid * total / ref_grid -
+                                tile_begin;
+            int64_t raw_end = (int64_t)(bid + 1) * total / ref_grid -
+                              tile_begin;
+            b_begin = raw_begin < 0 ? 0 : (int)raw_begin;
+            b_end = raw_end > n_bpr ? n_bpr : (int)raw_end;
+            if (b_begin >= b_end) continue;
+        }
+        for (int i = 0; i < 16; i++) sum[i] = 0.0f;
     for (int b = b_begin; b < b_end; b++) {
         for (int i = tid; i < I * 64; i += blockDim.x) {
             int ri = i >> 6;
@@ -4709,6 +4795,14 @@ static __global__ void q6k_mmq_128x64_kernel(
         }
         __syncthreads();
     }
+        if (ref_grid > 0) {
+            for (int i = 0; i < 16; i++) {
+                if (!have_tail) tail[i] = sum[i];
+                else prefix[i] += sum[i];
+            }
+            have_tail = 1;
+        }
+    }
 
 #pragma unroll
     for (int jp = 0; jp < 4; jp++) {
@@ -4720,7 +4814,8 @@ static __global__ void q6k_mmq_128x64_kernel(
                                   (lane % 4) * 2 + (l & 1)];
             if (row < rows && token >= 0 && token < n_tokens)
                 out[((size_t)split * n_tokens + token) * rows + row] =
-                    sum[jp * 4 + l];
+                    ref_grid > 0 ? tail[jp * 4 + l] + prefix[jp * 4 + l]
+                                 : sum[jp * 4 + l];
         }
     }
 }
@@ -8837,24 +8932,28 @@ static __global__ void per_token_head_unit_rmsnorm_cpu_reference_kernel(
         xh[i] *= scale;
 }
 
-static __global__ void per_token_head_weighted_rmsnorm_cpu_reference_kernel(
+/* Match ggml-cuda's FP32 RMSNorm reduction for CUDA prefill Q/K heads. */
+template <int BLOCK>
+static __global__ void per_token_head_weighted_rmsnorm_ggml_kernel(
         float *x, const float *weight, int n_heads, int head_size,
         float eps, int per_head_weight) {
-    int h = blockIdx.x;
-    int t = blockIdx.y;
-    if (h >= n_heads || threadIdx.x != 0 || head_size <= 0) return;
-    float *xh = x + ((size_t)t * n_heads + (size_t)h) * head_size;
-    const float *wh = weight +
-        (per_head_weight ? (size_t)h * head_size : 0);
-    double ss = 0.0;
-    for (int i = 0; i < head_size; i++)
-        ss += (double)(xh[i] * xh[i]);
-    float scale = 1.0f /
-        sqrtf((float)(ss / (double)head_size) + eps);
-    for (int i = 0; i < head_size; i++) {
-        float normalized = xh[i] * scale;
-        xh[i] = normalized * wh[i];
-    }
+    const int h = blockIdx.x, t = blockIdx.y, tid = threadIdx.x;
+    float *xh = x + ((size_t)t * n_heads + h) * head_size;
+    const float *wh = weight + (per_head_weight ? (size_t)h * head_size : 0);
+    float ss = 0.0f;
+    for (int i = tid; i < head_size; i += BLOCK)
+        ss += xh[i] * xh[i];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        ss += __shfl_xor_sync(0xffffffffu, ss, offset);
+    __shared__ float sums[BLOCK / 32];
+    if ((tid & 31) == 0) sums[tid >> 5] = ss;
+    __syncthreads();
+    ss = (tid & 31) < BLOCK / 32 ? sums[tid & 31] : 0.0f;
+    for (int offset = 16; offset > 0; offset >>= 1)
+        ss += __shfl_xor_sync(0xffffffffu, ss, offset);
+    float scale = rsqrtf(ss / head_size + eps);
+    for (int i = tid; i < head_size; i += BLOCK)
+        xh[i] = scale * xh[i] * wh[i];
 }
 
 static __global__ void qk_rmsnorm_rope_kernel(
@@ -19544,12 +19643,26 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
          * Otherwise the reference distributes K work over one SM wave. */
         int64_t grid = 100 * tiles / ((int64_t)nsm * waves) >= 90 ? tiles : nsm;
         if (grid > INT_MAX) return -1;
+        int64_t ref_tiles = (int64_t)((rows + 127) / 128) *
+                            ((n_tokens + 127) / 128);
+        int ref_split_bound = (int)((grid + ref_tiles - 1) / ref_tiles) +
+                              (grid != ref_tiles);
         if (bn_quant_format_is_q6k(type) && n_tokens >= 16 && w->mmq_data) {
-            if (n_tokens >= 64) {
+            if (n_tokens >= 128 && ref_split_bound > cols / BN_QK_K) {
+                dim3 mmq_grid((rows + 63) / 64,
+                              (n_tokens + 31) / 32, 1);
+                q6k_mmq_packed_kernel<64, 32, 2>
+                    <<<mmq_grid, 256, 0, stream>>>(
+                        out, (const BnCudaQ6KMmqBlock *)w->mmq_data,
+                        (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
+                        n_tokens, jwidth, (int)grid);
+            } else if (n_tokens >= 64) {
                 int tile_rows = (rows + 127) / 128;
                 int tile_tokens = (n_tokens + 63) / 64;
                 int split_tiles = tile_rows * ((n_tokens + 127) / 128);
                 int split_count = (nsm + split_tiles - 1) / split_tiles;
+                if (n_tokens >= 128 && (int64_t)grid != split_tiles)
+                    split_count++;
                 int n_bpr = cols / BN_QK_K;
                 if (split_count > n_bpr) split_count = n_bpr;
                 if (split_count < 1) split_count = 1;
@@ -19561,14 +19674,24 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     ctx->d_mmq_fixup,
                         (const BnCudaQ6KMmqBlock *)w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
-                        n_tokens, split_count);
+                        n_tokens, split_count, NULL, NULL, NULL, NULL,
+                        NULL, 0, NULL, 0,
+                        n_tokens >= 128 ? jwidth : 0,
+                        n_tokens >= 128 ? (int)grid : 0);
                 int fixup_threads = 256;
                 size_t values = (size_t)rows * n_tokens;
-                q4k_mmq_split_fixup_kernel<<<
-                    (unsigned)((values + fixup_threads - 1) / fixup_threads),
-                    fixup_threads, 0, stream>>>(
-                        out, ctx->d_mmq_fixup, rows, n_tokens,
-                        split_count, 0);
+                if (n_tokens >= 128)
+                    kquant_mmq_reference_fixup_kernel<<<
+                        (unsigned)((values + fixup_threads - 1) / fixup_threads),
+                        fixup_threads, 0, stream>>>(
+                            out, ctx->d_mmq_fixup, rows, cols,
+                            n_tokens, jwidth, (int)grid);
+                else
+                    q4k_mmq_split_fixup_kernel<<<
+                        (unsigned)((values + fixup_threads - 1) / fixup_threads),
+                        fixup_threads, 0, stream>>>(
+                            out, ctx->d_mmq_fixup, rows, n_tokens,
+                            split_count, 0);
             } else if (n_tokens >= 32) {
                 dim3 mmq_grid((rows + 63) / 64,
                               (n_tokens + 31) / 32, 1);
@@ -19663,7 +19786,8 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
         } else if (((bn_quant_format_is_q4k(type) && n_tokens >= 8) ||
                     (bn_quant_format_is_q5k(type) && n_tokens >= 16)) &&
                    w->mmq_data) {
-            if (bn_quant_format_is_q4k(type) && n_tokens >= 128) {
+            if (bn_quant_format_is_q4k(type) && n_tokens >= 128 &&
+                ref_split_bound <= cols / BN_QK_K) {
                 int tile_rows = (rows + 127) / 128;
                 /* The 64-token tile keeps enough independent blocks in
                  * flight for wide FFN projections and reduces shared-memory
@@ -19678,6 +19802,8 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                            ctx->device) != cudaSuccess || nsm <= 0)
                     return -1;
                 int split_count = (nsm + split_tiles - 1) / split_tiles;
+                if ((int64_t)grid != split_tiles)
+                    split_count++;
                 int n_bpr = cols / BN_QK_K;
                 if (split_count > n_bpr) split_count = n_bpr;
                 if (split_count < 1) split_count = 1;
@@ -19692,7 +19818,9 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                             (const BnBlockQ4K *)w->data,
                             (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
-                            n_tokens, 0, split_count);
+                            n_tokens, 0, split_count,
+                            NULL, NULL, NULL, NULL, 0, 0, 0,
+                            jwidth, (int)grid);
                 else
                     q4k_mmq_128xj_kernel<64, 1>
                         <<<mmq_grid, 512, 0, stream>>>(
@@ -19700,14 +19828,16 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                             (const BnBlockQ4K *)w->data,
                             (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
-                            n_tokens, 0, split_count);
+                            n_tokens, 0, split_count,
+                            NULL, NULL, NULL, NULL, 0, 0, 0,
+                            jwidth, (int)grid);
                 int fixup_threads = 256;
                 size_t values = (size_t)rows * n_tokens;
-                q4k_mmq_split_fixup_kernel<<<
+                kquant_mmq_reference_fixup_kernel<<<
                     (unsigned)((values + fixup_threads - 1) / fixup_threads),
                     fixup_threads, 0, stream>>>(
-                        out, ctx->d_mmq_fixup, rows, n_tokens,
-                        split_count, 0);
+                        out, ctx->d_mmq_fixup, rows, cols,
+                        n_tokens, jwidth, (int)grid);
             } else if (n_tokens >= 64) {
                 dim3 mmq_grid((rows + 63) / 64,
                               (n_tokens + 63) / 64, 1);
@@ -26516,16 +26646,28 @@ static int cuda_prefill_attention_prepared_impl(void *vctx, float *out,
     const float *k_weight = kw ? (const float *)kw->data : NULL;
     if (!inputs_prepared && p->reference_rmsnorm_order) {
         if (q_weight) {
-            per_token_head_weighted_rmsnorm_cpu_reference_kernel<<<
-                dim3(p->n_heads, p->n_tokens), 1>>>(
-                q, q_weight, p->n_heads, p->head_size, p->norm_eps,
-                p->qk_norm_per_head);
+            if (p->head_size < 1024)
+                per_token_head_weighted_rmsnorm_ggml_kernel<256><<<
+                    dim3(p->n_heads, p->n_tokens), 256>>>(
+                    q, q_weight, p->n_heads, p->head_size, p->norm_eps,
+                    p->qk_norm_per_head);
+            else
+                per_token_head_weighted_rmsnorm_ggml_kernel<1024><<<
+                    dim3(p->n_heads, p->n_tokens), 1024>>>(
+                    q, q_weight, p->n_heads, p->head_size, p->norm_eps,
+                    p->qk_norm_per_head);
         }
         if (k_weight) {
-            per_token_head_weighted_rmsnorm_cpu_reference_kernel<<<
-                dim3(p->n_kv_heads, p->n_tokens), 1>>>(
-                k, k_weight, p->n_kv_heads, p->head_size, p->norm_eps,
-                p->qk_norm_per_head);
+            if (p->head_size < 1024)
+                per_token_head_weighted_rmsnorm_ggml_kernel<256><<<
+                    dim3(p->n_kv_heads, p->n_tokens), 256>>>(
+                    k, k_weight, p->n_kv_heads, p->head_size, p->norm_eps,
+                    p->qk_norm_per_head);
+            else
+                per_token_head_weighted_rmsnorm_ggml_kernel<1024><<<
+                    dim3(p->n_kv_heads, p->n_tokens), 1024>>>(
+                    k, k_weight, p->n_kv_heads, p->head_size, p->norm_eps,
+                    p->qk_norm_per_head);
         }
         if (cudaGetLastError() != cudaSuccess) return -1;
         q_weight = NULL;
