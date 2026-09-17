@@ -33629,7 +33629,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
              * greater capacity. Captured runtime launches need that bound,
              * not shared memory proportional to the full context capacity. */
             int flash_scratch = graph_exec ? min(seq_len, 2048) : n_kv;
-            size_t shared = (size_t)(flash_scratch + threads) * sizeof(float);
+            /* The 512-wide reference path gives each warp independent KQ
+             * tiles and output rows; more warps retain its arithmetic order. */
+            int flash_threads = head_size == 512 && kv_mul == 8 &&
+                                ctx->kv_f16 ? 1024 : threads;
+            size_t shared = (size_t)(flash_scratch + flash_threads) * sizeof(float);
             if (head_size == 128 && n_kv > 256 && n_kv <= 2048) {
                 int first_key = op->attention_window > 0 &&
                     n_kv > op->attention_window
@@ -33642,7 +33646,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     first_key, n_kv > 512);
                 break;
             }
-            BN_CUDA_LAUNCH(ctx, flash_attention_kernel, n_heads, threads,
+            BN_CUDA_LAUNCH(ctx, flash_attention_kernel, n_heads, flash_threads,
                 shared,
                 out, q, key, value, n_heads, head_size, n_kv, kv_mul,
                 kv_dim, seq_len, op->p[6], cuda_u32_to_f32(op->p[7]),
