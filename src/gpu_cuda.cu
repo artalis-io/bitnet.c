@@ -15669,10 +15669,12 @@ static __global__ void flash_attention_kernel(float *out, const float *q,
         return;
     }
 #endif
-    /* At 2:1 GQA, retain the partitioned reduction for 16 heads. The
-     * tested wider head layouts need the generic reduction for parity. */
+    /* At 2:1 GQA, the 16- and 32-head F16 layouts use the partitioned
+     * reduction. Gemma4's 32-head decode otherwise drifts from llama.cpp
+     * when flash attention reads the half-precision KV cache. */
     int decode256_parts = (head_size == 256 && blockDim.x == 256 &&
-                           (kv_mul != 2 || n_heads == 16) &&
+                           (kv_mul != 2 || n_heads == 16 ||
+                            (kv_f16 && kv_mul == 2 && n_heads == 32)) &&
                            ((kv_f16 && (n_kv <= 256 || kv_mul == 2 || kv_mul == 16)) ||
                             (!kv_f16 && kv_mul == 6 && n_kv <= 256)))
         ? cuda_decode256_partitions(n_kv, n_heads, attention_reference_max_blocks) : 0;
@@ -19658,9 +19660,9 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                                          0, stream>>>(
                 out, w->data, (const BnCudaBlockQ8MmqF32 *)xq,
                 rows, cols, type, n_tokens, jwidth, (int)grid);
-        } else if ((bn_quant_format_is_q4k(type) ||
-                    bn_quant_format_is_q5k(type)) &&
-                   n_tokens >= 16 && w->mmq_data) {
+        } else if (((bn_quant_format_is_q4k(type) && n_tokens >= 8) ||
+                    (bn_quant_format_is_q5k(type) && n_tokens >= 16)) &&
+                   w->mmq_data) {
             if (bn_quant_format_is_q4k(type) && n_tokens >= 128) {
                 int tile_rows = (rows + 127) / 128;
                 /* The 64-token tile keeps enough independent blocks in

@@ -514,6 +514,12 @@ static void run_q4k_mmq_original_sum_case(BnGPUBackend *gpu) {
     assert(bn_gpu_backend_matmul_batch(gpu, ops, 2, input, tokens, cols) == 0);
     expect_close(batched[0], output, tokens * rows);
     expect_close(batched[1], output, tokens * rows);
+    /* A short prompt uses the padded packed MMQ tile as well. Its first
+     * fourteen rows must agree with the independently checked full tile. */
+    float short_output[14 * rows];
+    assert(gpu->matmul(gpu->ctx, short_output, weight, input, rows, cols,
+                       14, BN_GGUF_TENSOR_Q4_K) == 0);
+    expect_close(short_output, output, 14 * rows);
     gpu->buffer_destroy(gpu->ctx, weight);
 }
 
@@ -8295,6 +8301,16 @@ int main(int argc, char **argv) {
     }
     if (argc == 2 && strcmp(argv[1], "--iq3s-reference") == 0) {
         run_iq3s_reference_case(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--gemma4-decode-attention-reference") == 0) {
+        run_decode_attention_partition_replay_case(gpu, 256, 2);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--q4k-short-mmq-reference") == 0) {
+        run_q4k_mmq_original_sum_case(gpu);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
