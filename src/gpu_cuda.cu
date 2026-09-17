@@ -19860,12 +19860,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
             if (bn_quant_format_is_q4k(type) && n_tokens >= 128 &&
                 ref_split_bound <= cols / BN_QK_K) {
                 int tile_rows = (rows + 127) / 128;
-                /* Wide projections amortize the larger 128-token tile;
-                 * narrower projections retain the 64-token tile's occupancy. */
-                int wide_tile = rows >= 8192;
-                int tile_tokens = wide_tile
-                    ? (n_tokens + 127) / 128
-                    : (n_tokens + 63) / 64;
+                int tile_tokens = (n_tokens + 127) / 128;
                 int split_tiles = tile_rows * ((n_tokens + 127) / 128);
                 int nsm = 0;
                 if (cudaDeviceGetAttribute(&nsm, cudaDevAttrMultiProcessorCount,
@@ -19881,26 +19876,15 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                 if (cuda_ensure_mmq_fixup(ctx, partial_values) != 0)
                     return -1;
                 dim3 mmq_grid(tile_rows, tile_tokens, split_count);
-                if (wide_tile)
-                    q4k_mmq_128xj_kernel<128, 1>
-                        <<<mmq_grid, 512, 0, stream>>>(
-                            ctx->d_mmq_fixup,
-                            (const BnBlockQ4K *)w->data,
-                            (const BnCudaKQuantMmqBlock *)w->mmq_data,
-                            (const BnCudaBlockQ8_1 *)xq, rows, cols,
-                            n_tokens, 0, split_count,
-                            NULL, NULL, NULL, NULL, 0, 0, 0,
-                            jwidth, (int)grid);
-                else
-                    q4k_mmq_128xj_kernel<64, 1>
-                        <<<mmq_grid, 512, 0, stream>>>(
-                            ctx->d_mmq_fixup,
-                            (const BnBlockQ4K *)w->data,
-                            (const BnCudaKQuantMmqBlock *)w->mmq_data,
-                            (const BnCudaBlockQ8_1 *)xq, rows, cols,
-                            n_tokens, 0, split_count,
-                            NULL, NULL, NULL, NULL, 0, 0, 0,
-                            jwidth, (int)grid);
+                q4k_mmq_128xj_kernel<128, 1>
+                    <<<mmq_grid, 512, 0, stream>>>(
+                        ctx->d_mmq_fixup,
+                        (const BnBlockQ4K *)w->data,
+                        (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                        (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                        n_tokens, 0, split_count,
+                        NULL, NULL, NULL, NULL, 0, 0, 0,
+                        jwidth, (int)grid);
                 int fixup_threads = 256;
                 size_t values = (size_t)rows * n_tokens;
                 kquant_mmq_reference_fixup_kernel<<<
