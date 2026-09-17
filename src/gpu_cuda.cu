@@ -27961,10 +27961,10 @@ static int cuda_prefill_dense_layer(
         if (cuda_buffer_row_view(qk, 0, projection_q_rows, &q_view) != 0 ||
             cuda_buffer_row_view(qk, projection_q_rows, kv_dim, &k_view) != 0)
             return -1;
-        /* Short 128-wide prompts and other head sizes retain decode's FP32
-         * accumulation order. Long 128-wide prompts use the batch MMQ path. */
+        /* Short prompts retain decode's FP32 accumulation order. Long
+         * prompts use batch MMQ for the Q/K projections. */
         if (ctx->kv_f16 && qk_type == BN_GGUF_TENSOR_Q4_K &&
-            n_tokens >= 16 && (head_size != 128 || n_tokens < 128)) {
+            n_tokens >= 16 && n_tokens < 128) {
             if (cuda_prefill_q4k_reference_rows(ctx, q_gated ? d_qk : d_q,
                     &q_view, d_attn_norm, projection_q_rows, dim,
                     n_tokens) != 0 ||
