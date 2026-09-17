@@ -27843,8 +27843,9 @@ static int cuda_prefill_dense_layer(
         return -1;
     int use_mma = cuda_prefill_attention_mma_enabled(ctx, n_tokens, n_heads,
         n_kv_heads, head_size, kv_mul, kv_dim, 0);
-    int use_mmf128 = !use_mma && !ctx->kv_f16 && ctx->compute_capability >= 800 &&
-        head_size == 128 && n_tokens <= 256;
+    int use_mmf128 = !use_mma && ctx->compute_capability >= 800 &&
+        head_size == 128 && n_tokens <= 256 &&
+        (!ctx->kv_f16 || n_tokens >= 128);
     int use_mmf256 = !use_mma && !ctx->kv_f16 && ctx->compute_capability >= 800 &&
         head_size == 256 && n_tokens <= 16;
     int use_mmf512 = !use_mma && !ctx->kv_f16 && ctx->compute_capability >= 800 &&
@@ -27956,9 +27957,10 @@ static int cuda_prefill_dense_layer(
         if (cuda_buffer_row_view(qk, 0, projection_q_rows, &q_view) != 0 ||
             cuda_buffer_row_view(qk, projection_q_rows, kv_dim, &k_view) != 0)
             return -1;
-        /* Keep long-prompt FP16 KV projections in decode's FP32 order. */
+        /* Short 128-wide prompts and other head sizes retain decode's FP32
+         * accumulation order. Long 128-wide prompts use the batch MMQ path. */
         if (ctx->kv_f16 && qk_type == BN_GGUF_TENSOR_Q4_K &&
-            n_tokens >= 16) {
+            n_tokens >= 16 && (head_size != 128 || n_tokens < 128)) {
             if (cuda_prefill_q4k_reference_rows(ctx, q_gated ? d_qk : d_q,
                     &q_view, d_attn_norm, projection_q_rows, dim,
                     n_tokens) != 0 ||
