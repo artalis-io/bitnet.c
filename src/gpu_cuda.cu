@@ -27173,7 +27173,7 @@ static int cuda_prefill_q4k_reference_rows(
     if (!ctx || !out || !w || !w->data || !x || rows <= 0 ||
         cols <= 0 || n_tokens <= 0) return -1;
     q4k_f32_avx2_reference_matmul_kernel<<<
-        dim3((rows * 8 + 255) / 256, (n_tokens + 7) / 8), 256, 0,
+        dim3((rows * 8 + 127) / 128, (n_tokens + 7) / 8), 128, 0,
         ctx->exec_stream>>>(out, (const BnBlockQ4K *)w->data, x,
                             (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             rows, cols, n_tokens);
