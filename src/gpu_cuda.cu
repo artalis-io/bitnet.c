@@ -15328,7 +15328,7 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
         float *out, const float *q, const void *key_cache,
         const void *value_cache, int n_heads, int n_kv, int kv_mul,
         int kv_dim, uint32_t loff, float scale, int kv_f16,
-        int first_key) {
+        int first_key, int parallel_scores) {
     const int h = blockIdx.x >> 1;
     const int tid = threadIdx.x;
     /* Two 32-value tiles share one score/softmax pass. The eight AVX2
@@ -15343,29 +15343,60 @@ static __global__ void flash_attention_avx2_reference_128_kernel(
     __shared__ float inverse_shared;
     __shared__ float value_lanes[2][8][32];
 
-    for (int t = tid; t < n_kv; t += blockDim.x) {
-        float sums[4][8] = {{0.0f}};
-        size_t koff = (size_t)loff + (size_t)t * kv_dim + kh * 128;
+    if (parallel_scores) {
+        /* Eight CUDA lanes follow the eight independent AVX2 accumulation
+         * lanes. This coalesces F16 KV reads at longer decode contexts. */
+        const int score_lane = tid & 7;
+        const unsigned score_mask = 0xffu << ((tid & 31) & ~7);
+        for (int t = tid >> 3; t < n_kv; t += blockDim.x / 8) {
+            float sums[4] = {0.0f};
+            size_t koff = (size_t)loff + (size_t)t * kv_dim + kh * 128;
 #pragma unroll
-        for (int chunk = 0; chunk < 4; chunk++)
-#pragma unroll
-            for (int lane = 0; lane < 8; lane++) {
-                int d = chunk * 32 + lane;
+            for (int chunk = 0; chunk < 4; chunk++) {
+                int d = chunk * 32 + score_lane;
 #pragma unroll
                 for (int step = 0; step < 4; step++, d += 8)
-                    sums[step][lane] = fmaf(
-                        qh[d], cuda_kv_load(key_cache, koff + d, kv_f16),
-                        sums[step][lane]);
+                    sums[step] = fmaf(qh[d],
+                        cuda_kv_load(key_cache, koff + d, kv_f16),
+                        sums[step]);
             }
-        float lanes[8];
+            float lane_sum = __fadd_rn(
+                __fadd_rn(sums[0], sums[2]),
+                __fadd_rn(sums[1], sums[3]));
+            float lanes[8];
 #pragma unroll
-        for (int lane = 0; lane < 8; lane++)
-            lanes[lane] = __fadd_rn(
-                __fadd_rn(sums[0][lane], sums[2][lane]),
-                __fadd_rn(sums[1][lane], sums[3][lane]));
-        probabilities[t] = t >= first_key
-            ? __fmul_rn(cuda_attention_hsum8_avx2(lanes), scale)
-            : -INFINITY;
+            for (int lane = 0; lane < 8; lane++)
+                lanes[lane] = __shfl_sync(score_mask, lane_sum, lane, 8);
+            if (score_lane == 0)
+                probabilities[t] = t >= first_key
+                    ? __fmul_rn(cuda_attention_hsum8_avx2(lanes), scale)
+                    : -INFINITY;
+        }
+    } else {
+        for (int t = tid; t < n_kv; t += blockDim.x) {
+            float sums[4][8] = {{0.0f}};
+            size_t koff = (size_t)loff + (size_t)t * kv_dim + kh * 128;
+#pragma unroll
+            for (int chunk = 0; chunk < 4; chunk++)
+#pragma unroll
+                for (int lane = 0; lane < 8; lane++) {
+                    int d = chunk * 32 + lane;
+#pragma unroll
+                    for (int step = 0; step < 4; step++, d += 8)
+                        sums[step][lane] = fmaf(
+                            qh[d], cuda_kv_load(key_cache, koff + d, kv_f16),
+                            sums[step][lane]);
+                }
+            float lanes[8];
+#pragma unroll
+            for (int lane = 0; lane < 8; lane++)
+                lanes[lane] = __fadd_rn(
+                    __fadd_rn(sums[0][lane], sums[2][lane]),
+                    __fadd_rn(sums[1][lane], sums[3][lane]));
+            probabilities[t] = t >= first_key
+                ? __fmul_rn(cuda_attention_hsum8_avx2(lanes), scale)
+                : -INFINITY;
+        }
     }
     __syncthreads();
 
@@ -33597,7 +33628,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     n_heads * 2, 512, (size_t)n_kv * sizeof(float),
                     out, q, key, value, n_heads, n_kv, kv_mul, kv_dim,
                     op->p[6], cuda_u32_to_f32(op->p[7]), ctx->kv_f16,
-                    first_key);
+                    first_key, n_kv > 512);
                 break;
             }
             BN_CUDA_LAUNCH(ctx, flash_attention_kernel, n_heads, threads,
