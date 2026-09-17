@@ -24225,7 +24225,18 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
         if (nt > 8) {
             BN_CUDA_LAUNCH(ctx, q4_quantize_mmq, dim3(dim/32,nt), 32, 0,
                 (BnQ4CudaInput *)quant, x, dim);
-            if (nt >= 128 && gate_width % 16 == 0) {
+            if (nt >= 128 && gate_width % 32 == 0) {
+                BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,4>),
+                    dim3((hidden+15)/16,(nt+31)/32,experts), 128, 0,
+                    g, (const BnBlockQ4_0 *)gate->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, nt, nt, 0,
+                    experts, k, k, gate_width, gate_grid, hidden * 2, 0);
+                BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,4>),
+                    dim3((hidden+15)/16,(nt+31)/32,experts), 128, 0,
+                    u, (const BnBlockQ4_0 *)up->data,
+                    (BnQ4CudaInput *)quant, map, hidden, dim, nt, nt, 0,
+                    experts, k, k, gate_width, gate_grid, hidden * 2, hidden);
+            } else if (nt >= 128 && gate_width % 16 == 0) {
                 BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,2>),
                     dim3((hidden+15)/16,(nt+15)/16,experts), 64, 0,
                     g, (const BnBlockQ4_0 *)gate->data,
@@ -24343,7 +24354,13 @@ static int cuda_moe_ordered_quant_device(BnCudaCtx *ctx, int graph_exec, int gra
             BN_CUDA_LAUNCH(ctx, q4_quantize_mmq,
                 dim3(hidden/32,items), 32, 0,
                 (BnQ4CudaInput *)quant, mid, hidden);
-            if (nt >= 128 && down_width % 16 == 0) {
+            if (nt >= 128 && down_width % 32 == 0) {
+                BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,4>),
+                    dim3((dim+15)/16,(nt+31)/32,experts), 128, 0,
+                    down_values, (const BnBlockQ4_0 *)down->data,
+                    (BnQ4CudaInput *)quant, map, dim, hidden, nt, nt, 0,
+                    experts, k, 1, down_width, down_grid, dim, 0);
+            } else if (nt >= 128 && down_width % 16 == 0) {
                 BN_CUDA_LAUNCH(ctx, (q4_mmq_mma_tile<true,2>),
                     dim3((dim+15)/16,(nt+15)/16,experts), 64, 0,
                     down_values, (const BnBlockQ4_0 *)down->data,
