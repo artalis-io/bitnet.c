@@ -16857,6 +16857,32 @@ static int cuda_prefill_attention_mma(BnCudaCtx *ctx, float *out, const float *q
     return cudaGetLastError() == cudaSuccess ? 0 : -1;
 }
 
+static __global__ void prefill_gemm_score_ptrs_kernel(
+        void **ptrs, const float *q, const float *k, float *scores,
+        int n_tokens, int n_heads, int kv_mul, int head_size) {
+    int h = blockIdx.x * blockDim.x + threadIdx.x;
+    if (h >= n_heads) return;
+    ptrs[h] = (void *)(k + (size_t)(h / kv_mul) * head_size);
+    ptrs[n_heads + h] = (void *)(q + (size_t)h * head_size);
+    ptrs[2 * n_heads + h] =
+        (void *)(scores + (size_t)h * n_tokens * n_tokens);
+}
+
+static __global__ void prefill_gemm_value_ptrs_kernel(
+        void **ptrs, const void *v, const void *probabilities, void *out,
+        int n_tokens, int n_heads, int kv_mul, int head_size,
+        int v_element_bytes, int output_element_bytes) {
+    int h = blockIdx.x * blockDim.x + threadIdx.x;
+    if (h >= n_heads) return;
+    int kv_h = h / kv_mul;
+    ptrs[h] = (void *)((const char *)v +
+        (size_t)kv_h * head_size * v_element_bytes);
+    ptrs[n_heads + h] = (void *)((const char *)probabilities +
+        (size_t)h * n_tokens * n_tokens * output_element_bytes);
+    ptrs[2 * n_heads + h] = (char *)out +
+        (size_t)h * head_size * output_element_bytes;
+}
+
 static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
                                        const float *d_q, const float *d_k,
                                        const float *d_v, float *d_scores,
@@ -16922,22 +16948,14 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
         const float **d_a = (const float **)ctx->d_gemm_ptrs;
         const float **d_b = d_a + n_heads;
         float **d_c = (float **)(d_b + n_heads);
-        void **h_a = ctx->h_gemm_ptrs;
-        void **h_b = h_a + n_heads;
-        void **h_c = h_b + n_heads;
-        for (int h = 0; h < n_heads; h++) {
-            int kv_h = h / kv_mul;
-            h_a[h] = (void *)(d_k + (size_t)kv_h * head_size);
-            h_b[h] = (void *)(d_q + (size_t)h * head_size);
-            h_c[h] = (void *)(d_scores + (size_t)h * n_tokens * n_tokens);
-        }
-        size_t ptr_bytes = (size_t)n_heads * 3u * sizeof(void *);
-        cudaError_t copy_err = cudaMemcpy(ctx->d_gemm_ptrs, ctx->h_gemm_ptrs,
-                                          ptr_bytes, cudaMemcpyHostToDevice);
-        if (copy_err != cudaSuccess) {
+        prefill_gemm_score_ptrs_kernel<<<(n_heads + 127) / 128, 128>>>(
+            ctx->d_gemm_ptrs, d_q, d_k, d_scores, n_tokens, n_heads,
+            kv_mul, head_size);
+        cudaError_t ptr_err = cudaGetLastError();
+        if (ptr_err != cudaSuccess) {
             fprintf(stderr,
-                    "[bn:gpu:cuda] prefill score ptr upload failed: %s\n",
-                    cudaGetErrorString(copy_err));
+                    "[bn:gpu:cuda] prefill score ptr setup failed: %s\n",
+                    cudaGetErrorString(ptr_err));
             return -1;
         }
         cublasStatus_t st = cublasGemmBatchedEx(
@@ -16998,18 +17016,6 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
                 }
             }
 
-            for (int h = 0; h < n_heads; h++) {
-                int kv_h = h / kv_mul;
-                h_a[h] = (void *)((const char *)gemm_v +
-                    (size_t)kv_h * head_size * kv_element_bytes);
-                h_b[h] = ctx->kv_f16
-                    ? (void *)(packed_probabilities +
-                        (size_t)h * n_tokens * n_tokens)
-                    : (void *)(d_scores + (size_t)h * n_tokens * n_tokens);
-                h_c[h] = ctx->kv_f16
-                    ? (void *)(packed_output + (size_t)h * head_size)
-                    : (void *)(d_out + (size_t)h * head_size);
-            }
             if (ctx->kv_f16) {
                 int cvt_threads = 256;
                 int cvt_blocks = (int)((probability_values + 255u) / 256u);
@@ -17018,12 +17024,19 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
                 if (cudaGetLastError() != cudaSuccess)
                     return -1;
             }
-            copy_err = cudaMemcpy(ctx->d_gemm_ptrs, ctx->h_gemm_ptrs,
-                                  ptr_bytes, cudaMemcpyHostToDevice);
-            if (copy_err != cudaSuccess) {
+            prefill_gemm_value_ptrs_kernel<<<(n_heads + 127) / 128, 128>>>(
+                ctx->d_gemm_ptrs, gemm_v,
+                ctx->kv_f16 ? (const void *)packed_probabilities
+                            : (const void *)d_scores,
+                ctx->kv_f16 ? (void *)packed_output : (void *)d_out,
+                n_tokens, n_heads, kv_mul, head_size,
+                (int)kv_element_bytes,
+                ctx->kv_f16 ? (int)sizeof(__half) : (int)sizeof(float));
+            ptr_err = cudaGetLastError();
+            if (ptr_err != cudaSuccess) {
                 fprintf(stderr,
-                        "[bn:gpu:cuda] prefill value ptr upload failed: %s\n",
-                        cudaGetErrorString(copy_err));
+                        "[bn:gpu:cuda] prefill value ptr setup failed: %s\n",
+                        cudaGetErrorString(ptr_err));
                 return -1;
             }
             const __half half_one = __float2half(1.0f);
