@@ -46,11 +46,14 @@ typedef struct {
     uint8_t mins32[8];
 } BnCudaKQuantMmqBlock;
 
-typedef struct {
+typedef struct __align__(16) {
     int8_t qs[BN_QK_K];
     uint16_t d;
     int8_t scales[16];
 } BnCudaQ6KMmqBlock;
+
+static_assert(sizeof(BnCudaQ6KMmqBlock) == 288,
+              "Q6_K packed blocks need 16-byte alignment for async copies");
 
 typedef struct {
     uint16_t d;
@@ -4784,39 +4787,64 @@ static __global__ void q6k_mmq_128x64_kernel(
         }
         for (int i = 0; i < 16; i++) sum[i] = 0.0f;
     for (int b = b_begin; b < b_end; b++) {
-        for (int i = tid; i < I * 64; i += blockDim.x) {
-            int ri = i >> 6;
-            int qword = i & 63;
-            int row = row0 + ri;
-            int value = 0;
-            if (row < rows) {
-                if (routed) {
-                    const BnBlockQ6K *blk = raw +
-                        ((size_t)expert * rows + row) * n_bpr + b;
-                    unsigned packed = 0;
-#pragma unroll
-                    for (int v = 0; v < 4; v++) {
-                        int i6 = qword * 4 + v;
-                        int group = i6 >> 5;
-                        int j = i6 & 31;
-                        int chunk = group >> 2;
-                        int segment = group & 3;
-                        int lo = (blk->ql[chunk * 64 +
-                            (segment & 1) * 32 + j] >>
-                            ((segment >> 1) * 4)) & 15;
-                        int hi = (blk->qh[chunk * 32 + j] >>
-                                  (segment * 2)) & 3;
-                        packed |= ((unsigned)((lo | (hi << 4)) - 32) & 0xffu)
-                                  << (v * 8);
-                    }
-                    value = (int)packed;
+#if __CUDA_ARCH__ >= 800
+        if (!routed) {
+            for (int i = tid; i < I * 16; i += blockDim.x) {
+                int ri = i >> 4;
+                int chunk = i & 15;
+                int row = row0 + ri;
+                void *dst = (char *)(sx + ri * X_STRIDE) + chunk * 16;
+                if (row < rows) {
+                    const void *src =
+                        blocks[(size_t)row * n_bpr + b].qs + chunk * 16;
+                    unsigned shared_dst =
+                        (unsigned)__cvta_generic_to_shared(dst);
+                    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;"
+                                 :: "r"(shared_dst), "l"(src));
                 } else {
-                    const BnCudaQ6KMmqBlock *blk =
-                        blocks + (size_t)row * n_bpr + b;
-                    memcpy(&value, blk->qs + qword * 4, sizeof(value));
+                    uint4 zero = make_uint4(0, 0, 0, 0);
+                    memcpy(dst, &zero, sizeof(zero));
                 }
             }
-            sx[ri * X_STRIDE + qword] = value;
+            asm volatile("cp.async.commit_group;");
+        } else
+#endif
+        {
+            for (int i = tid; i < I * 64; i += blockDim.x) {
+                int ri = i >> 6;
+                int qword = i & 63;
+                int row = row0 + ri;
+                int value = 0;
+                if (row < rows) {
+                    if (routed) {
+                        const BnBlockQ6K *blk = raw +
+                            ((size_t)expert * rows + row) * n_bpr + b;
+                        unsigned packed = 0;
+#pragma unroll
+                        for (int v = 0; v < 4; v++) {
+                            int i6 = qword * 4 + v;
+                            int group = i6 >> 5;
+                            int j = i6 & 31;
+                            int chunk = group >> 2;
+                            int segment = group & 3;
+                            int lo = (blk->ql[chunk * 64 +
+                                (segment & 1) * 32 + j] >>
+                                ((segment >> 1) * 4)) & 15;
+                            int hi = (blk->qh[chunk * 32 + j] >>
+                                      (segment * 2)) & 3;
+                            packed |= ((unsigned)((lo | (hi << 4)) - 32) & 0xffu)
+                                      << (v * 8);
+                        }
+                        value = (int)packed;
+                    } else {
+                        const BnCudaQ6KMmqBlock *blk =
+                            blocks + (size_t)row * n_bpr + b;
+                        memcpy(&value, blk->qs + qword * 4,
+                               sizeof(value));
+                    }
+                }
+                sx[ri * X_STRIDE + qword] = value;
+            }
         }
         for (int i = tid; i < I * 5; i += blockDim.x) {
             int ri = i / 5;
@@ -4871,6 +4899,9 @@ static __global__ void q6k_mmq_128x64_kernel(
                     : xq[(size_t)token * x_blocks + (size_t)b * 8 + group].d)
                 : 0.0f;
         }
+#if __CUDA_ARCH__ >= 800
+        if (!routed) asm volatile("cp.async.wait_group 0;");
+#endif
         __syncthreads();
 
 #pragma unroll
