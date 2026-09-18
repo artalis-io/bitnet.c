@@ -2323,7 +2323,9 @@ static __global__ void iq4xs_mmq_ordered_t8_kernel(
  * a Stream-K tile, stage each weight group once for their integer MMA dots;
  * scale application retains GGML's group and reduction order. */
 template <bool Packed, bool ShareA, bool FilterTiles = false>
-static __global__ __launch_bounds__(128, 4)
+/* The unshared split tiles need more registers to avoid local-memory spills.
+ * Shared tiles gain more from four resident CTAs than from removing spills. */
+static __global__ __launch_bounds__(128, ShareA ? 4 : 2)
 void iq4xs_mmq_mma_ordered_t8_kernel(
         float *out, const void *weights,
         const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
