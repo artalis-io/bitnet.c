@@ -26329,6 +26329,10 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(ctx->runtime_policy, n_tokens, dim, 0);
     int use_moe_block_prepared_batch =
         bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(ctx->runtime_policy, routed_native_quant);
+    /* SM120 routed Q8 MMQ serializes each down row across all experts. For
+     * prompt batches, the direct Q8 path is substantially faster. */
+    if (ctx->compute_capability == 1200 && routed_native_quant && n_tokens > 8)
+        use_moe_block_prepared_batch = 0;
     int use_routed_mmq = use_moe_block_prepared_batch && n_tokens > 8 &&
                          ctx->compute_capability == 1200;
 
