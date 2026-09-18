@@ -158,6 +158,57 @@ static void run_wide_q5k_matmul_case(BnGPUBackend *gpu, int n_tokens) {
     free(weights);
 }
 
+static void run_wide_q6k_prefill_case(BnGPUBackend *gpu, int n_tokens) {
+    enum { rows = 512, cols = 8192, blocks_per_row = cols / BN_QK_K };
+    const int selected[] = {0, blocks_per_row / 2, blocks_per_row - 1};
+    size_t n_blocks = (size_t)rows * blocks_per_row;
+    BnBlockQ6K *weights = (BnBlockQ6K *)calloc(n_blocks, sizeof(*weights));
+    float *x = (float *)malloc((size_t)n_tokens * cols * sizeof(*x));
+    float *out = (float *)malloc((size_t)n_tokens * rows * sizeof(*out));
+    assert(weights && x && out);
+    for (int r = 0; r < rows; r++) {
+        for (size_t s = 0; s < sizeof(selected) / sizeof(selected[0]); s++) {
+            int b = selected[s];
+            BnBlockQ6K *block = &weights[r * blocks_per_row + b];
+            block->d = bn_fp32_to_fp16(0.00390625f * (float)(1 + r % 3));
+            for (int i = 0; i < 128; i++)
+                block->ql[i] = (uint8_t)(r * 29 + b * 7 + i * 13);
+            for (int i = 0; i < 64; i++)
+                block->qh[i] = (uint8_t)(r * 11 + b * 17 + i * 3);
+            for (int i = 0; i < 16; i++)
+                block->scales[i] = (int8_t)((r + b + i * 5) % 15 - 7);
+        }
+    }
+    for (int i = 0; i < n_tokens * cols; i++)
+        x[i] = 0.5f * sinf((float)(i % 257) * 0.03125f);
+
+    void *buf = gpu->buffer_create(gpu->ctx, weights,
+        n_blocks * sizeof(*weights), BN_GGUF_TENSOR_Q6_K, rows, cols);
+    assert(buf);
+    assert(bn_gpu_backend_matmul(gpu, out, buf, x, rows, cols,
+                                 n_tokens, BN_GGUF_TENSOR_Q6_K) == 0);
+    for (int t = 0; t < n_tokens; t++) {
+        for (int r = 0; r < rows; r++) {
+            double expected = 0.0;
+            for (size_t s = 0; s < sizeof(selected) / sizeof(selected[0]); s++) {
+                int b = selected[s];
+                float dequant[BN_QK_K];
+                bn_quant_dequant_q6k(&weights[r * blocks_per_row + b],
+                                     dequant);
+                for (int i = 0; i < BN_QK_K; i++)
+                    expected += (double)dequant[i] *
+                        x[(size_t)t * cols + b * BN_QK_K + i];
+            }
+            assert(isfinite(out[(size_t)t * rows + r]));
+            assert(fabs((double)out[(size_t)t * rows + r] - expected) < 0.5);
+        }
+    }
+    gpu->buffer_destroy(gpu->ctx, buf);
+    free(out);
+    free(x);
+    free(weights);
+}
+
 static void run_q4k_matmul_batch_case(BnGPUBackend *gpu) {
     enum { cols = BN_QK_K, n_tokens = 5, rows0 = 3, rows1 = 5 };
     BnBlockQ4K weights0[rows0];
@@ -8322,6 +8373,12 @@ int main(int argc, char **argv) {
         run_wide_q5k_matmul_case(gpu, 127);
         run_wide_q5k_matmul_case(gpu, 128);
         run_wide_q5k_matmul_case(gpu, 129);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--q6-wide-prefill") == 0) {
+        run_wide_q6k_prefill_case(gpu, 129);
+        run_wide_q6k_prefill_case(gpu, 257);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }

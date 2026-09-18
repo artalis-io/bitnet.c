@@ -19892,12 +19892,16 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                 int n_bpr = cols / BN_QK_K;
                 if (split_count > n_bpr) split_count = n_bpr;
                 if (split_count < 1) split_count = 1;
+                /* The kernel combines reference K partitions in order;
+                 * long prefill is faster without partial buffers/fixup. */
+                if (n_tokens >= 128) split_count = 1;
                 size_t partial_values = (size_t)split_count * rows * n_tokens;
-                if (cuda_ensure_mmq_fixup(ctx, partial_values) != 0)
+                if (split_count > 1 &&
+                    cuda_ensure_mmq_fixup(ctx, partial_values) != 0)
                     return -1;
                 dim3 mmq_grid(tile_rows, tile_tokens, split_count);
                 q6k_mmq_128x64_kernel<<<mmq_grid, 512, 0, stream>>>(
-                    ctx->d_mmq_fixup,
+                    split_count > 1 ? ctx->d_mmq_fixup : out,
                         (const BnCudaQ6KMmqBlock *)w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq, rows, cols,
                         n_tokens, split_count, NULL, NULL, NULL, NULL,
@@ -19906,13 +19910,13 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                         n_tokens >= 128 ? (int)grid : 0);
                 int fixup_threads = 256;
                 size_t values = (size_t)rows * n_tokens;
-                if (n_tokens >= 128)
+                if (n_tokens >= 128 && split_count > 1)
                     kquant_mmq_reference_fixup_kernel<<<
                         (unsigned)((values + fixup_threads - 1) / fixup_threads),
                         fixup_threads, 0, stream>>>(
                             out, ctx->d_mmq_fixup, rows, cols,
                             n_tokens, jwidth, (int)grid);
-                else
+                else if (split_count > 1)
                     q4k_mmq_split_fixup_kernel<<<
                         (unsigned)((values + fixup_threads - 1) / fixup_threads),
                         fixup_threads, 0, stream>>>(
