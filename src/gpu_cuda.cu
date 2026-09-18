@@ -20246,44 +20246,11 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
         } else if (((bn_quant_format_is_q4k(type) && n_tokens >= 8) ||
                     (bn_quant_format_is_q5k(type) && n_tokens >= 16)) &&
                    w->mmq_data) {
-            if (bn_quant_format_is_q4k(type) && n_tokens >= 128 &&
-                ref_split_bound <= cols / BN_QK_K) {
-                int tile_rows = (rows + 127) / 128;
-                int tile_tokens = (n_tokens + 127) / 128;
-                int split_tiles = tile_rows * ((n_tokens + 127) / 128);
-                int nsm = 0;
-                if (cudaDeviceGetAttribute(&nsm, cudaDevAttrMultiProcessorCount,
-                                           ctx->device) != cudaSuccess || nsm <= 0)
-                    return -1;
-                int split_count = (nsm + split_tiles - 1) / split_tiles;
-                if ((int64_t)grid != split_tiles)
-                    split_count++;
-                int n_bpr = cols / BN_QK_K;
-                if (split_count > n_bpr) split_count = n_bpr;
-                if (split_count < 1) split_count = 1;
-                size_t partial_values = (size_t)split_count * rows * n_tokens;
-                if (cuda_ensure_mmq_fixup(ctx, partial_values) != 0)
-                    return -1;
-                dim3 mmq_grid(tile_rows, tile_tokens, split_count);
-                q4k_mmq_128xj_kernel<128, 1>
-                    <<<mmq_grid, 512, 0, stream>>>(
-                        ctx->d_mmq_fixup,
-                        (const BnBlockQ4K *)w->data,
-                        (const BnCudaKQuantMmqBlock *)w->mmq_data,
-                        (const BnCudaBlockQ8_1 *)xq, rows, cols,
-                        n_tokens, 0, split_count,
-                        NULL, NULL, NULL, NULL, 0, 0, 0,
-                        jwidth, (int)grid);
-                int fixup_threads = 256;
-                size_t values = (size_t)rows * n_tokens;
-                kquant_mmq_reference_fixup_kernel<<<
-                    (unsigned)((values + fixup_threads - 1) / fixup_threads),
-                    fixup_threads, 0, stream>>>(
-                        out, ctx->d_mmq_fixup, rows, cols,
-                        n_tokens, jwidth, (int)grid);
-            } else if (n_tokens >= 64) {
-                if (bn_quant_format_is_q5k(type) && n_tokens >= 128) {
-                    /* Reuse each Q5_K weight tile across two token phases. */
+            if (n_tokens >= 64) {
+                if ((bn_quant_format_is_q5k(type) ||
+                     bn_quant_format_is_q4k(type)) && n_tokens >= 128) {
+                    /* Preserve reference accumulation for interior prompt
+                     * rows while reusing weights across token phases. */
                     dim3 mmq_grid((rows + 127) / 128,
                                   (n_tokens + 63) / 64, 1);
                     kquant_mmq_packed_kernel<128, 64, 2, true, false, true,
