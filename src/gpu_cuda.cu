@@ -30674,6 +30674,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 reference_kquant_matvec = 0;
                 reference_block_accumulation = 0;
             }
+            /* The 2048x4096 Q4_K attention output projection retains its
+             * tested token stream with the faster native CUDA dot path. */
+            if (op->rows == 2048 && op->cols == 4096 &&
+                bn_quant_format_is_q4k(op->type)) {
+                reference_block_accumulation = 0;
+            }
             /* Gated Q5_K queries use native CUDA MMVQ arithmetic. */
             if (bn_quant_format_is_q5k(op->type) &&
                 op->buf_out == BN_GPU_VALUE_QKV &&
