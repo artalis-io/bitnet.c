@@ -5838,31 +5838,32 @@ static __global__ void q5k_dot_matvec_split_kernel(
     }
 }
 
-static __global__ void q5k_dot_matvec_split_4warp_kernel(
+/* Keep the four logical partial sums and their addition order, but let one
+ * physical warp compute a row. This avoids a block-wide synchronization for
+ * each projection and allows several rows to share a CTA. */
+static __global__ void q5k_dot_matvec_split_1warp_4partial_kernel(
     float *out0, float *out1, float *out2, const BnBlockQ5K *blocks,
     const BnCudaBlockQ8_1 *xq, const float *bias0, int total_rows, int cols,
     int split0, int split1, size_t out1_offset, size_t out2_offset) {
-    __shared__ float partial[3][32];
     int lane = threadIdx.x & 31;
-    int warp = threadIdx.x >> 5;
-    int row = blockIdx.x;
-    if (row >= total_rows || warp >= 4) return;
+    int row = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
+    if (row >= total_rows) return;
 
     int n_bpr = cols / BN_QK_K;
     int kbx = lane / 16;
     int iqs = 2 * (lane & 15);
-    float sum = 0.0f;
     const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
-    for (int b = warp * 2 + kbx; b < n_bpr; b += 8)
-        sum += cuda_vec_dot_q5k_q8_1(&row_blocks[b], xq + (size_t)b * 8,
-                                     iqs);
-
-    /* Match the standalone/reference lane-wise inter-warp reduction. */
-    if (warp > 0) partial[warp - 1][lane] = sum;
-    __syncthreads();
-    if (warp > 0) return;
+    float partial[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 #pragma unroll
-    for (int w = 0; w < 3; w++) sum += partial[w][lane];
+    for (int logical_warp = 0; logical_warp < 4; logical_warp++) {
+        for (int b = logical_warp * 2 + kbx; b < n_bpr; b += 8)
+            partial[logical_warp] += cuda_vec_dot_q5k_q8_1(
+                &row_blocks[b], xq + (size_t)b * 8, iqs);
+    }
+    float sum = partial[0];
+#pragma unroll
+    for (int logical_warp = 1; logical_warp < 4; logical_warp++)
+        sum += partial[logical_warp];
     for (int offset = 16; offset > 0; offset >>= 1)
         sum += __shfl_xor_sync(0xffffffffu, sum, offset);
     if (lane != 0) return;
@@ -32170,7 +32171,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int warps = q5_threads / 32;
                 if (bn_gpu_policy_cuda_deinterleaved_kquant_split_4warp_enabled(ctx->runtime_policy, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                        q5k_dot_matvec_split_4warp_kernel, total_rows, 128,
+                        q5k_dot_matvec_split_1warp_4partial_kernel,
+                        (total_rows + 3) / 4, 128,
                         0, out0, out1, out2,
                         (const BnBlockQ5K *)w->data, xq, bias0,
                         total_rows, cols, split0, split1,
