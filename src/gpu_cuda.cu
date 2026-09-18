@@ -26329,12 +26329,11 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(ctx->runtime_policy, n_tokens, dim, 0);
     int use_moe_block_prepared_batch =
         bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(ctx->runtime_policy, routed_native_quant);
-    /* SM120 routed Q8 MMQ serializes each down row across all experts. For
-     * prompt batches, the direct Q8 path is substantially faster. */
-    if (ctx->compute_capability == 1200 && routed_native_quant && n_tokens > 8)
+    if (ctx->compute_capability == 1200 && routed_native_quant &&
+        n_tokens < 128)
         use_moe_block_prepared_batch = 0;
-    int use_routed_mmq = use_moe_block_prepared_batch && n_tokens > 8 &&
-                         ctx->compute_capability == 1200;
+    /* Routed MMQ is slower than prepared gate/up plus direct down on SM120. */
+    int use_routed_mmq = 0;
 
     if (routed_ordered_quant) {
 #ifdef BN_CUDA_MXFP4_SM120
@@ -26643,7 +26642,9 @@ moe_route_routed_down:
         if (cuda_launch_routed_mmq(ctx, d_full_out, down, NULL, d_mid,
                 d_indices, d_weights, dim, hidden_dim, n_tokens, n_experts, k, 1) != 0)
             return -1;
-    } else if (use_moe_block_prepared_batch) {
+    } else if (use_moe_block_prepared_batch &&
+               !(ctx->compute_capability == 1200 && routed_native_quant &&
+                 n_tokens > 8)) {
         int n_mid = n_tokens * k;
         int mid_blocks = hidden_dim / 32;
         if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
