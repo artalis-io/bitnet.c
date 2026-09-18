@@ -30099,6 +30099,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             attention_key = (attention_key ^ (uint32_t)ai) * UINT64_C(1099511628211);
             attention_key = (attention_key ^ (uint32_t)ops[ai].attention_window) *
                             UINT64_C(1099511628211);
+            /* FP32 128-wide flash switches from one kernel to a
+             * partition-and-combine pair above 512 keys. Rebuild the graph
+             * when its node layout changes. */
+            if (ops[ai].op_code == BN_GPU_CODE_FLASH_ATTN &&
+                !ctx->kv_f16 && (int)ops[ai].p[1] == 128)
+                attention_key = (attention_key ^
+                    (uint32_t)((int)ops[ai].p[2] > 512)) *
+                    UINT64_C(1099511628211);
         }
     }
     int runtime_params_ready = 0;
