@@ -33827,9 +33827,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     break;
                 }
                 if (ctx->compute_capability >= 1200) {
+                    /* One block computes all four value tiles. Splitting
+                     * them repeats the score and softmax work four times
+                     * at decode lengths around 512 keys. */
                     BN_CUDA_LAUNCH(ctx,
-                        flash_attention_avx2_reference_128_kernel<true>,
-                        n_heads * 4, 1024, (size_t)n_kv * sizeof(float),
+                        flash_attention_avx2_reference_128_kernel<false>,
+                        n_heads, 1024, (size_t)n_kv * sizeof(float),
                         out, q, key, value, n_heads, n_kv, kv_mul, kv_dim,
                         op->p[6], cuda_u32_to_f32(op->p[7]), ctx->kv_f16,
                         first_key, n_kv > 512);
