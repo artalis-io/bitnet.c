@@ -14622,6 +14622,12 @@ static __device__ __forceinline__ float cuda_ssm_decay(float dt, float a) {
     return __expf(softplus * a);
 }
 
+static __device__ __forceinline__ float cuda_ssm_prefill_decay(float dt,
+                                                                float a) {
+    float softplus = dt > 20.0f ? dt : __logf(1.0f + __expf(dt));
+    return expf(softplus * a);
+}
+
 static __global__ void ssm_alpha_beta_kernel(
     float *alpha, float *beta, const float *dt_bias, const float *a_log,
     int n) {
@@ -14832,6 +14838,7 @@ static __global__ void ssm_prefill_l2norm_kernel(
     }
 }
 
+template <bool PreciseDecay>
 static __global__ void ssm_prefill_alpha_beta_kernel(
     float *alpha, float *beta, const float *dt_bias, const float *a_log,
     int num_v_heads, int n_tokens) {
@@ -14840,7 +14847,8 @@ static __global__ void ssm_prefill_alpha_beta_kernel(
     if (h >= total) return;
     int hv = h % num_v_heads;
     float dt = alpha[h] + dt_bias[hv];
-    alpha[h] = cuda_ssm_decay(dt, a_log[hv]);
+    alpha[h] = PreciseDecay ? cuda_ssm_prefill_decay(dt, a_log[hv])
+                            : cuda_ssm_decay(dt, a_log[hv]);
     beta[h] = cuda_sigmoid(beta[h]);
 }
 
@@ -14870,7 +14878,7 @@ static __global__ void ssm_prefill_alpha_beta_f32_kernel(
     if (tid == 0) {
         float dt = as + dt_bias[h];
         size_t idx = (size_t)tok * (size_t)num_v_heads + (size_t)h;
-        alpha[idx] = cuda_ssm_decay(dt, a_log[h]);
+        alpha[idx] = cuda_ssm_prefill_decay(dt, a_log[h]);
         beta[idx] = cuda_sigmoid(bs);
     }
 }
@@ -22810,7 +22818,7 @@ static int cuda_ssm_delta_gate_batch(
         cudaMemcpy(d_beta, beta, ab_count * sizeof(float),
                    cudaMemcpyHostToDevice) != cudaSuccess)
         goto done;
-    ssm_prefill_alpha_beta_kernel<<<
+    ssm_prefill_alpha_beta_kernel<false><<<
         (n_tokens * num_v_heads + 255) / 256, 256>>>(
         d_alpha, d_beta, (const float *)dt_bias->data,
         (const float *)a_log->data, num_v_heads, n_tokens);
@@ -29086,11 +29094,24 @@ static int cuda_prefill_ssm_layer(
         }
 
         if (!ab_preactivated) {
-            ssm_prefill_alpha_beta_kernel<<<
-                ((int)ab_values + threads - 1) / threads, threads, 0,
-                ssm_stream>>>(
-                d_alpha, d_beta, (const float *)dt_bias->data,
-                (const float *)a_log->data, num_v_heads, n_tokens);
+            /* F32 alpha/beta projections need the reference final
+             * exponential over long scans; quantized projections retain
+             * their established fast-decay contract. */
+            int precise_decay =
+                bn_backend_quant_uses_dense_float(alpha_type) &&
+                bn_backend_quant_uses_dense_float(beta_type);
+            if (precise_decay)
+                ssm_prefill_alpha_beta_kernel<true><<<
+                    ((int)ab_values + threads - 1) / threads, threads, 0,
+                    ssm_stream>>>(
+                    d_alpha, d_beta, (const float *)dt_bias->data,
+                    (const float *)a_log->data, num_v_heads, n_tokens);
+            else
+                ssm_prefill_alpha_beta_kernel<false><<<
+                    ((int)ab_values + threads - 1) / threads, threads, 0,
+                    ssm_stream>>>(
+                    d_alpha, d_beta, (const float *)dt_bias->data,
+                    (const float *)a_log->data, num_v_heads, n_tokens);
             err = cudaGetLastError();
             if (err != cudaSuccess) {
                 fprintf(stderr, "[bn:gpu:cuda] prefill ssm batched alpha/beta failed: %s\n",
