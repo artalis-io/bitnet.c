@@ -15465,7 +15465,7 @@ static __global__ void gqa_combine_kernel(float *out, const float *att,
     int vh = h / kv_mul;
     const float *row = att + (size_t)h * seq_len;
     float sum = 0.0f;
-    for (int pair = tid; pair < 128; pair += blockDim.x) {
+    for (int pair = tid; pair < (n_kv + 1) / 2; pair += blockDim.x) {
         int t = pair * 2;
         size_t voff = (size_t)loff + (size_t)t * kv_dim +
                       (size_t)vh * head_size;
@@ -29916,6 +29916,22 @@ static const char *cuda_profile_name(int code) {
     return cuda_op_name(code);
 }
 
+static int cuda_gqa_combine_threads(int n_kv) {
+    /* llama.cpp pads non-flash attention to 256 cache positions and picks
+     * the first warp multiple that minimizes per-thread value pairs. */
+    int padded = ((n_kv + 255) / 256) * 256;
+    int best = 32;
+    int iterations = (padded + 2 * best - 1) / (2 * best);
+    for (int candidate = 64; candidate <= 256; candidate += 32) {
+        int next = (padded + 2 * candidate - 1) / (2 * candidate);
+        if (next < iterations) {
+            best = candidate;
+            iterations = next;
+        }
+    }
+    return best;
+}
+
 static int cuda_op_mentions_buf(const BnGPUOp *op, int buf) {
     if (!op || buf < 0) return 0;
     if (op->op_code == BN_GPU_CODE_HC_COMBINE &&
@@ -30380,6 +30396,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 !ctx->kv_f16 && (int)ops[ai].p[1] == 128)
                 attention_key = (attention_key ^
                     (uint32_t)((int)ops[ai].p[2] > 512)) *
+                    UINT64_C(1099511628211);
+            if (ops[ai].op_code == BN_GPU_CODE_GQA_SCORES)
+                attention_key = (attention_key ^
+                    (uint32_t)cuda_gqa_combine_threads(
+                        (int)ops[ai].p[2])) *
                     UINT64_C(1099511628211);
         }
     }
@@ -34056,6 +34077,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (!out || !att || !value || n_heads <= 0 || head_size <= 0 ||
                 n_kv <= 0 || kv_mul <= 0 || kv_dim <= 0 || seq_len <= 0)
                 BN_CUDA_EXEC_FAIL("gqa combine invalid args");
+            int combine_threads = cuda_gqa_combine_threads(n_kv);
             if (ctx->kv_f16 && head_size == 256 && kv_mul == 6) {
                 BN_CUDA_LAUNCH(ctx, gqa_combine_f16_mmvf_kernel,
                     n_heads * head_size, 32, 0,
@@ -34064,13 +34086,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else {
                 if (graph_exec) {
                     BN_CUDA_LAUNCH_STATIC(ctx, gqa_combine_kernel,
-                        n_heads * head_size, 128, 0,
+                        n_heads * head_size, combine_threads, 0,
                         out, att, value, n_heads, head_size, n_kv, kv_mul,
                         kv_dim, seq_len, op->p[6], ctx->kv_f16,
                         (const BnCudaRuntimeParams *)ctx->d_runtime);
                 } else {
                     BN_CUDA_LAUNCH(ctx, gqa_combine_kernel,
-                        n_heads * head_size, 128, 0,
+                        n_heads * head_size, combine_threads, 0,
                         out, att, value, n_heads, head_size, n_kv, kv_mul,
                         kv_dim, seq_len, op->p[6], ctx->kv_f16,
                         (const BnCudaRuntimeParams *)NULL);
