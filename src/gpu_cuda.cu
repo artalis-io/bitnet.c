@@ -4263,8 +4263,9 @@ static __global__ void kquant_mmq_packed_kernel(
  * signed-byte MMA operands and FP16 (scale, minimum) pairs; stage those into
  * a padded row layout and retain the reference pairwise FP32 accumulation.
  * Routed gate/up can share route IDs and Q8 input staging without changing
- * either projection's accumulation order. */
-template <int J, int ROW_FRAGS, bool Dual = false>
+ * either projection's accumulation order. Specialize the route handling so
+ * ordinary dense tiles use direct token indices in the inner K loop. */
+template <int J, int ROW_FRAGS, bool Dual = false, bool Routed = false>
 __launch_bounds__(512, 1)
 static __global__ void q4k_mmq_128xj_kernel(
         float *out, const BnBlockQ4K *blocks,
@@ -4287,8 +4288,9 @@ static __global__ void q4k_mmq_128xj_kernel(
     int warp = tid >> 5;
     int row0 = blockIdx.x * I;
     int token0 = blockIdx.y * J;
-    int routed = route_order && expert_counts && expert_offsets &&
-                 experts > 0 && route_k > 0;
+    if (Routed && (!route_order || !expert_counts || !expert_offsets ||
+                   experts <= 0 || route_k <= 0)) return;
+    const bool routed = Routed;
     if (Dual && (!routed || !second_blocks || !second_out)) return;
     int expert = routed ? (int)blockIdx.z : 0;
     if (routed && route_schedule) {
@@ -4338,14 +4340,14 @@ static __global__ void q4k_mmq_128xj_kernel(
     }
     float sum[(Dual ? 2 : 1) * J * ROW_FRAGS / 4] = {0.0f};
 
-    for (int token = tid; token < J; token += blockDim.x) {
-        int local_token = token0 + token;
-        route_ids[token] = local_token < local_tokens
-            ? (routed ? route_order[route_offset + local_token]
-                      : local_token)
-            : -1;
+    if (routed) {
+        for (int token = tid; token < J; token += blockDim.x) {
+            int local_token = token0 + token;
+            route_ids[token] = local_token < local_tokens
+                ? route_order[route_offset + local_token] : -1;
+        }
+        __syncthreads();
     }
-    __syncthreads();
 
     for (int b = b_begin; b < b_end; b++) {
         for (int projection = 0; projection < (Dual ? 2 : 1);
@@ -4402,7 +4404,7 @@ static __global__ void q4k_mmq_128xj_kernel(
             for (int i = tid; i < staged_tokens * 32; i += blockDim.x) {
                 int tj = i >> 5;
                 int qi = i & 31;
-                int route = route_ids[tj];
+                int route = routed ? route_ids[tj] : token0 + tj;
                 int token = routed && route >= 0 ? route / route_k : route;
                 int value = 0;
                 if (token >= 0 && token < n_tokens) {
@@ -4418,7 +4420,7 @@ static __global__ void q4k_mmq_128xj_kernel(
             for (int i = tid; i < staged_tokens * 4; i += blockDim.x) {
                 int tj = i >> 2;
                 int group = i & 3;
-                int route = route_ids[tj];
+                int route = routed ? route_ids[tj] : token0 + tj;
                 int token = routed && route >= 0 ? route / route_k : route;
                 uint32_t value = 0;
                 if (token >= 0 && token < n_tokens) {
@@ -4535,8 +4537,10 @@ static __global__ void q4k_mmq_128xj_kernel(
                           (l >> 1) * 8 + lane / 4;
                 int local_token = jp * 16 + (warp & 1) * 8 +
                                   (lane % 4) * 2 + (l & 1);
-                int route = route_ids[local_token];
-                if (row < rows && route >= 0)
+                int route = routed ? route_ids[local_token]
+                                   : token0 + local_token;
+                if (row < rows && route >= 0 &&
+                    (routed || route < n_tokens))
                     target[out_offset + ((size_t)split * n_tokens + route) *
                         rows + row] =
                         projection_sum[(jp * ROW_FRAGS + n) * 4 + l];
@@ -25067,7 +25071,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         float *up_out = gate_out + mid_values;
         dim3 routed_grid((hidden_dim + 127) / 128, 1,
                          routed_q4_schedule_count);
-        q4k_mmq_128xj_kernel<64, 1, true><<<routed_grid, 512>>>(
+        q4k_mmq_128xj_kernel<64, 1, true, true><<<routed_grid, 512>>>(
             gate_out, (const BnBlockQ4K *)gate->data, NULL, xq,
             hidden_dim, dim, n_tokens, 0, 1, d_slot_order,
             d_expert_counts, d_expert_offsets, d_route_schedule,
@@ -25291,7 +25295,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         float *down_values = ctx->d_x;
         dim3 routed_down_grid((dim + 127) / 128, 1,
                               routed_q4_schedule_count);
-        q4k_mmq_128xj_kernel<64, 1><<<routed_down_grid, 512>>>(
+        q4k_mmq_128xj_kernel<64, 1, false, true><<<routed_down_grid, 512>>>(
             down_values, (const BnBlockQ4K *)down->data, NULL, mid_q,
             dim, hidden_dim, n_mid, 0, 1, d_slot_order,
             d_expert_counts, d_expert_offsets, d_route_schedule,
@@ -25977,7 +25981,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         float *up_out = gate_out + mid_values;
         dim3 grid((hidden_dim + 127) / 128, 1,
                   routed_schedule_upper);
-        q4k_mmq_128xj_kernel<64, 1, true><<<grid, 512>>>(
+        q4k_mmq_128xj_kernel<64, 1, true, true><<<grid, 512>>>(
             gate_out, (const BnBlockQ4K *)gate->data, NULL, xq,
             hidden_dim, dim, n_tokens, 0, 1, d_slot_order,
             d_expert_counts, d_expert_offsets, d_routed_schedule,
@@ -26157,7 +26161,7 @@ moe_route_routed_down:
             quantize_mmq_input_kernel<<<dim3((mid_blocks + 15) / 16,
                 n_mid), 512>>>(
                 (BnCudaBlockQ8Mmq *)mid_q, d_mid, hidden_dim, 0);
-            q4k_mmq_128xj_kernel<64, 1><<<grid, 512>>>(
+            q4k_mmq_128xj_kernel<64, 1, false, true><<<grid, 512>>>(
                 down_values, (const BnBlockQ4K *)down->data, NULL, mid_q,
                 dim, hidden_dim, n_mid, 0, 1, d_slot_order,
                 d_expert_counts, d_expert_offsets, d_routed_schedule,
