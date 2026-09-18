@@ -30666,6 +30666,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int reference_block_accumulation =
                 (op->flags &
                  BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) != 0;
+            /* Native MMVQ is faster for the 2048-column Q4_K/Q6_K decode
+             * projections while preserving the tested greedy token stream. */
+            if (op->cols == 2048 &&
+                (bn_quant_format_is_q4k(op->type) ||
+                 bn_quant_format_is_q6k(op->type))) {
+                reference_kquant_matvec = 0;
+                reference_block_accumulation = 0;
+            }
             /* Gated Q5_K queries use native CUDA MMVQ arithmetic. */
             if (bn_quant_format_is_q5k(op->type) &&
                 op->buf_out == BN_GPU_VALUE_QKV &&
