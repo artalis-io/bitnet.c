@@ -19784,7 +19784,8 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
         ? (BnCudaBlockQ8Mmq *)prepared_xq
         : (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
     if (!prepared_xq)
-        quantize_mmq_input_kernel<<<dim3(cols / 32, n_tokens), 32,
+        quantize_mmq_input_kernel<<<dim3((cols / 32 + 15) / 16,
+                                           n_tokens), 512,
                                            0, stream>>>(xq, input, cols,
                 bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_MMQ_F32_SCALE));
     BnCudaMmqScratch scratch = {NULL, stream};
@@ -25052,7 +25053,8 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
         BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-        quantize_mmq_input_kernel<<<dim3(x_blocks, n_tokens, 1), 32, 0>>>(
+        quantize_mmq_input_kernel<<<dim3((x_blocks + 15) / 16,
+            n_tokens, 1), 512, 0>>>(
             (BnCudaBlockQ8Mmq *)xq, d_full_x, dim, 0);
         float *gate_out = ctx->d_x;
         float *up_out = gate_out + mid_values;
@@ -25276,7 +25278,8 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
             return -1;
         BnCudaBlockQ8_1 *mid_q = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-        quantize_mmq_input_kernel<<<dim3(mid_blocks, n_mid, 1), 32, 0>>>(
+        quantize_mmq_input_kernel<<<dim3((mid_blocks + 15) / 16,
+            n_mid, 1), 512, 0>>>(
             (BnCudaBlockQ8Mmq *)mid_q, d_mid, hidden_dim, 0);
         float *down_values = ctx->d_x;
         dim3 routed_down_grid((dim + 127) / 128, 1,
@@ -25960,7 +25963,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
         BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-        quantize_mmq_input_kernel<<<dim3(x_blocks, n_tokens), 32>>>(
+        quantize_mmq_input_kernel<<<dim3((x_blocks + 15) / 16,
+            n_tokens), 512>>>(
             (BnCudaBlockQ8Mmq *)xq, d_full_x, dim, 0);
         float *gate_out = ctx->d_x;
         float *up_out = gate_out + mid_values;
@@ -26128,7 +26132,8 @@ moe_route_routed_down:
                 return -1;
             BnCudaBlockQ8Mmq *mid_q =
                 (BnCudaBlockQ8Mmq *)ctx->d_q8_1;
-            quantize_mmq_input_kernel<<<dim3(mid_blocks, n_mid), 32>>>(
+            quantize_mmq_input_kernel<<<dim3((mid_blocks + 15) / 16,
+                n_mid), 512>>>(
                 mid_q, d_mid, hidden_dim, 1);
             q6k_mmq_128x64_kernel<<<grid, 512>>>(
                 down_values, NULL,
@@ -26142,7 +26147,8 @@ moe_route_routed_down:
             if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
                 return -1;
             BnCudaBlockQ8_1 *mid_q = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-            quantize_mmq_input_kernel<<<dim3(mid_blocks, n_mid), 32>>>(
+            quantize_mmq_input_kernel<<<dim3((mid_blocks + 15) / 16,
+                n_mid), 512>>>(
                 (BnCudaBlockQ8Mmq *)mid_q, d_mid, hidden_dim, 0);
             q4k_mmq_128xj_kernel<64, 1><<<grid, 512>>>(
                 down_values, (const BnBlockQ4K *)down->data, NULL, mid_q,
