@@ -4873,6 +4873,21 @@ static __global__ void q6k_mmq_128x64_kernel(
             int qword = i & 63;
             int token = route_ids[tj];
             int value = 0;
+#if __CUDA_ARCH__ >= 800
+            if (!routed && !xq8k && token >= 0 && token < n_tokens) {
+                int group = qword >> 3;
+                int word = qword & 7;
+                const void *src =
+                    xq[(size_t)token * x_blocks + (size_t)b * 8 + group]
+                        .qs + word * 4;
+                void *dst = sy + tj * Y_STRIDE + qword;
+                unsigned shared_dst =
+                    (unsigned)__cvta_generic_to_shared(dst);
+                asm volatile("cp.async.ca.shared.global [%0], [%1], 4;"
+                             :: "r"(shared_dst), "l"(src));
+                continue;
+            }
+#endif
             if (token >= 0 && token < n_tokens) {
                 int group = qword >> 3;
                 int word = qword & 7;
@@ -4889,6 +4904,9 @@ static __global__ void q6k_mmq_128x64_kernel(
             }
             sy[tj * Y_STRIDE + qword] = value;
         }
+#if __CUDA_ARCH__ >= 800
+        if (!routed && !xq8k) asm volatile("cp.async.commit_group;");
+#endif
         for (int i = tid; i < staged_tokens * 8; i += blockDim.x) {
             int tj = i >> 3;
             int group = i & 7;
