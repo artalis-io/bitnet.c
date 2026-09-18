@@ -17026,11 +17026,13 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
         head_size <= 0 || kv_mul <= 0 || kv_dim <= 0 ||
         n_heads / kv_mul != n_kv_heads)
         return -1;
-    /* At long FP32 GQA8 prefill, pedantic GEMM keeps sampled-token parity
-     * that the tensor-core 32F mode loses while remaining much faster than
-     * the serial attention fallback. */
+    /* At long FP32 prefill, these attention shapes need pedantic score and
+     * value GEMM to preserve the sampled-token prefix from the serial path. */
     const bool strict_f32_gqa8 = !ctx->kv_f16 && n_tokens > 768 &&
         n_heads == 32 && n_kv_heads == 4 && head_size == 128 && kv_mul == 8;
+    const bool strict_f32_24head = !ctx->kv_f16 && n_tokens > 512 &&
+        n_heads == 24 && head_size == 256;
+    const bool strict_f32_attention = strict_f32_gqa8 || strict_f32_24head;
 
     const unsigned long long debug_call_index =
         ctx->diagnostics.prefill_gemm_attention_calls++;
@@ -17099,7 +17101,7 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
             &alpha, (const void *const *)d_a, CUDA_R_32F, kv_dim,
             (const void *const *)d_b, CUDA_R_32F, q_ld,
             &zero, (void *const *)d_c, CUDA_R_32F, n_tokens,
-            n_heads, strict_f32_gqa8
+            n_heads, strict_f32_attention
                 ? CUBLAS_COMPUTE_32F_PEDANTIC : CUBLAS_COMPUTE_32F,
             CUBLAS_GEMM_DEFAULT_TENSOR_OP);
         if (st == CUBLAS_STATUS_SUCCESS) {
@@ -17189,7 +17191,7 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
                 ctx->kv_f16 ? CUDA_R_16F : CUDA_R_32F, q_ld,
                 n_heads,
                 ctx->kv_f16 ? CUBLAS_COMPUTE_16F
-                    : (strict_f32_gqa8 ? CUBLAS_COMPUTE_32F_PEDANTIC
+                    : (strict_f32_attention ? CUBLAS_COMPUTE_32F_PEDANTIC
                                       : CUBLAS_COMPUTE_32F),
                 CUBLAS_GEMM_DEFAULT_TENSOR_OP);
             if (st == CUBLAS_STATUS_SUCCESS) {
