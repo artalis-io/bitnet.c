@@ -18536,48 +18536,50 @@ static __global__ void q8_mmq_dense_subwarp_kernel(
             end - first > 2 ? last + fixup : last;
 }
 
-/* The reference schedule has a multiple-of-four token width. Four adjacent
- * tokens therefore traverse identical K intervals, so load each weight
- * quartet once while preserving every token's DP4A and FP32 sum order. */
-static __global__ void q8_mmq_dense_subwarp_t4_kernel(
+/* The reference schedule has a multiple-of-eight token width. Adjacent
+ * tokens therefore traverse identical K intervals, so load each four-byte
+ * weight group once while preserving each token's sum order. */
+template <int TokensPerTile>
+static __global__ void q8_mmq_dense_subwarp_tiled_kernel(
     float *out, const BnBlockQ8_0 *weight,
     const BnCudaBlockQ8_0F32 *input, const int *schedule,
     int rows, int cols, int n_tokens, int j, int ntx, size_t out_offset) {
     int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
     int lane = threadIdx.x & 7;
-    int token0 = blockIdx.y * 4;
+    int token0 = blockIdx.y * TokensPerTile;
     if (row >= rows || token0 >= n_tokens) return;
     int nb = cols / 32;
     int tile = (row / 128) * ntx + token0 / j;
     int first = schedule[tile], end = schedule[tile + 1];
     const BnBlockQ8_0 *w = weight + (size_t)row * nb;
-    const BnCudaBlockQ8_0F32 *x[4];
+    const BnCudaBlockQ8_0F32 *x[TokensPerTile];
 #pragma unroll
-    for (int t = 0; t < 4; t++) {
+    for (int t = 0; t < TokensPerTile; t++) {
         int token = token0 + t < n_tokens ? token0 + t : token0;
         x[t] = input + (size_t)token * nb;
     }
     unsigned mask = 0xffu << (threadIdx.x & ~7);
-    float last[4] = {0.0f}, fixup[4] = {0.0f};
+    float last[TokensPerTile] = {0.0f};
+    float fixup[TokensPerTile] = {0.0f};
     for (int base = first; base < end; base += 16) {
         int p = base + lane * 2;
-        float partial[4] = {0.0f};
+        float partial[TokensPerTile] = {0.0f};
         if (p < end) {
             for (int b = schedule[p]; b < schedule[p + 1]; b++) {
-                int dot[4] = {0};
+                int dot[TokensPerTile] = {0};
 #pragma unroll
                 for (int i = 0; i < 32; i += 4) {
                     int av, bv;
                     memcpy(&av, w[b].qs + i, sizeof(av));
 #pragma unroll
-                    for (int t = 0; t < 4; t++) {
+                    for (int t = 0; t < TokensPerTile; t++) {
                         memcpy(&bv, x[t][b].qs + i, sizeof(bv));
                         dot[t] = cuda_dp4a_i32(av, bv, dot[t]);
                     }
                 }
                 float wd = cuda_fp16_to_fp32(w[b].d);
 #pragma unroll
-                for (int t = 0; t < 4; t++)
+                for (int t = 0; t < TokensPerTile; t++)
                     partial[t] = fmaf(
                         __fmul_rn((float)dot[t], wd), x[t][b].d, partial[t]);
             }
@@ -18586,7 +18588,7 @@ static __global__ void q8_mmq_dense_subwarp_t4_kernel(
         for (int source = 0; source < 8; source++) {
             int part_index = base + source * 2;
 #pragma unroll
-            for (int t = 0; t < 4; t++) {
+            for (int t = 0; t < TokensPerTile; t++) {
                 float part = __shfl_sync(mask, partial[t], source, 8);
                 if (lane == 0 && part_index < end) {
                     if (part_index == first) last[t] = part;
@@ -18597,7 +18599,7 @@ static __global__ void q8_mmq_dense_subwarp_t4_kernel(
     }
     if (lane == 0) {
 #pragma unroll
-        for (int t = 0; t < 4; t++) {
+        for (int t = 0; t < TokensPerTile; t++) {
             if (token0 + t < n_tokens)
                 out[out_offset + (size_t)(token0 + t) * rows + row] =
                     end - first > 2 ? last[t] + fixup[t] : last[t];
@@ -18649,8 +18651,13 @@ static int cuda_launch_q8_0_matmul(BnCudaCtx *ctx, float *d_dst,
         BnCudaBlockQ8_0F32 *input = (BnCudaBlockQ8_0F32 *)ctx->d_q8_0_f32;
         quantize_q8_mmq_kernel<<<dim3(cols/32, n_tokens),32>>>(input, d_x, cols);
         if (cudaGetLastError() != cudaSuccess) return -1;
-        if (n_tokens >= 16 && plan->j % 4 == 0)
-            q8_mmq_dense_subwarp_t4_kernel<<<
+        if (n_tokens >= 32 && plan->j % 8 == 0)
+            q8_mmq_dense_subwarp_tiled_kernel<8><<<
+                dim3((rows + 31) / 32, (n_tokens + 7) / 8), 256>>>(
+                d_dst, blocks, input, plan->data, rows, cols, n_tokens,
+                plan->j, plan->ntx, out_offset);
+        else if (n_tokens >= 16 && plan->j % 4 == 0)
+            q8_mmq_dense_subwarp_tiled_kernel<4><<<
                 dim3((rows + 31) / 32, (n_tokens + 3) / 4), 256>>>(
                 d_dst, blocks, input, plan->data, rows, cols, n_tokens,
                 plan->j, plan->ntx, out_offset);
