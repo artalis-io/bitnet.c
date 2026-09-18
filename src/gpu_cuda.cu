@@ -3002,7 +3002,8 @@ static __global__ void q5k_q8k_avx2_reference_matvec_kernel(
 }
 
 static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
-    float *out, const BnBlockQ4K *blocks, const BnBlockQ8K *xq,
+    float *out, const BnBlockQ4K *blocks,
+    const BnCudaKQuantMmqBlock *prepared, const BnBlockQ8K *xq,
     const float *bias, int rows, int cols, size_t out_offset) {
     int global_lane = blockIdx.x * blockDim.x + threadIdx.x;
     int row = global_lane >> 5;
@@ -3015,6 +3016,8 @@ static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
     unsigned mask = 0xffffffffu;
     for (int b = 0; b < n_bpr; b++) {
         const BnBlockQ4K *blk = row_blocks + b;
+        const BnCudaKQuantMmqBlock *pblk = prepared
+            ? prepared + (size_t)row * n_bpr + b : NULL;
         const BnBlockQ8K *xb = xq + b;
         int dot = 0;
         int min_corr = 0;
@@ -3022,7 +3025,12 @@ static __global__ void q4k_q8k_avx2_reference_matvec_kernel(
         for (int group = 0; group < 8; group++) {
             int sc = 0;
             int mn = 0;
-            cuda_kquant_group_scale_min(blk->scales, group, &sc, &mn);
+            if (pblk) {
+                sc = (int)pblk->scales32[group];
+                mn = (int)pblk->mins32[group];
+            } else {
+                cuda_kquant_group_scale_min(blk->scales, group, &sc, &mn);
+            }
             int byte_off = (group >> 1) * 32;
             int shift = (group & 1) ? 4 : 0;
             int q = (blk->qs[byte_off + lane] >> shift) & 15;
@@ -30895,7 +30903,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (op->rows * 32 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
-                    out, (const BnBlockQ4K *)w->data, xq, bias,
+                    out, (const BnBlockQ4K *)w->data,
+                    (const BnCudaKQuantMmqBlock *)w->mmq_data, xq, bias,
                     op->rows, op->cols, out_offset);
                 break;
             }
