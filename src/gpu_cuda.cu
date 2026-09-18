@@ -4304,10 +4304,9 @@ static __global__ void q4k_mmq_128xj_kernel(
     int tile_tokens = local_tokens - token0;
     if (tile_tokens < 0) tile_tokens = 0;
     if (tile_tokens > J) tile_tokens = J;
-    /* Routed experts usually fill only part of a 64-token tile. Stage and
-     * multiply only live 16-token MMA panels; preserve each live panel's
-     * accumulation order. */
-    int staged_tokens = routed ? ((tile_tokens + 15) & ~15) : J;
+    /* Stage and multiply only live 16-token MMA panels in partial prompt
+     * and routed-expert tiles, preserving each panel's accumulation order. */
+    int staged_tokens = (tile_tokens + 15) & ~15;
     int n_bpr = cols / BN_QK_K;
     int x_blocks = cols / 32;
     int split = routed ? 0 : (int)blockIdx.z;
@@ -4472,7 +4471,7 @@ static __global__ void q4k_mmq_128xj_kernel(
 
 #pragma unroll
             for (int jp = 0; jp < J / 16; jp++) {
-                if (routed && token0 + jp * 16 >= local_tokens)
+                if (jp * 16 >= staged_tokens)
                     break;
 #pragma unroll
                 for (int k = 0; k < 4; k++) {
@@ -4622,7 +4621,7 @@ static __global__ void q6k_mmq_128x64_kernel(
     int tile_tokens = local_tokens - token0;
     if (tile_tokens < 0) tile_tokens = 0;
     if (tile_tokens > J) tile_tokens = J;
-    int staged_tokens = routed ? ((tile_tokens + 15) & ~15) : J;
+    int staged_tokens = (tile_tokens + 15) & ~15;
     int n_bpr = cols / BN_QK_K;
     int x_blocks = cols / 32;
     int split = routed ? 0 : (int)blockIdx.z;
@@ -4763,7 +4762,7 @@ static __global__ void q6k_mmq_128x64_kernel(
 
 #pragma unroll
         for (int jp = 0; jp < 4; jp++) {
-            if (routed && token0 + jp * 16 >= local_tokens)
+            if (jp * 16 >= staged_tokens)
                 break;
             int token_panel = jp * 2 + token_phase;
             float part[2][4] = {{0.0f}};
