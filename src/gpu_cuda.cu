@@ -2319,14 +2319,15 @@ static __global__ void iq4xs_mmq_ordered_t8_kernel(
                 out[(size_t)(token0 + t) * rows + row] = tail[t] + prefix[t];
 }
 
-/* Four warps compute the same 16 rows across 32 tokens. When all warps share
- * a Stream-K tile, stage each weight group once for their integer MMA dots;
- * scale application retains GGML's group and reduction order. */
-template <bool Packed, bool ShareA, bool FilterTiles = false>
+/* Four warps compute the same 16 rows across 32 tokens for IQ4_XS/IQ4_NL.
+ * When all warps share a Stream-K tile, stage each weight group once for their
+ * integer MMA dots; scale application retains GGML's group and reduction order. */
+template <bool Packed, bool ShareA, bool FilterTiles = false,
+          bool IQ4NL = false>
 /* The unshared split tiles need more registers to avoid local-memory spills.
  * Shared tiles gain more from four resident CTAs than from removing spills. */
 static __global__ __launch_bounds__(128, ShareA ? 4 : 2)
-void iq4xs_mmq_mma_ordered_t8_kernel(
+void iq4_codebook_mmq_mma_ordered_t8_kernel(
         float *out, const void *weights,
         const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
         int n_tokens, int width, int grid) {
@@ -2368,12 +2369,17 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
              * across groups and reuse each input scale for both rows. */
             const BnCudaIQ4XSPackedBlock *packed_row[2] = {NULL, NULL};
             const BnBlockIQ4XS *raw_row[2] = {NULL, NULL};
+            const BnBlockIQ4NL *nl_row[2] = {NULL, NULL};
             float row_d[2] = {0.0f, 0.0f};
 #pragma unroll
             for (int row_pair = 0; row_pair < 2; row_pair++) {
                 int row = row0 + (lane / 4) + row_pair * 8;
                 if (row >= rows) continue;
-                if (Packed) {
+                if (IQ4NL) {
+                    nl_row[row_pair] =
+                        (const BnBlockIQ4NL *)weights +
+                        (size_t)row * groups + b * 8;
+                } else if (Packed) {
                     packed_row[row_pair] =
                         (const BnCudaIQ4XSPackedBlock *)weights +
                         (size_t)row * blocks + b;
@@ -2396,7 +2402,14 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
                     int k = i & 31;
                     int8_t qv = 0;
                     if (row < rows) {
-                        if (Packed) {
+                        if (IQ4NL) {
+                            const BnBlockIQ4NL *w =
+                                (const BnBlockIQ4NL *)weights +
+                                (size_t)row * groups + b * 8 + group;
+                            int q = (w->qs[k & 15] >>
+                                     (4 * (k >> 4))) & 15;
+                            qv = bn_kvalues_iq4nl[q];
+                        } else if (Packed) {
                             const BnCudaIQ4XSPackedBlock *w =
                                 (const BnCudaIQ4XSPackedBlock *)weights +
                                 (size_t)row * blocks + b;
@@ -2467,7 +2480,9 @@ void iq4xs_mmq_mma_ordered_t8_kernel(
                     int row = row0 + (lane / 4) + row_pair * 8;
                     if (row >= rows) continue;
                     float wd;
-                    if (Packed) {
+                    if (IQ4NL) {
+                        wd = cuda_fp16_to_fp32(nl_row[row_pair][group].d);
+                    } else if (Packed) {
                         wd = row_d[row_pair] *
                              packed_row[row_pair]->scales[group];
                     } else {
@@ -20267,12 +20282,25 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                    n_tokens >= 16 && cols % 256 == 0 &&
                    bn_gpu_policy_cuda_iq4nl_t8_enabled(
                        ctx->runtime_policy)) {
-            iq4nl_mmq_ordered_t8_kernel<<<dim3((rows + 15) / 16,
-                                                (n_tokens + 7) / 8), 128,
-                                           0, stream>>>(
-                out, (const BnBlockIQ4NL *)w->data,
-                (const BnCudaBlockQ8MmqF32 *)xq,
-                rows, cols, n_tokens, jwidth, (int)grid);
+            dim3 mmq_grid((rows + 15) / 16, (n_tokens + 31) / 32);
+            if (jwidth >= 32 && jwidth % 32 == 0)
+                iq4_codebook_mmq_mma_ordered_t8_kernel<false, true, false,
+                                                       true><<<mmq_grid, 128,
+                                                               0, stream>>>(
+                    out, w->data, (const BnCudaBlockQ8MmqF32 *)xq,
+                    rows, cols, n_tokens, jwidth, (int)grid);
+            else {
+                iq4_codebook_mmq_mma_ordered_t8_kernel<false, true, true,
+                                                       true><<<mmq_grid, 128,
+                                                               0, stream>>>(
+                    out, w->data, (const BnCudaBlockQ8MmqF32 *)xq,
+                    rows, cols, n_tokens, jwidth, (int)grid);
+                iq4_codebook_mmq_mma_ordered_t8_kernel<false, false, true,
+                                                       true><<<mmq_grid, 128,
+                                                               0, stream>>>(
+                    out, w->data, (const BnCudaBlockQ8MmqF32 *)xq,
+                    rows, cols, n_tokens, jwidth, (int)grid);
+            }
         } else if (bn_quant_format_supports_packed_codebook_matvec(type) &&
                    n_tokens >= 16 &&
                    cols % 256 == 0) {
@@ -20280,7 +20308,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                 /* A multiple-of-32 width keeps all four token warps in the
                  * same Stream-K partition, so their A tile may be shared. */
                 if (w->mmq_data && jwidth >= 32 && jwidth % 32 == 0)
-                    iq4xs_mmq_mma_ordered_t8_kernel<true, true><<<
+                    iq4_codebook_mmq_mma_ordered_t8_kernel<true, true><<<
                         dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
                         0, stream>>>(
                         out, w->mmq_data,
@@ -20289,26 +20317,26 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                 else if (w->mmq_data) {
                     dim3 mmq_grid((rows + 15) / 16,
                                   (n_tokens + 31) / 32);
-                    iq4xs_mmq_mma_ordered_t8_kernel<true, true, true><<<
+                    iq4_codebook_mmq_mma_ordered_t8_kernel<true, true, true><<<
                         mmq_grid, 128, 0, stream>>>(
                         out, w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq,
                         rows, cols, n_tokens, jwidth, (int)grid);
-                    iq4xs_mmq_mma_ordered_t8_kernel<true, false, true><<<
+                    iq4_codebook_mmq_mma_ordered_t8_kernel<true, false, true><<<
                         mmq_grid, 128, 0, stream>>>(
                         out, w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq,
                         rows, cols, n_tokens, jwidth, (int)grid);
                 }
                 else if (jwidth >= 32 && jwidth % 32 == 0)
-                    iq4xs_mmq_mma_ordered_t8_kernel<false, true><<<
+                    iq4_codebook_mmq_mma_ordered_t8_kernel<false, true><<<
                         dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
                         0, stream>>>(
                         out, w->data,
                         (const BnCudaBlockQ8MmqF32 *)xq,
                         rows, cols, n_tokens, jwidth, (int)grid);
                 else
-                    iq4xs_mmq_mma_ordered_t8_kernel<false, false><<<
+                    iq4_codebook_mmq_mma_ordered_t8_kernel<false, false><<<
                         dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
                         0, stream>>>(
                         out, w->data,
