@@ -18812,8 +18812,12 @@ static int cuda_init_activations(void *vctx,
         plan->seq_len * plan->kv_dim * kv_elem_size;
     sizes[BN_GPU_VALUE_VALUE_CACHE] = (size_t)plan->attention_layer_count *
         plan->seq_len * plan->kv_dim * kv_elem_size;
+    size_t attention_values = (size_t)plan->n_heads * plan->seq_len;
+    /* Decode attention may emit 16 partials of 130 floats per head. */
+    size_t partition_values = (size_t)plan->n_heads * 16 * 130;
     sizes[BN_GPU_VALUE_ATT] =
-        (size_t)plan->n_heads * plan->seq_len * sizeof(float);
+        (attention_values > partition_values
+            ? attention_values : partition_values) * sizeof(float);
     sizes[BN_GPU_VALUE_LOGITS] = (size_t)plan->vocab_size * sizeof(float);
     sizes[BN_GPU_VALUE_ROPE_FREQ] =
         (size_t)plan->n_layers * (size_t)(plan->head_size / 2) *
@@ -34008,7 +34012,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int first_key = op->attention_window > 0 &&
                     n_kv > op->attention_window
                     ? n_kv - op->attention_window : 0;
-                int partitions = min(8, seq_len / 256);
+                int partitions = min(16, seq_len / 64);
                 float *partition_scratch = cuda_act(ctx, BN_GPU_VALUE_ATT);
                 /* FP32 KV benefits from key partitions only past 512 keys;
                  * keep the reference accumulation for short decode. */
