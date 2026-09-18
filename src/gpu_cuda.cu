@@ -4489,7 +4489,9 @@ static __global__ void q4k_mmq_128xj_kernel(
                 int row = row0 + ri;
                 uint32_t value = 0;
                 if (row < rows) {
-                    if (routed) {
+                    /* Wide dense tiles fetch scales more cheaply from the
+                     * compact Q4_K block than from the separate MMQ layout. */
+                    if (routed || (rows >= 32768 && cols >= 5376)) {
                         const BnBlockQ4K *blk = source +
                             ((size_t)expert * rows + row) * n_bpr + b;
                         int sc, mn;
