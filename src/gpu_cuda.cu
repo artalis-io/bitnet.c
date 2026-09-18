@@ -4335,7 +4335,8 @@ static __global__ void q4k_mmq_128xj_kernel(
             b_begin = raw_begin < 0 ? 0 : (int)raw_begin;
             b_end = raw_end > n_bpr ? n_bpr : (int)raw_end;
         } else {
-            b_begin = b_end = 0;
+            /* Reference fixup reads only real partitions for this tile. */
+            return;
         }
     }
     float sum[(Dual ? 2 : 1) * J * ROW_FRAGS / 4] = {0.0f};
