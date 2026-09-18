@@ -30301,8 +30301,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         graph_has_gqa |= ops[gi].op_code == BN_GPU_CODE_GQA_SCORES;
         graph_has_gelu_gate |= ops[gi].op_code == BN_GPU_CODE_GELU_GATE;
     }
+    /* Blackwell runs the GELU/GQA decode graph faster than direct launches;
+     * retain the conservative direct path on earlier architectures. */
     if (graph_exec && !enable_graph_exec && graph_has_gqa &&
-        graph_has_gelu_gate)
+        graph_has_gelu_gate && ctx->compute_capability < 1200)
         graph_exec = 0;
     int graph_static_params = graph_exec && cuda_ops_have_logits(ops, n_ops);
     if (graph_exec && cuda_ops_have_moe_cublas_decode(ctx, ops, n_ops))
