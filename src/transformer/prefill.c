@@ -3028,8 +3028,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
             int ssm_idx = plan.ssm_idx;
 
+            /* Large dense CUDA hybrids keep reference attention on the host,
+             * but consecutive SSM layers can still retain GPU activations. */
             if (bn_transformer_prefill_ssm_run_chain_enabled(prefill_gpu) &&
-                gpu_hybrid_prefill &&
+                (gpu_hybrid_prefill ||
+                 (bn_gpu_backend_is_cuda(prefill_gpu) &&
+                  bn_transformer_prefill_uses_large_dense_hybrid_ssm(c))) &&
                 (prefill_ssm_layer_chain_ready(m, lw, l, n_tokens) ||
                  prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens))) {
                 int run_end = l + 1;
