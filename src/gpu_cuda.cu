@@ -4730,6 +4730,7 @@ static __global__ void kquant_mmq_reference_fixup_kernel(
     out[i] = partials[(size_t)(count - 1) * n + i] + prefix;
 }
 
+template <bool Routed = false>
 __launch_bounds__(512, 1)
 static __global__ void q6k_mmq_128x64_kernel(
         float *out, const BnCudaQ6KMmqBlock *blocks,
@@ -4752,8 +4753,7 @@ static __global__ void q6k_mmq_128x64_kernel(
     int token_phase = warp & 1;
     int row0 = blockIdx.x * I;
     int token0 = blockIdx.y * J;
-    int routed = raw && route_order && expert_counts && expert_offsets &&
-                 route_schedule && experts > 0;
+    const bool routed = Routed;
     int expert = 0;
     if (routed) {
         if (schedule_has_count && blockIdx.z >= route_schedule[0]) return;
@@ -4795,13 +4795,14 @@ static __global__ void q6k_mmq_128x64_kernel(
         }
     }
 
-    for (int token = tid; token < J; token += blockDim.x) {
-        int local_token = token0 + token;
-        route_ids[token] = local_token < local_tokens
-            ? (routed ? route_order[route_offset + local_token]
-                      : local_token) : -1;
+    if (routed) {
+        for (int token = tid; token < J; token += blockDim.x) {
+            int local_token = token0 + token;
+            route_ids[token] = local_token < local_tokens
+                ? route_order[route_offset + local_token] : -1;
+        }
+        __syncthreads();
     }
-    __syncthreads();
 
     /* Reproduce each reference partition's local FP32 accumulation order. */
     for (int bid = last; bid >= first; bid--) {
@@ -4900,7 +4901,7 @@ static __global__ void q6k_mmq_128x64_kernel(
         for (int i = tid; i < staged_tokens * 64; i += blockDim.x) {
             int tj = i >> 6;
             int qword = i & 63;
-            int token = route_ids[tj];
+            int token = routed ? route_ids[tj] : token0 + tj;
             int value = 0;
 #if __CUDA_ARCH__ >= 800
             if (!routed && !xq8k && token >= 0 && token < n_tokens) {
@@ -4939,7 +4940,7 @@ static __global__ void q6k_mmq_128x64_kernel(
         for (int i = tid; i < staged_tokens * 8; i += blockDim.x) {
             int tj = i >> 3;
             int group = i & 7;
-            int token = route_ids[tj];
+            int token = routed ? route_ids[tj] : token0 + tj;
             xd[tj][group] = token >= 0 && token < n_tokens
                 ? (xq8k
                     ? xq8k[(size_t)token * (cols / BN_QK_K) + b].d
@@ -5025,8 +5026,8 @@ static __global__ void q6k_mmq_128x64_kernel(
 #pragma unroll
         for (int l = 0; l < 4; l++) {
             int row = row0 + row_warp * 16 + (l >> 1) * 8 + lane / 4;
-            int token = route_ids[token_panel * 8 +
-                                  (lane % 4) * 2 + (l & 1)];
+            int local_token = token_panel * 8 + (lane % 4) * 2 + (l & 1);
+            int token = routed ? route_ids[local_token] : token0 + local_token;
             if (row < rows && token >= 0 && token < n_tokens)
                 out[((size_t)split * n_tokens + token) * rows + row] =
                     ref_grid > 0 ? tail[jp * 4 + l] + prefix[jp * 4 + l]
@@ -25494,7 +25495,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         float *down_values = ctx->d_x;
         dim3 routed_down_grid((dim + 127) / 128, 1,
                               routed_q4_schedule_count);
-        q6k_mmq_128x64_kernel<<<routed_down_grid, 512>>>(
+        q6k_mmq_128x64_kernel<true><<<routed_down_grid, 512>>>(
             down_values, NULL, NULL, dim, hidden_dim, n_mid, 1,
             (const BnBlockQ6K *)down->data, d_slot_order,
             d_expert_counts, d_expert_offsets, d_route_schedule,
@@ -26367,7 +26368,7 @@ moe_route_routed_down:
             quantize_mmq_input_kernel<<<dim3((mid_blocks + 15) / 16,
                 n_mid), 512>>>(
                 mid_q, d_mid, hidden_dim, 1);
-            q6k_mmq_128x64_kernel<<<grid, 512>>>(
+            q6k_mmq_128x64_kernel<true><<<grid, 512>>>(
                 down_values, NULL,
                 (const BnCudaBlockQ8MmqF32 *)mid_q,
                 dim, hidden_dim, n_mid, 1,
