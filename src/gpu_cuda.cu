@@ -246,6 +246,15 @@ typedef struct {
 } BnCudaQ8MmqPlan;
 
 typedef struct {
+    unsigned char *data;
+    size_t size;
+    void *func;
+    unsigned int grid[3];
+    unsigned int block[3];
+    size_t shared;
+} BnCudaGraphArgs;
+
+typedef struct {
     const BnBackendRuntimePolicy *runtime_policy;
     BnCudaExecutionPolicy execution_policy;
     BnCudaDiagnostics diagnostics;
@@ -268,6 +277,7 @@ typedef struct {
     cudaGraph_t exec_graph_def;
     cudaGraphExec_t exec_graph;
     cudaGraphNode_t *exec_nodes;
+    BnCudaGraphArgs *exec_node_args;
     int exec_nodes_cap;
     int exec_node_count;
     int exec_node_cursor;
@@ -544,7 +554,67 @@ static int cuda_ensure_graph_nodes(BnCudaCtx *ctx, int need) {
         ctx->exec_nodes, (size_t)cap * sizeof(cudaGraphNode_t));
     if (!nodes) return -1;
     ctx->exec_nodes = nodes;
+    BnCudaGraphArgs *args = (BnCudaGraphArgs *)realloc(
+        ctx->exec_node_args, (size_t)cap * sizeof(BnCudaGraphArgs));
+    if (!args) return -1;
+    memset(args + ctx->exec_nodes_cap, 0,
+           (size_t)(cap - ctx->exec_nodes_cap) * sizeof(BnCudaGraphArgs));
+    ctx->exec_node_args = args;
     ctx->exec_nodes_cap = cap;
+    return 0;
+}
+
+/* Decode replays the same graph with a few moving KV offsets and lengths.
+ * Compare the full launch contract before paying for a CUDA node update. */
+static int cuda_graph_args_match(const BnCudaGraphArgs *saved,
+                                 const cudaKernelNodeParams *params,
+                                 void *const *values, const size_t *sizes,
+                                 size_t count) {
+    size_t offset = 0;
+    if (!saved || !saved->data) return 0;
+    if (saved->func != params->func ||
+        saved->grid[0] != params->gridDim.x ||
+        saved->grid[1] != params->gridDim.y ||
+        saved->grid[2] != params->gridDim.z ||
+        saved->block[0] != params->blockDim.x ||
+        saved->block[1] != params->blockDim.y ||
+        saved->block[2] != params->blockDim.z ||
+        saved->shared != params->sharedMemBytes)
+        return 0;
+    for (size_t i = 0; i < count; i++) {
+        if (offset > saved->size || sizes[i] > saved->size - offset ||
+            memcmp(saved->data + offset, values[i], sizes[i]) != 0)
+            return 0;
+        offset += sizes[i];
+    }
+    return offset == saved->size;
+}
+
+static int cuda_graph_args_save(BnCudaGraphArgs *saved,
+                                const cudaKernelNodeParams *params,
+                                void *const *values, const size_t *sizes,
+                                size_t count) {
+    size_t total = 0;
+    for (size_t i = 0; i < count; i++) total += sizes[i];
+    if (saved->size != total || !saved->data) {
+        unsigned char *data = (unsigned char *)realloc(saved->data, total);
+        if (!data) return -1;
+        saved->data = data;
+        saved->size = total;
+    }
+    size_t offset = 0;
+    for (size_t i = 0; i < count; i++) {
+        memcpy(saved->data + offset, values[i], sizes[i]);
+        offset += sizes[i];
+    }
+    saved->func = params->func;
+    saved->grid[0] = params->gridDim.x;
+    saved->grid[1] = params->gridDim.y;
+    saved->grid[2] = params->gridDim.z;
+    saved->block[0] = params->blockDim.x;
+    saved->block[1] = params->blockDim.y;
+    saved->block[2] = params->blockDim.z;
+    saved->shared = params->sharedMemBytes;
     return 0;
 }
 
@@ -570,6 +640,8 @@ static int cuda_dispatch_kernel(BnCudaCtx *ctx, int graph_exec,
     }
 
     void *arg_ptrs[] = { (void *)&args... };
+    const size_t arg_sizes[] = { sizeof(Args)... };
+    const size_t arg_count = sizeof...(Args);
     cudaKernelNodeParams params;
     memset(&params, 0, sizeof(params));
     params.func = (void *)kernel;
@@ -598,6 +670,11 @@ static int cuda_dispatch_kernel(BnCudaCtx *ctx, int graph_exec,
                     cudaGetErrorString(err));
             return -1;
         }
+        if (graph_update_node &&
+            cuda_graph_args_save(&ctx->exec_node_args[ctx->exec_node_count],
+                                 &params, arg_ptrs, arg_sizes,
+                                 arg_count) != 0)
+            return -1;
         ctx->exec_node_count++;
     } else {
         if (ctx->exec_node_cursor >= ctx->exec_node_count) {
@@ -606,13 +683,22 @@ static int cuda_dispatch_kernel(BnCudaCtx *ctx, int graph_exec,
             return -1;
         }
         if (graph_update_node) {
-            err = cudaGraphExecKernelNodeSetParams(
-                ctx->exec_graph, ctx->exec_nodes[ctx->exec_node_cursor],
-                &params);
-            if (err != cudaSuccess) {
-                fprintf(stderr, "[bn:gpu:cuda] graph set kernel failed: %s\n",
-                        cudaGetErrorString(err));
-                return -1;
+            BnCudaGraphArgs *saved =
+                &ctx->exec_node_args[ctx->exec_node_cursor];
+            if (!cuda_graph_args_match(saved, &params, arg_ptrs, arg_sizes,
+                                       arg_count)) {
+                err = cudaGraphExecKernelNodeSetParams(
+                    ctx->exec_graph, ctx->exec_nodes[ctx->exec_node_cursor],
+                    &params);
+                if (err != cudaSuccess) {
+                    fprintf(stderr,
+                            "[bn:gpu:cuda] graph set kernel failed: %s\n",
+                            cudaGetErrorString(err));
+                    return -1;
+                }
+                if (cuda_graph_args_save(saved, &params, arg_ptrs, arg_sizes,
+                                         arg_count) != 0)
+                    return -1;
             }
         }
         ctx->exec_node_cursor++;
@@ -18586,6 +18672,11 @@ static int cuda_ensure_host_out(BnCudaCtx *ctx, size_t bytes) {
 static void cuda_invalidate_exec_graph(BnCudaCtx *ctx) {
     if (ctx->exec_graph) cudaGraphExecDestroy(ctx->exec_graph);
     if (ctx->exec_graph_def) cudaGraphDestroy(ctx->exec_graph_def);
+    for (int i = 0; i < ctx->exec_node_count; i++) {
+        free(ctx->exec_node_args[i].data);
+        ctx->exec_node_args[i].data = NULL;
+        ctx->exec_node_args[i].size = 0;
+    }
     ctx->exec_graph = NULL;
     ctx->exec_graph_def = NULL;
     ctx->exec_node_count = 0;
@@ -34196,9 +34287,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 fprintf(stderr,
                         "[bn:gpu:cuda] graph instantiate failed: %s\n",
                         cudaGetErrorString(graph_err));
-                cudaGraphDestroy(ctx->exec_graph_def);
-                ctx->exec_graph_def = NULL;
-                ctx->exec_node_count = 0;
+                cuda_invalidate_exec_graph(ctx);
                 return -1;
             }
             ctx->exec_graph_ops = n_ops;
@@ -34672,6 +34761,7 @@ void bn_gpu_cuda_destroy(BnGPUBackend *gpu) {
         if (ctx->d_prefill) cudaFree(ctx->d_prefill);
         if (ctx->d_mmq_fixup) cudaFree(ctx->d_mmq_fixup);
         free(ctx->exec_nodes);
+        free(ctx->exec_node_args);
         free(ctx->h_gemm_ptrs);
         if (ctx->h_out) cudaFreeHost(ctx->h_out);
         if (ctx->h_argmax) cudaFreeHost(ctx->h_argmax);
