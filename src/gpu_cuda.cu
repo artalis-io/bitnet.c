@@ -33811,8 +33811,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     ? n_kv - op->attention_window : 0;
                 int partitions = min(8, seq_len / 256);
                 float *partition_scratch = cuda_act(ctx, BN_GPU_VALUE_ATT);
+                /* FP32 KV benefits from key partitions only past 512 keys;
+                 * keep the reference accumulation for short decode. */
                 if (ctx->compute_capability >= 1200 &&
-                    ctx->kv_f16 && partitions > 1 &&
+                    (ctx->kv_f16 || n_kv > 512) && partitions > 1 &&
                     (n_kv + partitions - 1) / partitions <= 256 &&
                     partition_scratch &&
                     (size_t)n_heads * partitions * 130 * sizeof(float) <=
