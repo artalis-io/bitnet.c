@@ -3982,6 +3982,7 @@ static __global__ void kquant_mmq_packed_kernel(
     __shared__ float x_original_sum[tile_tokens][8];
     __shared__ uint16_t w_ds[tile_rows][8];
     __shared__ uint16_t w_ms[tile_rows][8];
+    enum { token_phases = tile_tokens / (token_groups * 16) };
     int tid = threadIdx.x;
     int lane = tid & 31;
     int warp = tid >> 5;
@@ -3991,8 +3992,8 @@ static __global__ void kquant_mmq_packed_kernel(
     int token0 = blockIdx.y * tile_tokens;
     int n_bpr = cols / BN_QK_K;
     int x_blocks = cols / 32;
-    float tail[2][4] = {{0.0f}};
-    float prefix[2][4] = {{0.0f}};
+    float tail[token_phases][2][4] = {{{0.0f}}};
+    float prefix[token_phases][2][4] = {{{0.0f}}};
     int token_tiles = jwidth > 0 ? (n_tokens - 1) / jwidth + 1 : 1;
     int64_t tile = (int64_t)(row0 / 128) * token_tiles +
                    (jwidth > 0 ? token0 / jwidth : 0);
@@ -4015,7 +4016,7 @@ static __global__ void kquant_mmq_packed_kernel(
             end = raw_end > n_bpr ? n_bpr : (int)raw_end;
             if (begin >= end) continue;
         }
-        float sums[2][4] = {{0.0f}};
+        float sums[token_phases][2][4] = {{{0.0f}}};
     for (int b = begin; b < end; b++) {
         for (int i = tid; i < tile_rows * (BN_QK_K / 16);
              i += blockDim.x) {
@@ -4142,12 +4143,15 @@ static __global__ void kquant_mmq_packed_kernel(
                 }
             }
 #pragma unroll
+            for (int phase = 0; phase < token_phases; phase++) {
+#pragma unroll
             for (int panel = 0; panel < 2; panel++) {
                 int bv[2], c[4] = {0, 0, 0, 0};
 #if __CUDA_ARCH__ >= 750
                 {
                     const int *base = (const int *)(
-                        tile_b[token_warp * 16 + panel * 8] + group * 32);
+                        tile_b[phase * token_groups * 16 +
+                               token_warp * 16 + panel * 8] + group * 32);
                     const int *src = base + (lane % 8) *
                         ((BN_QK_K + 16) / 4) + ((lane / 8) * 4) % 8;
                     unsigned int shared_src =
@@ -4162,7 +4166,8 @@ static __global__ void kquant_mmq_packed_kernel(
                 for (int l = 0; l < 2; l++) {
                     int bi = lane / 4;
                     int bj = l * 4 + lane % 4;
-                    memcpy(&bv[l], &tile_b[token_warp * 16 + panel * 8 + bi]
+                    memcpy(&bv[l], &tile_b[phase * token_groups * 16 +
+                                              token_warp * 16 + panel * 8 + bi]
                                                [group * 32 + bj * 4], 4);
                 }
 #endif
@@ -4200,7 +4205,8 @@ static __global__ void kquant_mmq_packed_kernel(
                 int sum_b[2];
 #pragma unroll
                 for (int j = 0; j < 2; j++) {
-                    int token = token_warp * 16 + panel * 8 +
+                    int token = phase * token_groups * 16 +
+                                token_warp * 16 + panel * 8 +
                                 (lane % 4) * 2 + j;
                     d_b[j] = x_d[token][group];
                     sum_b[j] = x_qsum[token][group];
@@ -4210,39 +4216,45 @@ static __global__ void kquant_mmq_packed_kernel(
                     int oi = (l / 2) * 8 + lane / 4;
                     int oj = (lane % 4) * 2 + (l & 1);
                     int row = row0 + row_warp * 16 + oi;
-                    int token = token_warp * 16 + panel * 8 + oj;
+                    int token = phase * token_groups * 16 +
+                                token_warp * 16 + panel * 8 + oj;
                     if (row < rows && token0 + token < n_tokens) {
                         float dx = d_b[l & 1];
                         if (reference_sum) {
-                            float sx = x_original_sum[
-                                token_warp * 16 + panel * 8 + oj][group];
-                            sums[panel][l] = fmaf(d_a[l / 2] * dx,
-                                (float)c[l], sums[panel][l]);
-                            sums[panel][l] = fmaf(m_a[l / 2], sx,
-                                sums[panel][l]);
+                            float sx = x_original_sum[token][group];
+                            sums[phase][panel][l] = fmaf(d_a[l / 2] * dx,
+                                (float)c[l], sums[phase][panel][l]);
+                            sums[phase][panel][l] = fmaf(m_a[l / 2], sx,
+                                sums[phase][panel][l]);
                         } else {
-                            sums[panel][l] += dx *
+                            sums[phase][panel][l] += dx *
                                 (d_a[l / 2] * (float)c[l] +
                                  m_a[l / 2] * (float)sum_b[l & 1]);
                         }
                     }
                 }
             }
+            }
         }
         __syncthreads();
     }
 
 #pragma unroll
+        for (int phase = 0; phase < token_phases; phase++) {
+#pragma unroll
         for (int panel = 0; panel < 2; panel++) {
 #pragma unroll
             for (int l = 0; l < 4; l++) {
-                if (!have_tail) tail[panel][l] = sums[panel][l];
-                else prefix[panel][l] += sums[panel][l];
+                if (!have_tail) tail[phase][panel][l] = sums[phase][panel][l];
+                else prefix[phase][panel][l] += sums[phase][panel][l];
             }
+        }
         }
         have_tail = 1;
     }
 
+#pragma unroll
+    for (int phase = 0; phase < token_phases; phase++) {
 #pragma unroll
     for (int panel = 0; panel < 2; panel++) {
 #pragma unroll
@@ -4250,11 +4262,13 @@ static __global__ void kquant_mmq_packed_kernel(
             int oi = (l / 2) * 8 + lane / 4;
             int oj = (lane % 4) * 2 + (l & 1);
             int row = row0 + row_warp * 16 + oi;
-            int token = token0 + token_warp * 16 + panel * 8 + oj;
+            int token = token0 + phase * token_groups * 16 +
+                        token_warp * 16 + panel * 8 + oj;
             if (row < rows && token < n_tokens)
                 out[out_offset + (size_t)token * rows + row] =
-                    tail[panel][l] + prefix[panel][l];
+                    tail[phase][panel][l] + prefix[phase][panel][l];
         }
+    }
     }
 }
 
@@ -20034,20 +20048,31 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                         out, ctx->d_mmq_fixup, rows, cols,
                         n_tokens, jwidth, (int)grid);
             } else if (n_tokens >= 64) {
-                dim3 mmq_grid((rows + 63) / 64,
-                              (n_tokens + 63) / 64, 1);
-                if (n_tokens >= 128)
-                    kquant_mmq_packed_kernel<64, 64, 4, true, true>
+                if (bn_quant_format_is_q5k(type) && n_tokens >= 128) {
+                    /* Reuse each Q5_K weight tile across two token phases. */
+                    dim3 mmq_grid((rows + 127) / 128,
+                                  (n_tokens + 63) / 64, 1);
+                    kquant_mmq_packed_kernel<128, 64, 2, true>
                         <<<mmq_grid, 512, 0, stream>>>(
                             out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
                             n_tokens, 0, jwidth, (int)grid);
-                else
-                    kquant_mmq_packed_kernel<64, 64, 4, true, false>
-                        <<<mmq_grid, 512, 0, stream>>>(
-                            out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
-                            (const BnCudaBlockQ8_1 *)xq, rows, cols,
-                            n_tokens, 0, jwidth, (int)grid);
+                } else {
+                    dim3 mmq_grid((rows + 63) / 64,
+                                  (n_tokens + 63) / 64, 1);
+                    if (n_tokens >= 128)
+                        kquant_mmq_packed_kernel<64, 64, 4, true, true>
+                            <<<mmq_grid, 512, 0, stream>>>(
+                                out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                                (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                                n_tokens, 0, jwidth, (int)grid);
+                    else
+                        kquant_mmq_packed_kernel<64, 64, 4, true, false>
+                            <<<mmq_grid, 512, 0, stream>>>(
+                                out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                                (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                                n_tokens, 0, jwidth, (int)grid);
+                }
             } else {
                 /* Pad short batches to one 32-token tile: fewer wide FFN
                  * blocks and better occupancy than two 16-token tiles. */

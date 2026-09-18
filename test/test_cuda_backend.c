@@ -8318,6 +8318,13 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--q5-wide-prefill") == 0) {
+        run_wide_q5k_matmul_case(gpu, 127);
+        run_wide_q5k_matmul_case(gpu, 128);
+        run_wide_q5k_matmul_case(gpu, 129);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION);
     assert(!(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH));
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_FALLBACK);
@@ -9104,6 +9111,8 @@ int main(int argc, char **argv) {
     run_wide_q5k_matmul_case(gpu, 17);
     run_wide_q5k_matmul_case(gpu, 33);
     run_wide_q5k_matmul_case(gpu, 65);
+    run_wide_q5k_matmul_case(gpu, 128);
+    run_wide_q5k_matmul_case(gpu, 129);
     bn_gpu_cuda_destroy(gpu);
     unsetenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT");
 
