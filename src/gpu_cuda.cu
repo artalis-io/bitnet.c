@@ -4066,7 +4066,8 @@ static __global__ void q4k_dot_matmul8_token_sharedx_kernel(
 }
 
 template <int tile_rows, int tile_tokens, int token_groups,
-          bool reference_sum = false, bool high_occupancy = false>
+          bool reference_sum = false, bool high_occupancy = false,
+          bool async_input = false>
 __launch_bounds__(512, high_occupancy ? 2 : 1)
 static __global__ void kquant_mmq_packed_kernel(
         float *out, const BnCudaKQuantMmqBlock *blocks,
@@ -4151,13 +4152,39 @@ static __global__ void kquant_mmq_packed_kernel(
             int group_k16 = k16 & 1;
             int global_token = token0 + token;
             uint4 value = make_uint4(0, 0, 0, 0);
-            if (global_token < n_tokens)
+            if (global_token < n_tokens) {
+#if __CUDA_ARCH__ >= 800
+                if (async_input) {
+                    /* Q8_1 blocks have a 36-byte stride, so their qs payload
+                     * is only 4-byte aligned even when the tile is aligned. */
+                    const void *src =
+                        xq[(size_t)global_token * x_blocks +
+                           (size_t)b * 8 + group].qs + group_k16 * 16;
+                    void *dst = tile_b[token] + k16 * 16;
+#pragma unroll
+                    for (int q = 0; q < 4; q++) {
+                        unsigned int shared_dst =
+                            (unsigned int)__cvta_generic_to_shared(
+                                (char *)dst + q * 4);
+                        const void *src_word = (const char *)src + q * 4;
+                        asm volatile(
+                            "cp.async.ca.shared.global [%0], [%1], 4;"
+                            :: "r"(shared_dst), "l"(src_word));
+                    }
+                    continue;
+                }
+#endif
                 memcpy(&value,
                        xq[(size_t)global_token * x_blocks +
                           (size_t)b * 8 + group].qs + group_k16 * 16,
                        sizeof(value));
+            }
             memcpy(tile_b[token] + k16 * 16, &value, sizeof(value));
         }
+#if __CUDA_ARCH__ >= 800
+        if (async_input)
+            asm volatile("cp.async.commit_group;");
+#endif
         for (int i = tid; i < tile_tokens * 8; i += blockDim.x) {
             int token = i / 8;
             int group = i & 7;
@@ -20210,7 +20237,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     /* Reuse each Q5_K weight tile across two token phases. */
                     dim3 mmq_grid((rows + 127) / 128,
                                   (n_tokens + 63) / 64, 1);
-                    kquant_mmq_packed_kernel<128, 64, 2, true>
+                    kquant_mmq_packed_kernel<128, 64, 2, true, false, true>
                         <<<mmq_grid, 512, 0, stream>>>(
                             out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
