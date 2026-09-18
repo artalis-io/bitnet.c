@@ -4067,13 +4067,14 @@ static __global__ void q4k_dot_matmul8_token_sharedx_kernel(
 
 template <int tile_rows, int tile_tokens, int token_groups,
           bool reference_sum = false, bool high_occupancy = false,
-          bool async_input = false>
+          bool async_input = false, bool pipeline_a = false>
 __launch_bounds__(512, high_occupancy ? 2 : 1)
 static __global__ void kquant_mmq_packed_kernel(
         float *out, const BnCudaKQuantMmqBlock *blocks,
         const BnCudaBlockQ8_1 *xq, int rows, int cols, int n_tokens,
         size_t out_offset, int jwidth = 0, int ref_grid = 0) {
-    __shared__ __align__(16) int8_t tile_a[tile_rows][BN_QK_K + 16];
+    __shared__ __align__(16) int8_t tile_a[pipeline_a ? 2 : 1]
+                                           [tile_rows][BN_QK_K + 16];
     __shared__ __align__(16) int8_t tile_b[tile_tokens][BN_QK_K + 16];
     __shared__ float x_d[tile_tokens][8];
     __shared__ int x_qsum[tile_tokens][8];
@@ -4116,33 +4117,39 @@ static __global__ void kquant_mmq_packed_kernel(
         }
         float sums[token_phases][2][4] = {{{0.0f}}};
     for (int b = begin; b < end; b++) {
-        for (int i = tid; i < tile_rows * (BN_QK_K / 16);
-             i += blockDim.x) {
-            int tile_row = i / (BN_QK_K / 16);
-            int k16 = i % (BN_QK_K / 16);
-            int row = row0 + tile_row;
-            uint4 value = make_uint4(0, 0, 0, 0);
-            if (row < rows) {
+        if (!pipeline_a || b == begin) {
+            for (int i = tid; i < tile_rows * (BN_QK_K / 16);
+                 i += blockDim.x) {
+                int tile_row = i / (BN_QK_K / 16);
+                int k16 = i % (BN_QK_K / 16);
+                int row = row0 + tile_row;
+                uint4 value = make_uint4(0, 0, 0, 0);
+                if (row < rows) {
 #if __CUDA_ARCH__ >= 800
-                const void *src =
-                    blocks[(size_t)row * n_bpr + b].qs + k16 * 16;
-                void *dst = tile_a[tile_row] + k16 * 16;
-                unsigned int shared_dst =
-                    (unsigned int)__cvta_generic_to_shared(dst);
-                asm volatile("cp.async.cg.shared.global [%0], [%1], 16;"
-                             :: "r"(shared_dst), "l"(src));
+                    const void *src =
+                        blocks[(size_t)row * n_bpr + b].qs + k16 * 16;
+                    void *dst = tile_a[pipeline_a ? (b & 1) : 0][tile_row] +
+                                k16 * 16;
+                    unsigned int shared_dst =
+                        (unsigned int)__cvta_generic_to_shared(dst);
+                    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;"
+                                 :: "r"(shared_dst), "l"(src));
 #else
-                memcpy(&value,
-                       blocks[(size_t)row * n_bpr + b].qs + k16 * 16,
-                       sizeof(value));
-                memcpy(tile_a[tile_row] + k16 * 16, &value, sizeof(value));
+                    memcpy(&value,
+                           blocks[(size_t)row * n_bpr + b].qs + k16 * 16,
+                           sizeof(value));
+                    memcpy(tile_a[pipeline_a ? (b & 1) : 0][tile_row] +
+                           k16 * 16, &value, sizeof(value));
 #endif
-            } else {
-                memcpy(tile_a[tile_row] + k16 * 16, &value, sizeof(value));
+                } else {
+                    memcpy(tile_a[pipeline_a ? (b & 1) : 0][tile_row] +
+                           k16 * 16, &value, sizeof(value));
+                }
             }
         }
 #if __CUDA_ARCH__ >= 800
-        asm volatile("cp.async.commit_group;");
+        if (!pipeline_a || b == begin)
+            asm volatile("cp.async.commit_group;");
 #endif
         for (int i = tid; i < tile_tokens * (BN_QK_K / 16);
              i += blockDim.x) {
@@ -4224,6 +4231,41 @@ static __global__ void kquant_mmq_packed_kernel(
 #endif
         __syncthreads();
 
+        /* Stage the next Q5_K weight tile while this tile runs its MMA.
+         * Each stage has separate storage, so FP32 accumulation is unchanged. */
+        if (pipeline_a && b + 1 < end) {
+            for (int i = tid; i < tile_rows * (BN_QK_K / 16);
+                 i += blockDim.x) {
+                int tile_row = i / (BN_QK_K / 16);
+                int k16 = i % (BN_QK_K / 16);
+                int row = row0 + tile_row;
+                uint4 value = make_uint4(0, 0, 0, 0);
+                if (row < rows) {
+#if __CUDA_ARCH__ >= 800
+                    const void *src =
+                        blocks[(size_t)row * n_bpr + b + 1].qs + k16 * 16;
+                    void *dst = tile_a[(b + 1) & 1][tile_row] + k16 * 16;
+                    unsigned int shared_dst =
+                        (unsigned int)__cvta_generic_to_shared(dst);
+                    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;"
+                                 :: "r"(shared_dst), "l"(src));
+#else
+                    memcpy(&value,
+                           blocks[(size_t)row * n_bpr + b + 1].qs + k16 * 16,
+                           sizeof(value));
+                    memcpy(tile_a[(b + 1) & 1][tile_row] + k16 * 16,
+                           &value, sizeof(value));
+#endif
+                } else {
+                    memcpy(tile_a[(b + 1) & 1][tile_row] + k16 * 16,
+                           &value, sizeof(value));
+                }
+            }
+#if __CUDA_ARCH__ >= 800
+            asm volatile("cp.async.commit_group;");
+#endif
+        }
+
 #pragma unroll
         for (int group = 0; group < 8; group++) {
             int a[4];
@@ -4232,7 +4274,8 @@ static __global__ void kquant_mmq_packed_kernel(
 #if __CUDA_ARCH__ >= 750
             {
                 const int *base = (const int *)(
-                    tile_a[row_warp * 16] + group * 32);
+                    tile_a[pipeline_a ? (b & 1) : 0][row_warp * 16] +
+                    group * 32);
                 const int *src = base + (lane % 16) *
                     ((BN_QK_K + 16) / 4) + (lane / 16) * 4;
                 unsigned int shared_src =
@@ -4248,7 +4291,8 @@ static __global__ void kquant_mmq_packed_kernel(
             for (int l = 0; l < 4; l++) {
                 int ai = (l / 2) * 8 + lane / 4;
                 int aj = (lane % 4) * 2 + (l & 1);
-                memcpy(&a[l], &tile_a[row_warp * 16 + ai]
+                memcpy(&a[l], &tile_a[pipeline_a ? (b & 1) : 0]
+                                         [row_warp * 16 + ai]
                                          [group * 32 + aj * 4], 4);
             }
 #endif
@@ -4360,6 +4404,9 @@ static __global__ void kquant_mmq_packed_kernel(
             }
             }
         }
+#if __CUDA_ARCH__ >= 800
+        if (pipeline_a) asm volatile("cp.async.wait_group 0;");
+#endif
         __syncthreads();
     }
 
@@ -20238,7 +20285,8 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     /* Reuse each Q5_K weight tile across two token phases. */
                     dim3 mmq_grid((rows + 127) / 128,
                                   (n_tokens + 63) / 64, 1);
-                    kquant_mmq_packed_kernel<128, 64, 2, true, false, true>
+                    kquant_mmq_packed_kernel<128, 64, 2, true, false, true,
+                                             true>
                         <<<mmq_grid, 512, 0, stream>>>(
                             out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
