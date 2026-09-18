@@ -18638,6 +18638,80 @@ static __global__ void q8_0_matmul_prepared_input_kernel(
     if (lane == 0) out[out_offset + (size_t)token * rows + row] = sum;
 }
 
+/* Reuse each Q8_0 weight pair across prompt tokens while keeping the
+ * four-logical-warp MMVQ reduction that recurrent SSM state requires. */
+template <int TokensPerTile>
+static __global__ void q8_0_matmul_prepared_input_tiled_kernel(
+        float *out, const BnBlockQ8_0 *weights, const BnCudaBlockQ8_1 *input,
+        int rows, int cols, int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int row = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32;
+    int token0 = blockIdx.y * TokensPerTile;
+    if (row >= rows || token0 >= n_tokens) return;
+    int n_blocks = cols / 32;
+    const BnBlockQ8_0 *row_weights = weights + (size_t)row * n_blocks;
+    const BnCudaBlockQ8_1 *x[TokensPerTile];
+#pragma unroll
+    for (int t = 0; t < TokensPerTile; t++) {
+        int token = token0 + t < n_tokens ? token0 + t : token0;
+        x[t] = input + (size_t)token * n_blocks;
+    }
+    float sum[TokensPerTile] = {0.0f};
+#pragma unroll
+    for (int warp = 0; warp < 4; warp++) {
+        float partial[TokensPerTile] = {0.0f};
+        int logical_tid = warp * 32 + lane;
+        for (int block = logical_tid / 4; block < n_blocks; block += 32) {
+            int weights_pair[2];
+            int offset = (lane % 4) * 8;
+            memcpy(&weights_pair[0], row_weights[block].qs + offset, 4);
+            memcpy(&weights_pair[1], row_weights[block].qs + offset + 4, 4);
+            float wd = cuda_fp16_to_fp32(row_weights[block].d);
+#pragma unroll
+            for (int t = 0; t < TokensPerTile; t++) {
+                int values;
+                memcpy(&values, x[t][block].qs + offset, 4);
+                int dot = cuda_dp4a_i32(weights_pair[0], values, 0);
+                memcpy(&values, x[t][block].qs + offset + 4, 4);
+                dot = cuda_dp4a_i32(weights_pair[1], values, dot);
+                float scale = wd * cuda_fp16_to_fp32(x[t][block].d);
+                partial[t] = fmaf(scale, (float)dot, partial[t]);
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < TokensPerTile; t++)
+            sum[t] += partial[t];
+    }
+    for (int offset = 16; offset; offset >>= 1)
+#pragma unroll
+        for (int t = 0; t < TokensPerTile; t++)
+            sum[t] += __shfl_xor_sync(0xffffffffu, sum[t], offset);
+    if (lane == 0)
+#pragma unroll
+        for (int t = 0; t < TokensPerTile; t++)
+            if (token0 + t < n_tokens)
+                out[(size_t)(token0 + t) * rows + row] = sum[t];
+}
+
+static int cuda_q8_0_matmul_prepared_exact_batch(
+        BnCudaCtx *ctx, float *out, const BnCudaBuffer *weight,
+        const float *input, int rows, int cols, int n_tokens,
+        cudaStream_t stream) {
+    if (!ctx || !out || !weight || !weight->data || !input ||
+        rows <= 0 || cols <= 0 || (cols & 31) || n_tokens <= 0 ||
+        cols > INT_MAX / n_tokens ||
+        cuda_ensure_q8_1(ctx, cols * n_tokens) != 0)
+        return -1;
+    BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+    quantize_q8_1_batch_kernel<<<dim3(cols / 32, n_tokens), 32,
+                                  0, stream>>>(xq, input, cols, n_tokens);
+    q8_0_matmul_prepared_input_tiled_kernel<4><<<
+        dim3((rows + 7) / 8, (n_tokens + 3) / 4), 256, 0, stream>>>(
+        out, (const BnBlockQ8_0 *)weight->data, xq,
+        rows, cols, n_tokens);
+    return cudaGetLastError() == cudaSuccess ? 0 : -1;
+}
+
 static int cuda_launch_q8_0_matmul(BnCudaCtx *ctx, float *d_dst,
                                    const BnBlockQ8_0 *blocks,
                                    const float *d_x, int rows, int cols,
@@ -21603,6 +21677,20 @@ static int cuda_matmul_device_out_preconverted_f16(
         return 0;
     return cuda_matmul_device_out(ctx, d_dst, w, d_x, rows, cols,
                                   n_tokens, type);
+}
+
+static int cuda_prefill_ssm_matmul_reference_q8(
+        BnCudaCtx *ctx, float *out, const BnCudaBuffer *weight,
+        const float *input, const void *input_f16, int rows, int cols,
+        int n_tokens, int type, int exact_q8_ssm,
+        cudaStream_t stream) {
+    if (exact_q8_ssm &&
+        bn_backend_quant_supports_native_quant_matmul(type) &&
+        n_tokens > 8)
+        return cuda_q8_0_matmul_prepared_exact_batch(
+            ctx, out, weight, input, rows, cols, n_tokens, stream);
+    return cuda_matmul_device_out_preconverted_f16(
+        ctx, out, weight, input, input_f16, rows, cols, n_tokens, type);
 }
 
 static int cuda_q8k_matmul_preferred(const BnCudaCtx *ctx, int type,
@@ -29192,6 +29280,12 @@ static int cuda_prefill_ssm_layer(
     /* Reference projections are separate matrices. Stacking changes the
      * MMQ partition or F32 matrix algorithm, and therefore recurrent state. */
     int reference_projections = ctx->compute_capability == 1200;
+    int exact_q8_ssm = reference_projections &&
+        bn_backend_quant_supports_native_quant_matmul(wqkv_type) &&
+        bn_backend_quant_supports_native_quant_matmul(wz_type) &&
+        bn_backend_quant_supports_native_quant_matmul(alpha_type) &&
+        bn_backend_quant_supports_native_quant_matmul(beta_type) &&
+        bn_backend_quant_supports_native_quant_matmul(out_type);
     int separate_f32_ab = reference_projections &&
         bn_backend_quant_uses_dense_float(alpha_type) &&
         bn_backend_quant_uses_dense_float(beta_type);
@@ -29364,13 +29458,16 @@ static int cuda_prefill_ssm_layer(
                     cudaGetErrorString(err));
             return -1;
         }
-    } else if (cuda_matmul_device_out_preconverted_f16(
-                   ctx, d_qkv, wqkv, d_norm, norm_f16, qkv_dim, dim,
-                   n_tokens, wqkv_type) != 0 ||
-               cuda_matmul_device_out_preconverted_f16(
-                   ctx, d_z, wz, d_norm, norm_f16, inner_dim, dim,
-                   n_tokens, wz_type) != 0) {
-        return -1;
+    } else {
+        if (cuda_prefill_ssm_matmul_reference_q8(
+                ctx, d_qkv, wqkv, d_norm, norm_f16,
+                qkv_dim, dim, n_tokens, wqkv_type,
+                exact_q8_ssm, ssm_stream) != 0 ||
+            cuda_prefill_ssm_matmul_reference_q8(
+                ctx, d_z, wz, d_norm, norm_f16,
+                inner_dim, dim, n_tokens, wz_type,
+                exact_q8_ssm, ssm_stream) != 0)
+            return -1;
     }
     BN_CUDA_SSM_PROFILE_STEP(BN_CUDA_SSM_PROF_QKVZ);
     if (cuda_prefill_ssm_debug_dump(ctx, "qkv", d_qkv, qkv_dim, n_tokens,
@@ -29412,13 +29509,16 @@ static int cuda_prefill_ssm_layer(
                     cudaGetErrorString(err));
             return -1;
         }
-    } else if (cuda_matmul_device_out_preconverted_f16(
-                   ctx, d_alpha, alpha, d_norm, norm_f16,
-                   num_v_heads, dim, n_tokens, alpha_type) != 0 ||
-               cuda_matmul_device_out_preconverted_f16(
-                   ctx, d_beta, beta, d_norm, norm_f16,
-                   num_v_heads, dim, n_tokens, beta_type) != 0) {
-        return -1;
+    } else {
+        if (cuda_prefill_ssm_matmul_reference_q8(
+                ctx, d_alpha, alpha, d_norm, norm_f16,
+                num_v_heads, dim, n_tokens, alpha_type,
+                exact_q8_ssm, ssm_stream) != 0 ||
+            cuda_prefill_ssm_matmul_reference_q8(
+                ctx, d_beta, beta, d_norm, norm_f16,
+                num_v_heads, dim, n_tokens, beta_type,
+                exact_q8_ssm, ssm_stream) != 0)
+            return -1;
     }
     BN_CUDA_SSM_PROFILE_STEP(BN_CUDA_SSM_PROF_AB);
     if (cuda_prefill_ssm_debug_dump(ctx, "alpha", d_alpha, num_v_heads,
@@ -29626,8 +29726,10 @@ static int cuda_prefill_ssm_layer(
         return -1;
 
     float *d_ssm_residual = alias_prev_output ? d_ffn_residual : ctx->d_out;
-    if (cuda_matmul_device_out(ctx, d_ssm_residual, ssm_out, d_ssm, dim,
-                               inner_dim, n_tokens, out_type) != 0) {
+    if (cuda_prefill_ssm_matmul_reference_q8(
+            ctx, d_ssm_residual, ssm_out, d_ssm, NULL,
+            dim, inner_dim, n_tokens, out_type,
+            exact_q8_ssm, ssm_stream) != 0) {
         return -1;
     }
     residual_add_kernel<<<((int)dim_values + threads - 1) / threads,
