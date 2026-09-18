@@ -17026,6 +17026,11 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
         head_size <= 0 || kv_mul <= 0 || kv_dim <= 0 ||
         n_heads / kv_mul != n_kv_heads)
         return -1;
+    /* At long FP32 GQA8 prefill, pedantic GEMM keeps sampled-token parity
+     * that the tensor-core 32F mode loses while remaining much faster than
+     * the serial attention fallback. */
+    const bool strict_f32_gqa8 = !ctx->kv_f16 && n_tokens > 768 &&
+        n_heads == 32 && n_kv_heads == 4 && head_size == 128 && kv_mul == 8;
 
     const unsigned long long debug_call_index =
         ctx->diagnostics.prefill_gemm_attention_calls++;
@@ -17094,7 +17099,8 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
             &alpha, (const void *const *)d_a, CUDA_R_32F, kv_dim,
             (const void *const *)d_b, CUDA_R_32F, q_ld,
             &zero, (void *const *)d_c, CUDA_R_32F, n_tokens,
-            n_heads, CUBLAS_COMPUTE_32F,
+            n_heads, strict_f32_gqa8
+                ? CUBLAS_COMPUTE_32F_PEDANTIC : CUBLAS_COMPUTE_32F,
             CUBLAS_GEMM_DEFAULT_TENSOR_OP);
         if (st == CUBLAS_STATUS_SUCCESS) {
             if (cuda_prefill_attention_debug_dump(
@@ -17182,7 +17188,9 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
                 (void *const *)d_c,
                 ctx->kv_f16 ? CUDA_R_16F : CUDA_R_32F, q_ld,
                 n_heads,
-                ctx->kv_f16 ? CUBLAS_COMPUTE_16F : CUBLAS_COMPUTE_32F,
+                ctx->kv_f16 ? CUBLAS_COMPUTE_16F
+                    : (strict_f32_gqa8 ? CUBLAS_COMPUTE_32F_PEDANTIC
+                                      : CUBLAS_COMPUTE_32F),
                 CUBLAS_GEMM_DEFAULT_TENSOR_OP);
             if (st == CUBLAS_STATUS_SUCCESS) {
                 if (ctx->kv_f16) {
@@ -27455,11 +27463,14 @@ static int cuda_prefill_qkv_attention_wo_impl(
         n_kv_heads, head_size, kv_mul, kv_dim, 0);
     int use_mmf128 = !use_mma && ctx->compute_capability >= 800 &&
         head_size == 128 && n_tokens >= 128 && n_tokens <= 256;
-    /* This GQA8 F16 layout retains sampled-token parity with batched GEMM
-     * beyond the general 512-token prefill cap. */
+    /* The GQA8 F16 layout retains sampled-token parity with batched GEMM.
+     * The 2048-wide GQA8 FP32 Q4_K shape also avoids the slow serial path
+     * above 512 keys; other shapes keep their reference path there. */
     const int gemm_max_tokens = ctx->kv_f16 && n_heads == 32 &&
         n_kv_heads == 4 && head_size == 128 && kv_mul == 8
-        ? 1792 : 512;
+        ? 1792 : (!ctx->kv_f16 && dim == 2048 && n_heads == 32 &&
+                   n_kv_heads == 4 && head_size == 128 && kv_mul == 8 &&
+                   bn_quant_format_is_q4k(qk_type) ? 2048 : 512);
     int use_gemm_attention = !use_mma && !use_mmf128 &&
         bn_gpu_policy_cuda_prefill_gemm_attention_enabled_for_shape(
             ctx->runtime_policy, n_tokens, gemm_max_tokens, ctx->kv_f16, n_heads,
