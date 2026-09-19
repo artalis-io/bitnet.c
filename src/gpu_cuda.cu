@@ -9883,39 +9883,40 @@ static __global__ void weighted_add_sigmoid_avx2_reference_kernel(
     int n, int dim, int reset, int complement) {
     __shared__ float weight_s;
     int tid = threadIdx.x;
-    if (tid == 0) {
-        float lo[4][8] = {{0.0f}};
-        float hi[4][8] = {{0.0f}};
-        int d = 0;
+    int lane = tid & 31;
+    int d = 0;
+    float half_lane = 0.0f;
+    if (tid < 8) {
+        float lo[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float hi[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         for (; d + 63 < dim; d += 64) {
-            for (int group = 0; group < 4; group++) {
-                int off = d + group * 16;
 #pragma unroll
-                for (int lane = 0; lane < 8; lane++) {
-                    lo[group][lane] = fmaf(
-                        gate[off + lane], gate_in[off + lane],
-                        lo[group][lane]);
-                    hi[group][lane] = fmaf(
-                        gate[off + 8 + lane], gate_in[off + 8 + lane],
-                        hi[group][lane]);
-                }
+            for (int group = 0; group < 4; group++) {
+                int off = d + group * 16 + lane;
+                lo[group] = fmaf(gate[off], gate_in[off], lo[group]);
+                hi[group] = fmaf(gate[off + 8], gate_in[off + 8],
+                                 hi[group]);
             }
         }
-        float half[8];
-#pragma unroll
-        for (int lane = 0; lane < 8; lane++) {
-            float merged_lo = __fadd_rn(
-                __fadd_rn(lo[0][lane], lo[2][lane]),
-                __fadd_rn(lo[1][lane], lo[3][lane]));
-            float merged_hi = __fadd_rn(
-                __fadd_rn(hi[0][lane], hi[2][lane]),
-                __fadd_rn(hi[1][lane], hi[3][lane]));
-            half[lane] = __fadd_rn(merged_hi, merged_lo);
-        }
-        float quarter0 = __fadd_rn(half[0], half[4]);
-        float quarter1 = __fadd_rn(half[1], half[5]);
-        float quarter2 = __fadd_rn(half[2], half[6]);
-        float quarter3 = __fadd_rn(half[3], half[7]);
+        float merged_lo = __fadd_rn(
+            __fadd_rn(lo[0], lo[2]), __fadd_rn(lo[1], lo[3]));
+        float merged_hi = __fadd_rn(
+            __fadd_rn(hi[0], hi[2]), __fadd_rn(hi[1], hi[3]));
+        half_lane = __fadd_rn(merged_hi, merged_lo);
+    }
+    float half1 = __shfl_sync(0xffffffffu, half_lane, 1);
+    float half2 = __shfl_sync(0xffffffffu, half_lane, 2);
+    float half3 = __shfl_sync(0xffffffffu, half_lane, 3);
+    float half4 = __shfl_sync(0xffffffffu, half_lane, 4);
+    float half5 = __shfl_sync(0xffffffffu, half_lane, 5);
+    float half6 = __shfl_sync(0xffffffffu, half_lane, 6);
+    float half7 = __shfl_sync(0xffffffffu, half_lane, 7);
+    if (tid == 0) {
+        float half0 = half_lane;
+        float quarter0 = __fadd_rn(half0, half4);
+        float quarter1 = __fadd_rn(half1, half5);
+        float quarter2 = __fadd_rn(half2, half6);
+        float quarter3 = __fadd_rn(half3, half7);
         float dot = __fadd_rn(__fadd_rn(quarter2, quarter0),
                               __fadd_rn(quarter3, quarter1));
         for (; d < dim; d++)
