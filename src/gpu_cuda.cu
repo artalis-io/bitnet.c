@@ -31351,6 +31351,22 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 reference_kquant_matvec = 0;
                 reference_block_accumulation = 0;
             }
+            /* Recurrent Q4_K projections use llama.cpp's CUDA Q8_1
+             * activation contract.  Keeping the CPU FP32 reference flag here
+             * introduces a large same-input error before the otherwise exact
+             * recurrent scan and gate operations. */
+            if (bn_quant_format_is_q4k(op->type) && op->cols == 5120 &&
+                (op->buf_out == BN_GPU_VALUE_QKV ||
+                 op->buf_out == BN_GPU_VALUE_SSM_Z)) {
+                reference_kquant_matvec = 0;
+                reference_block_accumulation = 0;
+            }
+            if (ctx->compute_capability == 1200 &&
+                (bn_quant_format_is_q4k(op->type) ||
+                 bn_quant_format_is_q5k(op->type))) {
+                reference_kquant_matvec = 0;
+                reference_block_accumulation = 0;
+            }
             if (reference_kquant_matvec && ctx->kv_f16 &&
                 bn_quant_format_is_q4k(op->type) && i + 6 < n_ops &&
                 next && next->op_code == BN_GPU_CODE_MATVEC &&
