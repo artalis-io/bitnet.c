@@ -20406,10 +20406,15 @@ static __global__ void iq4nl_dot_matvec_mmvq_kernel(float *out,
         const BnCudaBlockQ8_1 *x = input + (size_t)token * blocks + b;
         const BnBlockIQ4NL *w = (const BnBlockIQ4NL *)weights + (size_t)row * blocks + b;
         int dot = 0;
-        for (int j = 0; j < 8; j++) {
-            int index = group * 8 + j;
-            dot += (int)bn_kvalues_iq4nl[w->qs[index] & 15] * (int)x->qs[index];
-            dot += (int)bn_kvalues_iq4nl[w->qs[index] >> 4] * (int)x->qs[index + 16];
+#pragma unroll
+        for (int j = 0; j < 2; j++) {
+            uint32_t codes, u0, u1;
+            memcpy(&codes, w->qs + group * 8 + j * 4, sizeof(codes));
+            int2 q = iq4xs_expand_codes(codes);
+            memcpy(&u0, x->qs + group * 8 + j * 4, sizeof(u0));
+            memcpy(&u1, x->qs + 16 + group * 8 + j * 4, sizeof(u1));
+            dot = cuda_dp4a_i32(q.x, (int)u0, dot);
+            dot = cuda_dp4a_i32(q.y, (int)u1, dot);
         }
         float d = cuda_fp16_to_fp32(w->d) * cuda_fp16_to_fp32(x->d);
         sum = fmaf(d, (float)dot, sum);
