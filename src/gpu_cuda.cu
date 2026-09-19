@@ -20979,11 +20979,11 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                    w->mmq_data) {
             if (n_tokens >= 64) {
                 if (bn_quant_format_is_q5k(type)) {
-                    dim3 mmq_grid((rows + 127) / 128,
+                    dim3 mmq_grid((rows + 63) / 64,
                                   (n_tokens + 31) / 32, 1);
-                    kquant_mmq_packed_kernel<128, 32, 2, true, false, true,
+                    kquant_mmq_packed_kernel<64, 32, 2, true, true, true,
                                              true>
-                        <<<mmq_grid, 512, 0, stream>>>(
+                        <<<mmq_grid, 256, 0, stream>>>(
                             out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
                             n_tokens, 0, jwidth, (int)grid);
