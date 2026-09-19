@@ -3977,6 +3977,36 @@ static __global__ void q5k_dot_matvec_1warp_4partial_kernel(
     }
 }
 
+static __global__ void q5k_dot_matvec_1warp_4partial_residual_kernel(
+        float *x, const BnBlockQ5K *blocks,
+        const BnCudaBlockQ8_1 *xq, const float *residual,
+        int rows, int cols) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int row = blockIdx.x * (blockDim.x >> 5) + warp;
+    if (row >= rows) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
+    float partial[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+#pragma unroll
+    for (int logical_warp = 0; logical_warp < 4; logical_warp++) {
+        for (int b = logical_warp * 2 + kbx; b < n_bpr; b += 8)
+            partial[logical_warp] += cuda_vec_dot_q5k_q8_1(
+                row_blocks + b, xq + (size_t)b * 8, iqs);
+    }
+    float sum = partial[0];
+#pragma unroll
+    for (int logical_warp = 1; logical_warp < 4; logical_warp++)
+        sum += partial[logical_warp];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+    if (lane == 0)
+        x[row] = residual[row] + sum;
+}
+
 static __global__ void q5k_dot_matvec_pair_4warp_kernel(
         float *out0, float *out1, const BnBlockQ5K *blocks0,
         const BnBlockQ5K *blocks1, const BnCudaBlockQ8_1 *xq,
@@ -32199,11 +32229,41 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
                 if (bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(ctx->runtime_policy, op->cols)) {
-                    BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
-                        q5k_dot_matvec_1warp_4partial_kernel,
-                        (op->rows + 7) / 8, 256, 0,
-                        out, (const BnBlockQ5K *)w->data, xq, bias,
-                        op->rows, op->cols, out_offset);
+                    int fuse_resid_norm =
+                        next &&
+                        next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
+                        next->buf_in == BN_GPU_VALUE_X &&
+                        next->buf_aux == op->buf_out &&
+                        out_offset == 0 && bias == NULL &&
+                        bias_idx < 0 && fused_copy_idx < 0 &&
+                        op->rows == (int)next->p[0];
+                    BnCudaBuffer *nw = fuse_resid_norm
+                        ? (BnCudaBuffer *)next->W_buf : NULL;
+                    float *resid = fuse_resid_norm
+                        ? cuda_act(ctx, next->buf_in) : NULL;
+                    float *norm_out = fuse_resid_norm
+                        ? cuda_act(ctx, next->buf_out) : NULL;
+                    if (fuse_resid_norm && nw && nw->data && resid &&
+                        norm_out) {
+                        BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
+                            q5k_dot_matvec_1warp_4partial_residual_kernel,
+                            (op->rows + 7) / 8, 256, 0,
+                            resid, (const BnBlockQ5K *)w->data, xq,
+                            resid, op->rows, op->cols);
+                        int norm_threads = cuda_rmsnorm_threads(op->rows);
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                            rmsnorm_kernel, 1, norm_threads,
+                            (size_t)norm_threads * sizeof(float),
+                            norm_out, resid, (const float *)nw->data,
+                            op->rows, cuda_u32_to_f32(next->p[1]));
+                        i++;
+                    } else {
+                        BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
+                            q5k_dot_matvec_1warp_4partial_kernel,
+                            (op->rows + 7) / 8, 256, 0,
+                            out, (const BnBlockQ5K *)w->data, xq, bias,
+                            op->rows, op->cols, out_offset);
+                    }
                 } else {
                     int q5_threads = 256;
                     int warps = q5_threads / 32;
