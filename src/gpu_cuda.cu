@@ -10189,6 +10189,69 @@ static __global__ void weighted_add_sigmoid_avx2_reference_kernel(
     }
 }
 
+static __global__ void weighted_add_sigmoid_avx2_reference_residual_rmsnorm_kernel(
+    float *resid, const float *x, const float *r, const float *gate,
+    const float *gate_in, float *out, const float *norm_weight,
+    int n, int dim, int reset, int complement, float eps) {
+    __shared__ float weight_s;
+    __shared__ float partial_ss[32];
+    int tid = threadIdx.x;
+    int lane = tid & 31;
+    int d = 0;
+    float half_lane = 0.0f;
+    if (tid < 8) {
+        float lo[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float hi[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        for (; d + 63 < dim; d += 64) {
+#pragma unroll
+            for (int group = 0; group < 4; group++) {
+                int off = d + group * 16 + lane;
+                lo[group] = fmaf(gate[off], gate_in[off], lo[group]);
+                hi[group] = fmaf(gate[off + 8], gate_in[off + 8], hi[group]);
+            }
+        }
+        float merged_lo = __fadd_rn(
+            __fadd_rn(lo[0], lo[2]), __fadd_rn(lo[1], lo[3]));
+        float merged_hi = __fadd_rn(
+            __fadd_rn(hi[0], hi[2]), __fadd_rn(hi[1], hi[3]));
+        half_lane = __fadd_rn(merged_hi, merged_lo);
+    }
+    float half1 = __shfl_sync(0xffffffffu, half_lane, 1);
+    float half2 = __shfl_sync(0xffffffffu, half_lane, 2);
+    float half3 = __shfl_sync(0xffffffffu, half_lane, 3);
+    float half4 = __shfl_sync(0xffffffffu, half_lane, 4);
+    float half5 = __shfl_sync(0xffffffffu, half_lane, 5);
+    float half6 = __shfl_sync(0xffffffffu, half_lane, 6);
+    float half7 = __shfl_sync(0xffffffffu, half_lane, 7);
+    if (tid == 0) {
+        float quarter0 = __fadd_rn(half_lane, half4);
+        float quarter1 = __fadd_rn(half1, half5);
+        float quarter2 = __fadd_rn(half2, half6);
+        float quarter3 = __fadd_rn(half3, half7);
+        float dot = __fadd_rn(__fadd_rn(quarter2, quarter0),
+                              __fadd_rn(quarter3, quarter1));
+        for (; d < dim; d++)
+            dot = __fadd_rn(dot, __fmul_rn(gate[d], gate_in[d]));
+        float exp_neg = (float)exp((double)-dot);
+        float weight = cuda_div_rn(1.0f, __fadd_rn(1.0f, exp_neg));
+        weight_s = complement ? __fadd_rn(1.0f, -weight) : weight;
+    }
+    __syncthreads();
+
+    float ss = 0.0f;
+    for (int i = tid; i < n; i += blockDim.x) {
+        float v = __fmul_rn(weight_s, r[i]);
+        float combined = reset ? v : __fadd_rn(x[i], v);
+        float rv = __fadd_rn(resid[i], combined);
+        resid[i] = rv;
+        ss += rv * rv;
+    }
+    ss = cuda_block_reduce_sum_all(ss, partial_ss);
+    float scale = rsqrtf(__fdividef(ss, (float)n) + eps);
+    for (int i = tid; i < n; i += blockDim.x)
+        out[i] = resid[i] * scale * norm_weight[i];
+}
+
 static __global__ void shared_expert_add_sigmoid_batch_kernel(
     float *out, const float *shared, const float *gate_logits,
     int n_tokens, int dim) {
@@ -34801,11 +34864,31 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 return -1;
             int sigmoid_threads = dim >= 1536 ? 512 : 256;
             if (op->p[5] & BN_GPU_WEIGHTED_ADD_SIGMOID_REFERENCE_DOT) {
-                BN_CUDA_LAUNCH(ctx,
-                    weighted_add_sigmoid_avx2_reference_kernel,
-                    1, sigmoid_threads, 0, in, aux,
-                    (const float *)gate->data, gate_in, n, dim,
-                    (int)op->p[2], (int)op->p[4]);
+                if (dim <= 8192 && next &&
+                    bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled(
+                        ctx->runtime_policy) &&
+                    next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
+                    next->buf_aux == op->buf_in &&
+                    (int)next->p[0] == n && !next->p[7]) {
+                    float *resid = cuda_act(ctx, next->buf_in);
+                    float *norm_out = cuda_act(ctx, next->buf_out);
+                    BnCudaBuffer *norm = (BnCudaBuffer *)next->W_buf;
+                    if (!resid || !norm_out || !norm || !norm->data)
+                        return -1;
+                    BN_CUDA_LAUNCH(ctx,
+                        weighted_add_sigmoid_avx2_reference_residual_rmsnorm_kernel,
+                        1, cuda_rmsnorm_threads(n), 0, resid, in, aux,
+                        (const float *)gate->data, gate_in, norm_out,
+                        (const float *)norm->data, n, dim, (int)op->p[2],
+                        (int)op->p[4], cuda_u32_to_f32(next->p[1]));
+                    i++;
+                } else {
+                    BN_CUDA_LAUNCH(ctx,
+                        weighted_add_sigmoid_avx2_reference_kernel,
+                        1, sigmoid_threads, 0, in, aux,
+                        (const float *)gate->data, gate_in, n, dim,
+                        (int)op->p[2], (int)op->p[4]);
+                }
             } else if (dim <= 8192 && next &&
                 bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled(
                     ctx->runtime_policy) &&
