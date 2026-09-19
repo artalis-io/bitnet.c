@@ -11084,11 +11084,11 @@ static __global__ void moe_route_fill_slots_kernel(
 
 /* A fixed upper-bound launch skips unpopulated route tiles on device. */
 static __global__ void moe_route_compact_schedule_kernel(
-        int *schedule, const int *counts, int n_experts) {
+        int *schedule, const int *counts, int n_experts, int tile_width) {
     if (blockIdx.x || threadIdx.x) return;
     int used = 0;
     for (int expert = 0; expert < n_experts; expert++)
-        for (int tile = 0; tile * 64 < counts[expert]; tile++)
+        for (int tile = 0; tile * tile_width < counts[expert]; tile++)
             schedule[1 + used++] = expert | (tile << 16);
     schedule[0] = used;
 }
@@ -18955,19 +18955,39 @@ static __global__ void q8_0_matmul_prepared_input_kernel(
 static __global__ void q8_0_matmul_mma_128x16_kernel(
         float *out, const BnBlockQ8_0 *weights,
         const BnCudaBlockQ8_1 *input, int rows, int cols,
-        int n_tokens, size_t out_offset) {
+        int n_tokens, size_t out_offset,
+        const int *route_order = NULL, const int *expert_counts = NULL,
+        const int *expert_offsets = NULL, const int *route_schedule = NULL,
+        int experts = 0, int input_divisor = 1) {
 #if __CUDA_ARCH__ >= 800
     enum { k_tile_blocks = 8, stride = k_tile_blocks * 32 + 16 };
     __shared__ __align__(16) int8_t a_tile[128][stride];
     __shared__ __align__(16) int8_t b_tile[16][stride];
     __shared__ float a_scale[128][k_tile_blocks];
     __shared__ float b_scale[16][k_tile_blocks];
+    __shared__ int route_ids[16];
     float sums[2][4] = {{0.0f}};
     int tid = threadIdx.x;
     int lane = tid & 31;
     int warp = tid >> 5;
     int row0 = blockIdx.x * 128;
     int token0 = blockIdx.y * 16;
+    int expert = 0;
+    bool routed = route_order && expert_counts && expert_offsets &&
+                  route_schedule && experts > 0;
+    int live_tokens = n_tokens - token0;
+    if (routed) {
+        if (blockIdx.y >= (unsigned)route_schedule[0]) return;
+        int scheduled = route_schedule[blockIdx.y + 1];
+        expert = scheduled & 0xffff;
+        token0 = (scheduled >> 16) * 16;
+        if (expert >= experts) return;
+        live_tokens = expert_counts[expert] - token0;
+        if (tid < 16)
+            route_ids[tid] = tid < live_tokens
+                ? route_order[expert_offsets[expert] + token0 + tid] : -1;
+        __syncthreads();
+    }
     int n_blocks = cols / 32;
 
     for (int kb0 = 0; kb0 < n_blocks; kb0 += k_tile_blocks) {
@@ -18980,7 +19000,8 @@ static __global__ void q8_0_matmul_mma_128x16_kernel(
             uint4 value = make_uint4(0, 0, 0, 0);
             if (row < rows && kb0 + g < n_blocks)
                 memcpy(&value,
-                       weights[(size_t)row * n_blocks + kb0 + g].qs + q,
+                       weights[((size_t)expert * rows + row) * n_blocks +
+                               kb0 + g].qs + q,
                        sizeof(value));
             memcpy(a_tile[r] + g * 32 + q, &value, sizeof(value));
         }
@@ -18989,7 +19010,8 @@ static __global__ void q8_0_matmul_mma_128x16_kernel(
             int rem = i - t * k_tile_blocks * 2;
             int g = rem >> 1;
             int q = (i & 1) * 16;
-            int token = token0 + t;
+            int item = routed ? route_ids[t] : token0 + t;
+            int token = item >= 0 ? item / input_divisor : 0;
             uint4 value = make_uint4(0, 0, 0, 0);
             if (token < n_tokens && kb0 + g < n_blocks)
                 memcpy(&value,
@@ -19003,13 +19025,17 @@ static __global__ void q8_0_matmul_mma_128x16_kernel(
             int row = row0 + r;
             a_scale[r][g] = row < rows && kb0 + g < n_blocks
                 ? cuda_fp16_to_fp32(
-                    weights[(size_t)row * n_blocks + kb0 + g].d) : 0.0f;
+                    weights[((size_t)expert * rows + row) * n_blocks +
+                            kb0 + g].d) : 0.0f;
         }
         if (tid < 16 * k_tile_blocks) {
             int t = tid / k_tile_blocks;
             int g = tid - t * k_tile_blocks;
-            int token = token0 + t;
-            b_scale[t][g] = token < n_tokens && kb0 + g < n_blocks
+            int item = routed ? route_ids[t] : token0 + t;
+            int token = item >= 0 ? item / input_divisor : 0;
+            b_scale[t][g] = item >= 0 &&
+                (!routed ? token < n_tokens : t < live_tokens) &&
+                kb0 + g < n_blocks
                 ? cuda_fp16_to_fp32(
                     input[(size_t)token * n_blocks + kb0 + g].d) : 0.0f;
         }
@@ -19070,15 +19096,18 @@ static __global__ void q8_0_matmul_mma_128x16_kernel(
             int r = warp * 16 + (l / 2) * 8 + lane / 4;
             int t = panel * 8 + (lane % 4) * 2 + (l & 1);
             int row = row0 + r;
-            int token = token0 + t;
-            if (row < rows && token < n_tokens)
-                out[out_offset + (size_t)token * rows + row] =
+            int item = routed ? route_ids[t] : token0 + t;
+            if (row < rows && item >= 0 &&
+                (routed || item < n_tokens))
+                out[out_offset + (size_t)item * rows + row] =
                     sums[panel][l];
         }
     }
 #else
     (void)out; (void)weights; (void)input; (void)rows; (void)cols;
-    (void)n_tokens; (void)out_offset;
+    (void)n_tokens; (void)out_offset; (void)route_order;
+    (void)expert_counts; (void)expert_offsets; (void)route_schedule;
+    (void)experts; (void)input_divisor;
 #endif
 }
 
@@ -26459,7 +26488,10 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         n_tokens >= 64 &&
         bn_backend_quant_moe_routed_asymmetric_kquant(
             gate_type, up_type, down_type);
-    if (use_routed_q4_mmq) {
+    int use_routed_q8_mma = ctx->compute_capability == 1200 &&
+        n_tokens >= 64 && routed_native_quant;
+    int use_routed_schedule = use_routed_q4_mmq || use_routed_q8_mma;
+    if (use_routed_schedule) {
         size_t gateup_bytes = 2u * mid_values * sizeof(float);
         size_t down_bytes = (size_t)n_tokens * k * dim * sizeof(float);
         moe_scratch_x_bytes = gateup_bytes > down_bytes
@@ -26471,7 +26503,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
          * before deriving d_mid or preserving resident input pointers. */
         size_t shared_hidden_bytes =
             (size_t)n_tokens * (size_t)shared_hidden_dim * sizeof(float);
-        moe_scratch_x_bytes = shared_hidden_bytes;
+        if (shared_hidden_bytes > moe_scratch_x_bytes)
+            moe_scratch_x_bytes = shared_hidden_bytes;
         if (shared_hidden_bytes * 2u > moe_scratch_out_bytes)
             moe_scratch_out_bytes = shared_hidden_bytes * 2u;
         if (full_bytes > moe_scratch_out_bytes)
@@ -26525,15 +26558,17 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     if (routed_asymmetric_kquant && n_tokens > 1 &&
         !use_cublas_all_active_two_fixed)
         use_sorted_slots = 1;
-    if (use_routed_q4_mmq) use_sorted_slots = 1;
+    if (use_routed_schedule) use_sorted_slots = 1;
     size_t sorted_route_aux_bytes = use_sorted_slots
         ? (route_items * sizeof(int) + (size_t)n_experts * 4u * sizeof(int))
         : 0u;
     size_t decode_route_bytes =
         use_cublas_all_active_two_decode ? 4u * sizeof(float) : 0u;
-    int routed_schedule_upper = use_routed_q4_mmq
-        ? n_experts + ((int)route_items + 63) / 64 : 0;
-    size_t routed_schedule_bytes = use_routed_q4_mmq
+    int routed_tile_width = use_routed_q8_mma ? 16 : 64;
+    int routed_schedule_upper = use_routed_schedule
+        ? n_experts + ((int)route_items + routed_tile_width - 1) /
+          routed_tile_width : 0;
+    size_t routed_schedule_bytes = use_routed_schedule
         ? ((size_t)routed_schedule_upper + 1u) * sizeof(int) : 0u;
     size_t route_aux_bytes = sorted_route_aux_bytes +
         routed_schedule_bytes + decode_route_bytes;
@@ -26568,7 +26603,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         ? d_expert_offsets + n_experts : NULL;
     int *d_active_experts = use_sorted_slots
         ? d_expert_fill + n_experts : NULL;
-    int *d_routed_schedule = use_routed_q4_mmq
+    int *d_routed_schedule = use_routed_schedule
         ? (int *)(d_route_aux + sorted_route_aux_bytes) : NULL;
     float *d_decode_route = use_cublas_all_active_two_decode
         ? (float *)(d_route_aux + sorted_route_aux_bytes +
@@ -26723,9 +26758,10 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             return -1;
         }
     }
-    if (use_routed_q4_mmq) {
+    if (use_routed_schedule) {
         moe_route_compact_schedule_kernel<<<1, 1>>>(
-            d_routed_schedule, d_expert_counts, n_experts);
+            d_routed_schedule, d_expert_counts, n_experts,
+            routed_tile_width);
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
     }
@@ -26882,7 +26918,30 @@ static int cuda_moe_route_routed_ffn_batch_impl(
                     "[bn:gpu:cuda] grouped cublas moe gate/up failed; falling back\n");
     }
 
-    if (use_routed_q4_mmq) {
+    if (use_routed_q8_mma) {
+        int x_blocks = dim / 32;
+        if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(x_blocks, n_tokens), 32>>>(
+            xq, d_full_x, dim, n_tokens);
+        float *gate_out = ctx->d_x;
+        float *up_out = gate_out + mid_values;
+        dim3 grid((hidden_dim + 127) / 128, routed_schedule_upper);
+        q8_0_matmul_mma_128x16_kernel<<<grid, 256>>>(
+            gate_out, (const BnBlockQ8_0 *)gate->data, xq,
+            hidden_dim, dim, n_tokens, 0, d_slot_order,
+            d_expert_counts, d_expert_offsets, d_routed_schedule,
+            n_experts, k);
+        q8_0_matmul_mma_128x16_kernel<<<grid, 256>>>(
+            up_out, (const BnBlockQ8_0 *)up->data, xq,
+            hidden_dim, dim, n_tokens, 0, d_slot_order,
+            d_expert_counts, d_expert_offsets, d_routed_schedule,
+            n_experts, k);
+        moe_routed_activation_pair_kernel<<<
+            (unsigned)((mid_values + 255u) / 256u), 256>>>(
+                d_mid, gate_out, up_out, (int)mid_values, act_type);
+    } else if (use_routed_q4_mmq) {
         int x_blocks = dim / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -27045,7 +27104,25 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
 
 moe_route_routed_down:
-    if (use_routed_q4_mmq) {
+    if (use_routed_q8_mma) {
+        int n_mid = n_tokens * k;
+        int mid_blocks = hidden_dim / 32;
+        if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *mid_q = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(mid_blocks, n_mid), 32>>>(
+            mid_q, d_mid, hidden_dim, n_mid);
+        float *down_values = ctx->d_x;
+        dim3 grid((dim + 127) / 128, routed_schedule_upper);
+        q8_0_matmul_mma_128x16_kernel<<<grid, 256>>>(
+            down_values, (const BnBlockQ8_0 *)down->data, mid_q,
+            dim, hidden_dim, n_mid, 0, d_slot_order,
+            d_expert_counts, d_expert_offsets, d_routed_schedule,
+            n_experts, 1);
+        moe_routed_ordered_reduce_kernel<<<
+            dim3((dim + 255) / 256, n_tokens), 256>>>(
+                d_full_out, down_values, d_weights, NULL, dim, k, 0);
+    } else if (use_routed_q4_mmq) {
         int n_mid = n_tokens * k;
         float *down_values = ctx->d_x;
         dim3 grid((dim + 127) / 128, 1, routed_schedule_upper);
