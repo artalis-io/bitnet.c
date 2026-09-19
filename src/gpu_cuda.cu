@@ -4010,8 +4010,10 @@ static __global__ void q5k_dot_matvec_1warp_4partial_residual_kernel(
 static __global__ void q5k_dot_matvec_pair_4warp_kernel(
         float *out0, float *out1, const BnBlockQ5K *blocks0,
         const BnBlockQ5K *blocks1, const BnCudaBlockQ8_1 *xq,
-        int rows, int cols, size_t out0_offset, size_t out1_offset) {
+        int rows, int cols, size_t out0_offset, size_t out1_offset,
+        int fuse_silu, uint32_t silu_flags) {
     __shared__ float partial[2][3][32];
+    __shared__ float projection_sum[2];
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int projection = warp >> 2;
@@ -4032,16 +4034,34 @@ static __global__ void q5k_dot_matvec_pair_4warp_kernel(
     if (logical_warp > 0)
         partial[projection][logical_warp - 1][lane] = sum;
     __syncthreads();
-    if (logical_warp > 0) return;
+    if (logical_warp == 0) {
 #pragma unroll
-    for (int w = 0; w < 3; w++) sum += partial[projection][w][lane];
-    for (int offset = 16; offset > 0; offset >>= 1)
-        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
-    if (lane == 0) {
-        if (projection)
-            out1[out1_offset + row] = sum;
-        else
-            out0[out0_offset + row] = sum;
+        for (int w = 0; w < 3; w++) sum += partial[projection][w][lane];
+        for (int offset = 16; offset > 0; offset >>= 1)
+            sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+        if (lane == 0) projection_sum[projection] = sum;
+    }
+    __syncthreads();
+    if (lane == 0 && logical_warp == 0) {
+        if (fuse_silu) {
+            if (projection == 0) {
+                float gate = projection_sum[0];
+                float silu =
+                    (silu_flags &
+                     BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) != 0
+                        ? cuda_avx2_reference_silu(gate)
+                        : cuda_silu_select(
+                              gate,
+                              (silu_flags &
+                               BN_GPU_OP_FLAG_REFERENCE_SILU) != 0);
+                out0[out0_offset + row] =
+                    __fmul_rn(silu, projection_sum[1]);
+            }
+        } else if (projection) {
+            out1[out1_offset + row] = projection_sum[1];
+        } else {
+            out0[out0_offset + row] = projection_sum[0];
+        }
     }
 }
 
@@ -31420,6 +31440,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
                 if (w1 && w1->data && out1) {
+                    int fuse_silu =
+                        i + 2 < n_ops && out_offset == 0 &&
+                        next->p[5] == 0 &&
+                        ops[i + 2].op_code == BN_GPU_CODE_SILU_GATE &&
+                        ops[i + 2].buf_in == op->buf_out &&
+                        ops[i + 2].buf_aux == next->buf_out &&
+                        (int)ops[i + 2].p[0] == op->rows &&
+                        (int)ops[i + 2].p[1] == 0;
                     if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                         BN_CUDA_EXEC_FAIL(
                             "q5k adjacent pair q8_1 scratch alloc failed");
@@ -31434,8 +31462,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (const BnBlockQ5K *)w->data,
                         (const BnBlockQ5K *)w1->data, xq,
                         op->rows, op->cols, out_offset,
-                        (size_t)next->p[5]);
-                    i++;
+                        (size_t)next->p[5], fuse_silu,
+                        fuse_silu ? ops[i + 2].flags : 0u);
+                    i += fuse_silu ? 2 : 1;
                     break;
                 }
             }
