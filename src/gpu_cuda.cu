@@ -26678,6 +26678,11 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int use_fused_batch_route =
         bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(
             ctx->runtime_policy, n_experts);
+    if (use_routed_q8_mma && n_experts <= 256 &&
+        !bn_backend_runtime_policy_enabled(
+            ctx->runtime_policy,
+            "BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK"))
+        use_fused_batch_route = 1;
     if (use_fused_batch_route) {
         moe_route_fused_batch_warp_topk_kernel<<<n_tokens, threads, 0>>>(
             d_indices, d_weights, (const float *)router->data, d_full_x,
