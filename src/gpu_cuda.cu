@@ -32217,7 +32217,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (bn_backend_quant_supports_packed_codebook_matvec(
                         op->type)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
-                        iq4xs_dot_matvec_compact_perm_kernel, op->rows, 128, 0,
+                        iq4xs_dot_matvec_compact_perm_pair_kernel,
+                        (op->rows + 1) / 2, 128, 0,
                         out, (const BnBlockIQ4XS *)w->data,
                         xq, op->rows, op->cols, bias, out_offset);
                 } else {
