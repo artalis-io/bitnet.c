@@ -3466,55 +3466,66 @@ static __global__ void qkv_f32_avx2_reference_matvec_kernel(
 static __global__ void q6k_q8k_avx2_reference_matvec_kernel(
     float *out, const BnBlockQ6K *blocks, const BnBlockQ8K *xq,
     const float *bias, int rows, int cols, size_t out_offset) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int lane = threadIdx.x & 7;
+    int row = (blockIdx.x * blockDim.x + threadIdx.x) >> 3;
     if (row >= rows) return;
     int n_bpr = cols / BN_QK_K;
-    float acc[8] = {0.0f, 0.0f, 0.0f, 0.0f,
-                    0.0f, 0.0f, 0.0f, 0.0f};
+    float acc = 0.0f;
     for (int b = 0; b < n_bpr; b++) {
         const BnBlockQ6K *blk =
             blocks + (size_t)row * n_bpr + b;
         const BnBlockQ8K *xb = xq + b;
-        int sumi[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+        int sumi = 0;
 #pragma unroll
         for (int chunk = 0; chunk < 2; chunk++) {
             const uint8_t *ql = blk->ql + chunk * 64;
             const uint8_t *qh = blk->qh + chunk * 32;
             const int8_t *sc = blk->scales + chunk * 8;
 #pragma unroll
-            for (int i = 0; i < 128; i++) {
-                int l = i & 31;
-                int q;
-                if (i < 32)
-                    q = (int)((ql[l] & 15) | ((qh[l] & 3) << 4));
-                else if (i < 64)
-                    q = (int)((ql[l + 32] & 15) |
-                              (((qh[l] >> 2) & 3) << 4));
-                else if (i < 96)
-                    q = (int)((ql[l] >> 4) |
-                              (((qh[l] >> 4) & 3) << 4));
-                else
-                    q = (int)((ql[l + 32] >> 4) |
-                              (((qh[l] >> 6) & 3) << 4));
-                int group = i >> 4;
-                int lane = (i & 31) >> 2;
-                int xi = chunk * 128 + i;
-                sumi[lane] += (q - 32) * (int)sc[group] *
-                              (int)xb->qs[xi];
+            for (int quadrant = 0; quadrant < 4; quadrant++) {
+                int group = quadrant * 2 + lane / 4;
+#pragma unroll
+                for (int j = 0; j < 4; j++) {
+                    int l = lane * 4 + j;
+                    int q;
+                    if (quadrant == 0)
+                        q = (int)((ql[l] & 15) | ((qh[l] & 3) << 4));
+                    else if (quadrant == 1)
+                        q = (int)((ql[l + 32] & 15) |
+                                  (((qh[l] >> 2) & 3) << 4));
+                    else if (quadrant == 2)
+                        q = (int)((ql[l] >> 4) |
+                                  (((qh[l] >> 4) & 3) << 4));
+                    else
+                        q = (int)((ql[l + 32] >> 4) |
+                                  (((qh[l] >> 6) & 3) << 4));
+                    int xi = chunk * 128 + quadrant * 32 + l;
+                    sumi += (q - 32) * (int)sc[group] *
+                            (int)xb->qs[xi];
+                }
             }
         }
         float scale = __fmul_rn(cuda_fp16_to_fp32(blk->d), xb->d);
-#pragma unroll
-        for (int lane = 0; lane < 8; lane++)
-            acc[lane] = fmaf((float)sumi[lane], scale, acc[lane]);
+        acc = fmaf((float)sumi, scale, acc);
     }
-    float s0 = __fadd_rn(acc[0], acc[4]);
-    float s1 = __fadd_rn(acc[1], acc[5]);
-    float s2 = __fadd_rn(acc[2], acc[6]);
-    float s3 = __fadd_rn(acc[3], acc[7]);
-    float value = __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
-    if (bias) value = __fadd_rn(value, bias[row]);
-    out[out_offset + row] = value;
+    unsigned mask = __activemask();
+    float a0 = __shfl_sync(mask, acc, 0, 8);
+    float a1 = __shfl_sync(mask, acc, 1, 8);
+    float a2 = __shfl_sync(mask, acc, 2, 8);
+    float a3 = __shfl_sync(mask, acc, 3, 8);
+    float a4 = __shfl_sync(mask, acc, 4, 8);
+    float a5 = __shfl_sync(mask, acc, 5, 8);
+    float a6 = __shfl_sync(mask, acc, 6, 8);
+    float a7 = __shfl_sync(mask, acc, 7, 8);
+    if (lane == 0) {
+        float s0 = __fadd_rn(a0, a4);
+        float s1 = __fadd_rn(a1, a5);
+        float s2 = __fadd_rn(a2, a6);
+        float s3 = __fadd_rn(a3, a7);
+        float value = __fadd_rn(__fadd_rn(s0, s2), __fadd_rn(s1, s3));
+        if (bias) value = __fadd_rn(value, bias[row]);
+        out[out_offset + row] = value;
+    }
 }
 
 static __global__ void q4k_q8k_dot_matvec4_kernel(float *out,
@@ -31606,7 +31617,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int reference_threads = 256;
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q6k_q8k_avx2_reference_matvec_kernel,
-                    (op->rows + reference_threads - 1) /
+                    (op->rows * 8 + reference_threads - 1) /
                         reference_threads,
                     reference_threads, 0,
                     out, (const BnBlockQ6K *)w->data, xq, bias,
