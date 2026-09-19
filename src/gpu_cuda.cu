@@ -26330,7 +26330,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int use_moe_block_prepared_batch =
         bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(ctx->runtime_policy, routed_native_quant);
     if (ctx->compute_capability == 1200 && routed_native_quant &&
-        n_tokens < 128)
+        n_tokens < 64)
         use_moe_block_prepared_batch = 0;
     /* Routed MMQ is slower than prepared gate/up plus direct down on SM120. */
     int use_routed_mmq = 0;
@@ -26642,9 +26642,7 @@ moe_route_routed_down:
         if (cuda_launch_routed_mmq(ctx, d_full_out, down, NULL, d_mid,
                 d_indices, d_weights, dim, hidden_dim, n_tokens, n_experts, k, 1) != 0)
             return -1;
-    } else if (use_moe_block_prepared_batch &&
-               !(ctx->compute_capability == 1200 && routed_native_quant &&
-                 n_tokens > 8)) {
+    } else if (use_moe_block_prepared_batch) {
         int n_mid = n_tokens * k;
         int mid_blocks = hidden_dim / 32;
         if (cuda_ensure_q8_1(ctx, mid_blocks * 32 * n_mid) != 0)
@@ -29294,7 +29292,7 @@ static int cuda_prefill_ssm_layer(
     int separate_f32_ab = reference_projections &&
         bn_backend_quant_uses_dense_float(alpha_type) &&
         bn_backend_quant_uses_dense_float(beta_type);
-    int use_stacked_prefill = !reference_projections &&
+    int use_stacked_prefill = (!reference_projections || n_tokens >= 64) &&
         bn_gpu_policy_cuda_prefill_ssm_stacked_enabled(ctx->runtime_policy);
     int use_qkvz = use_stacked_prefill &&
                    qkvz && qkvz->data && wqkv_type == wz_type &&
@@ -29734,7 +29732,7 @@ static int cuda_prefill_ssm_layer(
     if (cuda_prefill_ssm_matmul_reference_q8(
             ctx, d_ssm_residual, ssm_out, d_ssm, NULL,
             dim, inner_dim, n_tokens, out_type,
-            exact_q8_ssm, ssm_stream) != 0) {
+            n_tokens >= 64 ? 0 : exact_q8_ssm, ssm_stream) != 0) {
         return -1;
     }
     residual_add_kernel<<<((int)dim_values + threads - 1) / threads,
