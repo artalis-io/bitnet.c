@@ -31155,7 +31155,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_backend_quant_uses_native_quant(op->type) &&
                 ((op->rows == 8192 && op->cols == 2048) ||
                  (op->rows == 2048 && op->cols == 8192) ||
-                 (op->rows == 2048 && op->cols == 4096)))
+                 (op->rows == 2048 && op->cols == 4096) ||
+                 (op->rows == 512 && op->cols == 2048)))
                 reference_block_accumulation = 0;
             /* Native MMVQ is faster for the 2048-column Q4_K/Q6_K decode
              * projections while preserving the tested greedy token stream. */
