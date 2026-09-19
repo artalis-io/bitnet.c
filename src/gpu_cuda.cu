@@ -4012,12 +4012,12 @@ static __global__ void q5k_dot_matvec_pair_1warp_4partial_kernel(
         const BnBlockQ5K *blocks1, const BnCudaBlockQ8_1 *xq,
         int rows, int cols, size_t out0_offset, size_t out1_offset,
         int fuse_silu, uint32_t silu_flags) {
-    __shared__ float projection_sum[4][2];
+    __shared__ float projection_sum[1][2];
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int projection = warp & 1;
     int row_in_block = warp >> 1;
-    int row = blockIdx.x * 4 + row_in_block;
+    int row = blockIdx.x;
     if (row >= rows) return;
 
     int n_bpr = cols / BN_QK_K;
@@ -31459,7 +31459,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         0, xq, in, op->cols);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q5k_dot_matvec_pair_1warp_4partial_kernel,
-                        (op->rows + 3) / 4, 256, 0, out, out1,
+                        op->rows, 64, 0, out, out1,
                         (const BnBlockQ5K *)w->data,
                         (const BnBlockQ5K *)w1->data, xq,
                         op->rows, op->cols, out_offset,
