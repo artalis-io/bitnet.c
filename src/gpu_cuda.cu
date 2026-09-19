@@ -13,6 +13,7 @@
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <mma.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18638,6 +18639,99 @@ static __global__ void q8_0_matmul_prepared_input_kernel(
     if (lane == 0) out[out_offset + (size_t)token * rows + row] = sum;
 }
 
+/* One block computes 128 weight rows by 16 prompt tokens.  Q8_0/Q8_1
+ * scales vary every 32 K values, so each pair of INT8 MMA operations is
+ * converted and accumulated separately in FP32. */
+static __global__ void q8_0_matmul_mma_128x16_kernel(
+        float *out, const BnBlockQ8_0 *weights,
+        const BnCudaBlockQ8_1 *input, int rows, int cols,
+        int n_tokens, size_t out_offset) {
+#if __CUDA_ARCH__ >= 720
+    __shared__ __align__(16) int8_t a_tile[128][32];
+    __shared__ __align__(16) int8_t b_tile[16][32];
+    __shared__ __align__(16) int32_t c_tile[128][16];
+    __shared__ float a_scale[128];
+    __shared__ float b_scale[16];
+    float sums[8] = {0.0f};
+    int tid = threadIdx.x;
+    int warp = tid >> 5;
+    int row0 = blockIdx.x * 128;
+    int token0 = blockIdx.y * 16;
+    int n_blocks = cols / 32;
+
+    for (int kb = 0; kb < n_blocks; kb++) {
+        for (int i = tid; i < 128 * 32; i += 256) {
+            int r = i >> 5;
+            int q = i & 31;
+            int row = row0 + r;
+            a_tile[r][q] = row < rows
+                ? weights[(size_t)row * n_blocks + kb].qs[q] : 0;
+        }
+        for (int i = tid; i < 16 * 32; i += 256) {
+            int t = i >> 5;
+            int q = i & 31;
+            int token = token0 + t;
+            b_tile[t][q] = token < n_tokens
+                ? input[(size_t)token * n_blocks + kb].qs[q] : 0;
+        }
+        if (tid < 128) {
+            int row = row0 + tid;
+            a_scale[tid] = row < rows
+                ? cuda_fp16_to_fp32(
+                    weights[(size_t)row * n_blocks + kb].d) : 0.0f;
+        }
+        if (tid < 16) {
+            int token = token0 + tid;
+            b_scale[tid] = token < n_tokens
+                ? cuda_fp16_to_fp32(
+                    input[(size_t)token * n_blocks + kb].d) : 0.0f;
+        }
+        __syncthreads();
+
+        nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16,
+            signed char, nvcuda::wmma::row_major> af;
+        nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16,
+            signed char, nvcuda::wmma::col_major> bf;
+        nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16,
+            int> cf;
+        nvcuda::wmma::fill_fragment(cf, 0);
+        nvcuda::wmma::load_matrix_sync(af, &a_tile[warp * 16][0], 32);
+        nvcuda::wmma::load_matrix_sync(bf, &b_tile[0][0], 32);
+        nvcuda::wmma::mma_sync(cf, af, bf, cf);
+        nvcuda::wmma::load_matrix_sync(af, &a_tile[warp * 16][16], 32);
+        nvcuda::wmma::load_matrix_sync(bf, &b_tile[0][16], 32);
+        nvcuda::wmma::mma_sync(cf, af, bf, cf);
+        nvcuda::wmma::store_matrix_sync(&c_tile[warp * 16][0], cf, 16,
+                                         nvcuda::wmma::mem_row_major);
+        __syncthreads();
+
+#pragma unroll
+        for (int j = 0; j < 8; j++) {
+            int i = tid + j * 256;
+            int r = i >> 4;
+            int t = i & 15;
+            sums[j] = fmaf(a_scale[r] * b_scale[t],
+                           (float)c_tile[r][t], sums[j]);
+        }
+        __syncthreads();
+    }
+
+#pragma unroll
+    for (int j = 0; j < 8; j++) {
+        int i = tid + j * 256;
+        int r = i >> 4;
+        int t = i & 15;
+        int row = row0 + r;
+        int token = token0 + t;
+        if (row < rows && token < n_tokens)
+            out[out_offset + (size_t)token * rows + row] = sums[j];
+    }
+#else
+    (void)out; (void)weights; (void)input; (void)rows; (void)cols;
+    (void)n_tokens; (void)out_offset;
+#endif
+}
+
 /* Reuse each Q8_0 weight pair across prompt tokens while keeping the
  * four-logical-warp MMVQ reduction that recurrent SSM state requires. */
 template <int TokensPerTile>
@@ -18721,6 +18815,18 @@ static int cuda_launch_q8_0_matmul(BnCudaCtx *ctx, float *d_dst,
         return -1;
     int threads = 256;
     int warps = threads / 32;
+    if (ctx->compute_capability == 1200 && n_tokens >= 64) {
+        if (cols > INT_MAX / n_tokens ||
+            cuda_ensure_q8_1(ctx, cols * n_tokens) != 0) return -1;
+        BnCudaBlockQ8_1 *input = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(cols / 32, n_tokens), 32>>>(
+            input, d_x, cols, n_tokens);
+        if (cudaGetLastError() != cudaSuccess) return -1;
+        q8_0_matmul_mma_128x16_kernel<<<
+            dim3((rows + 127) / 128, (n_tokens + 15) / 16), 256>>>(
+                d_dst, blocks, input, rows, cols, n_tokens, out_offset);
+        return cudaGetLastError() == cudaSuccess ? 0 : -1;
+    }
     if (n_tokens <= 8) {
         if (cols > INT_MAX / n_tokens ||
             cuda_ensure_q8_1(ctx, cols * n_tokens) != 0) return -1;
