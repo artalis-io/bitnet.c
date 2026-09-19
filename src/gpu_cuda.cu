@@ -4021,38 +4021,6 @@ static __global__ void q5k_dot_matvec_4warp_kernel(float *out,
     }
 }
 
-static __global__ void q5k_dot_matvec_1warp_4partial_kernel(
-        float *out, const BnBlockQ5K *blocks,
-        const BnCudaBlockQ8_1 *xq, const float *bias,
-        int rows, int cols, size_t out_offset) {
-    int lane = threadIdx.x & 31;
-    int warp = threadIdx.x >> 5;
-    int row = blockIdx.x * (blockDim.x >> 5) + warp;
-    if (row >= rows) return;
-
-    int n_bpr = cols / BN_QK_K;
-    int kbx = lane / 16;
-    int iqs = 2 * (lane & 15);
-    const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
-    float partial[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-#pragma unroll
-    for (int logical_warp = 0; logical_warp < 4; logical_warp++) {
-        for (int b = logical_warp * 2 + kbx; b < n_bpr; b += 8)
-            partial[logical_warp] += cuda_vec_dot_q5k_q8_1(
-                row_blocks + b, xq + (size_t)b * 8, iqs);
-    }
-    float sum = partial[0];
-#pragma unroll
-    for (int logical_warp = 1; logical_warp < 4; logical_warp++)
-        sum += partial[logical_warp];
-    for (int offset = 16; offset > 0; offset >>= 1)
-        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
-    if (lane == 0) {
-        if (bias) sum += bias[row];
-        out[out_offset + row] = sum;
-    }
-}
-
 static __global__ void q5k_dot_matvec_1warp_4partial_residual_kernel(
         float *x, const BnBlockQ5K *blocks,
         const BnCudaBlockQ8_1 *xq, const float *residual,
@@ -32576,8 +32544,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         i++;
                     } else {
                         BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
-                            q5k_dot_matvec_1warp_4partial_kernel,
-                            (op->rows + 7) / 8, 256, 0,
+                            q5k_dot_matvec_4warp_kernel,
+                            op->rows, 128, 0,
                             out, (const BnBlockQ5K *)w->data, xq, bias,
                             op->rows, op->cols, out_offset);
                     }
