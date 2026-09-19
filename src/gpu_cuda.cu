@@ -3945,6 +3945,44 @@ static __global__ void q5k_dot_matvec_4warp_kernel(float *out,
     }
 }
 
+static __global__ void q5k_dot_matvec_pair_4warp_kernel(
+        float *out0, float *out1, const BnBlockQ5K *blocks0,
+        const BnBlockQ5K *blocks1, const BnCudaBlockQ8_1 *xq,
+        int rows, int cols, size_t out0_offset, size_t out1_offset) {
+    __shared__ float partial[2][3][32];
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int projection = warp >> 2;
+    int logical_warp = warp & 3;
+    int row = blockIdx.x;
+    if (row >= rows || warp >= 8) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    float sum = 0.0f;
+    const BnBlockQ5K *blocks = projection ? blocks1 : blocks0;
+    const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
+    for (int b = logical_warp * 2 + kbx; b < n_bpr; b += 8)
+        sum += cuda_vec_dot_q5k_q8_1(&row_blocks[b],
+                                     xq + (size_t)b * 8, iqs);
+
+    if (logical_warp > 0)
+        partial[projection][logical_warp - 1][lane] = sum;
+    __syncthreads();
+    if (logical_warp > 0) return;
+#pragma unroll
+    for (int w = 0; w < 3; w++) sum += partial[projection][w][lane];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+    if (lane == 0) {
+        if (projection)
+            out1[out1_offset + row] = sum;
+        else
+            out0[out0_offset + row] = sum;
+    }
+}
+
 static __global__ void q4k_dot_matmul_kernel(float *out,
                                              const BnBlockQ4K *blocks,
                                              const BnCudaBlockQ8_1 *xq,
@@ -31300,6 +31338,42 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         ctx->kv_f16, ctx->kv_f16);
                     skip_ops[i + 1] = 1;
                     skip_ops[i + 2] = 1;
+                    break;
+                }
+            }
+            if (!direct_kv_f16 && !reference_kquant_matvec &&
+                !reference_block_accumulation && next &&
+                bn_backend_quant_deinterleaved_kquant_pair_matvec(
+                    op->type, next->type) &&
+                next->op_code == BN_GPU_CODE_MATVEC &&
+                next->buf_in == op->buf_in &&
+                next->rows == op->rows && next->cols == op->cols &&
+                (op->cols % BN_QK_K) == 0 &&
+                bias == NULL && bias_idx < 0 &&
+                cuda_find_fusable_bias(ops, n_ops, i + 1,
+                                       next->buf_out, next->rows) < 0 &&
+                enable_deinterleaved_kquant_dot &&
+                bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(
+                    ctx->runtime_policy, op->cols)) {
+                BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
+                float *out1 = cuda_act(ctx, next->buf_out);
+                if (w1 && w1->data && out1) {
+                    if (cuda_ensure_q8_1(ctx, op->cols) != 0)
+                        BN_CUDA_EXEC_FAIL(
+                            "q5k adjacent pair q8_1 scratch alloc failed");
+                    BnCudaBlockQ8_1 *xq =
+                        (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                        quantize_q8_1_kernel, (op->cols + 31) / 32, 32,
+                        0, xq, in, op->cols);
+                    BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
+                        q5k_dot_matvec_pair_4warp_kernel,
+                        op->rows, 256, 0, out, out1,
+                        (const BnBlockQ5K *)w->data,
+                        (const BnBlockQ5K *)w1->data, xq,
+                        op->rows, op->cols, out_offset,
+                        (size_t)next->p[5]);
+                    i++;
                     break;
                 }
             }
