@@ -288,6 +288,8 @@ typedef struct {
     int exec_graph_ops;
     int exec_graph_static_params;
     uint64_t exec_graph_attention_key;
+    cudaGraphNode_t exec_graph_dep_override;
+    cudaGraphNode_t exec_graph_pending_join;
     int kv_f16;
     int separate_rope_norm;
     int has_moe_model;
@@ -658,14 +660,26 @@ static int cuda_dispatch_kernel(BnCudaCtx *ctx, int graph_exec,
     if (graph_building) {
         if (cuda_ensure_graph_nodes(ctx, ctx->exec_node_count + 1) != 0)
             return -1;
-        cudaGraphNode_t dep = NULL;
+        cudaGraphNode_t dep_storage[2];
         const cudaGraphNode_t *deps = NULL;
         size_t n_deps = 0;
-        if (ctx->exec_node_count > 0) {
-            dep = ctx->exec_nodes[ctx->exec_node_count - 1];
-            deps = &dep;
-            n_deps = 1;
+        int used_override = 0;
+        if (ctx->exec_graph_dep_override) {
+            dep_storage[n_deps++] = ctx->exec_graph_dep_override;
+            ctx->exec_graph_dep_override = NULL;
+            used_override = 1;
+        } else if (ctx->exec_node_count > 0) {
+            dep_storage[n_deps++] =
+                ctx->exec_nodes[ctx->exec_node_count - 1];
         }
+        if (!used_override && ctx->exec_graph_pending_join &&
+            (n_deps == 0 ||
+             dep_storage[0] != ctx->exec_graph_pending_join)) {
+            dep_storage[n_deps++] = ctx->exec_graph_pending_join;
+        }
+        if (!used_override && ctx->exec_graph_pending_join)
+            ctx->exec_graph_pending_join = NULL;
+        if (n_deps) deps = dep_storage;
         err = cudaGraphAddKernelNode(
             &ctx->exec_nodes[ctx->exec_node_count], ctx->exec_graph_def,
             deps, n_deps, &params);
@@ -31097,6 +31111,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     int prepared_kquant_input_cache_cols = 0;
     int prepared_kquant_input_cache_tokens = 0;
     int prepared_kquant_input_cache_mark_op = -1;
+    int prepared_q8_1_input_buf = -1;
+    int prepared_q8_1_input_cols = 0;
+    int prepared_q8_1_input_mark_op = -1;
+    cudaGraphNode_t prepared_q8_1_quant_node = NULL;
+    cudaGraphNode_t prepared_q8_1_projection_tail = NULL;
     const int enable_prepared_kquant_input_cache =
         bn_gpu_policy_prepared_kquant_input_cache_enabled(
             ctx->runtime_policy);
@@ -31124,6 +31143,29 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
      prepared_kquant_input_cache_buf == (buf_) && \
      prepared_kquant_input_cache_cols == (cols_) && \
      prepared_kquant_input_cache_tokens == (tokens_))
+/* Adjacent mixed-quant projections can share one immutable Q8_1 input. During
+ * graph construction, fork the second projection from that quantization node
+ * and join both projection tails at the following consumer. */
+#define BN_CUDA_PREPARED_Q8_1_MATCH(buf_, cols_) \
+    (prepared_q8_1_input_buf == (buf_) && \
+     prepared_q8_1_input_cols == (cols_) && \
+     prepared_q8_1_input_mark_op == i - 1)
+#define BN_CUDA_PREPARED_Q8_1_MARK(buf_, cols_) do { \
+        prepared_q8_1_input_buf = (buf_); \
+        prepared_q8_1_input_cols = (cols_); \
+        prepared_q8_1_input_mark_op = i; \
+        prepared_q8_1_projection_tail = NULL; \
+        if (graph_building && ctx->exec_node_count > 0) \
+            prepared_q8_1_quant_node = \
+                ctx->exec_nodes[ctx->exec_node_count - 1]; \
+    } while (0)
+#define BN_CUDA_PREPARED_Q8_1_FORK(reuse_) do { \
+        if ((reuse_) && graph_building && prepared_q8_1_quant_node && \
+            prepared_q8_1_projection_tail) { \
+            ctx->exec_graph_dep_override = prepared_q8_1_quant_node; \
+            ctx->exec_graph_pending_join = prepared_q8_1_projection_tail; \
+        } \
+    } while (0)
     unsigned char skip_ops[8192];
     if (n_ops > (int)sizeof(skip_ops)) {
         fprintf(stderr, "[bn:gpu:cuda] execute graph too large: %d ops\n",
@@ -31297,6 +31339,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 graph_building = 1;
                 ctx->exec_node_count = 0;
                 ctx->exec_node_cursor = 0;
+                ctx->exec_graph_dep_override = NULL;
+                ctx->exec_graph_pending_join = NULL;
             }
         } else {
             ctx->exec_node_cursor = 0;
@@ -32183,8 +32227,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("Q3_K MMVQ input allocation failed");
                 BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
-                    op->cols / 32, 32, 0, xq, in, op->cols);
+                int reuse_q8_1 = BN_CUDA_PREPARED_Q8_1_MATCH(
+                    op->buf_in, op->cols);
+                if (!reuse_q8_1) {
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                        quantize_q8_1_kernel, op->cols / 32, 32, 0,
+                        xq, in, op->cols);
+                    BN_CUDA_PREPARED_Q8_1_MARK(op->buf_in, op->cols);
+                }
+                BN_CUDA_PREPARED_Q8_1_FORK(reuse_q8_1);
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     q3k_dot_matvec_mmvq_kernel, op->rows, 128, 0,
                     out, w->data, xq, op->rows, op->cols, bias, out_offset);
@@ -32194,8 +32245,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("IQ4_NL MMVQ input allocation failed");
                 BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
-                    op->cols / 32, 32, 0, xq, in, op->cols);
+                int reuse_q8_1 = BN_CUDA_PREPARED_Q8_1_MATCH(
+                    op->buf_in, op->cols);
+                if (!reuse_q8_1) {
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                        quantize_q8_1_kernel, op->cols / 32, 32, 0,
+                        xq, in, op->cols);
+                    BN_CUDA_PREPARED_Q8_1_MARK(op->buf_in, op->cols);
+                }
+                BN_CUDA_PREPARED_Q8_1_FORK(reuse_q8_1);
                 BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                     iq4nl_dot_matvec_mmvq_kernel, op->rows, 128, 0,
                     out, w->data, xq, op->rows, op->cols, bias, out_offset);
@@ -32206,9 +32264,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("scaled-subblock MMVQ input allocation failed");
                 BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                    quantize_q8_1_kernel, op->cols / 32, 32, 0,
-                    xq, in, op->cols);
+                int reuse_q8_1 = BN_CUDA_PREPARED_Q8_1_MATCH(
+                    op->buf_in, op->cols);
+                if (!reuse_q8_1) {
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                        quantize_q8_1_kernel, op->cols / 32, 32, 0,
+                        xq, in, op->cols);
+                    BN_CUDA_PREPARED_Q8_1_MARK(op->buf_in, op->cols);
+                }
+                BN_CUDA_PREPARED_Q8_1_FORK(reuse_q8_1);
                 if (bn_backend_quant_supports_packed_codebook_matvec(
                         op->type)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
@@ -32251,9 +32315,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                         BN_CUDA_EXEC_FAIL("q6k mmvq q8_1 scratch alloc failed");
                     BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                        quantize_q8_1_kernel, (op->cols + 31) / 32, 32, 0,
-                        xq, in, op->cols);
+                    int reuse_q8_1 = BN_CUDA_PREPARED_Q8_1_MATCH(
+                        op->buf_in, op->cols);
+                    if (!reuse_q8_1) {
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                            quantize_q8_1_kernel,
+                            (op->cols + 31) / 32, 32, 0,
+                            xq, in, op->cols);
+                        BN_CUDA_PREPARED_Q8_1_MARK(op->buf_in, op->cols);
+                    }
+                    BN_CUDA_PREPARED_Q8_1_FORK(reuse_q8_1);
                     int q6_blocks_per_row = op->cols / BN_QK_K;
                     if (ctx->compute_capability == 1200 &&
                         q6_blocks_per_row > 20 && q6_blocks_per_row <= 40) {
@@ -32455,8 +32526,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q4k q8_1 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
-                    (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
+                int reuse_q8_1 = BN_CUDA_PREPARED_Q8_1_MATCH(
+                    op->buf_in, op->cols);
+                if (!reuse_q8_1) {
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                        quantize_q8_1_kernel,
+                        (op->cols + 31) / 32, 32, 0,
+                        xq, in, op->cols);
+                    BN_CUDA_PREPARED_Q8_1_MARK(op->buf_in, op->cols);
+                }
+                BN_CUDA_PREPARED_Q8_1_FORK(reuse_q8_1);
                 if (enable_asymmetric_kquant_4warp &&
                     bn_gpu_policy_cuda_asymmetric_kquant_4warp_shape_enabled(ctx->runtime_policy, op->rows,
                                                                op->cols)) {
@@ -32522,8 +32601,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q5k q8_1 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
-                    (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
+                int reuse_q8_1 = BN_CUDA_PREPARED_Q8_1_MATCH(
+                    op->buf_in, op->cols);
+                if (!reuse_q8_1) {
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
+                        quantize_q8_1_kernel,
+                        (op->cols + 31) / 32, 32, 0,
+                        xq, in, op->cols);
+                    BN_CUDA_PREPARED_Q8_1_MARK(op->buf_in, op->cols);
+                }
+                BN_CUDA_PREPARED_Q8_1_FORK(reuse_q8_1);
                 if (bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(ctx->runtime_policy, op->cols)) {
                     int fuse_resid_norm =
                         next &&
@@ -35332,6 +35419,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         default:
             BN_CUDA_EXEC_FAIL("unsupported op");
         }
+        if (graph_building && prepared_q8_1_input_mark_op == i &&
+            ctx->exec_node_count > 0)
+            prepared_q8_1_projection_tail =
+                ctx->exec_nodes[ctx->exec_node_count - 1];
 #undef BN_CUDA_EXEC_FAIL
         if (debug_nan) {
             switch (op->op_code) {
@@ -35678,6 +35769,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
 #undef BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE_BUF
 #undef BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE
 #undef BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK
+#undef BN_CUDA_PREPARED_Q8_1_FORK
+#undef BN_CUDA_PREPARED_Q8_1_MARK
+#undef BN_CUDA_PREPARED_Q8_1_MATCH
     return 0;
 }
 
