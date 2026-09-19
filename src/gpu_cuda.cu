@@ -1730,6 +1730,64 @@ static __global__ void q8_0_matvec_prepared_input_4warp_kernel(
     }
 }
 
+/* Join two projections which consume the same quantized activation.  Each
+ * row keeps the identical four-partition MMVID fold used by the standalone
+ * kernel; only the redundant quantization and launch are removed. */
+static __global__ void q8_0_matvec_prepared_input_pair_4warp_kernel(
+    float *out0, float *out1, const BnBlockQ8_0 *weight0,
+    const BnBlockQ8_0 *weight1, const BnCudaBlockQ8_1 *xq,
+    int rows0, int rows1, int cols, size_t out_offset0,
+    size_t out_offset1) {
+    __shared__ float partials[2][4][32];
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int row_local = warp >> 2;
+    int logical_warp = warp & 3;
+    int joined_row = blockIdx.x * 2 + row_local;
+    int total_rows = rows0 + rows1;
+    bool valid = joined_row < total_rows;
+    bool second = joined_row >= rows0;
+    int row = second ? joined_row - rows0 : joined_row;
+    int n_bpr = cols / 32;
+    float partial = 0.0f;
+    if (valid) {
+        const BnBlockQ8_0 *weight = second ? weight1 : weight0;
+        const BnBlockQ8_0 *row_blocks = weight + (size_t)row * n_bpr;
+        int logical_tid = logical_warp * 32 + lane;
+        for (int block = logical_tid / 4; block < n_bpr; block += 32) {
+            int dot = 0;
+#pragma unroll
+            for (int pair = 0; pair < 2; pair++) {
+                int weights, values;
+                int offset = (lane & 3) * 8 + pair * 4;
+                memcpy(&weights, row_blocks[block].qs + offset,
+                       sizeof(weights));
+                memcpy(&values, xq[block].qs + offset, sizeof(values));
+                dot = cuda_dp4a_i32(weights, values, dot);
+            }
+            float scale = cuda_fp16_to_fp32(row_blocks[block].d) *
+                          cuda_fp16_to_fp32(xq[block].d);
+            partial = fmaf(scale, (float)dot, partial);
+        }
+    }
+    partials[row_local][logical_warp][lane] = partial;
+    __syncthreads();
+    if (logical_warp == 0 && valid) {
+        float sum = 0.0f;
+#pragma unroll
+        for (int w = 0; w < 4; w++)
+            sum = __fadd_rn(sum, partials[row_local][w][lane]);
+        for (int offset = 16; offset; offset >>= 1)
+            sum = __fadd_rn(sum,
+                __shfl_xor_sync(0xffffffffu, sum, offset));
+        if (lane == 0) {
+            float *out = second ? out1 : out0;
+            size_t out_offset = second ? out_offset1 : out_offset0;
+            out[out_offset + (size_t)row] = sum;
+        }
+    }
+}
+
 static __device__ float cuda_dot_row_q8_0_prepared_input(
     const void *wdata, const BnCudaBlockQ8_1 *xq, int row, int cols) {
     const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)wdata;
@@ -32370,6 +32428,45 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ5K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
+            } else if (ctx->compute_capability == 1200 &&
+                       !reference_block_accumulation && next &&
+                       next->op_code == BN_GPU_CODE_MATVEC &&
+                       !(next->flags &
+                         BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) &&
+                       next->buf_in == op->buf_in &&
+                       next->cols == op->cols &&
+                       op->rows <= 8192 && next->rows <= 8192 &&
+                       op->p[5] == 0 && !bias && !direct_kv_f16 &&
+                       bn_backend_quant_supports_native_quant_prepared_input_matvec(
+                           op->type) &&
+                       bn_backend_quant_supports_native_quant_prepared_input_matvec(
+                           next->type) &&
+                       (op->cols & 31) == 0 &&
+                       cuda_find_fusable_bias(ops, n_ops, i + 1,
+                           next->buf_out, next->rows) < 0 &&
+                       next->buf_out != BN_GPU_VALUE_LOGITS &&
+                       (!ctx->kv_f16 ||
+                        (next->buf_out != BN_GPU_VALUE_KEY_CACHE &&
+                         next->buf_out != BN_GPU_VALUE_VALUE_CACHE))) {
+                BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
+                float *out1 = cuda_act(ctx, next->buf_out);
+                if (!w1 || !w1->data || !out1)
+                    BN_CUDA_EXEC_FAIL("paired q8_0 projection missing buffer");
+                if (cuda_ensure_q8_1(ctx, op->cols) != 0)
+                    BN_CUDA_EXEC_FAIL("paired q8_0 scratch alloc failed");
+                BnCudaBlockQ8_1 *xq =
+                    (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
+                    (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
+                int total_rows = op->rows + next->rows;
+                BN_CUDA_LAUNCH(ctx,
+                    q8_0_matvec_prepared_input_pair_4warp_kernel,
+                    (total_rows + 1) / 2, 256, 0,
+                    out, out1, (const BnBlockQ8_0 *)w->data,
+                    (const BnBlockQ8_0 *)w1->data, xq,
+                    op->rows, next->rows, op->cols, out_offset,
+                    (size_t)next->p[5]);
+                skip_ops[i + 1] = 1;
             } else if (((ctx->compute_capability == 1200 &&
                         ctx->execution_policy.allow_native_quant_prepared_input_default) ||
                         enable_native_quant_prepared_input_all ||
