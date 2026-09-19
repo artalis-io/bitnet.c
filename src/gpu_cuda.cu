@@ -15326,7 +15326,8 @@ static __global__ void ssm_delta_128_warp_kernel(
     float *state, float *out, const float *q, const float *k,
     const float *v, const float *alpha, const float *beta,
     int num_k_heads, float q_scale, size_t state_off,
-    int q_off, int k_off, int v_off) {
+    int q_off, int k_off, int v_off, const float *ab_src,
+    const float *dt_bias, const float *a_log, int beta_off) {
     const int hv_idx = blockIdx.x;
     const int col = blockIdx.y * blockDim.y + threadIdx.y;
     const int lane = threadIdx.x;
@@ -15334,8 +15335,11 @@ static __global__ void ssm_delta_128_warp_kernel(
 
     const int hk_idx = hv_idx % num_k_heads;
     const size_t state_base = state_off + (size_t)hv_idx * 128u * 128u;
-    const float decay = alpha[hv_idx];
-    const float b = beta[hv_idx];
+    const float decay = ab_src
+        ? cuda_ssm_decay(ab_src[hv_idx] + dt_bias[hv_idx], a_log[hv_idx])
+        : alpha[hv_idx];
+    const float b = ab_src
+        ? cuda_sigmoid(ab_src[beta_off + hv_idx]) : beta[hv_idx];
     const float *qh = q + (size_t)q_off + (size_t)hk_idx * 128u;
     const float *kh = k + (size_t)k_off + (size_t)hk_idx * 128u;
     const float *vh = v + (size_t)v_off + (size_t)hv_idx * 128u;
@@ -30265,7 +30269,9 @@ static int cuda_prefill_ssm_layer(
                                             ssm_stream>>>(
                     cuda_act(ctx, BN_GPU_VALUE_SSM_STATE), out_t, qkv_t,
                     qkv_t, qkv_t, alpha_t, beta_t, num_k_heads, q_scale,
-                    state_off, 0, key_dim, 2 * key_dim);
+                    state_off, 0, key_dim, 2 * key_dim,
+                    (const float *)NULL, (const float *)NULL,
+                    (const float *)NULL, 0);
             } else {
                 ssm_delta_kernel<<<num_v_heads, threads,
                                    (size_t)head_v_dim * sizeof(float),
@@ -35238,6 +35244,33 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (!dt || !dt->data || !a || !a->data ||
                 !src || !alpha || !beta || n <= 0 || beta_off < n)
                 BN_CUDA_EXEC_FAIL("ssm alpha beta split invalid args");
+            if (next && next->op_code == BN_GPU_CODE_SSM_DELTA &&
+                (int)next->p[0] == 128 && (int)next->p[1] == 128 &&
+                next->rows == n) {
+                float *state = cuda_act(ctx, BN_GPU_VALUE_SSM_STATE);
+                float *delta_out = cuda_act(ctx, next->buf_out);
+                const float *q = cuda_act(ctx, next->buf_in);
+                const float *k = cuda_act(ctx, next->buf_aux);
+                int v_buf = next->p[7] ? next->buf_in : BN_GPU_VALUE_SSM_V;
+                const float *v = cuda_act(ctx, v_buf);
+                int num_k_heads = (int)next->p[2];
+                float q_scale = cuda_u32_to_f32(next->p[3]);
+                size_t state_off = (size_t)next->p[4] / sizeof(float);
+                int q_off = (int)next->p[6];
+                int k_off = (int)next->p[7];
+                int v_off = k_off ? 2 * num_k_heads * 128 : 0;
+                if (!state || !delta_out || !q || !k || !v ||
+                    num_k_heads <= 0)
+                    BN_CUDA_EXEC_FAIL("fused ssm alpha beta delta invalid args");
+                BN_CUDA_LAUNCH(ctx, ssm_delta_128_warp_kernel,
+                    dim3(n, 32, 1), dim3(32, 4, 1), 0,
+                    state, delta_out, q, k, v, alpha, beta, num_k_heads,
+                    q_scale, state_off, q_off, k_off, v_off, src,
+                    (const float *)dt->data, (const float *)a->data,
+                    beta_off);
+                i++;
+                break;
+            }
             BN_CUDA_LAUNCH(ctx, ssm_alpha_beta_split_kernel, 1, threads, 0,
                 src, alpha, beta, (const float *)dt->data,
                 (const float *)a->data, n, beta_off);
@@ -35269,7 +35302,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH(ctx, ssm_delta_128_warp_kernel,
                     dim3(num_v_heads, 32, 1), dim3(32, 4, 1), 0,
                     state, out, q, k, v, alpha, beta, num_k_heads, q_scale,
-                    state_off, q_off, k_off, v_off);
+                    state_off, q_off, k_off, v_off,
+                    (const float *)NULL, (const float *)NULL,
+                    (const float *)NULL, 0);
             } else {
                 BN_CUDA_LAUNCH(ctx, ssm_delta_kernel, num_v_heads, threads,
                     (size_t)head_v_dim * sizeof(float), state, out, q, k, v,
