@@ -18887,33 +18887,42 @@ static __global__ void q8_0_matmul_mma_128x16_kernel(
         float *out, const BnBlockQ8_0 *weights,
         const BnCudaBlockQ8_1 *input, int rows, int cols,
         int n_tokens, size_t out_offset) {
-#if __CUDA_ARCH__ >= 720
-    __shared__ __align__(16) int8_t a_tile[128][32];
-    __shared__ __align__(16) int8_t b_tile[16][32];
-    __shared__ __align__(16) int32_t c_tile[128][16];
+#if __CUDA_ARCH__ >= 800
+    enum { stride = 48 };
+    __shared__ __align__(16) int8_t a_tile[128][stride];
+    __shared__ __align__(16) int8_t b_tile[16][stride];
     __shared__ float a_scale[128];
     __shared__ float b_scale[16];
-    float sums[8] = {0.0f};
+    float sums[2][4] = {{0.0f}};
     int tid = threadIdx.x;
+    int lane = tid & 31;
     int warp = tid >> 5;
     int row0 = blockIdx.x * 128;
     int token0 = blockIdx.y * 16;
     int n_blocks = cols / 32;
 
     for (int kb = 0; kb < n_blocks; kb++) {
-        for (int i = tid; i < 128 * 32; i += 256) {
-            int r = i >> 5;
-            int q = i & 31;
+        for (int i = tid; i < 128 * 2; i += 256) {
+            int r = i >> 1;
+            int q = (i & 1) * 16;
             int row = row0 + r;
-            a_tile[r][q] = row < rows
-                ? weights[(size_t)row * n_blocks + kb].qs[q] : 0;
+            uint4 value = make_uint4(0, 0, 0, 0);
+            if (row < rows)
+                memcpy(&value,
+                       weights[(size_t)row * n_blocks + kb].qs + q,
+                       sizeof(value));
+            memcpy(a_tile[r] + q, &value, sizeof(value));
         }
-        for (int i = tid; i < 16 * 32; i += 256) {
-            int t = i >> 5;
-            int q = i & 31;
+        for (int i = tid; i < 16 * 2; i += 256) {
+            int t = i >> 1;
+            int q = (i & 1) * 16;
             int token = token0 + t;
-            b_tile[t][q] = token < n_tokens
-                ? input[(size_t)token * n_blocks + kb].qs[q] : 0;
+            uint4 value = make_uint4(0, 0, 0, 0);
+            if (token < n_tokens)
+                memcpy(&value,
+                       input[(size_t)token * n_blocks + kb].qs + q,
+                       sizeof(value));
+            memcpy(b_tile[t] + q, &value, sizeof(value));
         }
         if (tid < 128) {
             int row = row0 + tid;
@@ -18929,43 +18938,61 @@ static __global__ void q8_0_matmul_mma_128x16_kernel(
         }
         __syncthreads();
 
-        nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16,
-            signed char, nvcuda::wmma::row_major> af;
-        nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16,
-            signed char, nvcuda::wmma::col_major> bf;
-        nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16,
-            int> cf;
-        nvcuda::wmma::fill_fragment(cf, 0);
-        nvcuda::wmma::load_matrix_sync(af, &a_tile[warp * 16][0], 32);
-        nvcuda::wmma::load_matrix_sync(bf, &b_tile[0][0], 32);
-        nvcuda::wmma::mma_sync(cf, af, bf, cf);
-        nvcuda::wmma::load_matrix_sync(af, &a_tile[warp * 16][16], 32);
-        nvcuda::wmma::load_matrix_sync(bf, &b_tile[0][16], 32);
-        nvcuda::wmma::mma_sync(cf, af, bf, cf);
-        nvcuda::wmma::store_matrix_sync(&c_tile[warp * 16][0], cf, 16,
-                                         nvcuda::wmma::mem_row_major);
-        __syncthreads();
+        int a[4];
+        {
+            const int *base = (const int *)&a_tile[warp * 16][0];
+            const int *src = base + (lane % 16) * (stride / 4) +
+                             (lane / 16) * 4;
+            unsigned int shared_src =
+                (unsigned int)__cvta_generic_to_shared(src);
+            asm volatile(
+                "ldmatrix.sync.aligned.m8n8.x4.b16 "
+                "{%0, %1, %2, %3}, [%4];"
+                : "=r"(a[0]), "=r"(a[1]), "=r"(a[2]), "=r"(a[3])
+                : "r"(shared_src));
+        }
 
 #pragma unroll
-        for (int j = 0; j < 8; j++) {
-            int i = tid + j * 256;
-            int r = i >> 4;
-            int t = i & 15;
-            sums[j] = fmaf(a_scale[r] * b_scale[t],
-                           (float)c_tile[r][t], sums[j]);
+        for (int panel = 0; panel < 2; panel++) {
+            int bv[2], c[4] = {0, 0, 0, 0};
+            const int *base = (const int *)&b_tile[panel * 8][0];
+            const int *src = base + (lane % 8) * (stride / 4) +
+                             ((lane / 8) * 4) % 8;
+            unsigned int shared_src =
+                (unsigned int)__cvta_generic_to_shared(src);
+            asm volatile(
+                "ldmatrix.sync.aligned.m8n8.x2.b16 {%0, %1}, [%2];"
+                : "=r"(bv[0]), "=r"(bv[1]) : "r"(shared_src));
+            asm volatile(
+                "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
+                "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, "
+                "{%0, %1, %2, %3};"
+                : "+r"(c[0]), "+r"(c[1]), "+r"(c[2]), "+r"(c[3])
+                : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]),
+                  "r"(bv[0]), "r"(bv[1]));
+#pragma unroll
+            for (int l = 0; l < 4; l++) {
+                int r = warp * 16 + (l / 2) * 8 + lane / 4;
+                int t = panel * 8 + (lane % 4) * 2 + (l & 1);
+                sums[panel][l] = fmaf(a_scale[r] * b_scale[t],
+                                      (float)c[l], sums[panel][l]);
+            }
         }
         __syncthreads();
     }
 
 #pragma unroll
-    for (int j = 0; j < 8; j++) {
-        int i = tid + j * 256;
-        int r = i >> 4;
-        int t = i & 15;
-        int row = row0 + r;
-        int token = token0 + t;
-        if (row < rows && token < n_tokens)
-            out[out_offset + (size_t)token * rows + row] = sums[j];
+    for (int panel = 0; panel < 2; panel++) {
+#pragma unroll
+        for (int l = 0; l < 4; l++) {
+            int r = warp * 16 + (l / 2) * 8 + lane / 4;
+            int t = panel * 8 + (lane % 4) * 2 + (l & 1);
+            int row = row0 + r;
+            int token = token0 + t;
+            if (row < rows && token < n_tokens)
+                out[out_offset + (size_t)token * rows + row] =
+                    sums[panel][l];
+        }
     }
 #else
     (void)out; (void)weights; (void)input; (void)rows; (void)cols;
