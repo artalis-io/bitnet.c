@@ -4007,45 +4007,44 @@ static __global__ void q5k_dot_matvec_1warp_4partial_residual_kernel(
         x[row] = residual[row] + sum;
 }
 
-static __global__ void q5k_dot_matvec_pair_4warp_kernel(
+static __global__ void q5k_dot_matvec_pair_1warp_4partial_kernel(
         float *out0, float *out1, const BnBlockQ5K *blocks0,
         const BnBlockQ5K *blocks1, const BnCudaBlockQ8_1 *xq,
         int rows, int cols, size_t out0_offset, size_t out1_offset,
         int fuse_silu, uint32_t silu_flags) {
-    __shared__ float partial[2][3][32];
-    __shared__ float projection_sum[2];
+    __shared__ float projection_sum[4][2];
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
-    int projection = warp >> 2;
-    int logical_warp = warp & 3;
-    int row = blockIdx.x;
-    if (row >= rows || warp >= 8) return;
+    int projection = warp & 1;
+    int row_in_block = warp >> 1;
+    int row = blockIdx.x * 4 + row_in_block;
+    if (row >= rows) return;
 
     int n_bpr = cols / BN_QK_K;
     int kbx = lane / 16;
     int iqs = 2 * (lane & 15);
-    float sum = 0.0f;
     const BnBlockQ5K *blocks = projection ? blocks1 : blocks0;
     const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
-    for (int b = logical_warp * 2 + kbx; b < n_bpr; b += 8)
-        sum += cuda_vec_dot_q5k_q8_1(&row_blocks[b],
-                                     xq + (size_t)b * 8, iqs);
-
-    if (logical_warp > 0)
-        partial[projection][logical_warp - 1][lane] = sum;
-    __syncthreads();
-    if (logical_warp == 0) {
+    float partial[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 #pragma unroll
-        for (int w = 0; w < 3; w++) sum += partial[projection][w][lane];
-        for (int offset = 16; offset > 0; offset >>= 1)
-            sum += __shfl_xor_sync(0xffffffffu, sum, offset);
-        if (lane == 0) projection_sum[projection] = sum;
+    for (int logical_warp = 0; logical_warp < 4; logical_warp++) {
+        for (int b = logical_warp * 2 + kbx; b < n_bpr; b += 8)
+            partial[logical_warp] += cuda_vec_dot_q5k_q8_1(
+                row_blocks + b, xq + (size_t)b * 8, iqs);
     }
+    float sum = partial[0];
+#pragma unroll
+    for (int logical_warp = 1; logical_warp < 4; logical_warp++)
+        sum += partial[logical_warp];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_xor_sync(0xffffffffu, sum, offset);
+    if (lane == 0)
+        projection_sum[row_in_block][projection] = sum;
     __syncthreads();
-    if (lane == 0 && logical_warp == 0) {
+    if (lane == 0) {
         if (fuse_silu) {
             if (projection == 0) {
-                float gate = projection_sum[0];
+                float gate = projection_sum[row_in_block][0];
                 float silu =
                     (silu_flags &
                      BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) != 0
@@ -4054,13 +4053,15 @@ static __global__ void q5k_dot_matvec_pair_4warp_kernel(
                               gate,
                               (silu_flags &
                                BN_GPU_OP_FLAG_REFERENCE_SILU) != 0);
-                out0[out0_offset + row] =
-                    __fmul_rn(silu, projection_sum[1]);
+                out0[out0_offset + row] = __fmul_rn(
+                    silu, projection_sum[row_in_block][1]);
             }
         } else if (projection) {
-            out1[out1_offset + row] = projection_sum[1];
+            out1[out1_offset + row] =
+                projection_sum[row_in_block][1];
         } else {
-            out0[out0_offset + row] = projection_sum[0];
+            out0[out0_offset + row] =
+                projection_sum[row_in_block][0];
         }
     }
 }
@@ -31457,8 +31458,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         quantize_q8_1_kernel, (op->cols + 31) / 32, 32,
                         0, xq, in, op->cols);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
-                        q5k_dot_matvec_pair_4warp_kernel,
-                        op->rows, 256, 0, out, out1,
+                        q5k_dot_matvec_pair_1warp_4partial_kernel,
+                        (op->rows + 3) / 4, 256, 0, out, out1,
                         (const BnBlockQ5K *)w->data,
                         (const BnBlockQ5K *)w1->data, xq,
                         op->rows, op->cols, out_offset,
