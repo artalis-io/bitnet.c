@@ -20982,7 +20982,7 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     dim3 mmq_grid((rows + 63) / 64,
                                   (n_tokens + 31) / 32, 1);
                     kquant_mmq_packed_kernel<64, 32, 2, true, true, true,
-                                             true>
+                                             false>
                         <<<mmq_grid, 256, 0, stream>>>(
                             out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
                             (const BnCudaBlockQ8_1 *)xq, rows, cols,
