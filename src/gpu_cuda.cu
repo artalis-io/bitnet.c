@@ -21005,8 +21005,16 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                     (bn_quant_format_is_q5k(type) && n_tokens >= 16)) &&
                    w->mmq_data) {
             if (n_tokens >= 64) {
-                if (bn_quant_format_is_q5k(type) ||
-                    bn_quant_format_is_q4k(type)) {
+                if (bn_quant_format_is_q5k(type)) {
+                    dim3 mmq_grid((rows + 127) / 128,
+                                  (n_tokens + 31) / 32, 1);
+                    kquant_mmq_packed_kernel<128, 32, 2, true, false, true,
+                                             true>
+                        <<<mmq_grid, 512, 0, stream>>>(
+                            out, (const BnCudaKQuantMmqBlock *)w->mmq_data,
+                            (const BnCudaBlockQ8_1 *)xq, rows, cols,
+                            n_tokens, 0, jwidth, (int)grid);
+                } else if (bn_quant_format_is_q4k(type)) {
                     /* Preserve reference accumulation for interior prompt
                      * rows while reusing weights across token phases. */
                     dim3 mmq_grid((rows + 127) / 128,
