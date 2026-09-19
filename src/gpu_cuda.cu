@@ -2437,21 +2437,26 @@ static __global__ void iq4xs_mmq_ordered_t8_kernel(
  * When all warps share a Stream-K tile, stage each weight group once for their
  * integer MMA dots; scale application retains GGML's group and reduction order. */
 template <bool Packed, bool ShareA, bool FilterTiles = false,
-          bool IQ4NL = false>
+          bool IQ4NL = false, int RowTiles = 1>
 /* The unshared split tiles need more registers to avoid local-memory spills.
  * Shared tiles gain more from four resident CTAs than from removing spills. */
-static __global__ __launch_bounds__(128, ShareA ? 4 : 2)
+static __global__ __launch_bounds__(128 * RowTiles,
+                                    ShareA ? 4 / RowTiles
+                                           : (RowTiles == 1 ? 2 : 1))
 void iq4_codebook_mmq_mma_ordered_t8_kernel(
         float *out, const void *weights,
         const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
         int n_tokens, int width, int grid) {
 #if __CUDA_ARCH__ >= 800
     enum { k_tile_groups = 8, k_tile_stride = k_tile_groups * 32 + 16 };
-    __shared__ int8_t tile_a[ShareA ? 1 : 4][16][k_tile_stride];
+    __shared__ int8_t tile_a[RowTiles][ShareA ? 1 : 4][16][k_tile_stride];
     __shared__ int8_t tile_b[4][8][k_tile_stride];
-    const int warp = threadIdx.x >> 5;
+    const int warp_global = threadIdx.x >> 5;
+    const int row_tile = warp_global >> 2;
+    const int warp = warp_global & 3;
+    const int local_thread = threadIdx.x & 127;
     const int lane = threadIdx.x & 31;
-    const int row0 = blockIdx.x * 16;
+    const int row0 = (blockIdx.x * RowTiles + row_tile) * 16;
     const int token0 = blockIdx.y * 32 + warp * 8;
     if (FilterTiles) {
         /* All four warps must use the same reference K partition before
@@ -2509,7 +2514,7 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
                 }
             }
 #pragma unroll
-                for (int i = ShareA ? threadIdx.x : lane;
+                for (int i = ShareA ? local_thread : lane;
                      i < 16 * k_tile_groups * 32;
                      i += ShareA ? 128 : 32) {
                     int row_in_tile = i / (k_tile_groups * 32);
@@ -2539,11 +2544,12 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
                             qv = bn_kvalues_iq4nl[q];
                         }
                     }
-                    tile_a[ShareA ? 0 : warp][row_in_tile]
+                    tile_a[row_tile][ShareA ? 0 : warp][row_in_tile]
                           [group * 32 + k] = qv;
                 }
 #pragma unroll
-                for (int i = lane; i < 8 * k_tile_groups * 32; i += 32) {
+                for (int i = lane; row_tile == 0 &&
+                                   i < 8 * k_tile_groups * 32; i += 32) {
                     int token_in_tile = i / (k_tile_groups * 32);
                     int group = (i / 32) & (k_tile_groups - 1);
                     int token = token0 + token_in_tile;
@@ -2563,7 +2569,8 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
             for (int group = 0; group < k_tile_groups; group++) {
                 int a[4], bv[2], dots[4] = {0, 0, 0, 0};
                 const int *asrc =
-                    (const int *)&tile_a[ShareA ? 0 : warp][0][group * 32] +
+                    (const int *)&tile_a[row_tile][ShareA ? 0 : warp][0]
+                                                 [group * 32] +
                     (lane % 16) * (k_tile_stride / 4) +
                     (lane / 16) * 4;
                 const int *bsrc =
@@ -20930,8 +20937,9 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
                 /* A multiple-of-32 width keeps all four token warps in the
                  * same Stream-K partition, so their A tile may be shared. */
                 if (w->mmq_data && jwidth >= 32 && jwidth % 32 == 0)
-                    iq4_codebook_mmq_mma_ordered_t8_kernel<true, true><<<
-                        dim3((rows + 15) / 16, (n_tokens + 31) / 32), 128,
+                    iq4_codebook_mmq_mma_ordered_t8_kernel<true, true,
+                                                            false, false, 4><<<
+                        dim3((rows + 63) / 64, (n_tokens + 31) / 32), 512,
                         0, stream>>>(
                         out, w->mmq_data,
                         (const BnCudaBlockQ8MmqF32 *)xq,
