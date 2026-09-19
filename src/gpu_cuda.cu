@@ -1159,11 +1159,11 @@ static __device__ void cuda_kquant_group_scale_min(const uint8_t *packed,
 static __global__ void pack_q4k_mmq_kernel(BnCudaKQuantMmqBlock *out,
                                             const BnBlockQ4K *blocks,
                                             size_t n_blocks) {
-    size_t block = (size_t)blockIdx.x * 4u + threadIdx.x / 64;
-    int lane = threadIdx.x & 63;
+    size_t block = (size_t)blockIdx.x * 8u + threadIdx.x / 32;
+    int lane = threadIdx.x & 31;
     if (block >= n_blocks) return;
     const BnBlockQ4K *src = blocks + block;
-    for (int i = lane; i < BN_QK_K; i += 64) {
+    for (int i = lane; i < BN_QK_K; i += 32) {
         int pair = i / 64;
         uint8_t packed = src->qs[pair * 32 + (i & 31)];
         out[block].qs[i] = (int8_t)((i & 32) ? packed >> 4 : packed & 15);
@@ -1183,11 +1183,11 @@ static __global__ void pack_q4k_mmq_kernel(BnCudaKQuantMmqBlock *out,
 static __global__ void pack_q5k_mmq_kernel(BnCudaKQuantMmqBlock *out,
                                             const BnBlockQ5K *blocks,
                                             size_t n_blocks) {
-    size_t block = (size_t)blockIdx.x * 4u + threadIdx.x / 64;
-    int lane = threadIdx.x & 63;
+    size_t block = (size_t)blockIdx.x * 8u + threadIdx.x / 32;
+    int lane = threadIdx.x & 31;
     if (block >= n_blocks) return;
     const BnBlockQ5K *src = blocks + block;
-    for (int i = lane; i < BN_QK_K; i += 64) {
+    for (int i = lane; i < BN_QK_K; i += 32) {
         int pair = i / 64;
         int half = i & 31;
         uint8_t packed = src->qs[pair * 32 + half];
@@ -20014,11 +20014,11 @@ static void cuda_buffer_create_kquant_mmq(BnCudaCtx *ctx, BnCudaBuffer *buf) {
         return;
     }
     if (buf->type == BN_GGUF_TENSOR_Q4_K)
-        pack_q4k_mmq_kernel<<<(n_blocks + 3) / 4, BN_QK_K>>>(
+        pack_q4k_mmq_kernel<<<(n_blocks + 7) / 8, BN_QK_K>>>(
             (BnCudaKQuantMmqBlock *)buf->mmq_data,
             (const BnBlockQ4K *)buf->data, n_blocks);
     else if (buf->type == BN_GGUF_TENSOR_Q5_K)
-        pack_q5k_mmq_kernel<<<(n_blocks + 3) / 4, BN_QK_K>>>(
+        pack_q5k_mmq_kernel<<<(n_blocks + 7) / 8, BN_QK_K>>>(
             (BnCudaKQuantMmqBlock *)buf->mmq_data,
             (const BnBlockQ5K *)buf->data, n_blocks);
     else if (bn_backend_quant_supports_packed_codebook_matvec(buf->type))
@@ -20593,11 +20593,11 @@ static int cuda_kquant_batch_matmul(BnCudaCtx *ctx, float *out,
             cudaMallocAsync(&scratch.data, bytes, stream) == cudaSuccess) {
             size_t blocks = (size_t)rows * (size_t)cols / BN_QK_K;
             if (bn_quant_format_is_q4k(type))
-                pack_q4k_mmq_kernel<<<(blocks + 3) / 4, BN_QK_K, 0, stream>>>(
+                pack_q4k_mmq_kernel<<<(blocks + 7) / 8, BN_QK_K, 0, stream>>>(
                     (BnCudaKQuantMmqBlock *)scratch.data,
                     (const BnBlockQ4K *)w->data, blocks);
             else
-                pack_q5k_mmq_kernel<<<(blocks + 3) / 4, BN_QK_K, 0, stream>>>(
+                pack_q5k_mmq_kernel<<<(blocks + 7) / 8, BN_QK_K, 0, stream>>>(
                     (BnCudaKQuantMmqBlock *)scratch.data,
                     (const BnBlockQ5K *)w->data, blocks);
             if (cudaGetLastError() != cudaSuccess) return -1;
