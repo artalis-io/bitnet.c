@@ -201,4 +201,69 @@ static __global__ void iq4xs_dot_matvec_compact_perm_pair_kernel(float *out,
     }
 }
 
+static __global__ void iq4xs_dot_matvec_compact_perm_quad_kernel(float *out,
+        const BnBlockIQ4XS *weights, const BnCudaBlockQ8_1 *input,
+        int rows, int cols, const float *bias, size_t out_offset) {
+    __shared__ float partial[4][3][32];
+    int tid = threadIdx.x, lane = tid & 31, warp = tid / 32;
+    int row0 = blockIdx.x * 4, token = blockIdx.y;
+    int blocks = cols / 256, group = tid & 7;
+    float sums[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (int b = tid / 8; b < blocks; b += blockDim.x / 8) {
+        const BnCudaBlockQ8_1 *x =
+            input + (size_t)token * (cols / 32) + b * 8 + group;
+        const BnBlockIQ4XS *ws[4];
+#pragma unroll
+        for (int r = 0; r < 4; r++) {
+            int row = row0 + r;
+            ws[r] = weights + (size_t)(row < rows ? row : row0) * blocks + b;
+        }
+        int dots[4] = {0, 0, 0, 0};
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            uint32_t u0, u1;
+            memcpy(&u0, x->qs + j * 4, sizeof(u0));
+            memcpy(&u1, x->qs + 16 + j * 4, sizeof(u1));
+#pragma unroll
+            for (int r = 0; r < 4; r++) {
+                uint32_t codes;
+                memcpy(&codes, ws[r]->qs + group * 16 + j * 4,
+                       sizeof(codes));
+                int2 q = iq4xs_expand_codes(codes);
+                dots[r] = cuda_dp4a_i32(q.x, (int)u0, dots[r]);
+                dots[r] = cuda_dp4a_i32(q.y, (int)u1, dots[r]);
+            }
+        }
+        float xd = cuda_fp16_to_fp32(x->d);
+#pragma unroll
+        for (int r = 0; r < 4; r++) {
+            int scale =
+                ((ws[r]->scales_l[group / 2] >> (4 * (group & 1))) & 15) |
+                (((ws[r]->scales_h >> (2 * group)) & 3) << 4);
+            float d = cuda_fp16_to_fp32(ws[r]->d) * xd;
+            sums[r] = fmaf(d, (float)(dots[r] * (scale - 32)), sums[r]);
+        }
+    }
+    if (warp) {
+#pragma unroll
+        for (int r = 0; r < 4; r++)
+            partial[r][warp - 1][lane] = sums[r];
+    }
+    __syncthreads();
+    if (!warp) {
+#pragma unroll
+        for (int r = 0; r < 4; r++) {
+            for (int i = 0; i < blockDim.x / 32 - 1; i++)
+                sums[r] += partial[r][i][lane];
+            for (int i = 16; i > 0; i /= 2)
+                sums[r] += __shfl_xor_sync(0xffffffffu, sums[r], i);
+            int row = row0 + r;
+            if (!lane && row < rows) {
+                if (bias) sums[r] += bias[row];
+                out[out_offset + (size_t)token * rows + row] = sums[r];
+            }
+        }
+    }
+}
+
 #endif
