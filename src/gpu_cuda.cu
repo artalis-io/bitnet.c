@@ -2388,8 +2388,9 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
         const BnCudaBlockQ8MmqF32 *input, int rows, int cols,
         int n_tokens, int width, int grid) {
 #if __CUDA_ARCH__ >= 800
-    __shared__ int8_t tile_a[ShareA ? 1 : 4][16][32];
-    __shared__ int8_t tile_b[4][8][32];
+    enum { k_tile_groups = 8, k_tile_stride = k_tile_groups * 32 + 16 };
+    __shared__ int8_t tile_a[ShareA ? 1 : 4][16][k_tile_stride];
+    __shared__ int8_t tile_b[4][8][k_tile_stride];
     const int warp = threadIdx.x >> 5;
     const int lane = threadIdx.x & 31;
     const int row0 = blockIdx.x * 16;
@@ -2450,11 +2451,12 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
                 }
             }
 #pragma unroll
-            for (int group = 0; group < 8; group++) {
-#pragma unroll
                 for (int i = ShareA ? threadIdx.x : lane;
-                     i < 16 * 32; i += ShareA ? 128 : 32) {
-                    int row = row0 + i / 32;
+                     i < 16 * k_tile_groups * 32;
+                     i += ShareA ? 128 : 32) {
+                    int row_in_tile = i / (k_tile_groups * 32);
+                    int group = (i / 32) & (k_tile_groups - 1);
+                    int row = row0 + row_in_tile;
                     int k = i & 31;
                     int8_t qv = 0;
                     if (row < rows) {
@@ -2479,11 +2481,14 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
                             qv = bn_kvalues_iq4nl[q];
                         }
                     }
-                    tile_a[ShareA ? 0 : warp][i / 32][k] = qv;
+                    tile_a[ShareA ? 0 : warp][row_in_tile]
+                          [group * 32 + k] = qv;
                 }
 #pragma unroll
-                for (int i = lane; i < 8 * 32; i += 32) {
-                    int token = token0 + i / 32;
+                for (int i = lane; i < 8 * k_tile_groups * 32; i += 32) {
+                    int token_in_tile = i / (k_tile_groups * 32);
+                    int group = (i / 32) & (k_tile_groups - 1);
+                    int token = token0 + token_in_tile;
                     int k = i & 31;
                     int8_t qv = 0;
                     if (token < n_tokens) {
@@ -2491,16 +2496,22 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
                             input + (size_t)token * groups + b * 8 + group;
                         qv = x->qs[k];
                     }
-                    tile_b[warp][i / 32][k] = qv;
+                    tile_b[warp][token_in_tile][group * 32 + k] = qv;
                 }
                 if (ShareA) __syncthreads();
                 else __syncwarp();
 
+#pragma unroll
+            for (int group = 0; group < k_tile_groups; group++) {
                 int a[4], bv[2], dots[4] = {0, 0, 0, 0};
-                const int *asrc = (const int *)tile_a[ShareA ? 0 : warp] +
-                    (lane % 16) * 8 + (lane / 16) * 4;
-                const int *bsrc = (const int *)tile_b[warp] +
-                    (lane % 8) * 8 + ((lane / 8) * 4) % 8;
+                const int *asrc =
+                    (const int *)&tile_a[ShareA ? 0 : warp][0][group * 32] +
+                    (lane % 16) * (k_tile_stride / 4) +
+                    (lane / 16) * 4;
+                const int *bsrc =
+                    (const int *)&tile_b[warp][0][group * 32] +
+                    (lane % 8) * (k_tile_stride / 4) +
+                    ((lane / 8) * 4) % 8;
                 unsigned ash = (unsigned)__cvta_generic_to_shared(asrc);
                 unsigned bsh = (unsigned)__cvta_generic_to_shared(bsrc);
                 asm volatile(
@@ -2558,9 +2569,9 @@ void iq4_codebook_mmq_mma_ordered_t8_kernel(
                                       dx[token_pair], acc[l]);
                     }
                 }
-                if (ShareA) __syncthreads();
-                else __syncwarp();
             }
+            if (ShareA) __syncthreads();
+            else __syncwarp();
         }
 #pragma unroll
         for (int l = 0; l < 4; l++) {
