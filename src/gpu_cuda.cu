@@ -799,19 +799,19 @@ static int cuda_use_moe_route_batch(const BnCudaCtx *ctx) {
     return ctx && ctx->moe_route_batch_enabled;
 }
 
-/* The half-warp Q8 routed kernels change the reference reduction order.
- * Blackwell uses the existing full-warp prepared kernels for both batch
- * entry points, matching MMVID gate/up and weighted down projections. */
+/* Batched Q8 routed projections use two independent half-warps.  Each
+ * half-warp completes the same ordered block reduction as the full-warp
+ * kernel, and Blackwell benefits from computing two rows per warp. */
 static int cuda_use_moe_gateup_block_2row(const BnCudaCtx *ctx,
                                          int hidden_dim) {
-    return ctx && ctx->compute_capability != 1200 &&
+    return ctx &&
            bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(
                ctx->runtime_policy, hidden_dim);
 }
 
 static int cuda_use_moe_down_block_2row(const BnCudaCtx *ctx,
                                        int hidden_dim) {
-    return ctx && ctx->compute_capability != 1200 &&
+    return ctx &&
            bn_gpu_policy_cuda_moe_down_block_2row_enabled(
                ctx->runtime_policy, hidden_dim);
 }
