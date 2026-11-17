@@ -42,4 +42,29 @@ void bn_transformer_dilated_conv_silu(float *out, const float *current,
 void bn_transformer_scaled_branch_add(float *x, const float *value,
     float scale, const float *branch, int size);
 
+/* mHC coefficients after projection and global RMS normalization. mixes/base
+ * contain [pre(H),post(H),comb(H*H)] and scale contains three F32 values.
+ * comb is indexed [source_stream][destination_stream]. H is 1..16, iterations
+ * 1..128, pre_eps/post_mult finite >=0 and sinkhorn_eps finite >0. All buffers
+ * must be disjoint. Input/metadata or normalization failure leaves outputs
+ * unchanged. No model, projection, allocation or BF16 rounding is owned here. */
+typedef struct {
+    float *pre, *post, *comb;
+    const float *mixes, *scale, *base;
+    int streams, iterations;
+    float pre_eps, sinkhorn_eps, post_mult;
+} BnMHCCoeffCtx;
+
+int bn_transformer_mhc_coefficients(const BnMHCCoeffCtx *ctx);
+
+/* F32 mHC collapse and post-layer mixing. residual/out (post-layer) are [H,D],
+ * branch/collapsed are [D]. Output must not overlap any input. Finite inputs
+ * and metadata are checked before writes; arithmetic itself follows F32.
+ * D=0 permits NULL buffers. H must remain 1..16. */
+int bn_transformer_mhc_mix_input(float *out, const float *residual,
+    const float *pre, int streams, int dim);
+int bn_transformer_mhc_mix_output(float *out, const float *residual,
+    const float *branch, const float *post, const float *comb,
+    int streams, int dim);
+
 #endif // BN_TRANSFORMER_MATH_INTERNAL_H

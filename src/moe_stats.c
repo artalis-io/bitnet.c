@@ -49,6 +49,17 @@ void bn_moe_print_stats(const BnMoEState *ms, int n_tokens) {
                 "total", ct_s);
 
     bn_moe_cache_print_stats(ms);
+    if (ms->stats.gpu_host_cache_hits || ms->stats.gpu_host_cache_misses) {
+        char hits[32], misses[32], hit_mb[32], miss_mb[32];
+        snprintf(hits, sizeof(hits), "%zu", ms->stats.gpu_host_cache_hits);
+        snprintf(misses, sizeof(misses), "%zu", ms->stats.gpu_host_cache_misses);
+        snprintf(hit_mb, sizeof(hit_mb), "%.3f",
+            (double)ms->stats.gpu_host_cache_hit_bytes / (1024.0 * 1024.0));
+        snprintf(miss_mb, sizeof(miss_mb), "%.3f",
+            (double)ms->stats.gpu_host_cache_miss_bytes / (1024.0 * 1024.0));
+        SH_LOG_INFO("GPU expert RAM cache", "hits", hits, "misses", misses,
+                    "hit_MB", hit_mb, "miss_MB", miss_mb);
+    }
 }
 
 void bn_moe_reset_stats(BnMoEState *ms) {
@@ -68,5 +79,7 @@ void bn_moe_reset_stats(BnMoEState *ms) {
     ms->stats.madvise_time_ms = 0;
     ms->stats.cache_hits = 0;
     ms->stats.cache_misses = 0;
+    ms->stats.gpu_host_cache_hits = ms->stats.gpu_host_cache_misses = 0;
+    ms->stats.gpu_host_cache_hit_bytes = ms->stats.gpu_host_cache_miss_bytes = 0;
 }
 

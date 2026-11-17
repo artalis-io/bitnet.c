@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "full_goal_complete": false,
+  "release_ready": false,
+  "status": "Matched-library numerical product gates passed; broader serving/performance goal incomplete",
+  "evidence_root": "/tmp/bitnet-goal-glm-natural-mla",
+  "production_source_changes": 0,
+  "original_producer_changes": 0,
+  "acceptance": "Exact full-vocabulary F32 equality against independently generated original BF16 heads expanded toF32; no tolerance change",
+  "numerical_profile": {
+    "cublas_version": [
+      13,
+      10,
+      0
+    ],
+    "provider_pair": {
+      "libcublas": {
+        "path": "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20",
+        "sha256": "b43f57b2185afdc10537b8422177edc7c1436f98cced0d2dc216b5acf9eeb00c"
+      },
+      "libcublasLt": {
+        "path": "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20",
+        "sha256": "34e7a85fe998f33cff4e66968eb32b86ae973e10a66fc62e9ddb58d37763a1ff"
+      }
+    },
+    "source_torch_cuda": "13.0",
+    "model": "GLM5.3 Flash UD-Q4_K_XL GGUF",
+    "operators": "Original recurrent-KDA/chronological sparse selected-set loop; not whole-plugin/HF-runtime equivalence"
+  },
+  "diagnosis": {
+    "historical_reference_provider": [
+      13,
+      1,
+      1
+    ],
+    "current_native_provider": [
+      13,
+      10,
+      0
+    ],
+    "old_references_preserved": true,
+    "old_values_replaced": false,
+    "matched_mla_tensors_exact": 8,
+    "matched_full_model_fields_exact": 562,
+    "matched_diagnostic_heads_exact": 2,
+    "observer_effect_excluded": true,
+    "provenance": "Both vendor pairs are checked in separate processes. Mapped libraries are recorded; actual selected symbols use dladdr and LD_DEBUG proves libtorch CUDA GEMM bindings. A version getter alone can report a mixed-provider result."
+  },
+  "product_cases": {
+    "short-replacement": {
+      "requests": 4,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "chinese",
+        "english"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "asan-short-replacement": {
+      "requests": 4,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "chinese",
+        "english"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    },
+    "long-short-mixed": {
+      "requests": 2,
+      "independent_histories": [
+        "long2049",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 8,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "asan-long-short-mixed": {
+      "requests": 2,
+      "independent_histories": [
+        "long2049",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 8,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    }
+  },
+  "source_reference_schedules": {
+    "english": [
+      32
+    ],
+    "chinese": [
+      28
+    ],
+    "long2049": [
+      1024,
+      1024,
+      1
+    ]
+  },
+  "new_source_decode_forwards": 2,
+  "all_source_first_repeat_files_exact": true,
+  "validation": {
+    "parent_protected_clean_and_full_cuda_unchanged": true,
+    "fresh_standard_suite": true,
+    "device_memcheck": {
+      "errors": 0,
+      "device_leaked_bytes": 0,
+      "completed_requests": 4,
+      "exact_full_f32_heads": 12
+    },
+    "sources_unchanged": 902,
+    "user_diagnostics_preserved": true
+  },
+  "limitations": [
+    "Flash/GLM product GPU execution is still serialized per-request fallback with fresh GPU request destruction",
+    "No shared Flash/GLM GEMM or GPU request pooling claim",
+    "These checks establish neither cross-version bit identity nor a performance or whole-release claim",
+    "External arrival/cancellation transport, broad lifecycle qualification, global resource bounds, matched performance, capability matrix and CPU/Metal remain in the active objective"
+  ]
+}

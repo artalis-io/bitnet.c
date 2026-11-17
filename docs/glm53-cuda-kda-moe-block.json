@@ -1,0 +1,171 @@
+{
+  "scope": "KDA/mHC/MoE through deferred FFN tuple, with actual layer44 weights; final contraction/logits are excluded",
+  "whole_goal_complete": false,
+  "exact_reference_elements": 35642384,
+  "reference_schedules": [
+    [
+      9
+    ],
+    [
+      2,
+      7
+    ],
+    [
+      3,
+      3,
+      3
+    ],
+    [
+      7,
+      1,
+      1
+    ],
+    [
+      6,
+      3
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  ],
+  "phases": 20,
+  "independent_recapture_files": 587,
+  "prior_reference_files_preserved": 680,
+  "original_extension_sha256": "19513f6a05ac8898d6ecff4c7a259326f87c3dcf185b74b2050d2a6a7fe8b561",
+  "source_sha256": {
+    "include/backend_layout.h": "a39b78222f2b8511d168313d99bd59c4f68fddf4eca2d6a26f65bf289ea35ae0",
+    "src/backend_layout.c": "67aa2f1cb5f6d18b8af68b460178dfc6b1074319e566f74ffac5d3a0ecd154cc",
+    "src/transformer/bf16_internal.h": "881a9ad061dbb557bcc25b6251473bae00265f774ba98594ce165159dc812c2f",
+    "src/transformer/bf16.c": "e56acd06108c50718e455c7825c5a3d3c527def7ddb57a24d3a4499dd5901eff",
+    "test/glm_kda_layout_checks.h": "9baa766859069aeb538bc2c080f1761c3ad545bfb4c255c3eebd2d7b6d877d22",
+    "test/glm_moe_work_checks.h": "b07c5443889530a6ec61160dd88c1e8fbbbd2260d3146539b67ab21b7378226f",
+    "test/reference_glm_deferred_kda.py": "4d43a8e1943c482f7d41336013e8747894cbcdd8d1665b9bf7b312bdb6f057d4",
+    "test/test_cuda_glm_deferred_kda.c": "ffcfc57f784470ce422a8a229a03dbc728d1786c62486e2772e90babd90c7d33",
+    "test/test_cuda_glm_kda_moe_block.c": "0fea669806fffdcc95cdf503841763cdd3b5ae586fc7de286887b524ff248056",
+    "Makefile": "0bf9e2d564466c8ebe1185618d5be36caa06397299f209e5eb530b162c230f30"
+  },
+  "validation": {
+    "mla-block-regression-exit": {
+      "exit": 0
+    },
+    "clean-exit": {
+      "exit": 0
+    },
+    "standard-exit": {
+      "exit": 0
+    },
+    "benches-exit": {
+      "exit": 0
+    },
+    "synccheck-exit": {
+      "exit": 0
+    },
+    "sanitize-exit": {
+      "exit": 0
+    },
+    "cuda-exit": {
+      "exit": 0
+    },
+    "trace-exit": {
+      "exit": 0
+    },
+    "trace-export-exit": {
+      "exit": 0
+    },
+    "build-exit": {
+      "exit": 0
+    },
+    "deferred-regression-exit": {
+      "exit": 0
+    },
+    "memcheck-exit": {
+      "exit": 0
+    },
+    "replay-build-exit": {
+      "exit": 0
+    },
+    "block-exit": {
+      "exit": 0
+    }
+  },
+  "cpu": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "trace": {
+    "kernels": 51,
+    "copies": [
+      [
+        2,
+        1172
+      ],
+      [
+        1,
+        48955392
+      ],
+      [
+        1,
+        36
+      ],
+      [
+        1,
+        48955392
+      ],
+      [
+        1,
+        36
+      ],
+      [
+        1,
+        32636928
+      ],
+      [
+        1,
+        24
+      ]
+    ],
+    "expert_weight_upload_bytes": 130547712,
+    "descriptor_upload_bytes": 96,
+    "control_read_bytes": 1172,
+    "activation_transfer_bytes": 0,
+    "runtime_apis": {
+      "cuKernelGetName": 51,
+      "cuStreamGetGreenCtx": 2,
+      "cudaEventQuery_v3020": 3,
+      "cudaEventRecord_v3020": 6,
+      "cudaLaunchKernel_v7000": 51,
+      "cudaMemcpyAsync_v3020": 7,
+      "cudaMemsetAsync_v3020": 1,
+      "cudaStreamSynchronize_v3020": 2,
+      "cudaStreamWaitEvent_v3020": 3
+    }
+  },
+  "backend_weight_payload_bytes": 181274712,
+  "ram_source_cache_budget_bytes": 134217728,
+  "host_expert_bank_budget_bytes": 122683392,
+  "device_expert_bank_budget_bytes": 122683392,
+  "profile": "Independent incoming deferred FFN tuple and nonzero history/F32 recurrent state; original fused_recurrent_kda, default fused mHC, raw F32 router, unchanged full288 vector expert operators with checkpoint clamp10. Native computes every intermediate and both next generations.",
+  "limitations": [
+    "No native token-to-block chain or whole-model generation claim.",
+    "Actual layer44 is qualified only through its deferred FFN tuple; final mHC post/contraction, final norm and head remain.",
+    "Short schedules up to9 tokens; long whole-model prefill, default chunk_kda, indexed ordering/ties and generation remain unqualified.",
+    "Source mappings remain open; no total process RSS bound or GLM VRAM expert cache.",
+    "No full-model CPU/Metal, serving, or vLLM performance parity claim."
+  ],
+  "evidence_root": "/tmp/bitnet-goal-glm-kda-moe-block"
+}

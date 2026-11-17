@@ -1,0 +1,1065 @@
+{
+  "scope": "Actual GLM block3 raw-F32 router, top8, shared plus routed complete MoE sublayer; mmap and pread RAM cache",
+  "whole_goal_complete": false,
+  "gpu": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "cuda_architecture": "SM120",
+  "model": "/data/models/gguf/glm5_3_flash/ud_q4_k_xl/GLM-5.3-Flash-UD-Q4_K_XL-00001-of-00006.gguf",
+  "geometry": {
+    "dim": 4096,
+    "routed_hidden": 2048,
+    "shared_hidden": 2048,
+    "experts": 288,
+    "k": 8,
+    "route_scale": 2.5,
+    "clamp": 10
+  },
+  "memory": {
+    "backend_resource_payload": 31458432,
+    "temporary_shared_preparation_host_bytes": 17825792,
+    "ram_cache_budget": 134217728,
+    "expert_payload_bytes": 15204352,
+    "bank_slots": 2,
+    "bank_capacity": 3,
+    "bank_payload_reserved_per_memory_domain": 122683392,
+    "other_scratch_and_source_mapping_excluded": true
+  },
+  "reference": {
+    "tokens": [
+      1,
+      9,
+      65,
+      129,
+      1024,
+      1025
+    ],
+    "original_extension_sha256": "19513f6a05ac8898d6ecff4c7a259326f87c3dcf185b74b2050d2a6a7fe8b561",
+    "original_matrix_profile": "unchanged original operators; partition expert domain only into [0,256) and [256,288), preserve token/slot geometry and precision dispatch, bit-select rows",
+    "installed_original_limit": "matrix IDs above255 skipped; whole method omits clamp",
+    "corrected_full_domain_extension": "f61f8846d7fb50fd2d03254b03a0801db62de9dbb6b1a102fb85233c53c3dd5e",
+    "corrected_full_domain_records_exact": true,
+    "corrected_extension_patch_qualification": "/tmp/bitnet-goal-flash-experts/qualification.json",
+    "raw_f32_router_profile": true,
+    "whole_plugin_parity": false,
+    "independent_original_repeat_exact": true,
+    "weights": {
+      "ffn_gate_inp.weight": "d5314b2d68e8cb0c1f70fc146b284ee4f1a0ef35c893234ae9a8462db6ecfac3",
+      "exp_probs_b.bias": "cad2f175acdabf61327e2c60bc609df9df81b21f7a8bc166d367b57ca13b78e7",
+      "ffn_gate_shexp.weight": "1345359489b609f8d3cf2cdd8f62d0465d5c0dac1d845fa0c9825ae01940d5cd",
+      "ffn_up_shexp.weight": "3d6ec7eac89afcb57ce977052d1e57e01f9dadd887a83759f773e02a67937162",
+      "ffn_down_shexp.weight": "ca72d5c13bc42655656b5da0d2782136537dc871eb051f8c1c1fb952c6fc457f",
+      "ffn_gate_exps.weight": "9fdc117d187684d6445ce41f26a40963fb49618e58581b42e431447a1fc1602c",
+      "ffn_up_exps.weight": "32b717dee644fb08dd31e973499969069ccb339317c462ffde08057ab953e4a7",
+      "ffn_down_exps.weight": "1487171a6311cd14b5c7d5052e8db1b97d1f13bb9766888f50be57cc36fd2f76"
+    },
+    "records": [
+      {
+        "case": 0,
+        "tokens": 1,
+        "hashes": {
+          "x": "544d5a3036e98b0696849e3d6a0adca3d693959032ce05bf342b808d202b3e26",
+          "logits": "7310595ba5b5aa97da185f4011900e8b7b9f637cc6822d163433124cbe3b65c2",
+          "weights": "e475b2cea94e12188d4da109546c7ee4cfbdf2c40e20a0ee49e62472f81db748",
+          "ids": "93866862fe7e617fd1b66e0bc042c86db50664430d7e685033243350e26ffcab",
+          "shared_gate_up": "69e41de627e4d78ad125e9b0cb2b396fa813b632a382d7de5254de3565dc4e48",
+          "shared_activated": "9310eb28ec1eb9835d75caf525817fb5cc87b644686ccc7630228436d1874976",
+          "shared_out": "5a89ddc44a7d62f356d666a8021a84fd341cd031517b747fb61cc5fc594f1cf6",
+          "routed_gate_up": "6b827a9f58cd4a2667f20dfb5eaf696ecd8456c999d5e159b6633444ccad6121",
+          "routed_activated": "90af47d0b76673672bd1889ca87d2cc22b987ae03ee61cc1fa12f5cba4af7396",
+          "routed_down": "14ff1766c69e4e28592f20fbfbd72d6ca6b50c75fca8994e28f127d8d0a0177c",
+          "weighted": "2e67a6013d00037b338a38e5ca813460bac2156fa1da3436fec635fa95acfd94",
+          "routed_out": "424f0b30b3210001e101470aaae20598def8d5eb042016f48838a36900804b59",
+          "out": "80c2ad7946158309267ad78bce1745121f8a5b64d5295fb11347c8f5a953d670"
+        }
+      },
+      {
+        "case": 1,
+        "tokens": 9,
+        "hashes": {
+          "x": "45af1f794ec9f380fd4be2be2f1ba1c742e7bfd84d96147f5f64be1261e46d25",
+          "logits": "0727dececefb6278c8bd8f800cd691b5d6a3745f73b57c0175d3bd1e11b6f6da",
+          "weights": "5f7e2fb9daf0ec810204c5d0446c05629f40c7e052ddc7a254de6955427d5202",
+          "ids": "5824defb2c2c2d53c0f1dc2689507c154c6036699601c42b680bb366253c3b2f",
+          "shared_gate_up": "08503f963489da922582e128854ed48ace21a66746e0b5c062f59e837ecbf9b1",
+          "shared_activated": "736a3b33276bee03aa6fda4232488ffde385549a91e58b8e5c1800d2e35adda7",
+          "shared_out": "a564f189222830cc623b20c24d9032c12be0dbc8ef4262b3876eeda08af907c5",
+          "routed_gate_up": "6682310b026d04ab44889cf94de60bc47d0adf5dfa37ac6cd008b9f0df3e0419",
+          "routed_activated": "696a42ddc27ca80184b56e4486d8fc9bdfba5cd8abc90059f14e0a6e5c25a802",
+          "routed_down": "559331c7bb614db4c3e4389110d1182165dd1dc6af4e6c8f62f9d677a5e7e887",
+          "weighted": "0776cca00ab2128d8e9d26ebd3379eab0da8bbc210fd0a5bfc57922ba7a53c10",
+          "routed_out": "d49053b67ee0edc6d5e3837e47c2616e5389c832ba809226f525f10b7dc17f94",
+          "out": "02b55416d6759179fc4221bad0d597d6c966e080ffeca8035c169d1d8840f66d"
+        }
+      },
+      {
+        "case": 2,
+        "tokens": 65,
+        "hashes": {
+          "x": "d3e00cb01bfcb3da0e9eed14813b271022caf5b5f3bf5eeec2ccd1df33020cc8",
+          "logits": "d7f1d8445e374689edd035c30bbe6289deed5b5b9d2a19ff2510143de6e2c9b5",
+          "weights": "a81a3869a349b1e3963c119d726228e64ea6aaa57e37f99eb961a706281a5a11",
+          "ids": "2cfb6aeeec19f80e9fb0b7904d03ad589a9cdb0a9949775df03e1b281d544e80",
+          "shared_gate_up": "138125a37809a7c2b6c8d47314febe7375b0e025cafd50844ad071f772d72081",
+          "shared_activated": "5267effd5d8a2c4509339fb9c22467129ddccd796a88ed73aff196b4769bfea1",
+          "shared_out": "1850e71d2e24689f403ae19eb5c3911905020a2db1ef05c5e3f3860ebdfe2962",
+          "routed_gate_up": "549cad80e68f5e92a2c12291fd5f9c6349f1763c9bffebb3b1d1641c95efc304",
+          "routed_activated": "822f180058a730ca42b18b11ed51fe6743b7dd421164793494ccc1eb06f6b0d9",
+          "routed_down": "3df85541e1199dc9368b7e73b53223c88c9a90f2d1be86511a2ccb06b0a944a2",
+          "weighted": "a68170826bccfdf4e3968c5a4a4a847ed0a92dc119be0d86c9327f0f395c53d9",
+          "routed_out": "0ef4e994055b900da58beec6413325d73145ef8a5cddba31aac27ddcbe3e69b8",
+          "out": "49b143e8c4f12ee9043e298f829b1ee026fbc54eac250450eac06fb0098ba7d5"
+        }
+      },
+      {
+        "case": 3,
+        "tokens": 129,
+        "hashes": {
+          "x": "f495cda90c20824bd58469e9b32f54e42a242b2ccea65958447835989d613bd1",
+          "logits": "5c500c1077161f45429825fc0a122fdd64bc7976a975403cbe6916cf8d01bf8f",
+          "weights": "f1ec8598dde7f4257c992c20e004e67b6c5542b41273f34dc5c0611c595c2160",
+          "ids": "05b20a5f2812a95c16424ea69ca2d5b67061136f2fd5ff87b8a1c6f8677fac85",
+          "shared_gate_up": "1c41b121d3299504043abdf0d54dcbea15ab45f48bf708c9247338cd1ff349cc",
+          "shared_activated": "779d2b3079c6872abf81e182044a746a42be3a70e137d401051b4c7f3412d4eb",
+          "shared_out": "b9df3668e1a57f2657fc11045cdd689ba135560332c0a44710dd82fa5ed80ffd",
+          "routed_gate_up": "23caa40029797c4b7510f83f9c1bfa83a0d070bf04af27c3df09ac6afe33b75a",
+          "routed_activated": "a13e70da14d5a4fa78cdf096e0225e44ee11c4afa4aac13ed828d4ff25c8ab05",
+          "routed_down": "d8c5c50e62fa87ea5115d51fad63ea67caad5644ddc7ef4b41d2ff767c924fcf",
+          "weighted": "1ec0b7ec2e91f563f9b0d9615f0972762081a7889666edbd1e371bff8bfea17b",
+          "routed_out": "ba1bc2e783ca3139ca06a9d151971d0fef67b4e5a4124d26e8820049a9701e8b",
+          "out": "143d42273953e2765f58bf24f369bd3bd1770a64544ba755d349ac7fa7c6ab35"
+        }
+      },
+      {
+        "case": 4,
+        "tokens": 1024,
+        "hashes": {
+          "x": "b57dba66711a007d649e0c6d16cf5badca240da11ca9950c92414fcf33971c87",
+          "logits": "b8e529e5ce49f97c7e0e0a2897b5063d74f49389ee6c0af67b015862c535f447",
+          "weights": "d24abf859461d454d853145d8f680058b9fc64c7116b6119be3c793f5f8abfbb",
+          "ids": "baaf696337b83b88f0cd59908f1828f40094375b2554ce84163d6277f25e860d",
+          "shared_gate_up": "c743edd75d1d320f630db27b8395a07493e8fd1c13b570c4d10161459939bfa9",
+          "shared_activated": "5f1d4a606f7126548a149fb422ee5dd820a31f1b3bef527809aaec79dc1bacd4",
+          "shared_out": "d641b6a4ea4b8f4f34dc68061de7b821402085cc866e998c6c304fe984457961",
+          "routed_gate_up": "03f4bb95212bfd6012638bd75f44eed462ae61c736eeca14198fe71e3ca237fe",
+          "routed_activated": "c5d9f3d977ebdb0d2762c95582082513d8c56edcc290082851b95db273d87a31",
+          "routed_down": "549a7d388fe006b76158aba7ca26781b67678884285cb6589a167e6556c7d721",
+          "weighted": "086dc5377ed7ced922fb89174ab68e63bc5aa2bf768a25641fbf120fdc6b7f09",
+          "routed_out": "60ca034b8986471acd1166acb711026b1f24d850b1a31f32f0ab12f26f48add8",
+          "out": "f58e1538823939bf63b0e81048cc4f64c902230dd5592b8f9b9def39d05cd28f"
+        }
+      },
+      {
+        "case": 5,
+        "tokens": 1025,
+        "hashes": {
+          "x": "51870a35683d99d69a7ba8725801d194bf2d0dda263852b9547f648f2f69896a",
+          "logits": "e8704c4a795c30fcbffce35d74eb8da3b98596d419dca65fdfd3bba06ef5ee94",
+          "weights": "d8d1451f0438bb72dab074d35b2b034a82f225679f4a6ee561a5dfb65d9e9fbe",
+          "ids": "2f13b59ce4cde0c9400f383980c76c6908eb7562b7b1b8e61128c405413f8890",
+          "shared_gate_up": "8447877a01b9a31407a08aa052682e0c0b12a253cb6cfbc144ecef31e3d0eb53",
+          "shared_activated": "77a952d58dbb7bbc28e89ec478498e72694c2866127ca0d6b934dca017cf2fd5",
+          "shared_out": "f787dd4bc79850bc2442a6839a19a7d877d845b8d6c37dd96d29054fd266b703",
+          "routed_gate_up": "492493d76e430eb24274c4048956c19b83d5116a764fcde804f07fb5c3a9e530",
+          "routed_activated": "ec8079d0aeda2847f1ccc672c9b598fe5880fb311389c32aa20e6d617f9435ad",
+          "routed_down": "da3bfd0155116c0509e75a269d9a77b012d525c96d04f5e45bddcf46033a5364",
+          "weighted": "5728d25557df0e4d4eecbcef9b11dd3dfcf7f5057d44b6161385de50871c87b3",
+          "routed_out": "747a71a0221ec1749e8e6ee4ca656e075df33f2d53293a11bb524deb5431aa99",
+          "out": "e908597576d48a37acff4b997e0bd4f1ee1e7e9475780075f2d16029f844cfed"
+        }
+      }
+    ]
+  },
+  "replay": {
+    "complete_moe_exact_words": 527733360,
+    "mmap_cases": 6,
+    "pread_cases": 9,
+    "router_shared_exact_words": 46182720,
+    "router_shared_token_counts": [
+      1,
+      2,
+      6,
+      7,
+      9,
+      64,
+      65,
+      129,
+      1024,
+      1025,
+      2048
+    ],
+    "comparisons": "direct byte equality BF16/F32/I32; inverse native map for expert rows",
+    "warm_ram_decode": {
+      "hits": 8,
+      "misses": 0,
+      "source_read_bytes": 0,
+      "gpu_upload_bytes": 121634816,
+      "revisited_after_large_prefills": true
+    },
+    "metadata_read_bytes_per_begin": 1172
+  },
+  "validation": {
+    "stages": {
+      "clean": 0,
+      "build": 0,
+      "standard": 0,
+      "benches": 0,
+      "replay-build": 0,
+      "router-final": 0,
+      "moe-final": 0,
+      "cuda": 0,
+      "bank-and-cache": 0,
+      "routed-regression": 0,
+      "dense-prefix-regression": 0,
+      "router-memcheck": 0,
+      "moe-memcheck": 0,
+      "router-synccheck": 0,
+      "moe-synccheck": 0
+    },
+    "standard_after_state_probes": 0,
+    "host_asan_ubsan": 0,
+    "synthetic_state_probes": [
+      "BUSY exact continuation",
+      "begin operation failures1..9 poison work",
+      "source read error cancels lease and restores borrowed host buffers",
+      "later bank enqueue failure preserves submitted progress"
+    ],
+    "synthetic_router": [
+      "lower ID ties",
+      "finite sigmoid underflow is zero not fallback",
+      "nonfinite fallback uniform without route scale",
+      "invalid metadata leaves output canary unchanged",
+      "token boundary1024/1025"
+    ],
+    "supplied_route_regression_words": 165888000,
+    "dense_prefix_regression_words": 221074320,
+    "zero_build_warnings": true,
+    "protected_user_binaries": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "trace": {
+    "kernel_counts": {
+      "cast_bf16_f32": 1,
+      "kernel": 1,
+      "biased_sigmoid_f32_kernel": 1,
+      "group_reset": 1,
+      "group_count": 1,
+      "group_prefix": 1,
+      "group_gather": 1,
+      "quantize_bf16_q8_batch_kernel": 2,
+      "q8_bf16_mmvq_kernel": 2,
+      "clamped_swiglu_kernel": 1,
+      "route_validate": 2,
+      "quantize_bf16_q8_affine_batch_kernel": 1,
+      "bank_map_input": 1,
+      "bank_project_grouped": 6,
+      "bank_activate_grouped": 3,
+      "bank_quantize_grouped": 3,
+      "route_weight": 1,
+      "route_sum": 1,
+      "add_bf16_kernel": 1
+    },
+    "kernel_total": 31,
+    "api_counts": {
+      "cudaMemsetAsync_v3020": 1,
+      "cuKernelGetName": 31,
+      "cudaLaunchKernel_v7000": 31,
+      "cuStreamGetGreenCtx": 2,
+      "cudaMemcpyAsync_v3020": 7,
+      "cudaStreamSynchronize_v3020": 2,
+      "cudaEventRecord_v3020": 6,
+      "cudaStreamWaitEvent_v3020": 3,
+      "cudaEventQuery_v3020": 1
+    },
+    "copies": [
+      {
+        "kind": 2,
+        "bytes": 1172
+      },
+      {
+        "kind": 1,
+        "bytes": 45613056
+      },
+      {
+        "kind": 1,
+        "bytes": 36
+      },
+      {
+        "kind": 1,
+        "bytes": 45613056
+      },
+      {
+        "kind": 1,
+        "bytes": 36
+      },
+      {
+        "kind": 1,
+        "bytes": 30408704
+      },
+      {
+        "kind": 1,
+        "bytes": 24
+      }
+    ],
+    "kernels": [
+      {
+        "name": "cast_bf16_f32",
+        "start_ns": 26073514,
+        "end_ns": 26074250,
+        "stream": 18
+      },
+      {
+        "name": "kernel",
+        "start_ns": 26138858,
+        "end_ns": 26143882,
+        "stream": 18
+      },
+      {
+        "name": "biased_sigmoid_f32_kernel",
+        "start_ns": 26148426,
+        "end_ns": 26152778,
+        "stream": 18
+      },
+      {
+        "name": "group_reset",
+        "start_ns": 26157450,
+        "end_ns": 26157962,
+        "stream": 18
+      },
+      {
+        "name": "group_count",
+        "start_ns": 26162698,
+        "end_ns": 26163370,
+        "stream": 18
+      },
+      {
+        "name": "group_prefix",
+        "start_ns": 26168938,
+        "end_ns": 26170154,
+        "stream": 18
+      },
+      {
+        "name": "group_gather",
+        "start_ns": 26175946,
+        "end_ns": 26180074,
+        "stream": 18
+      },
+      {
+        "name": "quantize_bf16_q8_batch_kernel",
+        "start_ns": 26228906,
+        "end_ns": 26229738,
+        "stream": 18
+      },
+      {
+        "name": "q8_bf16_mmvq_kernel",
+        "start_ns": 26236618,
+        "end_ns": 26245642,
+        "stream": 18
+      },
+      {
+        "name": "clamped_swiglu_kernel",
+        "start_ns": 26245930,
+        "end_ns": 26246794,
+        "stream": 18
+      },
+      {
+        "name": "quantize_bf16_q8_batch_kernel",
+        "start_ns": 26248458,
+        "end_ns": 26249290,
+        "stream": 18
+      },
+      {
+        "name": "q8_bf16_mmvq_kernel",
+        "start_ns": 26252458,
+        "end_ns": 26257546,
+        "stream": 18
+      },
+      {
+        "name": "route_validate",
+        "start_ns": 26259178,
+        "end_ns": 26260010,
+        "stream": 18
+      },
+      {
+        "name": "quantize_bf16_q8_affine_batch_kernel",
+        "start_ns": 26264906,
+        "end_ns": 26265770,
+        "stream": 18
+      },
+      {
+        "name": "bank_map_input",
+        "start_ns": 26271178,
+        "end_ns": 26277578,
+        "stream": 18
+      },
+      {
+        "name": "bank_project_grouped",
+        "start_ns": 29825649,
+        "end_ns": 29839313,
+        "stream": 18
+      },
+      {
+        "name": "bank_activate_grouped",
+        "start_ns": 29839601,
+        "end_ns": 29840529,
+        "stream": 18
+      },
+      {
+        "name": "bank_quantize_grouped",
+        "start_ns": 29840817,
+        "end_ns": 29841969,
+        "stream": 18
+      },
+      {
+        "name": "bank_project_grouped",
+        "start_ns": 29842257,
+        "end_ns": 29851217,
+        "stream": 18
+      },
+      {
+        "name": "bank_project_grouped",
+        "start_ns": 32676470,
+        "end_ns": 32690550,
+        "stream": 18
+      },
+      {
+        "name": "bank_activate_grouped",
+        "start_ns": 32690838,
+        "end_ns": 32691766,
+        "stream": 18
+      },
+      {
+        "name": "bank_quantize_grouped",
+        "start_ns": 32692054,
+        "end_ns": 32693206,
+        "stream": 18
+      },
+      {
+        "name": "bank_project_grouped",
+        "start_ns": 32693494,
+        "end_ns": 32703542,
+        "stream": 18
+      },
+      {
+        "name": "bank_project_grouped",
+        "start_ns": 34409082,
+        "end_ns": 34418810,
+        "stream": 18
+      },
+      {
+        "name": "bank_activate_grouped",
+        "start_ns": 34419098,
+        "end_ns": 34420026,
+        "stream": 18
+      },
+      {
+        "name": "bank_quantize_grouped",
+        "start_ns": 34420314,
+        "end_ns": 34421306,
+        "stream": 18
+      },
+      {
+        "name": "bank_project_grouped",
+        "start_ns": 34421594,
+        "end_ns": 34428698,
+        "stream": 18
+      },
+      {
+        "name": "route_validate",
+        "start_ns": 34428986,
+        "end_ns": 34429818,
+        "stream": 18
+      },
+      {
+        "name": "route_weight",
+        "start_ns": 34430106,
+        "end_ns": 34431290,
+        "stream": 18
+      },
+      {
+        "name": "route_sum",
+        "start_ns": 34431610,
+        "end_ns": 34432762,
+        "stream": 18
+      },
+      {
+        "name": "add_bf16_kernel",
+        "start_ns": 34433082,
+        "end_ns": 34433818,
+        "stream": 18
+      }
+    ],
+    "runtime": [
+      {
+        "name": "cudaMemsetAsync_v3020",
+        "start_ns": 26000781,
+        "end_ns": 26032139
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26037788,
+        "end_ns": 26039390
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26039891,
+        "end_ns": 26082136
+      },
+      {
+        "name": "cuStreamGetGreenCtx",
+        "start_ns": 26103198,
+        "end_ns": 26103799
+      },
+      {
+        "name": "cuStreamGetGreenCtx",
+        "start_ns": 26111581,
+        "end_ns": 26111771
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26127064,
+        "end_ns": 26127605
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26127755,
+        "end_ns": 26138342
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26140966,
+        "end_ns": 26141306
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26141386,
+        "end_ns": 26147365
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26150300,
+        "end_ns": 26150620
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26150801,
+        "end_ns": 26156009
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26156589,
+        "end_ns": 26156920
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26157070,
+        "end_ns": 26161837
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26162559,
+        "end_ns": 26162749
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26162829,
+        "end_ns": 26168197
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26168758,
+        "end_ns": 26169169
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26169249,
+        "end_ns": 26175118
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "start_ns": 26176450,
+        "end_ns": 26211864
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "start_ns": 26213266,
+        "end_ns": 26218103
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26221679,
+        "end_ns": 26222039
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26222120,
+        "end_ns": 26227438
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26229521,
+        "end_ns": 26229861
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26229931,
+        "end_ns": 26235139
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26236762,
+        "end_ns": 26237082
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26237163,
+        "end_ns": 26241870
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26242901,
+        "end_ns": 26243001
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26243272,
+        "end_ns": 26246447
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26246797,
+        "end_ns": 26246887
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26247048,
+        "end_ns": 26250333
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26252015,
+        "end_ns": 26252326
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26252476,
+        "end_ns": 26257574
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26258145,
+        "end_ns": 26258445
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26258665,
+        "end_ns": 26263312
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 26264124,
+        "end_ns": 26264584
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 26264675,
+        "end_ns": 26269502
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "start_ns": 29004220,
+        "end_ns": 29030971
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "start_ns": 29031612,
+        "end_ns": 29039494
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "start_ns": 29040406,
+        "end_ns": 29049019
+      },
+      {
+        "name": "cudaStreamWaitEvent_v3020",
+        "start_ns": 29049850,
+        "end_ns": 29054747
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 29057261,
+        "end_ns": 29058313
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 29059064,
+        "end_ns": 29080927
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 29081999,
+        "end_ns": 29082340
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 29082420,
+        "end_ns": 29087758
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 29088890,
+        "end_ns": 29089090
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 29089290,
+        "end_ns": 29094118
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 29095009,
+        "end_ns": 29095490
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 29095650,
+        "end_ns": 29100648
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "start_ns": 29100998,
+        "end_ns": 29101779
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "start_ns": 31850890,
+        "end_ns": 31870470
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "start_ns": 31870980,
+        "end_ns": 31877390
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "start_ns": 31878542,
+        "end_ns": 31883399
+      },
+      {
+        "name": "cudaStreamWaitEvent_v3020",
+        "start_ns": 31884251,
+        "end_ns": 31888117
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 31890140,
+        "end_ns": 31891031
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 31891742,
+        "end_ns": 31913545
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 31914857,
+        "end_ns": 31915298
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 31915378,
+        "end_ns": 31920045
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 31921367,
+        "end_ns": 31921558
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 31921728,
+        "end_ns": 31926605
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 31927627,
+        "end_ns": 31927957
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 31928128,
+        "end_ns": 31933175
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "start_ns": 31933606,
+        "end_ns": 31934237
+      },
+      {
+        "name": "cudaEventQuery_v3020",
+        "start_ns": 31936150,
+        "end_ns": 31941989
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "start_ns": 33856554,
+        "end_ns": 33874101
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "start_ns": 33874512,
+        "end_ns": 33880370
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "start_ns": 33881472,
+        "end_ns": 33885619
+      },
+      {
+        "name": "cudaStreamWaitEvent_v3020",
+        "start_ns": 33886440,
+        "end_ns": 33889765
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33891648,
+        "end_ns": 33892419
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33893140,
+        "end_ns": 33912890
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33913952,
+        "end_ns": 33914192
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33914392,
+        "end_ns": 33920021
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33921173,
+        "end_ns": 33921343
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33921523,
+        "end_ns": 33925680
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33926761,
+        "end_ns": 33927172
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33927352,
+        "end_ns": 33932730
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "start_ns": 33933161,
+        "end_ns": 33934103
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33936566,
+        "end_ns": 33936887
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33936967,
+        "end_ns": 33942105
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33942716,
+        "end_ns": 33942906
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33942986,
+        "end_ns": 33948284
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33948795,
+        "end_ns": 33948975
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33949055,
+        "end_ns": 33953092
+      },
+      {
+        "name": "cuKernelGetName",
+        "start_ns": 33954854,
+        "end_ns": 33955165
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "start_ns": 33955245,
+        "end_ns": 33960092
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "start_ns": 33962536,
+        "end_ns": 34435699
+      }
+    ],
+    "synchronization_records": [
+      {
+        "start": 26214558,
+        "end": 26217773,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 18,
+        "correlationId": 2295,
+        "globalPid": 314087670022144,
+        "deprecatedSyncType": null,
+        "syncType": 3,
+        "eventId": 4294967295,
+        "eventSyncId": 0
+      },
+      {
+        "start": 29051202,
+        "end": 29054327,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 18,
+        "correlationId": 2332,
+        "globalPid": 314087670022144,
+        "deprecatedSyncType": null,
+        "syncType": 2,
+        "eventId": 83,
+        "eventSyncId": 1
+      },
+      {
+        "start": 31884872,
+        "end": 31887686,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 18,
+        "correlationId": 2352,
+        "globalPid": 314087670022144,
+        "deprecatedSyncType": null,
+        "syncType": 2,
+        "eventId": 85,
+        "eventSyncId": 3
+      },
+      {
+        "start": 33887191,
+        "end": 33889304,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 18,
+        "correlationId": 2373,
+        "globalPid": 314087670022144,
+        "deprecatedSyncType": null,
+        "syncType": 2,
+        "eventId": 83,
+        "eventSyncId": 5
+      },
+      {
+        "start": 33963227,
+        "end": 34435378,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 18,
+        "correlationId": 2402,
+        "globalPid": 314087670022144,
+        "deprecatedSyncType": null,
+        "syncType": 3,
+        "eventId": 4294967295,
+        "eventSyncId": 0
+      },
+      {
+        "start": 31937131,
+        "end": 31941678,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 2367,
+        "globalPid": 314087670022144,
+        "deprecatedSyncType": null,
+        "syncType": 1,
+        "eventId": 84,
+        "eventSyncId": 2
+      },
+      {
+        "start": 34445244,
+        "end": 34449831,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 2403,
+        "globalPid": 314087670022144,
+        "deprecatedSyncType": null,
+        "syncType": 4,
+        "eventId": 4294967295,
+        "eventSyncId": 0
+      }
+    ],
+    "capture_scope": "Warm RAM-cached T1 decode complete MoE, routing through final addition; two earlier uncaptured steps seed the source cache. No inference allocation API or activation transfers. One control metadata read and final result fence. CUPTI labels successful nonblocking event query as event synchronization and adds unattributed final context sync."
+  },
+  "source_freeze": {
+    "include/backend_layout.h": "f805471ba9c43fe2fb1d2f2516aff652e27924db5822369c6253a5c0787518a3",
+    "include/gpu_backend.h": "3206ffe11f30bd5e1fdd719b52f7be0ce4ff85a24d39823a867d71346413c7e6",
+    "src/backend_layout.c": "2cb0eebd1bfd67f2ad5771af581858a5420591324bed93606c08422cfccf54e6",
+    "src/gpu_cuda.cu": "e283304cd16fab150262d77e71988bbf901825888b56f68b45718a9500336c78",
+    "src/gpu_cuda_gdn.cuh": "e4fb43dfd9114095fb30fff5bb137d4ff49ce052cf76bd03e6e78ef556664dfc",
+    "src/gpu_cuda_moe_resident.cuh": "b1f5657ba863f732a047f6b713e8cf4f8b026617add17050c1b21d4ac91122d6",
+    "src/transformer/bf16.c": "f2c8f94701f3b2735a0479cb57f89847da088a303ca83f97e230394a37b0779f",
+    "src/transformer/bf16_internal.h": "ffcddbdc8221edfbc29ba64ce7cfcf10159b2a406b4fa41c2ca3d001282075f8",
+    "test/glm_moe_layout_checks.h": "f2fc50f5285b24239ca28a8cae2adf0496f33cd4555e0309dd29718f9b7ee2ce",
+    "test/glm_dense_ffn_checks.h": "40dad49c0df219eee1da3d1aa5eebafc63981d26513aa6a70be765abc1f8c3c4",
+    "test/glm_router_edge_checks.h": "a09ff6e060134d439e55eb79a85ab2ed9a8704c72128798f8d393ddfbd85dd03",
+    "test/test_cuda_glm_router.c": "8045b164a718b5e7c4ce9ca3612fca118ebb1d54aee996afaf996cb2e60e2364",
+    "test/test_cuda_glm_moe_layer.c": "d15a086dfabe7a6a4226a6a4c2cd2b700804030af9c52234ee9169fa55b6ae73",
+    "test/reference_glm_moe_layer.py": "82da45172827a72bc6068dc9cfdf6e5f901a4c1465e0de567c2e4f550f8b48a1",
+    "Makefile": "66ed90e5e1ae28db025255ec566343c211616b4a74feca382aaf2ab56b413fdb",
+    "test/glm_moe_work_checks.h": "c68176d240582b2ec258319709e903059411d3b4693874b31fbfba91946b2787",
+    "test/test_gpu_backend.c": "4a702370fe902f06fd237734f51558d55279fde7ba25eda3fbc1111b44744438"
+  },
+  "evidence_root": "/tmp/bitnet-goal-glm-cuda-router",
+  "artifacts": {
+    "reference-domain-audit.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-router/reference-domain-audit.json",
+      "sha256": "26ff3fe1faf5c648ea5e265400144db2b8919bd4e235ca2d1c54839e5b7eb5dd"
+    },
+    "corrected-reference-domain-audit.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-router/corrected-reference-domain-audit.json",
+      "sha256": "c8e3f14b33b9061fbab373f41d3eedc41ef5f67b04cfa993f79f8c796dd9875a"
+    },
+    "resident-trace-summary.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-router/resident-trace-summary.json",
+      "sha256": "a7b9016bd81bad834485f1a7c82211ec0bfa6318b3027f9289cca8543fd94bae"
+    },
+    "source-freeze-final.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-router/source-freeze-final.json",
+      "sha256": "7aad3081af952942aa928267e6d8bf3d9094fa7b33e7dcd23248384b842af281"
+    }
+  },
+  "remaining": [
+    "indexed MLA, sparse indexer and pooling",
+    "whole-model resource/session binder and generation",
+    "GLM model-owned VRAM expert cache",
+    "GLM CPU AVX2/AVX512/NEON and secondary Metal",
+    "long-context/chunked/resumed whole-model correctness",
+    "matched fully resident vLLM prefill/decode within5%",
+    "serving throughput and tail latency"
+  ]
+}

@@ -1,0 +1,403 @@
+{
+  "status": "PROGRESS; whole production-model inference/vLLM parity goal remains ACTIVE and incomplete",
+  "component": "Actual native DeepSeek V4.1 Flash 1017 attention and learned-router FFN block composition",
+  "implementation": "src/transformer/trellis_block.h in existing transformer Trellis module",
+  "api": [
+    "bn_transformer_trellis_block_step",
+    "bn_transformer_trellis_block_current"
+  ],
+  "prerequisites": "Prepared SAME canonical producer/HC request; staged host history; matching index_begin and hc_begin once per batch. Checkpoint block order, serialized callers, no interleaved lower-level mutation while a block is pending",
+  "execution": [
+    "HC mix runs optional Engram and normalizes F32 carried collapse directly into existing F16 FFN input",
+    "Actual attention_forward_native produces F32 delta and commits its local KV/index/ring visibility",
+    "HC apply updates streams; FFN HC mix publishes next carry and normalizes directly to the same F16 input buffer",
+    "Actual run_learned selects checkpoint routing/expert arithmetic and computes routed plus shared FFN",
+    "Matching HC apply updates streams and publishes a borrowed final block stream view"
+  ],
+  "retry": "Engram BUSY retains attention-mix phase. Expert-placement BUSY retains the already normalized FFN site, its epoch, index generation, layer and admit policy. Retry SAME layer/policy; completed attention and its visibility update are not repeated",
+  "failure": "Scalar/ticket/order/policy rejection queues nothing. Any actual branch rejection/failure drains/releases the WHOLE canonical request, including after local attention visibility commit. Host history and position remain pending; reset/replay required. No simulated GPU rollback",
+  "result_lifetime": "Binds session/request generation, HC/history/index epoch, layer, token count, position and stream view. Expires on next accepted block attempt, history finalization, HC reuse, reset/free/failure. Current is not a GPU completion proof",
+  "ownership": "Only bounded request-local control fields added to existing TrellisRequest; sizeof request is included in existing host quota query. No new module, GPU kernel, backend weight copy or resident activation buffer",
+  "reference": {
+    "producer": "test/reference_native_block.py",
+    "method": "Unchanged original attention AST/kernels/projection methods, norm/RoPE/HC/routing/expert-decode/shared-FFN source kernels and actual checkpoint weights. Actual prior-block output drives the next block; no synthetic branch substitutions",
+    "scope": "Initial layers0/1 including Engram1, batch sizes1/7 at position0, real embedding and compressed tokenizer history. Partial model prefix only",
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "libraries": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13": "25cde432108543626df85d887c730bf2cab96803ca16f9654e4abc8d2b45833e",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublasLt.so.13": "1489aeb75d55ee55782798343ac66f57771d561cc1fe1e0491568deefa0e6515",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20": "34e7a85fe998f33cff4e66968eb32b86ae973e10a66fc62e9ddb58d37763a1ff",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20": "b43f57b2185afdc10537b8422177edc7c1436f98cced0d2dc216b5acf9eeb00c"
+    },
+    "source_integrity": "Existing pinned producers/sources/binaries and immutable core/router/parameter references checked; 792 expert component provenance records; original numeric corpus captured before candidate execution and replayed unchanged",
+    "precision": "Matched source cuBLAS13.10, explicit original INT4 BF16 lookup -> Exllama F16 Engram adapter; not original Diffbot full-forward numerical equivalence"
+  },
+  "qualification": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "gates": {
+      "normal": 0,
+      "asan": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "hc-regression": 0,
+      "source-replay": 0,
+      "prefix-profile": 0,
+      "prefix-export": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 844,
+    "records": {
+      "normal": {
+        "blocks": 16,
+        "forced_busy_retries": 24,
+        "checks": 178,
+        "exact_bytes": 20812288,
+        "expert_entry_bytes": 13315584,
+        "expert_quota_bytes": 639148032
+      },
+      "asan": {
+        "blocks": 16,
+        "forced_busy_retries": 24,
+        "checks": 178,
+        "exact_bytes": 20812288,
+        "expert_entry_bytes": 13315584,
+        "expert_quota_bytes": 639148032
+      },
+      "memcheck": {
+        "blocks": 16,
+        "forced_busy_retries": 24,
+        "checks": 178,
+        "exact_bytes": 20812288,
+        "expert_entry_bytes": 13315584,
+        "expert_quota_bytes": 639148032
+      },
+      "initcheck": {
+        "blocks": 16,
+        "forced_busy_retries": 24,
+        "checks": 178,
+        "exact_bytes": 20812288,
+        "expert_entry_bytes": 13315584,
+        "expert_quota_bytes": 639148032
+      }
+    },
+    "coverage": "16 actual block executions, 24 forced BUSY retries, 178 checks, 20812288 exact bytes; two sessions, two repeats; actual normalized inputs, attention/FFN deltas, selected IDs/weights and residual streams",
+    "busy_proof": "After expert BUSY: two HC input normalizations, one attention residual apply, attention ring cursor advanced once, host position still0. Wrong retry policy rejects. Successful retry adds only FFN residual; no repeated attention",
+    "faults": "Attention QKV rejection and FFN router rejection after actual attention/local visibility commit release the whole request; pending history unchanged. Peer ticket AND peer stream remain exact. Profile resets/rebuilds failed owner and matches complete real prefix again",
+    "sanitizers": "ASan/UBSan all new C code/probe; GPU memcheck full leak check and initcheck zero errors, zero bytes/allocations leaked. No new GPU kernels or unbounded whole-core racecheck",
+    "regression": "Existing 800-site HC/Engram source chain passes with rebuilt code; strict Qwen192/192 sampled IDs, first8/8 words, count0/8 mismatches, word prefix147/147",
+    "measurement_boundary": "Numerical probes install diagnostic callbacks that read intermediate boundaries and add completion fences. Separate profile restores real callbacks and compares final real-prefix output after capture"
+  },
+  "placement": {
+    "ram_budget_bytes": 639148032,
+    "decode_gpu_budget_bytes": 639148032,
+    "temporary_gpu_budget_bytes": 639148032,
+    "staging_bytes": 13315584,
+    "expert_entry_bytes": 13315584,
+    "policy": "admit=0 temporary policy; no new RAM/decode admission. Existing immutable checkpoint source bound and leases enforce placement quotas",
+    "excludes": "Immutable core/parameter/router weights, base request/attention/HC/Engram/rings/history, allocator/library/driver/context and OS page-cache overhead. Not total RSS/VRAM"
+  },
+  "profile": {
+    "scope": "Real first-two-block prefix R7, temporary placement (admit=0), prepared fresh session request, real callbacks, no diagnostic spies. Source OS page cache is uncontrolled; not a full model or vLLM comparison.",
+    "blocks": 2,
+    "tokens": 7,
+    "kernels": 118,
+    "expert_projection_uploads": 162,
+    "unique_selected_expert_bundles": 54,
+    "weight_upload_bytes": 719041536,
+    "host_logical_source_bytes": 719041536,
+    "id_upload_bytes": 28,
+    "engram_row_upload_bytes": 24192,
+    "h2d_transfers": 165,
+    "h2d_bytes": 719065756,
+    "d2h_transfers": 13,
+    "d2h_bytes": 540,
+    "routing_d2h_bytes": 504,
+    "request_error_flag_d2h_bytes": 36,
+    "activation_readback_bytes": 0,
+    "expert_projection_allocations": 162,
+    "expert_projection_frees": 162,
+    "resident_activation_allocations": 0,
+    "stream_synchronizations": 171,
+    "expert_upload_fences": 162,
+    "attention_fences": 2,
+    "routing_read_fences": 4,
+    "expert_lease_completion_fences": 2,
+    "caller_prefix_completion_fences": 1,
+    "blocking_allocation_upload_boundary_ms": 32.304677129,
+    "summed_kernel_nanoseconds": 1676511,
+    "kernel_span_nanoseconds": 66151502,
+    "summed_h2d_nanoseconds": 16600520,
+    "kernels_detail": [
+      {
+        "name": "<unnamed>::quant_a_kernel(const __half *, signed char *, signed char *, float *, int, int, int)",
+        "calls": 2,
+        "nanoseconds": 2880
+      },
+      {
+        "name": "<unnamed>::routing_gemm_i8_kernel(const signed char *, const signed char *, const float *, const signed char *, const signed char *, const float *, __half *, float *, int, int, int, int, int)",
+        "calls": 2,
+        "nanoseconds": 24640
+      },
+      {
+        "name": "<unnamed>::routing_gemm_reduce_kernel(const float *, __half *, int, int)",
+        "calls": 2,
+        "nanoseconds": 2080
+      },
+      {
+        "name": "bn_cuda_decode_detail::bind(BnCudaDecodeEXL3Pointers, long *, long *, const int *, int, int)",
+        "calls": 2,
+        "nanoseconds": 6752
+      },
+      {
+        "name": "bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_rot_kernel(bn_cuda_decode_detail::MoeCoopParams)",
+        "calls": 2,
+        "nanoseconds": 7488
+      },
+      {
+        "name": "bn_cuda_exl3::silu_mul(__half *, const __half *, const __half *, unsigned long, float)",
+        "calls": 2,
+        "nanoseconds": 2174
+      },
+      {
+        "name": "bn_cuda_gdn::add_f32_kernel(float *, const float *, const float *, unsigned long)",
+        "calls": 4,
+        "nanoseconds": 4096
+      },
+      {
+        "name": "bn_cuda_native_attention_detail::combine(BnCudaNativeLatentAttentionArgs)",
+        "calls": 2,
+        "nanoseconds": 13502
+      },
+      {
+        "name": "bn_cuda_native_io::embedding_kernel(float *, const int *, const unsigned short *, int *, int, int)",
+        "calls": 1,
+        "nanoseconds": 2048
+      },
+      {
+        "name": "bn_cuda_native_ple::cast_lookup(const __nv_bfloat16 *, __half *, unsigned long)",
+        "calls": 1,
+        "nanoseconds": 832
+      },
+      {
+        "name": "bn_cuda_native_ple::gate_value(const float *, const __half *, float *, unsigned long, int, int, float)",
+        "calls": 1,
+        "nanoseconds": 1440
+      },
+      {
+        "name": "bn_cuda_rows::int4_fp16s32_kernel(__nv_bfloat16 *, const unsigned char *, const __half *, unsigned long, int)",
+        "calls": 1,
+        "nanoseconds": 928
+      },
+      {
+        "name": "bn_cuda_swa_ring::update(const unsigned short *, unsigned short *, const unsigned short *, int, int, int, int, int, int)",
+        "calls": 2,
+        "nanoseconds": 3392
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_128x16x128_2_32x16x128_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 6,
+        "nanoseconds": 93952
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_256x8x64_2_64x8x64_tmaAB_alignCD4_bz_NNNN",
+        "calls": 2,
+        "nanoseconds": 108224
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_256x8x64_2_64x8x64_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 1,
+        "nanoseconds": 43201
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_64x8x128_5_16x8x128_tmaAB_alignCD4_bz_NNNN",
+        "calls": 1,
+        "nanoseconds": 166112
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_64x8x128_5_16x8x128_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 18,
+        "nanoseconds": 130241
+      },
+      {
+        "name": "nvjet_sm120_hss_mma_256x8x64_2_64x8x64_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 4,
+        "nanoseconds": 143714
+      },
+      {
+        "name": "std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)",
+        "calls": 1,
+        "nanoseconds": 3327
+      },
+      {
+        "name": "void <unnamed>::hc_apply_kernel<(int)4, float, (bool)1, (bool)0>(float *, const T2 *, const float *, const float *, const __half *, float *, int, int)",
+        "calls": 4,
+        "nanoseconds": 7488
+      },
+      {
+        "name": "void <unnamed>::hc_mix_finalize_kernel<(int)4, (int)24, (bool)0, (bool)0>(const float *, const float *, const float *, const float *, float *, float *, void *, int, int, int, float, float, int, const float *, float *, int)",
+        "calls": 4,
+        "nanoseconds": 15744
+      },
+      {
+        "name": "void <unnamed>::hc_mix_partials_kernel<(int)4, (int)24, (bool)1>(const float *, const float *, float *, int, int)",
+        "calls": 4,
+        "nanoseconds": 31168
+      },
+      {
+        "name": "void <unnamed>::routing_ds3_nogroup_topk_kernel<(int)1>(const __half *, const __half *, int *, __half *, float, int, int, int)",
+        "calls": 2,
+        "nanoseconds": 6400
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_a_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "calls": 2,
+        "nanoseconds": 502658
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_b_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "calls": 2,
+        "nanoseconds": 253088
+      },
+      {
+        "name": "void bn_cuda_native_attention_detail::attention<(int)16, (bool)1>(BnCudaNativeLatentAttentionArgs)",
+        "calls": 2,
+        "nanoseconds": 21504
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, __half, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 2,
+        "nanoseconds": 3263
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 1,
+        "nanoseconds": 3616
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<float, __half, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 4,
+        "nanoseconds": 12927
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<float, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 1,
+        "nanoseconds": 3616
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)0>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "calls": 2,
+        "nanoseconds": 5376
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)1>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "calls": 2,
+        "nanoseconds": 4928
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "calls": 25,
+        "nanoseconds": 36256
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "calls": 4,
+        "nanoseconds": 7456
+      }
+    ],
+    "runtime_api": [
+      {
+        "name": "cuKernelGetName",
+        "calls": 53,
+        "nanoseconds": 17359
+      },
+      {
+        "name": "cuKernelSetAttribute",
+        "calls": 32,
+        "nanoseconds": 14432
+      },
+      {
+        "name": "cuLaunchKernelEx",
+        "calls": 32,
+        "nanoseconds": 118019
+      },
+      {
+        "name": "cuStreamGetGreenCtx",
+        "calls": 66,
+        "nanoseconds": 13092
+      },
+      {
+        "name": "cudaEventRecord_v3020",
+        "calls": 3,
+        "nanoseconds": 17687
+      },
+      {
+        "name": "cudaFree_v3020",
+        "calls": 162,
+        "nanoseconds": 6150920
+      },
+      {
+        "name": "cudaGetDeviceProperties_v12000",
+        "calls": 4,
+        "nanoseconds": 1342
+      },
+      {
+        "name": "cudaLaunchKernelExC_v11060",
+        "calls": 29,
+        "nanoseconds": 135198
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "calls": 57,
+        "nanoseconds": 328258
+      },
+      {
+        "name": "cudaMalloc_v3020",
+        "calls": 162,
+        "nanoseconds": 8089672
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "calls": 16,
+        "nanoseconds": 1166415
+      },
+      {
+        "name": "cudaMemcpy_v3020",
+        "calls": 162,
+        "nanoseconds": 20840059
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "calls": 171,
+        "nanoseconds": 3228255
+      }
+    ],
+    "finding": "Projection-by-projection temporary expert allocation/upload/free and completion fences dominate this trace. Kernel span includes CPU placement and upload gaps; it is not full-model wall latency. Separate bounded RAM/VRAM placement and batched publication remain performance work."
+  },
+  "remaining": [
+    "Extend independent actual source captures and block composition through all40 layers, compressed owners/readers, index/candidate selection and Engram14",
+    "Final carried head collapse, exact vocabulary projection precision, logits and token generation; whole-model completion/commit gate",
+    "Short/long/chunked/resumed full CPU/CUDA model correctness, real backend compute-state restore/reset-replay and native text encoding/stream decoding",
+    "Optimize measured expert projection allocation/upload fences with separately bounded RAM/VRAM phase placement and batched publication, preserving routing/arithmetic/leases",
+    "Matched fully resident vLLM prefill/decode parity, continuous/chunked serving/KV scheduling/concurrent throughput and tail latency; CPU AVX2/512/NEON and secondary Metal scope remain"
+  ],
+  "source_sha256": {
+    "include/transformer_internal.h": "850ad930f61455165be6a5e56279179bb8917e5b957a6ff4a32724ff3f0490d1",
+    "src/transformer/trellis.c": "55256cc3eda675a3809dbf5b5a75e8631eeb97f1dd3d7b17a7fb68d884343fc1",
+    "src/transformer/trellis_hc.h": "38b4321f3a93c14bb81ec334c4141938e8bc35e1b745e3e46c15043ed8778880",
+    "src/transformer/trellis_block.h": "a6260c756d07d85061bfe82ff3f128bdec16b37f34dff040d408684df550be7c",
+    "test/native_producer_checks.h": "6eebb6048c10bf70d09706686a7ac5cec181477c11cc6e7067b15e768524d11b",
+    "test/reference_native_block.py": "223c71b7c44d661f21df0e0c4cfa587e49fd713a1688d71d33d9e67c953281e8",
+    "Makefile": "a09520468728b6d97fde726cb2d6c15d9566d209109e30c4b5e45a5491d21297"
+  }
+}

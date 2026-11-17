@@ -1,0 +1,477 @@
+{
+  "version": 1,
+  "goal_status": "active_incomplete",
+  "release_ready": false,
+  "scope": "Native DeepSeek exl3-int4-f16 product CLI joins the common managed HOST/DEVICE serving ledger. Independent model numerics and transformer-owned request plans stay unchanged.",
+  "defaults": {
+    "batch_host_mib": 16384,
+    "batch_device": "90 percent of free CUDA memory snapshot before shared model preparation",
+    "explicit_zero": "Disables that admission cap; expert-cache capacities and per-pool subset quotas still apply",
+    "single_request": "Uncapped by default, preserving existing behavior; explicit aggregate caps remain supported"
+  },
+  "ownership": {
+    "shared": "Immutable native model payload, conservative router preparation/staging upper bounds, configured RAM/GPU/temporary expert caches, tokenizer/input/output and frontend payloads",
+    "request": "Transformer-owned native plans; HOST includes host and pinned payload plus selected public session/backend/arena C struct sizes. Current selected metadata320 bytes per slot.",
+    "pool": "Main-owned exact max_tokens/capacity pool, max16 slots. Capacity rounds to256 and is at least max_tokens. Healthy release restarts before idle retention. Shared ledger owns reservations and ticket generations.",
+    "admission": "Preflight every encoded job against retained shared payload before expert placement/private session allocation; reserve before create and request preparation; commit after successful preparation; fence/free actual storage before ledger refund.",
+    "pressure": "Live request allocations never evicted. BUSY preserves live work and retries through the common scheduler. Reclaim idle storage to admit a new shape; retained idle payload remains charged.",
+    "subset_quotas": "Native raw HOST, PINNED and DEVICE pool ceilings remain additional checks. Raw HOST excludes PINNED; common aggregate HOST includes PINNED and selected metadata."
+  },
+  "reporting": {
+    "native_text_plan": "Requested concurrency ceiling, which can exceed admission caps; it is not a promise to allocate that cohort.",
+    "native_batch_memory": "Authoritative ledger totals and peaks, limits, shared upper bounds and BUSY count.",
+    "native_batch_pool": "Retained and peak raw private host/pinned payload; retained metadata, slot/idle/eviction counts.",
+    "native_batch_slot": "Exact retained max_tokens/capacity and payload per slot."
+  },
+  "passed_checks": {
+    "clean_build_zero_warnings": true,
+    "standard_suite": true,
+    "full_cuda_suite": true,
+    "fresh_asan_host_objects": 158,
+    "native_batch_full_heads": 198,
+    "native_batch_cases": [
+      "normal and ASAN default",
+      "normal and ASAN host-pressure",
+      "normal and ASAN device-pressure"
+    ],
+    "explicit_zero_full_heads": 44,
+    "independent_reference_paths": [
+      "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+      "/tmp/bitnet-goal-native-prefill1026/paired"
+    ],
+    "single_cli_cases_normal": 37,
+    "single_cli_cases_asan": 37,
+    "cuda_memcheck_errors": 0,
+    "cuda_memcheck_leaked_bytes": 0,
+    "negative_all_jobs_preflight_cases": 4,
+    "cpu_only_native_pool_normal_and_asan": true,
+    "asan_mock_backend_layout": true,
+    "dense_full_heads": {
+      "normal": 1152,
+      "asan": 1152,
+      "memcheck": 8
+    },
+    "flash_full_heads": 303,
+    "glm_full_heads": 148,
+    "legacy_dense_greedy_ids": 192
+  },
+  "limitations": [
+    "Bounds are managed serving payloads, not total process RSS or physical device usage.",
+    "Pre-serving metadata/input/tokenizer setup peaks, storage mappings, OS file cache, allocator/backend bookkeeping, driver/cuBLAS state and thread stacks remain outside this bound.",
+    "Shared retained quote deliberately keeps conservative model preparation/staging upper bounds; it is not minimal actual retained storage.",
+    "Free-device snapshot defaults cannot prevent allocations by other processes.",
+    "No new claim of external continuous-arrival service, controlled cold/warm offload performance, physical peaks, or matched resident vLLM parity."
+  ],
+  "evidence": "/tmp/bitnet-goal-native-admission",
+  "historical_integrity_exception": "/tmp/bitnet-goal-dense-admission/parent-log-discrepancy.json",
+  "status": "qualified_for_declared_managed_payload_scope",
+  "cases": {
+    "final-normal-default": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 12,
+        "group_calls": 6,
+        "single_forwards": 10,
+        "shared_layer_steps": 40,
+        "fallback_layer_steps": 200,
+        "shared_expert_borrows": 9360,
+        "busy_retries": 0,
+        "created": 2,
+        "reused": 2,
+        "retained_device_payload": 4786680158,
+        "peak_device_payload": 4786680158,
+        "peak_live": 2
+      },
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13765534519,
+        "reserved_device": 49688655646,
+        "peak_reserved_host": 13765534519,
+        "peak_reserved_device": 49688655646,
+        "busy": 0,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 19117664,
+        "peak_host_payload": 19117664,
+        "retained_pinned_payload": 37773312,
+        "peak_pinned_payload": 37773312,
+        "evicted": 0,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 2,
+        "idle": 2,
+        "retained_metadata_payload": 640
+      }
+    },
+    "final-normal-host-pressure": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 22,
+        "group_calls": 0,
+        "single_forwards": 22,
+        "shared_layer_steps": 0,
+        "fallback_layer_steps": 0,
+        "shared_expert_borrows": 0,
+        "busy_retries": 0,
+        "created": 3,
+        "reused": 1,
+        "retained_device_payload": 3023769923,
+        "peak_device_payload": 3023769923,
+        "peak_live": 1
+      },
+      "memory": {
+        "host_limit": 13743685632,
+        "device_limit": 91153642292,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13743470087,
+        "reserved_device": 47925745411,
+        "peak_reserved_host": 13743470087,
+        "peak_reserved_device": 47925745411,
+        "busy": 18,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 9661040,
+        "peak_host_payload": 9661040,
+        "retained_pinned_payload": 25165824,
+        "peak_pinned_payload": 25165824,
+        "evicted": 2,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 1,
+        "idle": 1,
+        "retained_metadata_payload": 320
+      }
+    },
+    "final-normal-device-pressure": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 22,
+        "group_calls": 0,
+        "single_forwards": 22,
+        "shared_layer_steps": 0,
+        "fallback_layer_steps": 0,
+        "shared_expert_borrows": 0,
+        "busy_retries": 0,
+        "created": 3,
+        "reused": 1,
+        "retained_device_payload": 3023769923,
+        "peak_device_payload": 3023769923,
+        "peak_live": 1
+      },
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 47926214656,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13743470087,
+        "reserved_device": 47925745411,
+        "peak_reserved_host": 13743470087,
+        "peak_reserved_device": 47925745411,
+        "busy": 18,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 9661040,
+        "peak_host_payload": 9661040,
+        "retained_pinned_payload": 25165824,
+        "peak_pinned_payload": 25165824,
+        "evicted": 2,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 1,
+        "idle": 1,
+        "retained_metadata_payload": 320
+      }
+    },
+    "final-normal-explicit-zero": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 12,
+        "group_calls": 6,
+        "single_forwards": 10,
+        "shared_layer_steps": 40,
+        "fallback_layer_steps": 200,
+        "shared_expert_borrows": 9360,
+        "busy_retries": 0,
+        "created": 2,
+        "reused": 2,
+        "retained_device_payload": 4786680158,
+        "peak_device_payload": 4786680158,
+        "peak_live": 2
+      },
+      "memory": {
+        "host_limit": 18446744073709551615,
+        "device_limit": 18446744073709551615,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13765534519,
+        "reserved_device": 49688655646,
+        "peak_reserved_host": 13765534519,
+        "peak_reserved_device": 49688655646,
+        "busy": 0,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 19117664,
+        "peak_host_payload": 19117664,
+        "retained_pinned_payload": 37773312,
+        "peak_pinned_payload": 37773312,
+        "evicted": 0,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 2,
+        "idle": 2,
+        "retained_metadata_payload": 640
+      }
+    },
+    "final-asan-default": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 12,
+        "group_calls": 6,
+        "single_forwards": 10,
+        "shared_layer_steps": 40,
+        "fallback_layer_steps": 200,
+        "shared_expert_borrows": 9360,
+        "busy_retries": 0,
+        "created": 2,
+        "reused": 2,
+        "retained_device_payload": 4786680158,
+        "peak_device_payload": 4786680158,
+        "peak_live": 2
+      },
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13765534519,
+        "reserved_device": 49688655646,
+        "peak_reserved_host": 13765534519,
+        "peak_reserved_device": 49688655646,
+        "busy": 0,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 19117664,
+        "peak_host_payload": 19117664,
+        "retained_pinned_payload": 37773312,
+        "peak_pinned_payload": 37773312,
+        "evicted": 0,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 2,
+        "idle": 2,
+        "retained_metadata_payload": 640
+      }
+    },
+    "final-asan-host-pressure": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 22,
+        "group_calls": 0,
+        "single_forwards": 22,
+        "shared_layer_steps": 0,
+        "fallback_layer_steps": 0,
+        "shared_expert_borrows": 0,
+        "busy_retries": 0,
+        "created": 3,
+        "reused": 1,
+        "retained_device_payload": 3023769923,
+        "peak_device_payload": 3023769923,
+        "peak_live": 1
+      },
+      "memory": {
+        "host_limit": 13743685632,
+        "device_limit": 91153642292,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13743470087,
+        "reserved_device": 47925745411,
+        "peak_reserved_host": 13743470087,
+        "peak_reserved_device": 47925745411,
+        "busy": 18,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 9661040,
+        "peak_host_payload": 9661040,
+        "retained_pinned_payload": 25165824,
+        "peak_pinned_payload": 25165824,
+        "evicted": 2,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 1,
+        "idle": 1,
+        "retained_metadata_payload": 320
+      }
+    },
+    "final-asan-device-pressure": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 22,
+        "group_calls": 0,
+        "single_forwards": 22,
+        "shared_layer_steps": 0,
+        "fallback_layer_steps": 0,
+        "shared_expert_borrows": 0,
+        "busy_retries": 0,
+        "created": 3,
+        "reused": 1,
+        "retained_device_payload": 3023769923,
+        "peak_device_payload": 3023769923,
+        "peak_live": 1
+      },
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 47926214656,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13743470087,
+        "reserved_device": 47925745411,
+        "peak_reserved_host": 13743470087,
+        "peak_reserved_device": 47925745411,
+        "busy": 18,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 9661040,
+        "peak_host_payload": 9661040,
+        "retained_pinned_payload": 25165824,
+        "peak_pinned_payload": 25165824,
+        "evicted": 2,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 1,
+        "idle": 1,
+        "retained_metadata_payload": 320
+      }
+    },
+    "final-asan-explicit-zero": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 12,
+        "group_calls": 6,
+        "single_forwards": 10,
+        "shared_layer_steps": 40,
+        "fallback_layer_steps": 200,
+        "shared_expert_borrows": 9360,
+        "busy_retries": 0,
+        "created": 2,
+        "reused": 2,
+        "retained_device_payload": 4786680158,
+        "peak_device_payload": 4786680158,
+        "peak_live": 2
+      },
+      "memory": {
+        "host_limit": 18446744073709551615,
+        "device_limit": 18446744073709551615,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13765534519,
+        "reserved_device": 49688655646,
+        "peak_reserved_host": 13765534519,
+        "peak_reserved_device": 49688655646,
+        "busy": 0,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 19117664,
+        "peak_host_payload": 19117664,
+        "retained_pinned_payload": 37773312,
+        "peak_pinned_payload": 37773312,
+        "evicted": 0,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 2,
+        "idle": 2,
+        "retained_metadata_payload": 640
+      }
+    },
+    "memcheck-native-device-pressure": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 22,
+        "group_calls": 0,
+        "single_forwards": 22,
+        "shared_layer_steps": 0,
+        "fallback_layer_steps": 0,
+        "shared_expert_borrows": 0,
+        "busy_retries": 0,
+        "created": 3,
+        "reused": 1,
+        "retained_device_payload": 3023769923,
+        "peak_device_payload": 3023769923,
+        "peak_live": 1
+      },
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 47926214656,
+        "shared_host_upper": 13708642903,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 13743470087,
+        "reserved_device": 47925745411,
+        "peak_reserved_host": 13743470087,
+        "peak_reserved_device": 47925745411,
+        "busy": 18,
+        "idle_retained": 1
+      },
+      "pool": {
+        "retained_host_payload": 9661040,
+        "peak_host_payload": 9661040,
+        "retained_pinned_payload": 25165824,
+        "peak_pinned_payload": 25165824,
+        "evicted": 2,
+        "discarded": 0,
+        "restart_failures": 0,
+        "slots": 1,
+        "idle": 1,
+        "retained_metadata_payload": 320
+      }
+    }
+  },
+  "cap_derivation": {
+    "caps": {
+      "host": 13107,
+      "device": 45706
+    },
+    "source": "/tmp/bitnet-goal-native-admission/final-normal-default/comparison.json",
+    "scope": "one largest individual request plus conservative shared retained payload",
+    "metadata_per_slot": 320
+  },
+  "audit": {
+    "sources": 915,
+    "references_before_document_updates": 85532,
+    "historical_exception": {
+      "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+      "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+      "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+      "changed": true
+    },
+    "numerical_references_unchanged": true
+  }
+}

@@ -1,0 +1,735 @@
+{
+  "status": "Qualified native request-local index orchestration, with bounded GPU primitive race-check scope. Full native attention, forward/model admission, end-to-end generation and vLLM parity remain open.",
+  "architecture": "DeepseekV41ForCausalLM",
+  "apis": [
+    "bn_transformer_trellis_index_session_plan",
+    "bn_transformer_trellis_prepare_session_index",
+    "bn_transformer_trellis_index_begin",
+    "bn_transformer_trellis_index_select"
+  ],
+  "implementation": {
+    "ownership": "Mutable selection/candidate workspace and epochs belong to the session request. Core projection/parameter handles remain immutable backend-model resources. Shape, index-source, KV-owner and candidate rules come from model anatomy; no model family/layer names added to transformer orchestration.",
+    "setup": "Additional exact device/host quotas, optional SWA on same FFN/KV request, shared reserved linear workspace, all index buffers allocated before execution. Transactional attach after stage completion, matching setup idempotent, live upgrades rejected. Permanently dense <=512-entry geometry has zero index device payload and needs no index compute callbacks.",
+    "publication": "Begin snapshots private owner publication generations and expires old selections/masks even at identical positions. Selection requires owner cursor equal chunk end and a successful owner publication after begin. A private checked uint64 generation commits after publication completion; public KV view shape unchanged. Republishing at unchanged cursor invalidates cached results.",
+    "execution": "Sliding and <=512-entry dense paths skip queries/scoring/selection. Producing index sources project once for the full chunk, then use source256/final-tail16 slabs (273 ->256+17). Ordinary top-k through16384 entries; larger pools use candidate-source masks then later candidate-use layers. Candidate masks cover the full chunk and share only while epoch/rate/entries/owner version match. Actual RoPE/query and per-slab causal positions preserved.",
+    "sharing": "Readers borrow the latest matching source index buffer, with no GPU work or completion fence. A later producing source expires previous selection views. Source candidate masks survive later candidate-use selection while parent publication generation remains unchanged.",
+    "failure": "Malformed scalar/view/dependency inputs reject before enqueue with unchanged outputs. Injected backend/completion failures destroy the entire request, invalidate borrowed views and require reset/setup. Model/session whole-forward position is not advanced.",
+    "hot_path": "No logical resident allocation, host upload, device readback or resize inside index execution. One completion fence per producing full chunk; none for dense/sliding/shared readers."
+  },
+  "reference": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "source_sha256": "ed8573473ff2284fc97c0dba6f6eebf627612219719ac72ee594c90c451759ff",
+    "function_ast_sha256": "2ec01c5f55d9965f6baa3050d0c2c9f24889a036a75281eebfb16d2f55d915a9",
+    "method": "Unchanged full source _indexer_topk AST; independent paired-library query/raw-head-weight projections replayed from immutable prior capture, original RoPE/Triton/original top-k. Caller dense/shared rules from architecture configuration. Synthetic repeated canonical key history; KV latents not used by this index-only fixture.",
+    "parent_manifest_sha256": "07444f17fc6c09b3b9a58df90ff51b4d5ddae7615c267c04df85d702f7a51aa1",
+    "manifest_sha256": "8b12242e9b9ab18484228d5aec88feb290051bc137cd78fa3f2e2223b7baa868",
+    "norm_epsilon": 1e-20,
+    "groups": 8,
+    "steps": 68,
+    "cases": [
+      {
+        "rows": 1,
+        "pos0": 0,
+        "end": 1,
+        "layers": [
+          0,
+          2,
+          3,
+          20,
+          21,
+          24,
+          25
+        ]
+      },
+      {
+        "rows": 1,
+        "pos0": 511,
+        "end": 512,
+        "layers": [
+          2,
+          3,
+          20,
+          21
+        ]
+      },
+      {
+        "rows": 4,
+        "pos0": 509,
+        "end": 513,
+        "layers": [
+          20,
+          21,
+          24,
+          25,
+          28,
+          29,
+          32,
+          33,
+          36,
+          37,
+          39
+        ]
+      },
+      {
+        "rows": 33,
+        "pos0": 993,
+        "end": 1026,
+        "layers": [
+          2,
+          3,
+          8,
+          9,
+          14,
+          15,
+          20,
+          21
+        ]
+      },
+      {
+        "rows": 1,
+        "pos0": 16383,
+        "end": 16384,
+        "layers": [
+          20,
+          21,
+          24,
+          25
+        ]
+      },
+      {
+        "rows": 1,
+        "pos0": 16384,
+        "end": 16385,
+        "layers": [
+          20,
+          21,
+          24,
+          25,
+          28,
+          29,
+          32,
+          33,
+          36,
+          37,
+          39
+        ]
+      },
+      {
+        "rows": 273,
+        "pos0": 65264,
+        "end": 65537,
+        "layers": [
+          20,
+          21,
+          24,
+          25,
+          28,
+          29,
+          32,
+          33,
+          36,
+          37,
+          39
+        ]
+      },
+      {
+        "rows": 1,
+        "pos0": 65536,
+        "end": 65537,
+        "layers": [
+          2,
+          3,
+          8,
+          9,
+          14,
+          15,
+          20,
+          21,
+          24,
+          25,
+          36,
+          39
+        ]
+      }
+    ],
+    "metadata_oracle": {
+      "steps": 68,
+      "modes": {
+        "sliding": 1,
+        "dense": 10,
+        "topk": 29,
+        "source": 6,
+        "use": 22
+      },
+      "slabs": {
+        "(4, 509, 20)": [
+          4
+        ],
+        "(4, 509, 24)": [
+          4
+        ],
+        "(4, 509, 28)": [
+          4
+        ],
+        "(4, 509, 32)": [
+          4
+        ],
+        "(4, 509, 36)": [
+          4
+        ],
+        "(33, 993, 2)": [
+          33
+        ],
+        "(33, 993, 8)": [
+          33
+        ],
+        "(33, 993, 14)": [
+          33
+        ],
+        "(33, 993, 20)": [
+          33
+        ],
+        "(1, 16383, 20)": [
+          1
+        ],
+        "(1, 16383, 24)": [
+          1
+        ],
+        "(1, 16384, 20)": [
+          1
+        ],
+        "(1, 16384, 24)": [
+          1
+        ],
+        "(1, 16384, 28)": [
+          1
+        ],
+        "(1, 16384, 32)": [
+          1
+        ],
+        "(1, 16384, 36)": [
+          1
+        ],
+        "(273, 65264, 20)": [
+          256,
+          17
+        ],
+        "(273, 65264, 24)": [
+          256,
+          17
+        ],
+        "(273, 65264, 28)": [
+          256,
+          17
+        ],
+        "(273, 65264, 32)": [
+          256,
+          17
+        ],
+        "(273, 65264, 36)": [
+          256,
+          17
+        ],
+        "(1, 65536, 2)": [
+          1
+        ],
+        "(1, 65536, 8)": [
+          1
+        ],
+        "(1, 65536, 14)": [
+          1
+        ],
+        "(1, 65536, 20)": [
+          1
+        ],
+        "(1, 65536, 24)": [
+          1
+        ],
+        "(1, 65536, 36)": [
+          1
+        ]
+      },
+      "method": "Independent Python metadata/caller-mode and source-slab oracle; numerical values remain original source captures."
+    },
+    "audit": {
+      "checked_payloads": 1784,
+      "reference_sha256": "8b12242e9b9ab18484228d5aec88feb290051bc137cd78fa3f2e2223b7baa868",
+      "parent_sha256": "07444f17fc6c09b3b9a58df90ff51b4d5ddae7615c267c04df85d702f7a51aa1",
+      "ancestor_manifest": "/tmp/bitnet-goal-native-kv-pools/checkpoint-paired-reference/reference.json",
+      "ancestor_sha256": "0935e5a5086d0cb943fcd759356bca60467e6c5524cdacb6ffe6b1fe99968f2c",
+      "weight_count": 32,
+      "norm_epsilon": 1e-20
+    },
+    "scope": "Checkpoint-derived x/normalized-q_res and immutable paired-library projection captures; original RoPE/Triton/top-k and unchanged full indexer AST. Synthetic repeated canonical key history with zero unused capacity and zero KV latents, not an actual full-prefix model execution."
+  },
+  "verification": {
+    "clean_product_build_zero_warnings": true,
+    "standard_suite": true,
+    "full_cuda_suite_and_diagnostics": true,
+    "targeted_cpu_tests": "Synthetic dispatch, dense/no-callback planning, exact quotas, allocation/completion rollback, source/readers/candidate sharing, pool-generation invalidation, invalid inputs, two-session isolation and reset.",
+    "controller": {
+      "real": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "asan-real": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "memcheck": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "initcheck": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "nsys": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "combined-real": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "combined-asan": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "combined-memcheck": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      },
+      "combined-initcheck": {
+        "calls": 136,
+        "compared_bytes": 43431718,
+        "hot_allocations": 0,
+        "index_device_bytes": 125584993,
+        "modes": [
+          2,
+          20,
+          58,
+          12,
+          44
+        ]
+      }
+    },
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "legacy-kv-build": 0,
+      "legacy-swa-build": 0,
+      "legacy-ffn-build": 0,
+      "real": 0,
+      "asan-real": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "race-bounded-index": 0,
+      "race-bounded-topk": 0,
+      "race-bounded-candidates": 0,
+      "race-bounded-candidate-use": 0,
+      "legacy-kv": 0,
+      "legacy-swa": 0,
+      "legacy-ffn": 0,
+      "nsys": 0,
+      "export": 0,
+      "combined-build": 0,
+      "combined-asan-build": 0,
+      "combined-real": 0,
+      "combined-asan": 0,
+      "combined-memcheck": 0,
+      "combined-initcheck": 0,
+      "reference-audit": 0
+    },
+    "host_sanitizer_scope": [
+      "probe and inline host planners",
+      "model",
+      "model_backend",
+      "backend_layout",
+      "backend_model",
+      "backend_session",
+      "session",
+      "trellis",
+      "json",
+      "safetensors",
+      "transformer/trellis including private KV/SWA/index controllers"
+    ],
+    "cuda_sanitizers": "Full controller and combined index/SWA: memcheck with full leak checking and initcheck, all zero errors/leaks. Bounded original GPU primitive race fixtures: index/query24 calls, top-k160 calls, candidate-source64 calls, candidate-use44 calls, all zero hazards/errors/warnings.",
+    "full_controller_race": {
+      "status": "incomplete_resource_stop",
+      "reason": "Racecheck host RSS exceeded400GB on502GiB shared machine; swap19GiB nearly full, available63GiB before large R273 group. Stopped target before exhaustion. Not a race failure and not a pass.",
+      "target_pid": 3832162,
+      "tool_pid": 3832153,
+      "completed_through": "group5 layer39; large group6 not qualified by full race run",
+      "full_normal_asan_memcheck_initcheck": "passed"
+    },
+    "race_limit": "Full controller race run stopped for shared-machine memory protection (>400GB host RSS, swap nearly full) before large R273 case. It is incomplete, not passed. GPU kernels unchanged in this controller change; bounded existing primitive race fixtures rerun on final build. Full R273 execution covered by exact normal/ASAN/memcheck/initcheck runs.",
+    "combined_setup_failures": 4,
+    "legacy_regressions": {
+      "kv": "96 calls,151399320 compared bytes,0 hot allocations; four setup faults and completion recovery.",
+      "swa": "400 calls,1395181568 compared bytes,0 hot allocations; all update modes and completion recovery.",
+      "ffn": "12 decode/4 prefill cases,7046173384 compared bytes,0 hot allocations/requests; offload transfers remain part of existing FFN probe, not index execution."
+    },
+    "frozen_source_files": 791,
+    "preserved_user_binaries": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "profile": {
+    "scope": "One profiled component selection: source layer24 candidate USE, R273, pos65264, pool65537, full query projection then256+17slabs. Not whole model, serving, throughput benchmark, or vLLM comparison.",
+    "kernel_count": 18,
+    "kernel_ns": 1096836,
+    "kernels": [
+      {
+        "name": "nvjet_sm120_hsh_mma_128x64x64_4_64x32x64_tmaAB_alignCD4_bz_NNNN",
+        "ns": 16864,
+        "grid": [
+          40,
+          4,
+          1
+        ],
+        "block": [
+          64,
+          2,
+          1
+        ]
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_32x64x128_4_16x32x128_tmaAB_alignCD4_splitK_NNNN",
+        "ns": 4352,
+        "grid": [
+          8,
+          1,
+          16
+        ],
+        "block": [
+          64,
+          2,
+          1
+        ]
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "ns": 1600,
+        "grid": [
+          1,
+          18,
+          1
+        ],
+        "block": [
+          32,
+          16,
+          1
+        ]
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)0>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "ns": 4064,
+        "grid": [
+          273,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          32,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::local_union(const unsigned char *, int *, int *, int *, int, int)",
+        "ns": 9632,
+        "grid": [
+          33,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::global_union(int *, int *, int, int)",
+        "ns": 1280,
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "void bn_cuda_native_candidate_use_detail::gather<(bool)1>(const __half *, const int *, const int *, const int *, const int *, int *, __half *, int, int, int)",
+        "ns": 8512,
+        "grid": [
+          1025,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "void bn_cuda_native_index_detail::score<(bool)0, (bool)1, (bool)1>(const __half *, const __half *, const __half *, const int *, __half *, int, int, int, int, int, int, const int *)",
+        "ns": 780803,
+        "grid": [
+          8,
+          513,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::mask(const unsigned char *, const int *, const int *, __half *, int, int, int, int, int)",
+        "ns": 72896,
+        "grid": [
+          256,
+          513,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "void bn_cuda_native_topk_detail::dsa_topk_kernel<(bool)1, (bool)1>(const __half *, int *, int, int, int, int, const int *, int)",
+        "ns": 52064,
+        "grid": [
+          256,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::remap(const int *, const int *, int *, int)",
+        "ns": 2144,
+        "grid": [
+          512,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::local_union(const unsigned char *, int *, int *, int *, int, int)",
+        "ns": 2080,
+        "grid": [
+          33,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::global_union(int *, int *, int, int)",
+        "ns": 928,
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "void bn_cuda_native_candidate_use_detail::gather<(bool)1>(const __half *, const int *, const int *, const int *, const int *, int *, __half *, int, int, int)",
+        "ns": 6240,
+        "grid": [
+          1025,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "void bn_cuda_native_index_detail::score<(bool)0, (bool)1, (bool)1>(const __half *, const __half *, const __half *, const int *, __half *, int, int, int, int, int, int, const int *)",
+        "ns": 104449,
+        "grid": [
+          1,
+          513,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::mask(const unsigned char *, const int *, const int *, __half *, int, int, int, int, int)",
+        "ns": 5760,
+        "grid": [
+          17,
+          513,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "void bn_cuda_native_topk_detail::dsa_topk_kernel<(bool)1, (bool)1>(const __half *, int *, int, int, int, int, const int *, int)",
+        "ns": 22048,
+        "grid": [
+          17,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "bn_cuda_native_candidate_use_detail::remap(const int *, const int *, int *, int)",
+        "ns": 1120,
+        "grid": [
+          34,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ]
+      }
+    ],
+    "runtime_api": {
+      "cuStreamGetGreenCtx": 4,
+      "cuKernelSetAttribute": 2,
+      "cuLaunchKernelEx": 2,
+      "cuKernelGetName": 15,
+      "cuLibraryGetKernel": 1,
+      "cudaLaunchKernelExC_v11060": 1,
+      "cudaLaunchKernel_v7000": 15,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "explicit_completion_fences": {
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "observed_allocation_free_copy_memset_api": {},
+    "device_memcpy_events": 0,
+    "sqlite_sha256": "62a82e591bd2633f1b45aae50888ba2bd8ad5b8e5280e35e7c9f5a2c6c6f262a"
+  },
+  "limits": [
+    "Component/index session orchestration only; full native causal attention and attention output projections/Engram are not integrated or admitted.",
+    "Two independent sessions demonstrate isolation, not continuous batching or concurrent serving throughput.",
+    "Single traced candidate-use component call is not a throughput/latency benchmark or vLLM parity evidence. Existing scorer performance gap remains open.",
+    "Full model short/long/chunked/resumed prefill/decode, production frequency/controller metadata, whole-forward asynchronous stream coordination and end-to-end token references remain required."
+  ],
+  "artifacts": "/tmp/bitnet-goal-native-index-session"
+}

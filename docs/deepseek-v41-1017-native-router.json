@@ -1,0 +1,249 @@
+{
+  "status": "PROGRESS; whole inference/vLLM parity objective remains ACTIVE and incomplete",
+  "component": "Native deterministic sqrtsoftplus noaux_tc routing, immutable model-wide derived layouts and batched prefill execution",
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "flags": "-O3 --use_fast_math -std=c++17 -arch=sm_120a",
+    "sha256": {
+      "routing.cu": "69d7df46a2b257d510d57c862833df4114e194d7ca2d2f5ef9bb9598776728a6",
+      "routing_gemm.cu": "b16c4b2bdd66822480db874912130d0518c453a0e11c84b62c270b1bacc633b3",
+      "det_gemm.cuh": "7420532283f5382ac806976cdc0eb365503ea486c26f75bc193f0f5b043dfea9",
+      "reduction.cuh": "30f65e8fbf651bd73768f211e97611eee71d49a73a3fbe0b335ac2e943d120e3",
+      "../modules/block_sparse_mlp_routing.py": "02f01a4f225430d0ad90dc5f89ae6557ec558f3df1ff6fb91ff6e64a7ce19247"
+    }
+  },
+  "reference_artifacts": {
+    "reference-source.json": "522a2c8e68ae58b3f0afe382c434565f23ce80bc1351562dfc424424d168eea3",
+    "reference.cu": "9763d39df9516ce03b254ec9b22cd35bf94758a64e08fce673215c15bacc5761",
+    "reference.so": "d048fd694ae8cbfec89d081f05bfac4ba0b795fbc96e7b55e2eeab6444030180",
+    "original-router.cuh": "da4a12c34c94cb399cdf43dfe9d35786d8b64f865e361fcf9532547e83d5da33",
+    "det_gemm.cuh": "7420532283f5382ac806976cdc0eb365503ea486c26f75bc193f0f5b043dfea9",
+    "reference.json": "2febf25c4827fdec0befbb017502ac88264d56a65b141f0d0323a2c5925b3a07",
+    "fixtures.json": "2aca156083cb153a241a2479ce448e28ed88b93bea2a5590ab110bf68075a7f6",
+    "capture.py": "67ed705882e7d6ab4597db339ffefcbe4c602b0319ad025568e3cdbb333834b0",
+    "fixtures.py": "75d581545467baad97cd291c156fda5c743523adea79fb8d73efcca00efc48e0",
+    "cuda_native_router_reference.h": "b3982d3562c7a84a2e053afcd92087c8a99e20c8cf928e6618420b790060adf1"
+  },
+  "implementation": {
+    "model_stage": "bn_model_prepare_native_routers after core+parameters+numerics, same backend owner. Preflight all layers and aggregate budgets, one-shot atomic publication; stage failure frees only staged handles, preserves core/parameter handles, permits retry. CPU synthetic40-layer tests injected failures1/20/40 and budget/precondition errors.",
+    "weights": "Dedicated immutable native_router_owner buffer; input packed F16[K,N] router gate and raw F32[1,E] bias remain unchanged. One owned allocation holds row-major F16[E,D], signed int8 high/low slices, F32 row scales, centered F16 bias, F32 mean, validation flag and alignment padding. GPU finite-check rejects nonfinite parents/mean and nonfinite centered F16 bias before publication; publication fence. The boundary regression used finite [+70000,-70000] F32 biases: the first version published F16 infinities and selected ID-1; the fixed version rejects setup atomically. First qualification and reproducer logs retained before-center-range-guard/. Free bypasses idle cache; ordinary matvec/matmul reject dedicated handle.",
+    "centering": "Torch Reduce.cuh scalar/vector4 mean schedule replicated in default-math TU, with explicit F32 add/sub/mul RN and separate F16 narrowing; original _esb_h AST independently captures (bias-bias.mean()).half(). Every derived byte (including padding/control) compared against original preparation values.",
+    "execution": "One row fixed-order FMA half-input/half-output GEMV, then original warp top-k. Multiple rows use original per-row128-element activation quantization, deterministic signed int8 tensor-core GEMM with exact int32 accumulators, fixed F32 split-K re-reduction and F16 logits, then sqrt(softplus) affinities/top-k. No vendor GEMM or per-token projection fallback. K1..32, expert IDs I32 (source I64 selections range-checked and frozen as both I64 and exact I32 values), routing weights F16.",
+    "selection": "Mean-centered F16 bias changes selection only; payload remains unbiased affinity. Normalize selected payloads with epsilon1e-20, scale (actual1.5), round F16. Original per-lane/warp tie order preserved; tied expert order can differ from increasing expert ID.",
+    "workspace": "Caller-owned exact resident views for F16 x/logits/weights,I32 selections,I8 ahi/alo,F32 activation scales and split partials. bn_gpu_router_workspace computes shape-only split and extents. Empty workspaces required when unused. All views/type/count/alignment/generation/backend owner/overlap checked before work; metadata rejection queues nothing, runtime failures poison request. No execution allocation/copy/fence.",
+    "limits": "SM80+ with97KiB opt-in shared memory; E1..512,D128..32768 multiples128,R1..65535,R*D<=INT32_MAX. sqrtsoftplus/no-group/text only; no hash/vision/group routing admitted. Router fast math isolated to new CUDA TU; mean/centering default math. No global mutable library state or GPU handles on CPU model weights."
+  },
+  "qualification": {
+    "checks": {
+      "boundary-build": 0,
+      "boundary-after": 0,
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-cpu-build": 0,
+      "asan-cpu": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "asan-native": 0,
+      "memcheck-unit": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "racecheck": 0,
+      "nsys-prefill": 0,
+      "nsys-prefill-export": 0,
+      "nsys-decode": 0,
+      "nsys-decode-export": 0
+    },
+    "records": {
+      "native": {
+        "cases": 360,
+        "repeated_bytes": 4920184800,
+        "derived_bytes": 314675200,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "cases": 360,
+        "repeated_bytes": 4920184800,
+        "derived_bytes": 314675200,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "cases": 360,
+        "repeated_bytes": 4920184800,
+        "derived_bytes": 314675200,
+        "mismatches": 0
+      },
+      "nsys-prefill": {
+        "cases": 1,
+        "repeated_bytes": 10054656,
+        "derived_bytes": 314675200,
+        "mismatches": 0
+      },
+      "nsys-decode": {
+        "cases": 1,
+        "repeated_bytes": 2412,
+        "derived_bytes": 314675200,
+        "mismatches": 0
+      }
+    },
+    "reference_sha256": "2febf25c4827fdec0befbb017502ac88264d56a65b141f0d0323a2c5925b3a07",
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "source_sha256": {
+      "include/gpu_backend.h": "0f364e8ffbb078ec1d41f8eb81ab30ac8975e0eedf1678f61155840be0cbfec4",
+      "include/gpu_cuda.h": "260e698d26bad366450b179949c7b5754c15d06593dc019a8ccd3abcdcf32ed1",
+      "include/backend_layout.h": "fe08647f9ed76ecc51a1347ad12f8887612266d9199e3a1b9230d092c0e6fb85",
+      "include/model.h": "47ebfc6e31ae01b30b3265845f5139b601940e355acbe823449f62751276d23e",
+      "src/gpu_cuda.cu": "d7247211f93717c88bda4cfee91a0c9cc1e54a7e29d92782121a6b63fff3683b",
+      "src/gpu_cuda_router.cu": "b2c953000f9d55632b44661042d4bebcfdb518b79514bca504e7cb16d83de809",
+      "src/gpu_cuda_router.h": "ba5ce9e578f44235ad038d5b40f745034820cce8dd31e47cac4820290866cb57",
+      "src/gpu_cuda_router_det.cuh": "3d8660dc70fc089e9539f88545c7d43da57371cdd7134eddbf314bd893e2b233",
+      "src/gpu_cuda_router_validate.cuh": "46720cf0df5a4cfce64500b4d86a65265ca92e5128b495e4eafac1ae90bec4f3",
+      "src/backend_layout.c": "ec42ab618e2c674fc1a67d0a21181ab85849db0ae9b7e09dbb57558b79cd825f",
+      "src/model_backend.c": "9932ec022bb809617d7949b0e8c6a23580d90c006bff2e9b8155d9b8d6e34570",
+      "test/cuda_native_router_checks.h": "944b98cf7b1cdf88d49a3ea274fb55b6e062e99df16490bcb2daf91205a39ecd",
+      "test/cuda_native_router_reference.h": "b3982d3562c7a84a2e053afcd92087c8a99e20c8cf928e6618420b790060adf1",
+      "test/native_router_checks.h": "b83c1c3432b247e1988e005ad954062939703e1eee21eb9971edb85e27b77ada",
+      "test/test_cuda_backend.c": "1a8cc239a6465f90669bbc403627234639f688e00b45ce3daa8ec518bfa1d87d",
+      "test/test_moe.c": "b3d25c4ea3caefcdc72bbd7df1b5a451fd1f519cb36dbe6adb3aba09b9871df5",
+      "Makefile": "14aef126c406dc60831562403c19f44cc6dce5afb569b15943401c0b36791c56",
+      "third_party/exllamav3/LICENSE": "27a32b6263fcd96c79d3beeecf221c4366780bdf15ad51986f48650bd7369bff",
+      "third_party/exllamav3/README.md": "9062ee6ca43c80379ea5fbd9f97ec71ca4168057b1f958518e8e6618b7927a2b"
+    }
+  },
+  "reference": {
+    "actual_cases": 360,
+    "layers": 40,
+    "rows": [
+      1,
+      7,
+      32,
+      33,
+      64,
+      256,
+      1024,
+      4096,
+      8192
+    ],
+    "dim": 5120,
+    "experts": 384,
+    "k": 6,
+    "checked_bytes_per_pass": 1640061600,
+    "derived_bytes": 314675200,
+    "synthetic_cases": 35,
+    "synthetic_experts": [
+      1,
+      2,
+      31,
+      32,
+      33,
+      127,
+      128,
+      129,
+      256,
+      383,
+      384,
+      511,
+      512
+    ],
+    "synthetic_coverage": "Derived full arena hashes, source logits/IDs/weights/quantized activations/scales/partials, zero-weight ties, K1 and32, small/ragged expert counts, split/reduce and direct output paths, two simultaneous requests and input/guard preservation. Actual probe checks all40 arenas and outputs3 repeats, inputs/guards unchanged, rejects Inf gate/NaN bias without changing parent values. Native,ASAN+UBSAN,memcheck allbitexact. CPU stage budget/rollback/retry tests also ASAN+UBSAN. Finite-to-F16 overflow and F32 mean overflow, NaN bias and subsequent successful preparation tested; source valid-reference values unchanged.",
+    "preparation_bytes": 314675200,
+    "arithmetic_note": "R1 FMA and multirow Ozaki-style int8 projection are distinct source numerical policies. Slice count changes with shape; no arbitrary row-splitting invariance claim. Full source logits, partial sums, IDs and weights compared instead of merely final top-k agreement."
+  },
+  "profiles": {
+    "prefill": {
+      "scope": "64 warmed router calls, actual layer0 shared derived gate,bias; R256 deterministic int8 split8,D5120,E384,K6. Setup/request allocation outside capture.",
+      "kernels": [
+        {
+          "name": "<unnamed>::quant_a_kernel(const __half *, signed char *, signed char *, float *, int, int, int)",
+          "count": 64,
+          "total_ns": 116704
+        },
+        {
+          "name": "<unnamed>::routing_gemm_i8_kernel(const signed char *, const signed char *, const float *, const signed char *, const signed char *, const float *, __half *, float *, int, int, int, int, int)",
+          "count": 64,
+          "total_ns": 887428
+        },
+        {
+          "name": "<unnamed>::routing_gemm_reduce_kernel(const float *, __half *, int, int)",
+          "count": 64,
+          "total_ns": 81696
+        },
+        {
+          "name": "void <unnamed>::routing_ds3_nogroup_topk_kernel<(int)1>(const __half *, const __half *, int *, __half *, float, int, int, int)",
+          "count": 64,
+          "total_ns": 199458
+        }
+      ],
+      "apis": {
+        "cuKernelGetName": 256,
+        "cudaGetLastError_v3020": 256,
+        "cudaLaunchKernel_v7000": 256,
+        "cudaSetDevice_v3020": 64
+      },
+      "allocation_copy_free_sync_calls": [],
+      "memcpy_records": 0,
+      "sqlite_sha256": "075edfde2012a841e63394fed643e93233f54f71d13200e39b4a2fb86e546357"
+    },
+    "decode": {
+      "scope": "64 warmed router calls, actual layer0 shared derived gate,bias; R1 fixed-order FMA,D5120,E384,K6. Setup/request allocation outside capture.",
+      "kernels": [
+        {
+          "name": "<unnamed>::routing_gemv_kernel(const __half *, const __half *, __half *, int, int)",
+          "count": 64,
+          "total_ns": 246497
+        },
+        {
+          "name": "void <unnamed>::routing_ds3_nogroup_topk_kernel<(int)1>(const __half *, const __half *, int *, __half *, float, int, int, int)",
+          "count": 64,
+          "total_ns": 171713
+        }
+      ],
+      "apis": {
+        "cuKernelGetName": 128,
+        "cudaGetLastError_v3020": 128,
+        "cudaLaunchKernel_v7000": 128,
+        "cudaSetDevice_v3020": 64
+      },
+      "allocation_copy_free_sync_calls": [],
+      "memcpy_records": 0,
+      "sqlite_sha256": "842bb73a298c08a7d6dad2ab6d75957f10409fb5b3f461989e894170f3a2ad92"
+    }
+  },
+  "limitations": [
+    "Native router and preparation now exist, but routed/shared FFN composition and bounded cache consumption are not wired into a complete native forward/generation graph.",
+    "Original EXL3 expert grouped prefill/composition and adaptive M>=384 variants still require completion/qualification. Attention compressed/indexed/shared KV and candidate selection, Engram103GiB bounded execution, session/graph/CLI admission remain.",
+    "No full-model generation, cold/warm expert offload throughput, CPU/NEON/Metal native routing or vLLM parity claim. Profiles cover one warmed actual layer at decodeR1 and prefillR256."
+  ],
+  "frozen_source_sha256": {
+    "include/gpu_backend.h": "0f364e8ffbb078ec1d41f8eb81ab30ac8975e0eedf1678f61155840be0cbfec4",
+    "include/gpu_cuda.h": "260e698d26bad366450b179949c7b5754c15d06593dc019a8ccd3abcdcf32ed1",
+    "include/backend_layout.h": "fe08647f9ed76ecc51a1347ad12f8887612266d9199e3a1b9230d092c0e6fb85",
+    "include/model.h": "47ebfc6e31ae01b30b3265845f5139b601940e355acbe823449f62751276d23e",
+    "src/gpu_cuda.cu": "d7247211f93717c88bda4cfee91a0c9cc1e54a7e29d92782121a6b63fff3683b",
+    "src/gpu_cuda_router.cu": "b2c953000f9d55632b44661042d4bebcfdb518b79514bca504e7cb16d83de809",
+    "src/gpu_cuda_router.h": "ba5ce9e578f44235ad038d5b40f745034820cce8dd31e47cac4820290866cb57",
+    "src/gpu_cuda_router_det.cuh": "3d8660dc70fc089e9539f88545c7d43da57371cdd7134eddbf314bd893e2b233",
+    "src/gpu_cuda_router_validate.cuh": "46720cf0df5a4cfce64500b4d86a65265ca92e5128b495e4eafac1ae90bec4f3",
+    "src/backend_layout.c": "ec42ab618e2c674fc1a67d0a21181ab85849db0ae9b7e09dbb57558b79cd825f",
+    "src/model_backend.c": "9932ec022bb809617d7949b0e8c6a23580d90c006bff2e9b8155d9b8d6e34570",
+    "test/cuda_native_router_checks.h": "944b98cf7b1cdf88d49a3ea274fb55b6e062e99df16490bcb2daf91205a39ecd",
+    "test/cuda_native_router_reference.h": "b3982d3562c7a84a2e053afcd92087c8a99e20c8cf928e6618420b790060adf1",
+    "test/native_router_checks.h": "b83c1c3432b247e1988e005ad954062939703e1eee21eb9971edb85e27b77ada",
+    "test/test_cuda_backend.c": "1a8cc239a6465f90669bbc403627234639f688e00b45ce3daa8ec518bfa1d87d",
+    "test/test_moe.c": "b3d25c4ea3caefcdc72bbd7df1b5a451fd1f519cb36dbe6adb3aba09b9871df5",
+    "Makefile": "14aef126c406dc60831562403c19f44cc6dce5afb569b15943401c0b36791c56",
+    "third_party/exllamav3/LICENSE": "27a32b6263fcd96c79d3beeecf221c4366780bdf15ad51986f48650bd7369bff",
+    "third_party/exllamav3/README.md": "9062ee6ca43c80379ea5fbd9f97ec71ca4168057b1f958518e8e6618b7927a2b"
+  }
+}

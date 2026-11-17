@@ -1,0 +1,257 @@
+{
+  "status": "Qualified correctness extension; full goal ACTIVE and incomplete",
+  "component": "DeepSeek V4.1 Flash1017 whole-model CUDA resumed prefill across physical SWA rebase and compressed-history capacity growth",
+  "parent": "docs/deepseek-v41-1017-native-forward-index.json",
+  "runtime_changes": false,
+  "implementation": "test/reference_native_forward_resume.py",
+  "implementation_sha256": "d6dbcb699a23763471b9469ece6f55fa641466913e58682f2cab343d9d784488",
+  "reference": {
+    "method": "Pinned original whole-model numerical graph, learned routing, grouped and reconstructed heavy experts, live index projections/RoPE/scoring/top512/shared readers and source head. The unchanged original post-attention physical ring-update block replaces the earlier nonwrapping fixture copy; only fixture ring/pool/page capacities and token schedule change. Candidate engine values never compute gold.",
+    "profile": "Explicit Diffbot INT4 BF16 row lookup -> Exllama F16 Engram execution adapter; not original Diffbot whole-runtime equivalence",
+    "prompt": "Original valid 513-token ID sequence repeated twice; five generated slots overwritten autoregressively",
+    "blocks": 280,
+    "grouped_blocks": 80,
+    "frames": [
+      {
+        "name": "prefill513",
+        "position": 0,
+        "tokens": 513,
+        "reset": true,
+        "generated": false,
+        "argmax_all": 2152,
+        "argmax_last": 2152
+      },
+      {
+        "name": "resume513",
+        "position": 513,
+        "tokens": 513,
+        "reset": false,
+        "generated": false,
+        "argmax_all": 271,
+        "argmax_last": 271
+      },
+      {
+        "name": "greedy-0",
+        "position": 1026,
+        "tokens": 1,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 32311,
+        "argmax_last": 32311
+      },
+      {
+        "name": "greedy-1",
+        "position": 1027,
+        "tokens": 1,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 10541,
+        "argmax_last": 10541
+      },
+      {
+        "name": "greedy-2",
+        "position": 1028,
+        "tokens": 1,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 17839,
+        "argmax_last": 17839
+      },
+      {
+        "name": "greedy-3",
+        "position": 1029,
+        "tokens": 1,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 389,
+        "argmax_last": 389
+      },
+      {
+        "name": "greedy-4",
+        "position": 1030,
+        "tokens": 1,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 12959,
+        "argmax_last": 12959
+      }
+    ],
+    "context": 1031,
+    "sliding_window": 128,
+    "physical_ring_rows": 768,
+    "ring_updates": 280,
+    "physical_rebases": 40,
+    "rebase": {
+      "before": 0,
+      "after": 768,
+      "position": 513,
+      "rows": 513
+    },
+    "pool_tokens": 2048,
+    "block_table_pages": 8,
+    "original_update_sha256": "723e10e5af6b0931825b93e7af283749bd1dac4ed23b13cf52e8074777a5acd0",
+    "original_source": "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/dsv4.py",
+    "original_source_sha256": "ed8573473ff2284fc97c0dba6f6eebf627612219719ac72ee594c90c451759ff",
+    "index_producing_steps": 53,
+    "index_borrowed_steps": 195,
+    "index_score_slabs": 66,
+    "index_producing_layers": [
+      2,
+      8,
+      14,
+      20,
+      24,
+      28,
+      32,
+      36
+    ],
+    "heavy_layers": 67,
+    "heavy_groups": 110,
+    "max_heavy_B": 4,
+    "max_heavy_M": 513,
+    "f16acc": 0
+  },
+  "validation": {
+    "qualification": {
+      "checks": {
+        "normal": 0,
+        "busy": 0,
+        "asan": 0,
+        "memcheck": 0,
+        "initcheck": 0,
+        "source-replay": 0,
+        "host-replay": 0,
+        "qwen27-compat": 0
+      },
+      "records": {
+        "normal": {
+          "untapped_forwards": 14,
+          "self_fed_greedy_tokens": 10,
+          "checks": 28,
+          "exact_bytes": 275624960
+        },
+        "busy": {
+          "untapped_forwards": 14,
+          "self_fed_greedy_tokens": 10,
+          "checks": 28,
+          "exact_bytes": 275624960
+        },
+        "asan": {
+          "untapped_forwards": 14,
+          "self_fed_greedy_tokens": 10,
+          "checks": 28,
+          "exact_bytes": 275624960
+        },
+        "memcheck": {
+          "untapped_forwards": 14,
+          "self_fed_greedy_tokens": 10,
+          "checks": 28,
+          "exact_bytes": 275624960
+        },
+        "initcheck": {
+          "untapped_forwards": 14,
+          "self_fed_greedy_tokens": 10,
+          "checks": 28,
+          "exact_bytes": 275624960
+        }
+      },
+      "frozen_sources": 852,
+      "reference_files": 24741,
+      "goal_status": "active",
+      "scope": "Actual 40-layer CUDA prefill513 plus resumed513 and five self-fed greedy steps per head mode, context1031; 40 original physical SWA rebases, pool2048 and BT8; live index producing layers2/8/14/20/24/28/32/36. Four partial-heavy BUSY faults at initial layer32 and resumed layer21, drain1to0leases; no repeated query/score/topk. No two-level candidates, performance parity or CLI admission"
+    },
+    "clean_build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "source_replay": "All saved source artifacts reproduced byte-for-byte; original sources and libraries remain pinned",
+    "host_replay": "Independent Python IEEE F16-to-F32 last-logit conversion reproduced exactly",
+    "normal_callbacks": "Normal production callbacks; no execution spies or intermediate readback fences",
+    "faults": {
+      "count": 4,
+      "per_head": 2,
+      "initial": {
+        "layer": 32,
+        "first": {
+          "B": 1,
+          "M": 473,
+          "experts": [
+            70
+          ]
+        },
+        "second": {
+          "B": 2,
+          "M": 369,
+          "experts": [
+            240,
+            184
+          ]
+        },
+        "fail_expert": 184
+      },
+      "resumed": {
+        "layer": 21,
+        "first": {
+          "B": 1,
+          "M": 510,
+          "experts": [
+            116
+          ]
+        },
+        "second": {
+          "B": 2,
+          "M": 394,
+          "experts": [
+            327,
+            181
+          ]
+        },
+        "fail_expert": 181
+      },
+      "assertions": "One live partial-group lease at fault, zero after BUSY; CPU logits, output ticket and position unchanged; input history remains staged and uncommitted; exact source outputs after retry",
+      "callbacks": {
+        "queries": 106,
+        "scores": 132,
+        "topks": 132
+      },
+      "callback_method": "Count-only wrappers add no GPU work or readback fences; totals derived from original-source producing steps and slabs, demonstrating no repeated index work"
+    },
+    "asan_ubsan": "Passed",
+    "cuda_memcheck": "0 errors; 0 bytes leaked in 0 allocations",
+    "cuda_initcheck": "0 errors",
+    "qwen27": {
+      "strict_generated_token_matches": 192,
+      "total_generated_tokens": 192,
+      "token_count_mismatches": 0,
+      "prompts": 8,
+      "word_prefix_matches": 147,
+      "total_words": 147
+    }
+  },
+  "artifacts": {
+    "directory": "/tmp/bitnet-goal-native-forward-resume",
+    "qualification": "/tmp/bitnet-goal-native-forward-resume/qualification.json",
+    "frozen_source_audit": "/tmp/bitnet-goal-native-forward-resume/frozen-source.json",
+    "reference_audit": "/tmp/bitnet-goal-native-forward-resume/reference-audit.json",
+    "resumed_provenance": "/tmp/bitnet-goal-native-forward-resume/paired/resumed-provenance.json",
+    "rebuilt_artifacts": "/tmp/bitnet-goal-native-forward-resume/rebuilt-artifacts.json"
+  },
+  "limits": [
+    "No runtime implementation changes or CLI/default-path admission in this extension",
+    "Pool and block-table capacities are planned before session preparation; not dynamic live-session allocation growth",
+    "No whole-model two-level candidate selection above the large-context threshold",
+    "No new direct intermediate-tensor supplement; this case compares published GPU and CPU logits and callback totals. The prior indexed-boundary supplement remains preserved",
+    "No CPU native whole-model or text encoder/stream decoder qualification",
+    "No throughput/latency parity claim; fused_window=1, fixed fixture quotas and uncontrolled OS page warmth",
+    "Production phase-specific RAM/VRAM policies, performance profiling, matched vLLM comparisons, continuous batching/KV scheduling and all-model/backend acceptance remain open"
+  ],
+  "goal_complete": false
+}

@@ -1,0 +1,103 @@
+{
+  "milestone": "Model-owned native trellis expert catalog",
+  "status": "Qualified component; whole inference and vLLM parity objective remains active",
+  "implementation": {
+    "owner": "BnModelRuntime owns every immutable expert projection source; bn_model_free releases it after backend resources.",
+    "binding": "bn_model_bind_trellis_experts uses architecture-owned component naming and registered trellis quant validation; validates all requested sources before publication. Failure preserves model, including existing runtime.",
+    "reader": "Model exposes one immutable BnMoEExpertReader, usable by the existing bounded RAM cache; reads allocate no memory. Caller-owned caches and leases must expire before model free.",
+    "limits": "Counts/dimensions come from validated caller config. This API does not parse config, bind full topology, register an executor, or enable ordinary generation.",
+    "storage": "Index/files are borrowed and must remain immutable and alive. Only projection marker bodies are read during binding; compressed expert bodies remain on disk."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "catalog-build": 0,
+      "catalog": 0,
+      "asan-catalog-build": 0,
+      "asan-catalog": 0,
+      "ffn-build": 0,
+      "asan-ffn-build": 0,
+      "ffn-l0-e0-m1": 0,
+      "ffn-l0-e0-m7": 0,
+      "ffn-l0-e0-m64": 0,
+      "ffn-l0-e0-m256": 0,
+      "ffn-l39-e383-m1": 0,
+      "ffn-l39-e383-m7": 0,
+      "ffn-l39-e383-m64": 0,
+      "ffn-l39-e383-m256": 0,
+      "asan-ffn": 0,
+      "memcheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "actual_catalog": {
+      "bound_projections": 46080,
+      "bound_experts": 15360,
+      "logical_bundle_bytes": 204527370240,
+      "marker_read_bytes": 184320,
+      "expert_body_reads_during_binding": 0
+    },
+    "actual_catalog_max_process_rss_kib": 330740,
+    "actual_ffn_cases": 8,
+    "tokens": [
+      1,
+      7,
+      64,
+      256
+    ],
+    "expert_endpoints": [
+      "layer 0 expert 0",
+      "layer 39 expert 383"
+    ],
+    "totals": {
+      "reference_f32_words": 23511040,
+      "reference_f16_words": 18137088,
+      "peer_zero_values": 3358720
+    },
+    "mismatches": 0,
+    "gpu_cache_payload_bound_bytes": 13315584,
+    "traced_peak_live_compressed_payload_bytes": 13315584,
+    "traced_weight_allocations": 9,
+    "traced_weight_frees": 9,
+    "traced_heap_allocations": 39,
+    "traced_heap_frees": 39,
+    "cleanup": "Actual FFN probe now frees GPU resources and catalog through bn_model_free; synthetic callback asserts catalog remains accessible during backend release.",
+    "rollback": "Synthetic late bad marker and missing component repeated 20 times each; wrong dimensions, counts and architecture, duplicate bind, pinned host cache and prefill staging also tested under Clang ASAN/UBSAN."
+  },
+  "limitations": [
+    "Full native config/anatomy, routing scheduler and generation remain unimplemented.",
+    "Actual FFN inputs are deterministic fixtures, not full-model hidden states.",
+    "Bound is requested compressed-weight GPU payload only; request buffers, context/library allocations, host metadata/cache/staging and OS page cache are separate.",
+    "Catalog max RSS includes linked runtime and index metadata; it is not total system footprint. OS storage coldness was not controlled.",
+    "No new prefill/decode throughput or vLLM parity claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-expert-catalog/qualification.json",
+    "trace": "/tmp/bitnet-goal-expert-catalog/lifetime.nsys-rep",
+    "profile": "/tmp/bitnet-goal-expert-catalog/profile-analysis.json",
+    "continuation": "/tmp/bitnet-goal-expert-catalog/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/model.h": "fac9facf2033f69ccccd5faef637b5ae3156dab5979c81a1566595c01c8594fc",
+    "include/model_internal.h": "63f958d32551f11c653a46bd0c0f2377bd467ca5ad927e0440ed3a41fd24f2b4",
+    "include/moe.h": "ffc9ab8a02bd0b757ed33cd1f4c622640a1bb96f5f0e26cb24412b434a4dfb62",
+    "include/moe_types.h": "c4b86e8de91a444ae9294e022818d94b474cd22484d82945d597bb1687265a12",
+    "src/model.c": "eb723b77698f9ad59a5ba55144fbb9ea0ce8d46d6f8bf687dde61739423fbd30",
+    "src/model_moe.c": "e178952a8eb38696b9e0ee9ca1111e0ef1aa1f405494bebd3f3de7bbf2eb0328",
+    "test/test_moe.c": "57ad7ade94cb9c5d2540d2b4e04087eb4ff4c800edcd8fafa13cb956a8560ce3",
+    "Makefile": "0ebc10a15a80f6fcefa72494e6ec843085fe07595fd49aa7efe0150da1829a87"
+  }
+}

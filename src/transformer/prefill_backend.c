@@ -333,6 +333,24 @@ void bn_transformer_prefill_quant_matmul_float_x(
     bn_quant_matmul_float_x(out, weight, x, n_tokens, pool);
 }
 
+int bn_transformer_prefill_quant_matmul_reference_multi(
+    float **out, const BnQWeight **weights, const BnPreparedWeight **prepared,
+    int n_tasks, const float *x, int n_tokens, int8_t *scratch,
+    BnThreadPool *pool) {
+    return bn_quant_matmul_prefill_prepared_multi(
+        out, weights, prepared, n_tasks, x, n_tokens, scratch, pool);
+}
+
+int bn_transformer_prefill_quant_matmul_reference_kquant_input_multi(
+    float **out, const BnQWeight **weights, const BnPreparedWeight **prepared,
+    int n_tasks, int n_tokens, const int8_t *quantized, const float *scales,
+    const int16_t *block_sums, const float *x, int8_t *scratch,
+    BnThreadPool *pool) {
+    return bn_quant_matmul_prefill_prepared_kquant_input_multi(
+        out, weights, prepared, n_tasks, n_tokens, quantized, scales,
+        block_sums, x, scratch, pool);
+}
+
 void bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
     float **out,
     const BnQWeight **weights,

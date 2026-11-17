@@ -1,0 +1,407 @@
+{
+  "scope": "Initial exact-input compute qualification; subsequent bounded queue/pool execution and performance are qualified in the linked runtime evidence",
+  "full_goal_complete": false,
+  "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+  "requests": 12,
+  "reference_max_live": 8,
+  "reference_kv_budget_bytes": 4294967296,
+  "arrival_steps": [
+    0,
+    8,
+    68
+  ],
+  "token_budget": 256,
+  "prefill_chunk": 64,
+  "outputs_per_request": 64,
+  "matrices": 134,
+  "heads": 784,
+  "bf16_words": 194682880,
+  "native_replay": "Exact-input diagnostic prepares all twelve sessions; does not establish eight-slot native memory bound",
+  "compute_calls": {
+    "prefill": 3,
+    "mixed": 4,
+    "decode": 127
+  },
+  "independent_attention": {
+    "source_sha256": "a3bcd3592804bdc2ed45c8320aa638ec020b4e8214f4ced76d914af11d78f0fd",
+    "image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+    "device": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "multiprocessors": 188,
+    "torch": "2.14.0a0+4fdf77b940.nv26.08",
+    "cuda": "13.4",
+    "source": "Unchanged public flash_attn_varlen_func,fa_version=2,num_splits=0"
+  },
+  "independent_attention_cases": [
+    {
+      "batch": 2,
+      "seed": 31,
+      "queries": [
+        1,
+        5
+      ],
+      "lengths": [
+        135,
+        5
+      ],
+      "batch_hashes": [
+        13285661887343465490,
+        15278216209049196367
+      ],
+      "singleton_hashes": [
+        10967602743571301738,
+        15278216209049196367
+      ],
+      "batch_sha256": "78196df955ef5d80dc8788c170cbff9a7e363b8d5f35a5703c7cd08745dd9dd8",
+      "singleton_sha256": "4913138fbc3afd50c10a1fbaaf652739dbb6341e41c8475521b92feffcd712f6"
+    },
+    {
+      "batch": 8,
+      "seed": 32,
+      "queries": [
+        1,
+        1,
+        1,
+        1,
+        5,
+        5,
+        5,
+        5
+      ],
+      "lengths": [
+        135,
+        136,
+        137,
+        138,
+        5,
+        5,
+        5,
+        5
+      ],
+      "batch_hashes": [
+        18438872166805390680,
+        2462782067450340419,
+        16357629194069813394,
+        13504847131403931444,
+        13430047786405445297,
+        16329481065613198961,
+        3939671911263324253,
+        3366458458960202593
+      ],
+      "singleton_hashes": [
+        6347217571994909536,
+        12033293403779591036,
+        3924323853703260479,
+        2230277511047383141,
+        13430047786405445297,
+        16329481065613198961,
+        3939671911263324253,
+        3366458458960202593
+      ],
+      "batch_sha256": "7a57d9c023a29ab09fa68fe81469dc3cee95bade22f2cad8849f027443dc0690",
+      "singleton_sha256": "c115ad929349bd1c78eb7f32d41abc8c24b0f56e017d87b1544a245ba8963028"
+    },
+    {
+      "batch": 8,
+      "seed": 33,
+      "queries": [
+        1,
+        1,
+        1,
+        1,
+        63,
+        63,
+        63,
+        63
+      ],
+      "lengths": [
+        65,
+        66,
+        67,
+        68,
+        63,
+        63,
+        63,
+        63
+      ],
+      "batch_hashes": [
+        2068832858880546158,
+        4710450293014651371,
+        17454332856027917405,
+        856136693186817744,
+        14688143498229569534,
+        10589839260149843455,
+        12998654979010836295,
+        16739122888295013504
+      ],
+      "singleton_hashes": [
+        15400115047051248465,
+        4710450293014651371,
+        10238081205513226318,
+        11829639259837496703,
+        14688143498229569534,
+        10589839260149843455,
+        12998654979010836295,
+        16739122888295013504
+      ],
+      "batch_sha256": "c3948fc57e32cb68c4c63c3c126fc74a35539f0e71b3e1085ee67a21bf534d93",
+      "singleton_sha256": "abb6c69486640d67484f9f61a582a71fd64290165008a76ff79fc7bc5731eb36"
+    },
+    {
+      "batch": 4,
+      "seed": 34,
+      "queries": [
+        1,
+        1,
+        1,
+        3
+      ],
+      "lengths": [
+        65,
+        129,
+        257,
+        3
+      ],
+      "batch_hashes": [
+        7307965268638865809,
+        15070009073761824562,
+        12159718872350596918,
+        11838090430590331870
+      ],
+      "singleton_hashes": [
+        16817128210093544808,
+        13090688764276877283,
+        9994140780244516879,
+        11838090430590331870
+      ],
+      "batch_sha256": "079a6caac4822aa7293731ec3749d76a0aa5ed84e8ded645b9f10705341e195b",
+      "singleton_sha256": "9b6673dced6b7338783d8c18051228f8cb1955a2126ce04c7caf1a4b35337f9b"
+    },
+    {
+      "batch": 4,
+      "seed": 35,
+      "queries": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "lengths": [
+        65,
+        129,
+        257,
+        513
+      ],
+      "batch_hashes": [
+        10338886919928624779,
+        15102441847217316107,
+        14097239990175345283,
+        13586924713025288324
+      ],
+      "singleton_hashes": [
+        10338886919928624779,
+        15102441847217316107,
+        14097239990175345283,
+        13586924713025288324
+      ],
+      "batch_sha256": "e575deb045de1e3442d9e2ae0861f5153a0956d898ab48e57554f4781bc141f0",
+      "singleton_sha256": "e575deb045de1e3442d9e2ae0861f5153a0956d898ab48e57554f4781bc141f0"
+    },
+    {
+      "batch": 3,
+      "seed": 36,
+      "queries": [
+        3,
+        5,
+        2
+      ],
+      "lengths": [
+        129,
+        257,
+        65
+      ],
+      "batch_hashes": [
+        11346686267321679101,
+        8140602595148208611,
+        10999314865740596664
+      ],
+      "singleton_hashes": [
+        11346686267321679101,
+        8140602595148208611,
+        10999314865740596664
+      ],
+      "batch_sha256": "5ace79645621c63842f0f203ce900df822d5054ca35cd24812bbf945c6341911",
+      "singleton_sha256": "5ace79645621c63842f0f203ce900df822d5054ca35cd24812bbf945c6341911"
+    },
+    {
+      "batch": 4,
+      "seed": 37,
+      "queries": [
+        1,
+        7,
+        1,
+        3
+      ],
+      "lengths": [
+        1025,
+        1025,
+        257,
+        513
+      ],
+      "batch_hashes": [
+        5318268973316835660,
+        4897447990310844971,
+        13638624471212323432,
+        8433980546867466311
+      ],
+      "singleton_hashes": [
+        2771778461632831774,
+        4897447990310844971,
+        11260459710017350282,
+        8433980546867466311
+      ],
+      "batch_sha256": "b04cef7c8935bf21233bf62c53a75e80f597ec5e22fb6b621712e4fa7dde2bad",
+      "singleton_sha256": "b06ba6113bed57f2de0630625f50d06505e9d83e1d72dad034e94ad906006b29"
+    }
+  ],
+  "independent_ffn": {
+    "method": "Unmodified Torch BF16 combined GEMM, Inductor-compiled SiLU/product, BF16 down GEMM",
+    "dim": 32,
+    "hidden": 64,
+    "allow_bf16_reduced_precision_reduction": false,
+    "hardware": {
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "sm": 120
+    },
+    "torch_cuda": "13.4",
+    "cases": [
+      {
+        "tokens": 3,
+        "hash": 5083505245648340361,
+        "shape": [
+          3,
+          32
+        ],
+        "sha256": "bb900a233e2352158d416d391aa0ac8beaf183724b677360510c13c52156de4c"
+      },
+      {
+        "tokens": 24,
+        "hash": 13906957959448477205,
+        "shape": [
+          24,
+          32
+        ],
+        "sha256": "8a473339b51b8d8114ea4e482c931a241038d694be965e05c4d915fccd88ee69"
+      },
+      {
+        "tokens": 32,
+        "hash": 3750649654227034788,
+        "shape": [
+          32,
+          32
+        ],
+        "sha256": "d110f1f58439032b4e07c467f883b46309d4c71449fa574b3acd87cf7dd50833"
+      }
+    ]
+  },
+  "checks": {
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "cuda-suite": {
+      "exit": 0
+    },
+    "stacked-ffn-memcheck": {
+      "exit": 0
+    },
+    "stacked-ffn-synccheck": {
+      "exit": 0
+    },
+    "mixed-attention-memcheck": {
+      "exit": 0
+    },
+    "mixed-attention-synccheck": {
+      "exit": 0
+    },
+    "runtime": {
+      "exit": 0
+    },
+    "staggered": {
+      "exit": 0
+    },
+    "staggered-verified": {
+      "exit": 0
+    },
+    "legacy-b4-correct-reference": {
+      "exit": 0
+    },
+    "legacy-b16-verified": {
+      "exit": 0
+    },
+    "legacy-chunk4097-verified": {
+      "exit": 0
+    },
+    "legacy-mixed4-verified": {
+      "exit": 0
+    }
+  },
+  "regressions": {
+    "legacy_b4": 256,
+    "legacy_b16": 1024,
+    "legacy_chunk4097": 256,
+    "legacy_mixed4": 260
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "125eb83e4e5af003f6fe9028e6815e560a768df3f716303cdcd1f2a9ab08ab1b",
+    "include/backend_layout.h": "4bec67fd33f5d6742f612dde0a06b16f0c67da8de6140e366d8ee933eee12730",
+    "src/backend_layout.c": "9c7e06b0d729bb32624c0e8e02740ad2d543c71bf4d803036e020893a59ba170",
+    "src/gpu_cuda.cu": "025574074d49204e0bee27fec92aca1ff55fa251f2cec2ff5d7d27f971139c2b",
+    "src/gpu_cuda_activation.cuh": "0c7c6bd3220479e5de1ed1e435f19efab7fa53ba6b0de57681c674d3bc8ced34",
+    "src/gpu_cuda_gdn.cuh": "99c627047d9d7adb4aed665fb1d412b618f6ec852f05d3a5ce38ebd9c847862d",
+    "src/gpu_cuda_attention.cuh": "5c3e7d1207515e1759f2afd3800be4ec94b8847e02c776c6456eccd59d2276b0",
+    "src/gpu_cuda_fa2.h": "e110dffdc98c96c8d9efe64cffc668c8fe290bf59eb0fcfbbf71e0c001d1dcd1",
+    "src/gpu_cuda_fa2.cu": "4de70ff1fada34bf1713b5ae4d77498b46734c360ed728ae568c91a4883571a7",
+    "src/transformer/bf16.c": "bb16dbe6ed237d1085522d838369948afbe9b8c841de336fc3869b2866fb5cb0",
+    "test/test_cuda_backend.c": "130c5b26b5891eaeeba775c3b19c5a4bd7334485abcd886a245922e3b6ed6154",
+    "Makefile": "adf1968cf9ddce7e81b19fe68a2f8d75614de764361fdea51e3dac896e69595c"
+  },
+  "evidence_root": "/tmp/bitnet-goal-staggered12-bound",
+  "host_planner": {
+    "source_sha256": {
+      "include/generate_batch_plan.h": "a042f22b00f468ede198ea01fa4bac12579dc3120bec15ba2ed47ef559debfc5",
+      "src/generate_batch_plan.c": "6da106873c8968b71a8c8f0cb89ccd0f1a5db8f20ccf7718dd0c103b42a6fd39",
+      "test/test_generate_batch_plan.c": "a36bd37b954fba2c9a3084f695a994b6b18765718cfd462b8f4ec3e3484d4dea",
+      "test/generate_batch_plan_reference.h": "e1bf73cdb4dc3d33eab843f8dde30e0fdeb038ebf179ea05e068c9ef517c7790",
+      "test/extract_generate_batch_plan_reference.py": "f8c837040e8a7b50f02dd359d58dc8f8450d2fa0eda42b7304512acf3ff4705f",
+      "test/bf16_cuda_staggered12_reference.json": "4b385e7981749b90781c2eaa0ed57b06023000d75d5fa1126d08b575843c6ec2"
+    },
+    "reference_cohorts": 134,
+    "reference_sampled_heads": 768,
+    "reference_forward_tokens": 1808,
+    "asan_ubsan": true,
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "runtime_integration": false,
+    "full_goal_complete": false
+  },
+  "subsequent_runtime_evidence": {
+    "correctness": "qwen38-cuda-arrivals-runtime.json",
+    "performance": "qwen38-cuda-arrivals-performance.json",
+    "profile": "qwen38-q8-small-batch-profile.json",
+    "scope": "Controlled engine-step arrivals only; full goal remains active"
+  }
+}

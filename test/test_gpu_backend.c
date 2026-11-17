@@ -18,6 +18,7 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+#include <limits.h>
 
 static BnCPURuntimePolicy test_cpu_runtime_from_env(void) {
     BnCPURuntimePolicy policy;
@@ -532,6 +533,47 @@ static void test_gpu_upload_aux_decode_ssm_ab_layout(void) {
     printf("PASSED\n");
 }
 
+typedef struct {
+    void *q;
+    void *k;
+} MockPrefillQKPair;
+
+static void *mock_create_prefill_qk_pair(void *ctx, void *q, void *k) {
+    (void)ctx;
+    MockPrefillQKPair *pair = malloc(sizeof(*pair));
+    if (pair) *pair = (MockPrefillQKPair){q, k};
+    return pair;
+}
+
+static void test_gpu_upload_aux_prefill_qk_pair(void) {
+    printf("test_gpu_upload_aux_prefill_qk_pair... ");
+    BnModel model = {0};
+    model.config.n_layers = 1;
+    model.config.dim = 32;
+    model.config.hidden_dim = 2;
+    model.config.nextn_predict_layers = 1;
+    model.weights.layers = calloc(1, sizeof(BnLayerWeights));
+    assert(model.weights.layers);
+    float q_data[4 * 32] = {0};
+    uint8_t k_data[4 * 34] = {0};
+    BnLayerWeights *lw = model.weights.layers;
+    lw->attn.wq = (BnQWeight){q_data, BN_GGUF_TENSOR_F32, 4, 32, 1.0f};
+    lw->attn.wk = (BnQWeight){k_data, BN_GGUF_TENSOR_Q8_0, 4, 32, 1.0f};
+    BnGPUBackend gpu = mock_gpu;
+    gpu.buffer_create_prefill_qk_pair = mock_create_prefill_qk_pair;
+    assert(bn_model_upload_weights(&model, &gpu) == 0);
+    BnBackendModel *backend = bn_model_backend(&model);
+    MockPrefillQKPair *pair = bn_backend_model_handle(
+        backend, 0, BN_BACKEND_HANDLE_PREFILL_QK_PAIR);
+    assert(pair);
+    assert(pair->q == bn_backend_model_qweight_buf(backend, &lw->attn.wq));
+    assert(pair->k == bn_backend_model_qweight_buf(backend, &lw->attn.wk));
+    assert(bn_backend_model_handle(backend, 0, BN_BACKEND_HANDLE_QK_STACKED) == NULL);
+    assert(lw->attn.wq.data == q_data && lw->attn.wk.data == k_data);
+    bn_model_free(&model);
+    printf("PASSED\n");
+}
+
 static void test_gpu_upload_moe_router(void) {
     printf("test_gpu_upload_moe_router... ");
 
@@ -572,6 +614,64 @@ static void test_gpu_upload_moe_router(void) {
 
     bn_model_free(&model);
     printf("PASSED\n");
+}
+
+static void test_gpu_upload_pread_expert_placement(void) {
+#if !defined(__EMSCRIPTEN__)
+    printf("test_gpu_upload_pread_expert_placement... ");
+    /* Both pread representations must retain GPU base weights without
+     * attempting the mapped-only full-expert upload. Mappings still qualify. */
+    for (int storage = 0; storage < 4; storage++) {
+        BnModel model = {0};
+        model.config.n_layers = 1;
+        model.config.dim = model.config.hidden_dim = 32;
+        model.config.n_experts = 2;
+        model.config.n_experts_active = 1;
+        model.config.moe_intermediate_size = 32;
+        model.weights.layers = calloc(1, sizeof(BnLayerWeights));
+        assert(model.weights.layers);
+        BnLayerWeights *lw = model.weights.layers;
+        float router[64] = {0};
+        lw->moe.router_weight = router;
+        BnMoEExpertMap *em = &lw->moe.expert_map;
+        em->gate_rows = em->gate_cols = em->up_rows = em->up_cols = 32;
+        em->down_rows = em->down_cols = 32;
+        em->gate_type = em->up_type = em->down_type = BN_GGUF_TENSOR_Q4_0;
+        em->expert_gate_bytes = em->expert_up_bytes = em->expert_down_bytes = 576;
+        em->up_offset = 1152;
+        em->down_offset = 2304;
+        uint8_t experts[3456] = {0};
+        BnMoEIO *io = bn_model_moe_io(&model);
+        assert(io);
+        FILE *file = tmpfile();
+        assert(file);
+        int fd = fileno(file);
+        const uint8_t *bases[] = {experts};
+        if (storage == 0) io->fd = fd;
+        else if (storage == 1) {
+            io->shard_fds = malloc(sizeof(int));
+            assert(io->shard_fds);
+            io->shard_fds[0] = fd;
+            io->n_shard_fds = 1;
+        } else if (storage == 2) io->mmap_base = experts;
+        else { io->mmap_bases = bases; io->n_mmap_bases = 1; }
+        BnGPUBackend gpu = mock_gpu;
+        gpu.kind = BN_GPU_BACKEND_CUDA;
+        gpu.caps |= BN_GPU_CAP_MOE_ROUTED_FFN;
+        gpu.buffer_create_quant_only = mock_create;
+        assert(bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
+            em->gate_type, em->up_type, em->down_type));
+        assert(bn_moe_policy_supports_resident_routed_ffn_layout(&model.config, em));
+        assert(bn_model_upload_weights(&model, &gpu) == 0);
+        assert(bn_model_gpu(&model) == &gpu);
+        assert(bn_backend_model_handle(bn_model_backend(&model), 0,
+            BN_BACKEND_HANDLE_MOE_ROUTER));
+        assert(bn_model_gpu_moe_prefill_resident(&model, 0) == (storage >= 2));
+        bn_model_free(&model);
+        assert(fclose(file) == 0);
+    }
+    printf("PASSED\n");
+#endif
 }
 
 static void test_model_gpu_moe_prefill_resident(void) {
@@ -713,6 +813,899 @@ static void test_gpu_release(void) {
     free(data);
 
     printf("PASSED\n");
+}
+
+typedef struct {
+    BnBackendModel *backend;
+    const void *owner;
+    DestroyCounter *buffers;
+    int releases;
+} ModelResourcesProbe;
+
+static void release_model_resources_probe(void *ptr) {
+    ModelResourcesProbe *p = ptr;
+    assert(bn_backend_model_gpu_resources(p->backend, p->owner) == NULL);
+    assert(p->buffers->destroys == 0);
+    ++p->releases;
+}
+
+static void test_backend_model_resource_lifecycle(void) {
+    DestroyCounter counter = {0};
+    BnGPUBackend gpu = {0};
+    gpu.ctx = &counter;
+    gpu.buffer_destroy = mock_counted_destroy;
+    BnBackendModel *b = bn_backend_model_create();
+    assert(b);
+    int owner = 0, other = 0;
+    ModelResourcesProbe p = {b, &owner, &counter, 0};
+    assert(bn_backend_model_attach_gpu_resources(NULL, &owner, &p, release_model_resources_probe) == -1);
+    assert(bn_backend_model_attach_gpu_resources(b, NULL, &p, release_model_resources_probe) == -1);
+    assert(bn_backend_model_attach_gpu_resources(b, &owner, NULL, release_model_resources_probe) == -1);
+    assert(bn_backend_model_attach_gpu_resources(b, &owner, &p, NULL) == -1);
+    assert(bn_backend_model_gpu_resources(NULL, &owner) == NULL);
+    assert(bn_backend_model_attach_gpu_resources(b, &owner, &p, release_model_resources_probe) == 0);
+    assert(bn_backend_model_gpu_resources(b, &owner) == &p);
+    assert(bn_backend_model_gpu_resources(b, &other) == NULL);
+    assert(bn_backend_model_gpu_resources(b, NULL) == NULL);
+    assert(bn_backend_model_attach_gpu_resources(b, &other, &p, release_model_resources_probe) == -1);
+    bn_backend_model_bind_gpu(b, &gpu);
+    void *buffer = malloc(4);
+    assert(buffer);
+    assert(bn_backend_model_register_handle(b, 0, BN_BACKEND_HANDLE_ATTN_NORM, buffer) == 0);
+    bn_backend_model_release_gpu(b);
+    assert(p.releases == 1 && counter.destroys == 1);
+    bn_backend_model_release_gpu(b);
+    assert(p.releases == 1 && counter.destroys == 1);
+    /* Cleanup also works after partial preparation without a GPU binding. */
+    counter.destroys = 0;
+    assert(bn_backend_model_attach_gpu_resources(b, &owner, &p, release_model_resources_probe) == 0);
+    bn_backend_model_free(b);
+    assert(p.releases == 2);
+    puts("test_backend_model_resource_lifecycle... PASSED");
+}
+
+static void test_backend_model_resource_move(void) {
+    BnBackendModel *source = bn_backend_model_create();
+    BnBackendModel *target = bn_backend_model_create();
+    assert(source && target);
+    DestroyCounter counter = {0};
+    BnGPUBackend gpu = {0};
+    int owner = 0;
+    ModelResourcesProbe p = {target, &owner, &counter, 0};
+    assert(bn_backend_model_move_gpu_resources(target, source) == -1);
+    assert(!bn_backend_model_attach_gpu_resources(source, &owner, &p,
+        release_model_resources_probe));
+    bn_backend_model_bind_gpu(source, &gpu);
+    assert(bn_backend_model_move_gpu_resources(NULL, source) == -1);
+    assert(bn_backend_model_move_gpu_resources(source, source) == -1);
+    bn_backend_model_bind_gpu(target, &gpu);
+    assert(bn_backend_model_move_gpu_resources(target, source) == -1);
+    assert(bn_backend_model_gpu_resources(source, &owner) == &p);
+    bn_backend_model_bind_gpu(target, NULL);
+    assert(!bn_backend_model_move_gpu_resources(target, source));
+    assert(bn_backend_model_gpu_resources(source, &owner) == NULL);
+    assert(bn_backend_model_gpu(source) == NULL);
+    assert(bn_backend_model_gpu_resources(target, &owner) == &p);
+    assert(bn_backend_model_gpu(target) == &gpu);
+    bn_backend_model_free(source);
+    assert(p.releases == 0);
+    bn_backend_model_free(target);
+    assert(p.releases == 1);
+    puts("test_backend_model_resource_move... PASSED");
+}
+
+typedef struct {
+    int calls, fail_at, created, destroyed, decoded_calls, fail_decoded, fail_decoded_at;
+    int check_gamma, gamma_uploads;
+    int stack_calls, fail_stack_stage;
+    void *stack_handles[3];
+} BF16PrepareProbe;
+
+static void *mock_bf16_prepare_upload(void *ctx, const void *data, size_t bytes,
+    int type, int rows, int cols) {
+    BF16PrepareProbe *p = ctx;
+    assert(data && bytes && rows > 0 && cols > 0);
+    if (p->check_gamma && type == BN_GGUF_TENSOR_F32 &&
+        ((rows == 1 && (cols == 128 || cols == 256 || cols == 8192 || cols == 10240)) || (rows == 4 && cols == 2560))) {
+        const float *gamma = data;
+        assert(bytes == (size_t)rows * cols * sizeof(*gamma));
+        for (int j = 0; j < rows * cols; j++) assert(gamma[j] == 0.0009765625f);
+        p->gamma_uploads++;
+    }
+    if (++p->calls == p->fail_at) return NULL;
+    void *buffer = malloc(1);
+    assert(buffer);
+    ++p->created;
+    return buffer;
+}
+
+static void *mock_bf16_prepare_decoded(void *ctx, void *raw) {
+    BF16PrepareProbe *p = ctx;
+    assert(raw);
+    ++p->decoded_calls;
+    if (p->fail_decoded || p->decoded_calls == p->fail_decoded_at) return NULL;
+    void *buffer = malloc(1);
+    assert(buffer);
+    ++p->created;
+    return buffer;
+}
+
+static void *mock_bf16_prepare_rotary(void *ctx, const BnGPURotaryCachePlan *plan) {
+    BF16PrepareProbe *p = ctx;
+    assert(plan && plan->positions == 512 && plan->rotary_dim == 64);
+    void *buffer = malloc(1);
+    assert(buffer);
+    ++p->created;
+    return buffer;
+}
+
+static void mock_bf16_prepare_destroy(void *ctx, void *buffer) {
+    BF16PrepareProbe *p = ctx;
+    assert(buffer);
+    if(buffer==p->stack_handles[0]) {
+        assert(!p->stack_handles[1]&&!p->stack_handles[2]);p->stack_handles[0]=NULL;
+    } else for(int i=1;i<3;i++)if(buffer==p->stack_handles[i])p->stack_handles[i]=NULL;
+    ++p->destroyed;
+    free(buffer);
+}
+
+static int mock_bf16_stack_pair(void *ctx,void *first,void *second,
+    void **parent,void **first_view,void **second_view) {
+    BF16PrepareProbe *p=ctx;assert(first&&second&&first!=second&&!*parent&&!*first_view&&!*second_view);
+    p->stack_calls++;void *handles[3]={0};
+    for(int i=0;i<3;i++) {
+        if(p->fail_stack_stage==i+1) {
+            while(i){free(handles[--i]);p->destroyed++;}return -1;
+        }
+        handles[i]=malloc(1);assert(handles[i]);p->created++;
+    }
+    memcpy(p->stack_handles,handles,sizeof(handles));
+    *parent=handles[0];*first_view=handles[1];*second_view=handles[2];return 0;
+}
+
+static BnQWeight mock_bf16_descriptor(const void *data, int rows, int cols) {
+    BnQWeight w = {data, BN_GGUF_TENSOR_Q4_K, rows, cols, 1.0f};
+    return w;
+}
+
+static void test_host_row_gather(void) {
+    unsigned char raw[9 * 90], original[sizeof(raw)], storage[5 * 96 + 32];
+    for (size_t i = 0; i < sizeof(raw); i++) raw[i] = (unsigned char)(i * 17 + 3);
+    memcpy(original, raw, sizeof(raw)); memset(storage, 0x5a, sizeof(storage));
+    BnQWeight w = {raw, BN_GGUF_TENSOR_IQ4_NL, 9, 160, 1};
+    int32_t ids[] = {8, 0, 3, 3, 1};
+    assert(bn_backend_quant_host_row_stride(&w) == 96);
+    assert(bn_backend_quant_host_rows_bf16_available(&w));
+    BnQWeight other_format = w; other_format.type = BN_GGUF_TENSOR_Q8_0;
+    assert(!bn_backend_quant_host_rows_bf16_available(&other_format));
+    assert(!bn_backend_quant_host_rows_bf16_available(NULL));
+    ids[4] = 9;
+    assert(bn_backend_quant_gather_host_rows(&w, ids, 5, storage + 16, 480) == -1);
+    for (size_t i = 0; i < sizeof(storage); i++) assert(storage[i] == 0x5a);
+    ids[4] = 1;
+    assert(bn_backend_quant_gather_host_rows(&w, ids, 5, storage + 16, 479) == -1);
+    assert(bn_backend_quant_gather_host_rows(&w, ids, 5, raw, 480) == -1);
+    assert(bn_backend_quant_gather_host_rows(&w, ids, 5, ids, 480) == -1);
+    assert(bn_backend_quant_gather_host_rows(&w, ids, SIZE_MAX, storage, sizeof(storage)) == -1);
+    assert(!bn_backend_quant_gather_host_rows(&w, ids, 5, storage + 16, 480));
+    for (int i = 0; i < 5; i++) {
+        assert(!memcmp(storage + 16 + i * 96, raw + ids[i] * 90, 90));
+        for (int j = 90; j < 96; j++) assert(storage[16 + i * 96 + j] == 0);
+    }
+    for (int i = 0; i < 16; i++) assert(storage[i] == 0x5a && storage[496 + i] == 0x5a);
+    assert(!memcmp(raw, original, sizeof(raw)));
+    w.scale = 2; assert(!bn_backend_quant_host_row_stride(&w));
+    w.scale = 1; w.cols = 159; assert(!bn_backend_quant_host_row_stride(&w));
+    w.cols = 160; w.type = BN_GGUF_TENSOR_I2_S; assert(!bn_backend_quant_host_row_stride(&w));
+    puts("test_host_row_gather... PASSED");
+}
+
+static void test_bf16_hc_preparation(void) {
+    float dummy = 0;
+    BnHyperConnectionWeights w = {0};
+    w.norm = &dummy;
+    w.down = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 32, 8192, 1};
+    w.up = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 8192, 32, 1};
+    w.inject = (BnQWeight){&dummy, BN_GGUF_TENSOR_F32, 4, 8192, 1};
+    BF16PrepareProbe probe = {0};
+    BnGPUBackend gpu = {0};
+    gpu.ctx = &probe; gpu.buffer_create_quant_only = mock_bf16_prepare_upload;
+    gpu.buffer_create_bf16_decoded = mock_bf16_prepare_decoded;
+    gpu.buffer_destroy = mock_bf16_prepare_destroy;
+    BnBackendBF16HCWeights out = {0}, empty = {0};
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2048, 4, 32, 0) == -1);
+    assert(!probe.calls && !memcmp(&out, &empty, sizeof(out)));
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2049, 4, 32, SIZE_MAX) == -1);
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2048, 3, 32, SIZE_MAX) == -1);
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2048, 4, 0, SIZE_MAX) == -1);
+    BnHyperConnectionWeights invalid = w;
+    invalid.norm = NULL;
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &invalid, 2048, 4, 32, SIZE_MAX) == -1);
+    invalid = w; invalid.up.scale = 2;
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &invalid, 2048, 4, 32, SIZE_MAX) == -1);
+    invalid = w; invalid.up.rows--;
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &invalid, 2048, 4, 32, SIZE_MAX) == -1);
+    invalid = w; invalid.up.type = BN_GGUF_TENSOR_Q2_K;
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &invalid, 2048, 4, 32, SIZE_MAX) == -1);
+    assert(!probe.calls && !memcmp(&out, &empty, sizeof(out)));
+    for (int fail = 1; fail <= 8; fail++) {
+        memset(&probe, 0, sizeof(probe));
+        if (fail <= 4) probe.fail_at = fail;
+        else probe.fail_decoded_at = fail - 4;
+        assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &w,
+            2048, 4, 32, SIZE_MAX) == -1);
+        assert(probe.created == probe.destroyed);
+        assert(!memcmp(&out, &empty, sizeof(out)));
+    }
+    memset(&probe, 0, sizeof(probe));
+    assert(!bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2048, 4, 32, SIZE_MAX));
+    size_t bytes = 2u * 8192 * (1 + 32 + 32 + 4), peak = out.peak_bytes;
+    assert(out.bytes == bytes && peak > bytes && out.down.type == BN_GGUF_TENSOR_BF16);
+    assert(probe.created - probe.destroyed == 4 && !out.down.raw);
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2048, 4, 32, SIZE_MAX) == -1);
+    bn_backend_layout_bf16_hc_free(&out); bn_backend_layout_bf16_hc_free(&out);
+    assert(probe.created == probe.destroyed && !memcmp(&out, &empty, sizeof(out)));
+    memset(&probe, 0, sizeof(probe));
+    assert(bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2048, 4, 32, peak - 1) == -1);
+    assert(!probe.calls);
+    w.inject.type = BN_GGUF_TENSOR_BF16;
+    assert(!bn_backend_layout_bf16_hc_init(&out, &gpu, &w, 2048, 4, 32, peak));
+    assert(probe.decoded_calls == 3);
+    bn_backend_layout_bf16_hc_free(&out);
+    assert(probe.created == probe.destroyed);
+    memset(&probe, 0, sizeof(probe));
+    assert(bn_backend_layout_bf16_hc_mixer_init(&out, &gpu, &w, 2048, 4, 32, SIZE_MAX) == -1);
+    assert(!probe.calls);
+    memset(&w.inject, 0, sizeof(w.inject));
+    assert(!bn_backend_layout_bf16_hc_mixer_init(&out, &gpu, &w, 2048, 4, 32, SIZE_MAX));
+    assert(out.bytes == 2u * 8192 * (1 + 32 + 32) && !out.inject.decoded);
+    assert(probe.created - probe.destroyed == 3);
+    bn_backend_layout_bf16_hc_free(&out);
+    assert(probe.created == probe.destroyed);
+    puts("test_bf16_hc_preparation... PASSED");
+}
+
+static void test_bf16_hc_model_preparation(void) {
+    float norm[8192];
+    for (size_t j = 0; j < sizeof(norm) / sizeof(*norm); j++) norm[j] = 1.0009765625f;
+    float dummy = 0;
+    BnHyperConnectionWeights branch = {0}; branch.norm = norm;
+    branch.down = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 32, 8192, 1};
+    branch.up = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 8192, 32, 1};
+    branch.inject = (BnQWeight){&dummy, BN_GGUF_TENSOR_F32, 4, 8192, 1};
+    BnLayerWeights layers[2] = {0};
+    for (int i = 0; i < 2; i++) layers[i].hc_attn = layers[i].hc_ffn = branch;
+    BnWeights w = {0}; w.layers = layers; w.hc_output = branch;
+    memset(&w.hc_output.inject, 0, sizeof(w.hc_output.inject));
+    BnConfig c = {0}; bn_model_arch_apply_config(&c, bn_model_arch_ops_for("qwen4exp"));
+    c.n_layers = 2; c.dim = 2048; c.hyper_connection_count = 4; c.hyper_connection_rank = 32;
+    BF16PrepareProbe probe = {0}; BnGPUBackend gpu = {0}; gpu.ctx = &probe;
+    gpu.buffer_create_quant_only = mock_bf16_prepare_upload;
+    gpu.buffer_create_bf16_decoded = mock_bf16_prepare_decoded;
+    gpu.buffer_destroy = mock_bf16_prepare_destroy;
+    BnBackendModel *backend = bn_backend_model_create(); assert(backend);
+    assert(bn_backend_layout_prepare_bf16_hc_model(backend, &gpu, &c, &w, 0) == -1);
+    assert(!probe.calls && !bn_backend_layout_bf16_hc_model(backend));
+    layers[1].hc_ffn.up.data = NULL;
+    assert(bn_backend_layout_prepare_bf16_hc_model(backend, &gpu, &c, &w, SIZE_MAX) == -1);
+    assert(!probe.calls); layers[1].hc_ffn = branch;
+    for (int fail = 1; fail <= 38; fail++) {
+        memset(&probe, 0, sizeof(probe));
+        if (fail <= 19) probe.fail_at = fail;
+        else probe.fail_decoded_at = fail - 19;
+        assert(bn_backend_layout_prepare_bf16_hc_model(backend, &gpu, &c, &w, SIZE_MAX) == -1);
+        assert(probe.created == probe.destroyed);
+        assert(!bn_backend_layout_bf16_hc_model(backend) && !bn_backend_layout_bf16(backend));
+    }
+    memset(&probe, 0, sizeof(probe));
+    probe.check_gamma = 1;
+    assert(!bn_backend_layout_prepare_bf16_hc_model(backend, &gpu, &c, &w, SIZE_MAX));
+    assert(probe.gamma_uploads == 5);
+    for (size_t j = 0; j < sizeof(norm) / sizeof(*norm); j++) assert(norm[j] == 1.0009765625f);
+    assert(bn_model_arch_zero_centered_norm_storage_offset(&c) == 1.0f);
+    assert(bn_model_arch_zero_centered_norm_storage_offset(NULL) == 0.0f);
+    BnConfig ordinary = {0};
+    bn_model_arch_apply_config(&ordinary, bn_model_arch_ops_for("qwen35"));
+    assert(bn_model_arch_zero_centered_norm_storage_offset(&ordinary) == 0.0f);
+    const BnBackendBF16HCModel *hc = bn_backend_layout_bf16_hc_model(backend);
+    assert(hc && hc->n_layers == 2 && hc->dim == 2048 && hc->streams == 4 && hc->rank == 32);
+    assert(hc->bytes == 4 * hc->attention[0].bytes + hc->output->bytes);
+    assert(hc->peak_bytes == 4 * hc->attention[0].bytes + hc->output->peak_bytes);
+    assert(!hc->output->inject.decoded && !hc->output->inject.raw);
+    assert(!bn_backend_layout_bf16(backend));
+    int calls = probe.calls;
+    assert(bn_backend_layout_prepare_bf16_hc_model(backend, &gpu, &c, &w, SIZE_MAX) == -1);
+    assert(probe.calls == calls);
+    size_t peak = hc->peak_bytes;
+    bn_backend_model_release_gpu(backend);
+    assert(probe.created == probe.destroyed && !bn_backend_layout_bf16_hc_model(backend));
+    memset(&probe, 0, sizeof(probe));
+    assert(bn_backend_layout_prepare_bf16_hc_model(backend, &gpu, &c, &w, peak - 1) == -1);
+    assert(!probe.calls);
+    assert(!bn_backend_layout_prepare_bf16_hc_model(backend, &gpu, &c, &w, peak));
+    bn_backend_model_free(backend);
+    assert(probe.created == probe.destroyed);
+    puts("test_bf16_hc_model_preparation... PASSED");
+}
+
+static void *mock_bf16_ple_stack(void *ctx, const void *a, size_t na,
+    const void *b, size_t nb, int type, int rows, int cols) {
+    assert(a && b && na && nb && (type == BN_GGUF_TENSOR_Q8_0 || type == BN_GGUF_TENSOR_F32));
+    return mock_bf16_prepare_upload(ctx, a, na + nb, type, rows, cols);
+}
+
+static void test_bf16_ple_model_preparation(void) {
+    float norm[10240];
+    for (size_t j = 0; j < sizeof(norm) / sizeof(*norm); j++) norm[j] = 1.0009765625f;
+    float dummy = 0;
+    BnHyperConnectionWeights branch = {0}; branch.norm = norm;
+    branch.down = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 32, 10240, 1};
+    branch.up = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 10240, 32, 1};
+    branch.inject = (BnQWeight){&dummy, BN_GGUF_TENSOR_F32, 4, 10240, 1};
+    BnLayerWeights layers[2] = {0};
+    for (int i=0;i<2;i++) layers[i].hc_attn=layers[i].hc_ffn=branch;
+    BnWeights w={0};w.layers=layers;w.hc_output=branch;memset(&w.hc_output.inject,0,sizeof(w.hc_output.inject));
+    BnPositionalLayerEmbeddingWeights *ple=&layers[1].ple;
+    ple->key=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,10240,2560,1};
+    ple->value=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,2560,2560,1};
+    ple->norm_key=ple->norm_query=ple->norm_conv=norm;ple->conv1d=&dummy;
+    BnConfig c={0};bn_model_arch_apply_config(&c,bn_model_arch_ops_for("qwen4exp"));
+    c.n_layers=2;c.dim=2560;c.hyper_connection_count=4;c.hyper_connection_rank=32;
+    c.ple_layer=1;c.ple_conv_kernel=4;c.ple_ngram_size=3;
+    BF16PrepareProbe probe={0};BnGPUBackend gpu={0};gpu.ctx=&probe;
+    gpu.buffer_create_quant_only=mock_bf16_prepare_upload;gpu.buffer_create_stacked2=mock_bf16_ple_stack;
+    gpu.buffer_create_bf16_decoded=mock_bf16_prepare_decoded;gpu.buffer_destroy=mock_bf16_prepare_destroy;
+    BnBackendModel *b=bn_backend_model_create();assert(b);
+    assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+    assert(!probe.calls);assert(!bn_backend_layout_prepare_bf16_hc_model(b,&gpu,&c,&w,SIZE_MAX));
+    const BnBackendBF16HCModel *hc=bn_backend_layout_bf16_hc_model(b);assert(hc);
+    const void *hc_first=hc->attention[0].down.decoded;
+    size_t bytes=hc->bytes,peak=bytes+100352000u,host=34816000u;
+    int calls=probe.calls;
+    assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,peak-1,host)==-1);
+    assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,peak,host-1)==-1);
+    BnWeights other=w;assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&other,SIZE_MAX,SIZE_MAX)==-1);
+    BnGPUBackend foreign=gpu;assert(bn_backend_layout_prepare_bf16_ple_model(b,&foreign,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+    ple->key.scale=2;assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);ple->key.scale=1;
+    ple->norm_conv=NULL;assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);ple->norm_conv=norm;
+    assert(calls==probe.calls);
+    int live=probe.created-probe.destroyed;
+    for(int fail=1;fail<=10;fail++) {
+        if(fail<=5)probe.fail_at=probe.calls+fail;
+        else probe.fail_decoded_at=probe.decoded_calls+fail-5;
+        assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,peak,host)==-1);
+        probe.fail_at=probe.fail_decoded_at=0;
+        assert(probe.created-probe.destroyed==live&&!bn_backend_layout_bf16_ple_model(b));
+        assert(bn_backend_layout_bf16_hc_model(b)==hc&&hc->attention[0].down.decoded==hc_first);
+        assert(!bn_backend_layout_bf16(b));
+    }
+    probe.check_gamma = 1; probe.gamma_uploads = 0;
+    assert(!bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,peak,host));
+    assert(probe.gamma_uploads == 3);
+    for (size_t j = 0; j < sizeof(norm) / sizeof(*norm); j++) assert(norm[j] == 1.0009765625f);
+    const BnBackendBF16PLEWeights *out=bn_backend_layout_bf16_ple_model(b);assert(out);
+    assert(out->bytes==65679360u&&out->peak_bytes==100352000u&&out->host_staging_bytes==host);
+    assert(out->model_bytes==bytes+out->bytes&&out->model_peak_bytes==peak);
+    assert(out->kv.type==BN_GGUF_TENSOR_BF16&&!out->kv.raw&&out->layer==1&&out->dim==2560&&out->streams==4);
+    assert(probe.created-probe.destroyed==live+5&&!bn_backend_layout_bf16(b));
+    calls=probe.calls;assert(bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);assert(calls==probe.calls);
+    bn_backend_model_release_gpu(b);assert(probe.created==probe.destroyed);
+    assert(!bn_backend_layout_bf16_ple_model(b)&&!bn_backend_layout_bf16_hc_model(b));
+    bn_backend_model_release_gpu(b);bn_backend_model_free(b);assert(probe.created==probe.destroyed);
+    puts("test_bf16_ple_model_preparation... PASSED");
+}
+
+static void test_bf16_flash_gdn_model_preparation(void) {
+    float norm[10240];
+    for (size_t j = 0; j < sizeof(norm) / sizeof(*norm); j++) norm[j] = 1.0009765625f;
+    float dummy=0,coef[48];for(int h=0;h<48;h++)coef[h]=-1.0f;
+    BnHyperConnectionWeights branch={0};branch.norm=norm;
+    branch.down=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,32,10240,1};
+    branch.up=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,10240,32,1};
+    branch.inject=(BnQWeight){&dummy,BN_GGUF_TENSOR_F32,4,10240,1};
+    BnLayerWeights layers[2]={0};
+    for(int l=0;l<2;l++){
+        layers[l].block_kind=BN_LAYER_BLOCK_SSM;layers[l].hc_attn=layers[l].hc_ffn=branch;
+        BnSSMWeights *s=&layers[l].ssm;
+        s->wqkv=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,10240,2560,1};
+        s->wz=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,6144,2560,1};
+        s->ssm_out=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,2560,6144,1};
+        s->ssm_alpha=s->ssm_beta=(BnQWeight){&dummy,BN_GGUF_TENSOR_F32,48,2560,1};
+        s->ssm_a=coef;s->ssm_norm=s->ssm_dt_bias=s->ssm_conv1d=&dummy;
+    }
+    BnWeights w={0};w.layers=layers;w.hc_output=branch;memset(&w.hc_output.inject,0,sizeof(w.hc_output.inject));
+    layers[1].ple=(BnPositionalLayerEmbeddingWeights){
+        .key={&dummy,BN_GGUF_TENSOR_Q8_0,10240,2560,1},.value={&dummy,BN_GGUF_TENSOR_Q8_0,2560,2560,1},
+        .norm_key=norm,.norm_query=norm,.norm_conv=norm,.conv1d=&dummy};
+    BnConfig c={0};bn_model_arch_apply_config(&c,bn_model_arch_ops_for("qwen4exp"));
+    c.n_layers=2;c.dim=2560;c.norm_eps=1e-6f;c.hyper_connection_count=4;c.hyper_connection_rank=32;
+    c.ple_layer=1;c.ple_conv_kernel=4;c.ple_ngram_size=3;c.ssm_state_size=128;c.ssm_conv_kernel=4;
+    c.ssm_inner_size=6144;c.ssm_time_step_rank=48;c.ssm_group_count=16;
+    BF16PrepareProbe probe={0};BnGPUBackend gpu={0};gpu.ctx=&probe;
+    gpu.buffer_create_quant_only=mock_bf16_prepare_upload;gpu.buffer_create_stacked2=mock_bf16_ple_stack;
+    gpu.buffer_create_bf16_decoded=mock_bf16_prepare_decoded;gpu.buffer_destroy=mock_bf16_prepare_destroy;
+    BnBackendModel *b=bn_backend_model_create();assert(b);
+    assert(!bn_backend_layout_prepare_bf16_hc_model(b,&gpu,&c,&w,SIZE_MAX));
+    assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+    assert(!bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX));
+    const BnBackendBF16PLEWeights *ple=bn_backend_layout_bf16_ple_model(b);assert(ple);
+    int calls=probe.calls,live=probe.created-probe.destroyed;
+    if(!bn_backend_layout_bf16_math_available(BN_BACKEND_BF16_MATH_MKL_VML_HA)){
+        assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+        assert(probe.calls==calls);bn_backend_model_free(b);assert(probe.created==probe.destroyed);
+        puts("test_bf16_flash_gdn_model_preparation... PASSED (qualified math unavailable)");return;
+    }
+    size_t peak=ple->model_bytes+247972384u,host=44564480u;
+    assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,peak-1,host)==-1);
+    assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,peak,host-1)==-1);
+    coef[47]=NAN;assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);coef[47]=-1;
+    layers[1].ssm.wz.data=NULL;assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);layers[1].ssm.wz.data=&dummy;
+    BnWeights other=w;assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&other,SIZE_MAX,SIZE_MAX)==-1);
+    assert(probe.calls==calls);
+    for(int fail=1;fail<=26;fail++){
+        if(fail<=14)probe.fail_at=probe.calls+fail;else probe.fail_decoded_at=probe.decoded_calls+fail-14;
+        assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,peak,host)==-1);
+        probe.fail_at=probe.fail_decoded_at=0;
+        assert(probe.created-probe.destroyed==live&&!bn_backend_layout_bf16_flash_gdn_model(b));
+        assert(bn_backend_layout_bf16_ple_model(b)==ple&&!bn_backend_layout_bf16(b));
+    }
+    assert(!bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,peak,host));
+    const BnBackendBF16FlashGDNModel *out=bn_backend_layout_bf16_flash_gdn_model(b);assert(out);
+    assert(out->n_layers==2&&out->n_gdn_layers==2&&out->bytes==231834688u&&out->peak_bytes==247972384u);
+    assert(out->host_staging_bytes==host&&out->model_bytes==ple->model_bytes+out->bytes&&out->model_peak_bytes==peak);
+    assert(out->layers[0].valid&&out->layers[1].valid&&out->gate_activation==BN_GPU_GATED_NORM_SIGMOID);
+    assert(out->math_profile==BN_BACKEND_BF16_MATH_MKL_VML_HA&&probe.created-probe.destroyed==live+14);
+    calls=probe.calls;assert(bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);assert(probe.calls==calls);
+    bn_backend_model_release_gpu(b);assert(probe.created==probe.destroyed&&!bn_backend_layout_bf16_flash_gdn_model(b));
+    bn_backend_model_release_gpu(b);bn_backend_model_free(b);assert(probe.created==probe.destroyed);
+    puts("test_bf16_flash_gdn_model_preparation... PASSED");
+}
+
+static void *mock_bf16_qsa_stack2(void *ctx,const void *a,size_t na,const void *b,size_t nb,
+    int type,int rows,int cols) {
+    assert(a&&b&&na&&nb);
+    return mock_bf16_prepare_upload(ctx,a,na+nb,type,rows,cols);
+}
+static void *mock_bf16_qsa_stack3(void *ctx,const void *a,size_t na,const void *b,size_t nb,
+    const void *c,size_t nc,int type,int rows,int cols) {
+    assert(a&&b&&c&&na&&nb&&nc&&type==BN_GGUF_TENSOR_Q8_0&&rows==13312&&cols==2560);
+    return mock_bf16_prepare_upload(ctx,a,na+nb+nc,type,rows,cols);
+}
+static void *mock_bf16_qsa_rotary(void *ctx,const BnGPURotaryCachePlan *p) {
+    assert(p&&p->positions==512&&p->rotary_dim==64&&p->theta==10000000.0f);
+    return mock_bf16_prepare_upload(ctx,p,(size_t)p->positions*64*2,BN_GGUF_TENSOR_BF16,p->positions,64);
+}
+static void test_bf16_flash_ffn_model_preparation(BnBackendModel *b, BnGPUBackend *gpu,
+    BnConfig *c, BnWeights *w, BF16PrepareProbe *probe) {
+    const BnBackendBF16FlashQSAModel *qsa = bn_backend_layout_bf16_flash_qsa_model(b);
+    assert(qsa && c->n_layers == 3);
+    float dummy = 0;
+    c->n_experts = 512; c->n_experts_active = 10; c->moe_intermediate_size = 640;
+    c->shared_expert_intermediate_size = 640; c->has_shared_expert = 1;
+    c->moe_norm_topk_prob = 1; c->moe_expert_weights_scale = 0;
+    for (int l = 0; l < 3; l++) {
+        BnLayerWeights *lw = &w->layers[l];
+        lw->ffn_kind = BN_LAYER_FFN_MOE; lw->moe.router_weight = &dummy;
+        lw->shared.shared_expert_gate = &dummy; lw->shared.shared_expert_gate_type = BN_GGUF_TENSOR_F32;
+        lw->shared.shared_gate = lw->shared.shared_up = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 640, 2560, 1};
+        lw->shared.shared_down = (BnQWeight){&dummy, BN_GGUF_TENSOR_Q8_0, 2560, 640, 1};
+        BnMoEExpertMap *m = &lw->moe.expert_map;
+        m->gate_rows = m->up_rows = 640; m->gate_cols = m->up_cols = 2560;
+        m->down_rows = 2560; m->down_cols = 640;
+        m->gate_type = m->up_type = l == 1 ? BN_GGUF_TENSOR_Q5_K : BN_GGUF_TENSOR_Q4_K;
+        m->down_type = l == 2 ? BN_GGUF_TENSOR_Q8_0 : BN_GGUF_TENSOR_Q5_1;
+        m->expert_gate_bytes = m->expert_up_bytes = l == 1 ? 1126400 : 921600;
+        m->expert_down_bytes = l == 2 ? 1740800 : 1228800;
+        m->gate_stride = m->expert_gate_bytes; m->up_stride = m->expert_up_bytes; m->down_stride = m->expert_down_bytes;
+    }
+    probe->check_gamma = 0;
+    int calls = probe->calls, live = probe->created - probe->destroyed;
+    size_t peak = qsa->model_bytes + 23562240u;
+    assert(bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,w,peak-1)==-1);
+    c->moe_expert_weights_scale = 2;
+    assert(bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,w,SIZE_MAX)==-1);
+    c->moe_expert_weights_scale = 0;
+    c->n_experts_active = 9;
+    assert(bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,w,SIZE_MAX)==-1);c->n_experts_active=10;
+    BnWeights other = *w;
+    assert(bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,&other,SIZE_MAX)==-1);
+    BnLayerWeights saved = w->layers[2];
+#define FFN_REJECT(change) do { change; assert(bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,w,SIZE_MAX)==-1); w->layers[2]=saved; } while (0)
+    FFN_REJECT(w->layers[2].moe.router_weight=NULL);
+    FFN_REJECT(w->layers[2].moe.router_scale=&dummy);
+    FFN_REJECT(w->layers[2].shared.shared_expert_gate_type=BN_GGUF_TENSOR_BF16);
+    FFN_REJECT(w->layers[2].shared.shared_down.cols=641);
+    FFN_REJECT(w->layers[2].shared.shared_gate.scale=2);
+    FFN_REJECT(w->layers[2].moe.expert_map.gate_cols=2561);
+    FFN_REJECT(w->layers[2].moe.expert_map.gate_up_fused=1);
+    FFN_REJECT(w->layers[2].moe.expert_map.down_offset=SIZE_MAX);
+    FFN_REJECT(w->layers[2].moe.expert_map.down_stride=SIZE_MAX/511+1);
+    FFN_REJECT(w->layers[2].moe.expert_map.expert_gate_bytes--);
+    FFN_REJECT(w->layers[2].moe.expert_map.up_stride--);
+    FFN_REJECT(w->layers[2].moe.expert_map.down_type=BN_GGUF_TENSOR_Q4_K);
+#undef FFN_REJECT
+    assert(probe->calls==calls && !bn_backend_layout_bf16_flash_ffn_model(b));
+    /* Fail each of 15 raw uploads and six decodes, including the last layer. */
+    for (int fail=1; fail<=21; fail++) {
+        if(fail<=15)probe->fail_at=probe->calls+fail;
+        else probe->fail_decoded_at=probe->decoded_calls+fail-15;
+        assert(bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,w,peak)==-1);
+        probe->fail_at=probe->fail_decoded_at=0;
+        assert(probe->created-probe->destroyed==live && !bn_backend_layout_bf16_flash_ffn_model(b));
+        assert(bn_backend_layout_bf16_flash_qsa_model(b)==qsa && qsa->rotary_cache && !bn_backend_layout_bf16(b));
+    }
+    assert(!bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,w,peak));
+    const BnBackendBF16FlashFFNModel *out=bn_backend_layout_bf16_flash_ffn_model(b);
+    assert(out && out->n_layers==3 && out->dim==2560 && out->hidden_dim==640 && out->shared_hidden_dim==640);
+    assert(out->n_experts==512 && out->k==10 && out->renormalize==1);
+    assert(out->shared_activation==BN_GPU_BF16_FFN_SILU_FUSED);
+    assert(out->bytes==23546880u && out->peak_bytes==23562240u);
+    assert(out->model_bytes==qsa->model_bytes+out->bytes && out->model_peak_bytes==peak);
+    assert(probe->created-probe->destroyed==live+15);
+    for(int l=0;l<3;l++) {
+        const BnBackendBF16FlashFFNWeights *fw=&out->layers[l];
+        assert(fw->router.decoded && !fw->router.raw && fw->router.type==BN_GGUF_TENSOR_BF16);
+        assert(fw->shared_router.decoded && !fw->shared_router.raw);
+        assert(fw->shared.gate.raw && !fw->shared.gate.decoded && fw->shared.gate.type==BN_GGUF_TENSOR_Q8_0);
+        assert(!memcmp(&fw->expert_map,&w->layers[l].moe.expert_map,sizeof(fw->expert_map)));
+    }
+    calls=probe->calls;
+    assert(bn_backend_layout_prepare_bf16_flash_ffn_model(b,gpu,c,w,SIZE_MAX)==-1 && probe->calls==calls);
+    /* Vocabulary tables are raw Q8 and remain independent of routed expert
+     * placement. No extra final norm is present in this HC architecture. */
+    c->vocab_size=248320;w->token_embedding=&dummy;w->emb_type=BN_GGUF_TENSOR_Q8_0;
+    w->output_weight=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,248320,2560,1};
+    calls=probe->calls;live=probe->created-probe->destroyed;
+    size_t io_peak=out->model_bytes+1350860800u;
+    assert(bn_backend_layout_prepare_bf16_flash_io_model(b,gpu,c,w,io_peak-1)==-1);
+    w->output_norm=&dummy;assert(bn_backend_layout_prepare_bf16_flash_io_model(b,gpu,c,w,SIZE_MAX)==-1);w->output_norm=NULL;
+    w->emb_type=BN_GGUF_TENSOR_Q4_K;assert(bn_backend_layout_prepare_bf16_flash_io_model(b,gpu,c,w,SIZE_MAX)==-1);w->emb_type=BN_GGUF_TENSOR_Q8_0;
+    w->output_weight.scale=2;assert(bn_backend_layout_prepare_bf16_flash_io_model(b,gpu,c,w,SIZE_MAX)==-1);w->output_weight.scale=1;
+    assert(probe->calls==calls);
+    for(int fail=1;fail<=2;fail++) {
+        probe->fail_at=probe->calls+fail;
+        assert(bn_backend_layout_prepare_bf16_flash_io_model(b,gpu,c,w,io_peak)==-1);probe->fail_at=0;
+        assert(probe->created-probe->destroyed==live&&!bn_backend_layout_bf16_flash_io_model(b));
+        assert(bn_backend_layout_bf16_flash_ffn_model(b)==out);
+    }
+    int decodes=probe->decoded_calls;
+    assert(!bn_backend_layout_prepare_bf16_flash_io_model(b,gpu,c,w,io_peak));
+    const BnBackendBF16FlashIOModel *io=bn_backend_layout_bf16_flash_io_model(b);assert(io);
+    assert(io->dim==2560&&io->vocab_size==248320&&io->bytes==1350860800u&&io->peak_bytes==io->bytes);
+    assert(io->model_bytes==io_peak&&io->model_peak_bytes==io_peak&&io->embedding&&io->output.raw&&!io->output.decoded);
+    assert(probe->created-probe->destroyed==live+2&&probe->decoded_calls==decodes);
+    assert(bn_backend_layout_prepare_bf16_flash_io_model(b,gpu,c,w,SIZE_MAX)==-1);
+    puts("test_bf16_flash_io_model_preparation... PASSED");
+    puts("test_bf16_flash_ffn_model_preparation... PASSED");
+}
+
+static void test_bf16_flash_model_preparation(BnBackendModel *partial,
+    BnGPUBackend *gpu, const BnConfig *small, const BnWeights *weights,
+    BF16PrepareProbe *probe) {
+    assert(!bn_backend_layout_bf16_flash_model(partial));
+    assert(!bn_backend_model_gpu(partial));
+    BnConfig c = *small;
+    BnWeights w = *weights;
+    c.n_layers = 48; c.hyper_connection_rank = 320;
+    BnLayerWeights *layers = calloc(48, sizeof(*layers));
+    assert(layers);
+    w.layers = layers;
+    w.hc_output.down.rows = w.hc_output.up.cols = 320;
+    for (int l = 0; l < 48; l++) {
+        int attention = (l + 1) % 4 == 0;
+        layers[l] = weights->layers[attention ? 0 : 1];
+        layers[l].hc_attn.down.rows = layers[l].hc_ffn.down.rows = 320;
+        layers[l].hc_attn.up.cols = layers[l].hc_ffn.up.cols = 320;
+        if (l != c.ple_layer) memset(&layers[l].ple, 0, sizeof(layers[l].ple));
+        c.attention_compress_ratios[l] = attention ? 4 : 0;
+    }
+    BnBackendModel *b = bn_backend_model_create(); assert(b);
+    int live = probe->created - probe->destroyed, calls = probe->calls;
+    assert(bn_backend_layout_prepare_bf16_flash_model_with_cache(b,gpu,&c,&w,SIZE_MAX,SIZE_MAX,1024*1024)==-1);
+    assert(probe->calls==calls&&!bn_backend_layout_bf16_flash_model(b));
+    assert(bn_backend_layout_prepare_bf16_flash_model(partial,gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+    c.bf16_layout = BN_MODEL_BF16_LAYOUT_NONE;
+    assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+    c.bf16_layout = BN_MODEL_BF16_LAYOUT_FLASH_HC;
+    assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,40959)==-1);
+    assert(probe->calls == calls);
+    /* Successful preparation establishes independently observable publication,
+     * budget and allocation counts for failures across the whole transaction. */
+    int decodes = probe->decoded_calls;
+    assert(!bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,SIZE_MAX));
+    const BnBackendBF16FlashIOModel *io = bn_backend_layout_bf16_flash_model(b);
+    assert(io && io == bn_backend_layout_bf16_flash_io_model(b));
+    assert(bn_backend_model_gpu(b) == gpu && !bn_backend_layout_bf16(b));
+    assert(bn_backend_layout_bf16_hc_model(b)->n_layers == 48);
+    assert(bn_backend_layout_bf16_flash_gdn_model(b)->n_gdn_layers == 36);
+    assert(bn_backend_layout_bf16_flash_qsa_model(b)->n_qsa_layers == 12);
+    size_t peak = io->model_peak_bytes;
+    int uploads = probe->calls - calls, decoded = probe->decoded_calls - decodes;
+    calls = probe->calls;
+    assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+    assert(probe->calls == calls && bn_backend_layout_bf16_flash_model(b) == io);
+    bn_backend_model_release_gpu(b);
+    assert(!bn_backend_model_gpu(b) && !bn_backend_layout_bf16_flash_model(b));
+    assert(probe->created - probe->destroyed == live);
+    int failures[] = {1, uploads/2, uploads-1, uploads};
+    for (size_t i = 0; i < sizeof(failures)/sizeof(failures[0]); i++) {
+        probe->fail_at = probe->calls + failures[i];
+        assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+        probe->fail_at = 0;
+        assert(!bn_backend_model_gpu(b) && !bn_backend_layout_bf16_hc_model(b));
+        assert(!bn_backend_layout_bf16_flash_model(b));
+        assert(probe->created - probe->destroyed == live);
+    }
+    int decode_failures[] = {1, decoded/2, decoded};
+    for (size_t i = 0; i < sizeof(decode_failures)/sizeof(decode_failures[0]); i++) {
+        probe->fail_decoded_at = probe->decoded_calls + decode_failures[i];
+        assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+        probe->fail_decoded_at = 0;
+        assert(!bn_backend_model_gpu(b) && !bn_backend_layout_bf16_hc_model(b));
+        assert(probe->created - probe->destroyed == live);
+    }
+    assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,peak-1,SIZE_MAX)==-1);
+    assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,40960)==-1);
+    assert(probe->created - probe->destroyed == live && !bn_backend_model_gpu(b));
+    /* A foreign layout is preserved when final publication cannot succeed. */
+    DestroyCounter counter = {0}; int owner = 0;
+    ModelResourcesProbe foreign = {b, &owner, &counter, 0};
+    assert(!bn_backend_model_attach_gpu_resources(b,&owner,&foreign,release_model_resources_probe));
+    assert(bn_backend_layout_prepare_bf16_flash_model(b,gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);
+    assert(probe->created - probe->destroyed == live);
+    assert(bn_backend_model_gpu_resources(b,&owner) == &foreign && !bn_backend_model_gpu(b));
+    bn_backend_model_free(b); assert(foreign.releases == 1);
+    free(layers);
+    puts("test_bf16_flash_model_preparation... PASSED");
+}
+
+static void test_bf16_flash_qsa_model_preparation(void) {
+    float norm[10240],dummy=0,coef[48];
+    for(size_t i=0;i<10240;i++)norm[i]=1.0009765625f;
+    for(int i=0;i<48;i++)coef[i]=-1.0f;
+    BnHyperConnectionWeights branch={0};branch.norm=norm;
+    branch.down=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,32,10240,1};
+    branch.up=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,10240,32,1};
+    branch.inject=(BnQWeight){&dummy,BN_GGUF_TENSOR_F32,4,10240,1};
+    BnLayerWeights layers[3]={0};
+    for(int l=0;l<3;l++) {
+        layers[l].hc_attn=layers[l].hc_ffn=branch;
+        if(l==1) {
+            layers[l].block_kind=BN_LAYER_BLOCK_SSM;BnSSMWeights *s=&layers[l].ssm;
+            s->wqkv=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,10240,2560,1};
+            s->wz=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,6144,2560,1};
+            s->ssm_out=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,2560,6144,1};
+            s->ssm_alpha=s->ssm_beta=(BnQWeight){&dummy,BN_GGUF_TENSOR_F32,48,2560,1};
+            s->ssm_a=coef;s->ssm_norm=s->ssm_dt_bias=s->ssm_conv1d=&dummy;
+        } else {
+            BnAttentionWeights *a=&layers[l].attn;
+            a->wq=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,12288,2560,1};
+            a->wk=a->wv=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,512,2560,1};
+            a->wo=(BnQWeight){&dummy,BN_GGUF_TENSOR_Q8_0,2560,6144,1};
+            a->head_size=256;a->n_kv_heads=2;a->kv_dim=512;a->kv_mul=12;a->q_dim=12288;a->has_kv=1;
+            a->q_norm=a->k_norm=norm;
+            layers[l].indexer.q=(BnQWeight){&dummy,BN_GGUF_TENSOR_BF16,512,2560,1};
+            layers[l].indexer.k=(BnQWeight){&dummy,BN_GGUF_TENSOR_BF16,128,2560,1};
+            layers[l].indexer.q_norm=layers[l].indexer.k_norm=norm;
+        }
+    }
+    layers[1].ple=(BnPositionalLayerEmbeddingWeights){
+        .key={&dummy,BN_GGUF_TENSOR_Q8_0,10240,2560,1},.value={&dummy,BN_GGUF_TENSOR_Q8_0,2560,2560,1},
+        .norm_key=norm,.norm_query=norm,.norm_conv=norm,.conv1d=&dummy};
+    BnWeights w={0};w.layers=layers;w.hc_output=branch;memset(&w.hc_output.inject,0,sizeof(w.hc_output.inject));
+    BnConfig c={0};bn_model_arch_apply_config(&c,bn_model_arch_ops_for("qwen4exp"));
+    c.n_layers=3;c.dim=2560;c.norm_eps=1e-6f;c.hyper_connection_count=4;c.hyper_connection_rank=32;
+    c.ple_layer=1;c.ple_conv_kernel=4;c.ple_ngram_size=3;c.ssm_state_size=128;c.ssm_conv_kernel=4;
+    c.ssm_inner_size=6144;c.ssm_time_step_rank=48;c.ssm_group_count=16;
+    c.n_heads=24;c.n_kv_heads=2;c.head_size=256;c.rope_dim_count=64;c.rope_theta=10000000.0f;c.seq_len=512;
+    c.indexer_head_count=4;c.indexer_head_size=128;c.indexer_top_k=2048;
+    c.attention_compress_ratios[0]=c.attention_compress_ratios[2]=4;
+    BF16PrepareProbe probe={0};BnGPUBackend gpu={0};gpu.ctx=&probe;
+    gpu.buffer_create_quant_only=mock_bf16_prepare_upload;gpu.buffer_create_stacked2=mock_bf16_qsa_stack2;
+    gpu.buffer_create_stacked3=mock_bf16_qsa_stack3;gpu.buffer_create_bf16_decoded=mock_bf16_prepare_decoded;
+    gpu.buffer_destroy=mock_bf16_prepare_destroy;gpu.buffer_create_rotary_bf16=mock_bf16_qsa_rotary;
+    BnBackendModel *b=bn_backend_model_create();assert(b);
+    assert(!bn_backend_layout_prepare_bf16_hc_model(b,&gpu,&c,&w,SIZE_MAX));
+    assert(!bn_backend_layout_prepare_bf16_ple_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX));
+    int calls=probe.calls;
+    assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1&&probe.calls==calls);
+    if(!bn_backend_layout_bf16_math_available(BN_BACKEND_BF16_MATH_MKL_VML_HA)) {
+        bn_backend_model_free(b);assert(probe.created==probe.destroyed);
+        puts("test_bf16_flash_qsa_model_preparation... PASSED (qualified GDN math unavailable)");return;
+    }
+    assert(!bn_backend_layout_prepare_bf16_flash_gdn_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX));
+    const BnBackendBF16FlashGDNModel *gdn=bn_backend_layout_bf16_flash_gdn_model(b);assert(gdn);
+    const void *first=gdn->layers[1].qkvz.decoded;int live=probe.created-probe.destroyed;
+    /* Independently counted 2*102893056 decoded bytes plus 512*64*2 rotary;
+     * peak adds the final output Q8 upload before it is released. */
+    size_t bytes=205851648u,peak=gdn->model_bytes+222496256u,host=36208640u;
+    calls=probe.calls;
+    assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,peak-1,host)==-1);
+    assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,peak,host-1)==-1);
+    layers[2].indexer.k.cols=128;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);layers[2].indexer.k.cols=2560;
+    layers[2].attn.q_norm=NULL;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);layers[2].attn.q_norm=norm;
+    layers[2].attn.wq.scale=2;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);layers[2].attn.wq.scale=1;
+    c.attention_compress_ratios[1]=4;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);c.attention_compress_ratios[1]=0;
+    c.attention_compress_ratios[2]=8;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);c.attention_compress_ratios[2]=4;
+    c.seq_len=262145;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1);c.seq_len=512;
+    BnWeights other=w;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&other,SIZE_MAX,SIZE_MAX)==-1);
+    assert(probe.calls==calls);
+    probe.check_gamma=1;probe.gamma_uploads=0;
+    for(int fail=1;fail<=27;fail++) {
+        if(fail<=15)probe.fail_at=probe.calls+fail;
+        else probe.fail_decoded_at=probe.decoded_calls+fail-15;
+        assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,peak,host)==-1);
+        probe.fail_at=probe.fail_decoded_at=0;
+        assert(probe.created-probe.destroyed==live&&!bn_backend_layout_bf16_flash_qsa_model(b));
+        assert(bn_backend_layout_bf16_flash_gdn_model(b)==gdn&&gdn->layers[1].qkvz.decoded==first&&!bn_backend_layout_bf16(b));
+    }
+    probe.gamma_uploads=0;assert(!bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,peak,host));
+    assert(probe.gamma_uploads==8);
+    const BnBackendBF16FlashQSAModel *out=bn_backend_layout_bf16_flash_qsa_model(b);assert(out);
+    assert(out->n_layers==3&&out->n_qsa_layers==2&&out->bytes==bytes&&out->peak_bytes==222496256u);
+    assert(out->model_bytes==gdn->model_bytes+bytes&&out->model_peak_bytes==peak&&out->host_staging_bytes==host);
+    assert(out->layers[0].valid&&!out->layers[1].valid&&out->layers[2].valid&&out->rotary_cache&&out->rotary_capacity==512);
+    assert(out->layers[0].qkv.type==BN_GGUF_TENSOR_BF16&&!out->layers[0].qkv.raw);
+    assert(probe.created-probe.destroyed==live+15&&!bn_backend_layout_bf16(b));
+    for(size_t i=0;i<10240;i++)assert(norm[i]==1.0009765625f);
+    calls=probe.calls;assert(bn_backend_layout_prepare_bf16_flash_qsa_model(b,&gpu,&c,&w,SIZE_MAX,SIZE_MAX)==-1&&probe.calls==calls);
+    test_bf16_flash_ffn_model_preparation(b,&gpu,&c,&w,&probe);
+    test_bf16_flash_model_preparation(b,&gpu,&c,&w,&probe);
+    bn_backend_model_release_gpu(b);assert(probe.created==probe.destroyed&&!bn_backend_layout_bf16_flash_qsa_model(b));
+    assert(!bn_backend_layout_bf16_flash_ffn_model(b));
+    bn_backend_model_release_gpu(b);bn_backend_model_free(b);assert(probe.created==probe.destroyed);
+    puts("test_bf16_flash_qsa_model_preparation... PASSED");
+}
+
+static void test_bf16_preparation_failure(void) {
+    BnConfig c = {0};
+    bn_model_arch_apply_config(&c, bn_model_arch_ops_for("qwen35"));
+    assert(c.bf16_layout == BN_MODEL_BF16_LAYOUT_HYBRID_OFFSET_NORM);
+    BnConfig legacy = {0};
+    bn_model_arch_apply_config(&legacy, bn_model_arch_ops_for("qwen3"));
+    assert(legacy.bf16_layout == BN_MODEL_BF16_LAYOUT_NONE);
+    bn_model_arch_apply_config(&legacy, NULL);
+    assert(legacy.bf16_layout == BN_MODEL_BF16_LAYOUT_NONE);
+    c.dim = 5120; c.hidden_dim = 17408; c.n_layers = 64;
+    c.n_heads = 24; c.n_kv_heads = 4; c.head_size = 256;
+    c.ssm_state_size = 128; c.ssm_group_count = 16;
+    c.ssm_time_step_rank = 48; c.ssm_inner_size = 6144;
+    c.ssm_conv_kernel = 4; c.vocab_size = 32; c.full_attn_interval = 4;
+    c.seq_len = 512; c.rope_dim_count = 64; c.rope_theta = 10000000.0f;
+    float norms[5120] = {0}, negative[48];
+    for (int i = 0; i < 48; ++i) negative[i] = -1.0f;
+    unsigned char dummy = 0;
+    BnLayerWeights layers[64] = {0};
+    BnWeights w = {0}; w.layers = layers;
+    w.output_norm = norms; w.token_embedding = &dummy;
+    w.emb_type = BN_GGUF_TENSOR_Q4_K;
+    w.output_weight = mock_bf16_descriptor(&dummy, 32, 5120);
+    for (int l = 0; l < 64; ++l) {
+        BnLayerWeights *b = &layers[l];
+        b->norm.attn_norm = b->norm.ffn_norm = norms;
+        b->ffn.ffn_gate = b->ffn.ffn_up = mock_bf16_descriptor(&dummy, 17408, 5120);
+        b->ffn.ffn_down = mock_bf16_descriptor(&dummy, 5120, 17408);
+        if ((l + 1) % 4) {
+            b->block_kind = BN_LAYER_BLOCK_SSM;
+            b->ssm.wqkv = mock_bf16_descriptor(&dummy, 10240, 5120);
+            b->ssm.wz = mock_bf16_descriptor(&dummy, 6144, 5120);
+            b->ssm.ssm_out = mock_bf16_descriptor(&dummy, 5120, 6144);
+            b->ssm.ssm_alpha = b->ssm.ssm_beta = mock_bf16_descriptor(&dummy, 48, 5120);
+            b->ssm.ssm_alpha.type = b->ssm.ssm_beta.type = BN_GGUF_TENSOR_Q8_0;
+            b->ssm.ssm_a = negative; b->ssm.ssm_conv1d = norms;
+            b->ssm.ssm_dt_bias = b->ssm.ssm_norm = norms;
+        } else {
+            b->attn.wq = mock_bf16_descriptor(&dummy, 12288, 5120);
+            b->attn.wk = b->attn.wv = mock_bf16_descriptor(&dummy, 1024, 5120);
+            b->attn.wo = mock_bf16_descriptor(&dummy, 5120, 6144);
+            b->attn.q_norm = b->attn.k_norm = norms;
+        }
+    }
+    BnGPUBackend gpu = {0}; BF16PrepareProbe probe = {0};
+    gpu.ctx = &probe;
+    gpu.buffer_create_quant_only = mock_bf16_prepare_upload;
+    gpu.buffer_create_bf16_decoded = mock_bf16_prepare_decoded;
+    gpu.buffer_create_rotary_bf16 = mock_bf16_prepare_rotary;
+    gpu.buffer_destroy = mock_bf16_prepare_destroy;
+    BnBackendModel *backend = bn_backend_model_create(); assert(backend);
+    assert(bn_backend_layout_bf16_math_available(BN_BACKEND_BF16_MATH_LIBC));
+    assert(!bn_backend_layout_bf16_math_available((BnBackendBF16Math)-1));
+#ifdef BN_ENABLE_MKL_VML
+    assert(bn_backend_layout_bf16_math_available(BN_BACKEND_BF16_MATH_MKL_VML_HA));
+#else
+    assert(!bn_backend_layout_bf16_math_available(BN_BACKEND_BF16_MATH_MKL_VML_HA));
+    assert(bn_backend_layout_prepare_bf16_with_math(backend, &gpu, &c, &w,
+        5, BN_BACKEND_BF16_MATH_MKL_VML_HA) == -1);
+#endif
+    assert(bn_backend_layout_prepare_bf16_with_math(backend, &gpu, &c, &w,
+        5, (BnBackendBF16Math)-1) == -1);
+    assert(probe.calls == 0 && !bn_backend_layout_bf16(backend));
+    BnBackendBF16MemoryPlan memory, sentinel;
+    memset(&memory, 0x5a, sizeof(memory));sentinel = memory;
+    assert(bn_backend_layout_bf16_memory_plan(&gpu, &c, &w, 0,
+        BN_BACKEND_BF16_MATH_LIBC, &memory) == -1);
+    assert(!memcmp(&memory, &sentinel, sizeof(memory)) && !probe.calls);
+    assert(!bn_backend_layout_bf16_memory_plan(&gpu, &c, &w, 129,
+        BN_BACKEND_BF16_MATH_LIBC, &memory));
+    /* Independent payload arithmetic; metadata-only source descriptors must
+     * never be dereferenced by the planning walk or sent to an upload callback. */
+    size_t q4_elements = 64ull * 3 * 17408 * 5120 +
+        48ull * (10240 * 5120 + 2 * 6144 * 5120) +
+        16ull * (12288 * 5120 + 2 * 1024 * 5120 + 6144 * 5120) +
+        2ull * 32 * 5120;
+    size_t expected_device = q4_elements / 256 * 144 + 48ull * 96 * 5120 / 32 * 34 +
+        64ull * 2 * 5120 * 2 + 16ull * 2 * 256 * 2 +
+        48ull * (10240 * 4 * 2 + 48 * 4 + 48 * 2 + 128 * 2) +
+        5120 * 2 + 512ull * 64 * 2;
+    assert(memory.device_bytes == expected_device && memory.device_peak_bytes == expected_device);
+    assert(memory.host_bytes > 0 && memory.host_peak_bytes == memory.host_bytes + 10240ull * 5120 / 256 * 144);
+    assert(!probe.calls && !probe.created && !probe.decoded_calls);
+    assert(bn_backend_layout_prepare_bf16_with_limits(backend, &gpu, &c, &w,
+        129, BN_BACKEND_BF16_MATH_LIBC, memory.device_peak_bytes - 1, memory.host_peak_bytes) == -1);
+    assert(bn_backend_layout_prepare_bf16_with_limits(backend, &gpu, &c, &w,
+        129, BN_BACKEND_BF16_MATH_LIBC, memory.device_peak_bytes, memory.host_peak_bytes - 1) == -1);
+    assert(!probe.calls && !probe.created && !bn_backend_layout_bf16(backend));
+    BnBackendBF16MemoryPlan plain, stacked;
+    layers[63].ffn.ffn_gate.type = layers[63].ffn.ffn_up.type = BN_GGUF_TENSOR_IQ4_XS;
+    assert(!bn_backend_layout_bf16_memory_plan(&gpu, &c, &w, 129,
+        BN_BACKEND_BF16_MATH_LIBC, &plain));
+    gpu.buffer_create_bf16_stacked_pair = mock_bf16_stack_pair;
+    gpu.resident_ffn_layouts = 1u << BN_GPU_BF16_FFN_STACKED_DECODED;
+    assert(!bn_backend_layout_bf16_memory_plan(&gpu, &c, &w, 129,
+        BN_BACKEND_BF16_MATH_LIBC, &stacked));
+    assert(stacked.device_bytes == plain.device_bytes && stacked.device_peak_bytes > plain.device_peak_bytes);
+    assert(stacked.host_peak_bytes == plain.host_peak_bytes && !probe.calls && !probe.stack_calls);
+    gpu.resident_ffn_layouts = 0;
+    layers[63].ffn.ffn_gate.type = layers[63].ffn.ffn_up.type = BN_GGUF_TENSOR_Q4_K;
+    assert(bn_backend_layout_prepare_bf16(NULL, &gpu, &c, &w, 5) == -1);
+    assert(bn_backend_layout_prepare_bf16(backend, NULL, &c, &w, 5) == -1);
+    assert(bn_backend_layout_prepare_bf16(backend, &gpu, &c, &w, 0) == -1);
+    c.bf16_layout = BN_MODEL_BF16_LAYOUT_NONE;
+    assert(bn_backend_layout_prepare_bf16(backend, &gpu, &c, &w, 5) == -1);
+    c.bf16_layout = BN_MODEL_BF16_LAYOUT_HYBRID_OFFSET_NORM;
+    /* Preflight checks the final layer before any upload. */
+    layers[63].attn.wq.scale = 2.0f;
+    assert(bn_backend_layout_prepare_bf16(backend, &gpu, &c, &w, 5) == -1);
+    layers[63].attn.wq.scale = 1.0f;
+    assert(probe.calls == 0);
+    /* Stop before reordered data is read: these are metadata-only fixtures. */
+    for (int i = 1; i <= 5; ++i) {
+        probe = (BF16PrepareProbe){0}; probe.fail_at = i;
+        assert(bn_backend_layout_prepare_bf16(backend, &gpu, &c, &w, 5) == -1);
+        assert(probe.calls == i && probe.created == i - 1);
+        assert(probe.destroyed == probe.created);
+        assert(bn_backend_layout_bf16(backend) == NULL);
+        assert(bn_backend_model_gpu(backend) == NULL);
+    }
+    probe = (BF16PrepareProbe){0}; probe.fail_decoded = 1;
+    layers[0].ffn.ffn_gate.type = BN_GGUF_TENSOR_IQ4_XS;
+    assert(bn_backend_layout_prepare_bf16(backend, &gpu, &c, &w, 129) == -1);
+    assert(probe.calls == 3 && probe.decoded_calls == 1);
+    assert(probe.created == probe.destroyed && probe.created == 3);
+    assert(bn_backend_layout_bf16(backend) == NULL);
+    assert(bn_backend_model_gpu(backend) == NULL);
+    /* Same-format merged geometry owns one parent and two borrowed row views.
+     * A later upload failure must destroy views before the parent, and every
+     * partial stack failure must preserve complete rollback/CPU anatomy. */
+    layers[0].ffn.ffn_up.type=BN_GGUF_TENSOR_IQ4_XS;
+    BnLayerWeights saved=layers[0];
+    gpu.buffer_create_bf16_stacked_pair=mock_bf16_stack_pair;
+    gpu.resident_ffn_layouts=1u<<BN_GPU_BF16_FFN_STACKED_DECODED;
+    for(int stage=1;stage<=3;stage++) {
+        probe=(BF16PrepareProbe){0};probe.fail_stack_stage=stage;
+        assert(bn_backend_layout_prepare_bf16(backend,&gpu,&c,&w,129)==-1);
+        assert(probe.stack_calls==1&&probe.decoded_calls==2&&probe.created==probe.destroyed);
+        assert(!bn_backend_layout_bf16(backend)&&!memcmp(&saved,&layers[0],sizeof(saved)));
+    }
+    probe=(BF16PrepareProbe){0};probe.fail_at=5;
+    assert(bn_backend_layout_prepare_bf16(backend,&gpu,&c,&w,129)==-1);
+    assert(probe.stack_calls==1&&probe.created==9&&probe.destroyed==9);
+    assert(!probe.stack_handles[0]&&!probe.stack_handles[1]&&!probe.stack_handles[2]);
+    gpu.resident_ffn_layouts=0;probe=(BF16PrepareProbe){0};probe.fail_at=5;
+    assert(bn_backend_layout_prepare_bf16(backend,&gpu,&c,&w,129)==-1);
+    assert(!probe.stack_calls&&probe.created==6&&probe.destroyed==6);
+    bn_backend_model_free(backend);
+    puts("test_bf16_preparation_failure... PASSED");
 }
 
 static void test_backend_model_release_owns_buffers(void) {
@@ -2071,6 +3064,13 @@ static void test_gpu_policy_helpers(void) {
     assert(TEST_POLICY_CALL(bn_gpu_policy_max_storage_binding_bytes, 7u * 1024u * 1024u) == 0);
     unsetenv("BN_GPU_MAX_STORAGE_BINDING_MB");
 
+    unsetenv("BN_CUDA_ENABLE_WEIGHT_POOL");
+    test_gpu_runtime_refresh(&gpu);
+    assert(!TEST_POLICY_CALL0(bn_gpu_policy_cuda_weight_pool_enabled));
+    setenv("BN_CUDA_ENABLE_WEIGHT_POOL", "1", 1);
+    test_gpu_runtime_refresh(&gpu);
+    assert(TEST_POLICY_CALL0(bn_gpu_policy_cuda_weight_pool_enabled));
+    unsetenv("BN_CUDA_ENABLE_WEIGHT_POOL");
     unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
     unsetenv("BN_CUDA_ENABLE_EAGER_KQUANT_CACHE");
     unsetenv("BN_CUDA_DISABLE_DOWN_KQUANT_CUBLAS_F16_CACHE");
@@ -2714,11 +3714,22 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_Q8_MOE_DOWN_4ROW");
     unsetenv("BN_CUDA_DISABLE_MOE_NATIVE_QUANT_DOWN_2ROW");
     unsetenv("BN_CUDA_DISABLE_Q8_MOE_DOWN_2ROW");
+    unsetenv("BN_CUDA_ENABLE_MOE_NATIVE_QUANT_GATEUP_2ROW");
+    unsetenv("BN_CUDA_ENABLE_MOE_NATIVE_QUANT_DOWN_2ROW");
+    unsetenv("BN_CUDA_ENABLE_NATIVE_QUANT_MMA");
+    assert(!bn_gpu_policy_cuda_native_quant_mma_enabled(test_current_backend_runtime()));
+    setenv("BN_CUDA_ENABLE_NATIVE_QUANT_MMA", "1", 1);
+    assert(bn_gpu_policy_cuda_native_quant_mma_enabled(test_current_backend_runtime()));
+    unsetenv("BN_CUDA_ENABLE_NATIVE_QUANT_MMA");
     assert(TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_block_prepared_batch_enabled, 1));
     assert(!TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_block_prepared_batch_enabled, 0));
-    assert(TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_gateup_block_2row_enabled, 1024));
+    assert(!TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_gateup_block_2row_enabled, 1024));
     assert(!TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_gateup_block_2row_enabled, 1025));
     assert(!TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_down_block_4row_enabled, 1024));
+    assert(!TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_down_block_2row_enabled, 1024));
+    setenv("BN_CUDA_ENABLE_MOE_NATIVE_QUANT_GATEUP_2ROW", "1", 1);
+    setenv("BN_CUDA_ENABLE_MOE_NATIVE_QUANT_DOWN_2ROW", "1", 1);
+    assert(TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_gateup_block_2row_enabled, 1024));
     assert(TEST_POLICY_CALL(bn_gpu_policy_cuda_moe_down_block_2row_enabled, 1024));
     setenv("BN_CUDA_DISABLE_MOE_NATIVE_QUANT_BLOCK_BATCH", "1", 1);
     setenv("BN_CUDA_DISABLE_MOE_NATIVE_QUANT_GATEUP_2ROW", "1", 1);
@@ -2745,6 +3756,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_Q8_MOE_DOWN_4ROW");
     unsetenv("BN_CUDA_DISABLE_Q8_MOE_DOWN_2ROW");
     unsetenv("BN_CUDA_DISABLE_DOWN_KQUANT_4WARP_LONG");
+    unsetenv("BN_CUDA_ENABLE_MOE_NATIVE_QUANT_GATEUP_2ROW");
+    unsetenv("BN_CUDA_ENABLE_MOE_NATIVE_QUANT_DOWN_2ROW");
     unsetenv("BN_CUDA_DISABLE_Q6K_4WARP_LONG");
     unsetenv("BN_CUDA_DISABLE_DOWN_KQUANT_4WARP_1536_8960");
     unsetenv("BN_CUDA_DISABLE_Q6K_4WARP_1536_8960");
@@ -5826,6 +6839,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_Q4_PREPARED");
     unsetenv("BN_GPU_DEBUG_ARGMAX");
     unsetenv("BN_GPU_PROFILE");
+    bn_backend_runtime_policy_free(&gpu.runtime_policy);
 
     printf("PASSED\n");
 }
@@ -6910,6 +7924,22 @@ static void test_gpu_matmul_batch_retries_single(void) {
             assert(out[1][1] == (reject_single ? 14 : 42));
         }
     }
+    for (int cuda = 0; cuda < 2; cuda++) {
+        RetryMatmulState state = {0};
+        BnGPUBackend gpu = {0}; gpu.ctx = &state;
+        gpu.kind = cuda ? BN_GPU_BACKEND_CUDA : BN_GPU_BACKEND_METAL;
+        gpu.matmul = retry_matmul_single;
+        bn_backend_quant_matmul_gpu_buf(out[0], &weight, gpu_weights[0],
+            x, 1, NULL, NULL, &gpu);
+        assert(state.single_calls == cuda);
+        assert(out[0][0] == (cuda ? 20 : 10));
+        state.single_calls = 0;
+        state.reject_weight = gpu_weights[1];
+        bn_backend_quant_matmul_batch_gpu_buf(tasks, buffers, 2, x, 1, 4,
+            NULL, NULL, &gpu);
+        assert(state.single_calls == (cuda ? 2 : 0));
+        assert(out[0][0] == (cuda ? 20 : 10) && out[1][0] == 10);
+    }
     printf("test_gpu_matmul_batch_retries_single... PASSED\n");
 }
 
@@ -6953,7 +7983,221 @@ static void test_rope_activation_plan(void) {
     printf("test_rope_activation_plan... PASSED\n");
 }
 
+static void test_bf16_matmul_plan(void) {
+    const int types[] = {BN_GGUF_TENSOR_IQ4_NL, BN_GGUF_TENSOR_IQ4_XS, BN_GGUF_TENSOR_IQ3_S};
+    const int widths[] = {33, 5120, 5121, 17408};
+    const int tokens[] = {1, 8, 9, 16, 17, 129};
+    for (size_t t = 0; t < sizeof(types) / sizeof(types[0]); t++)
+        for (size_t r = 0; r < sizeof(widths) / sizeof(widths[0]); r++)
+            for (size_t n = 0; n < sizeof(tokens) / sizeof(tokens[0]); n++) {
+                BnBackendBF16MatmulPlan plan;
+                assert(bn_backend_quant_bf16_matmul_plan(types[t], widths[r],
+                    768, tokens[n], &plan) == 0);
+                int small = tokens[n] <= (widths[r] <= 5120 ? 16 : 8);
+                assert(plan.kind == (small ? BN_BACKEND_BF16_MATMUL_A8_MMVQ :
+                    BN_BACKEND_BF16_MATMUL_DECODED_GEMM));
+                assert(plan.decoded_weight_bytes == (small ? 0 :
+                    (size_t)widths[r] * 768 * sizeof(uint16_t)));
+            }
+    const int a8_types[] = {BN_GGUF_TENSOR_Q3_K, BN_GGUF_TENSOR_Q8_0,
+        BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K};
+    const int a8_tokens[] = {1, 2, 3, 6, 7, 129};
+    for (size_t t = 0; t < sizeof(a8_types) / sizeof(a8_types[0]); t++)
+        for (size_t r = 0; r < sizeof(widths) / sizeof(widths[0]); r++)
+            for (size_t n = 0; n < sizeof(a8_tokens) / sizeof(a8_tokens[0]); n++) {
+                BnBackendBF16MatmulPlan plan;
+                assert(bn_backend_quant_bf16_matmul_plan(a8_types[t],
+                    widths[r], 768, a8_tokens[n], &plan) == 0);
+                int small = a8_tokens[n] <= (widths[r] <= 5120 ? 6 : 2);
+                assert(plan.kind == (small ? BN_BACKEND_BF16_MATMUL_A8_MMVQ :
+                    BN_BACKEND_BF16_MATMUL_A8_MMQ));
+                assert(plan.decoded_weight_bytes == 0);
+            }
+    BnBackendBF16MatmulPlan sentinel = {BN_BACKEND_BF16_MATMUL_A8_MMVQ, 777};
+    for (size_t n = 0; n < sizeof(tokens) / sizeof(tokens[0]); n++) {
+        BnBackendBF16MatmulPlan dense;
+        assert(bn_backend_quant_bf16_matmul_plan(BN_GGUF_TENSOR_BF16,
+            4, 10240, tokens[n], &dense) == 0);
+        assert(dense.kind == BN_BACKEND_BF16_MATMUL_DECODED_GEMM);
+        assert(dense.decoded_weight_bytes == 4u * 10240 * sizeof(uint16_t));
+    }
+    const int unsupported[] = {-1, BN_GGUF_TENSOR_F32,
+        BN_GGUF_TENSOR_IQ3_XXS, BN_GGUF_TENSOR_Q2_K};
+    for (size_t i = 0; i < sizeof(unsupported) / sizeof(unsupported[0]); i++)
+        assert(bn_backend_quant_bf16_matmul_plan(unsupported[i], 33, 256, 1,
+            &sentinel) == -1);
+    assert(bn_backend_quant_bf16_matmul_plan(types[0], 0, 256, 1, &sentinel) == -1);
+    assert(bn_backend_quant_bf16_matmul_plan(types[1], 33, 255, 1, &sentinel) == -1);
+    assert(bn_backend_quant_bf16_matmul_plan(types[0], 33, 256, 0, &sentinel) == -1);
+    assert(bn_backend_quant_bf16_matmul_plan(types[0], 33, 256, INT_MAX, &sentinel) == -1);
+    assert(bn_backend_quant_bf16_matmul_plan(types[0], 33, 256, 1, NULL) == -1);
+    assert(sentinel.kind == BN_BACKEND_BF16_MATMUL_A8_MMVQ && sentinel.decoded_weight_bytes == 777);
+    BnGPUBackend absent = {0};
+    assert(!bn_gpu_backend_can_gdn_prefill_prepare_bf16(&absent));
+    assert(!bn_gpu_backend_can_gdn_prefill_prepare_bf16(NULL));
+    assert(bn_gpu_backend_gdn_prefill_prepare_bf16(&absent,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, 1, 128, 1, 128, 1e-6f, 20.0f) == -1);
+    assert(!bn_gpu_backend_can_causal_conv_silu_bf16_batch(&absent));
+    assert(!bn_gpu_backend_can_causal_conv_silu_bf16_batch(NULL));
+    assert(bn_gpu_backend_causal_conv_silu_bf16_batch(&absent,
+        NULL, NULL, NULL, NULL, 1, 1, 4) == -1);
+    assert(!bn_gpu_backend_can_matmul_quant_bf16(&absent));
+    assert(!bn_gpu_backend_can_matmul_quant_bf16(NULL));
+    assert(bn_gpu_backend_matmul_quant_bf16(&absent, NULL, NULL, NULL, NULL, 1, 1, 1) == -1);
+    assert(!bn_gpu_backend_can_dense_ffn_bf16(&absent));
+    assert(!bn_gpu_backend_can_dense_ffn_bf16(NULL));
+    assert(bn_gpu_backend_dense_ffn_bf16(&absent, NULL, NULL, NULL, 1, 256, 256) == -1);
+    assert(!bn_gpu_backend_can_add_rmsnorm_bf16_batch(&absent));
+    assert(!bn_gpu_backend_can_dense_ffn_bf16_add_norm(&absent));
+    assert(bn_gpu_backend_add_rmsnorm_bf16_batch(&absent, NULL, NULL, NULL, NULL, NULL, 1, 256, 1e-6f, 0) == -1);
+    assert(bn_gpu_backend_dense_ffn_bf16_add_norm(&absent, NULL, NULL, NULL, NULL, NULL, NULL, 1, 256, 256, 1e-6f, 0) == -1);
+    puts("test_bf16_matmul_plan... PASSED");
+}
+
+#include "glm_kda_layout_checks.h"
+#include "glm_mhc_layout_checks.h"
+#include "glm_dense_ffn_checks.h"
+#include "glm_moe_layout_checks.h"
+#include "glm_moe_work_checks.h"
+#include "glm_indexer_layout_checks.h"
+#include "glm_mla_layout_checks.h"
+#include "glm_model_layout_checks.h"
+#include "glm_output_checks.h"
+
+static void test_rope_frequency_shape(void) {
+    assert(!bn_gpu_rope_frequency_shape(64,0,10000,1,0,1));
+    assert(!bn_gpu_rope_frequency_shape(64,1,160000,16,15,.1f));
+    assert(bn_gpu_rope_frequency_shape(63,0,10000,1,0,1)==-1);
+    assert(bn_gpu_rope_frequency_shape(64,0,10000,2,0,1)==-1);
+    assert(bn_gpu_rope_frequency_shape(64,1,NAN,16,15,.1f)==-1);
+    assert(bn_gpu_rope_frequency_shape(64,1,160000,16,15,INFINITY)==-1);
+    assert(bn_gpu_rope_frequency_shape(64,1,160000,16,64,.1f)==-1);
+    puts("test_rope_frequency_shape... PASSED");
+}
+static void test_f16_grouped_output_workspace(void) {
+    BnGPUF16GroupedOutputWorkspace w,saved;
+    assert(!bn_gpu_f16_grouped_output_workspace(8,4096,1024,273,&w)&&w.width==8192&&w.input_count==8945664&&w.concat_count==2236416);
+    assert(!bn_gpu_f16_grouped_output_workspace(8,4096,1024,1,&w));
+    assert(!bn_gpu_f16_grouped_output_workspace(1,35,17,273,&w)&&w.concat_count==4641);
+    saved=w;
+#define GROUP_PLAN_BAD(G,K,N,R) assert(bn_gpu_f16_grouped_output_workspace(G,K,N,R,&w)==-1&&!memcmp(&w,&saved,sizeof(w)))
+    GROUP_PLAN_BAD(0,1,1,1);GROUP_PLAN_BAD(65,1,1,1);GROUP_PLAN_BAD(8,0,1,1);GROUP_PLAN_BAD(8,1,0,1);GROUP_PLAN_BAD(8,1,1,0);GROUP_PLAN_BAD(8,1,1,16385);GROUP_PLAN_BAD(2,1,INT32_MAX,1);
+#undef GROUP_PLAN_BAD
+    assert(bn_gpu_f16_grouped_output_workspace(1,1,1,1,NULL)==-1);
+    printf("test_f16_grouped_output_workspace... PASSED\n");
+}
+
+static void test_source_latent_attention_workspace(void) {
+    BnGPUF16LatentAttentionWorkspace w,saved;
+    assert(!bn_gpu_latent_attention_workspace(1,0,1,1,128,0,&w)&&w.splits==8&&w.head_tile==16&&w.ml_count==1024&&w.acc_count==262144);
+    assert(!bn_gpu_latent_attention_workspace(8,65537,1,0,128,65535,&w)&&w.splits==16&&w.acc_count==4194304);
+    assert(!bn_gpu_latent_attention_workspace(9,65537,1,0,128,65535,&w)&&w.splits==1&&w.head_tile==32&&!w.ml_count&&!w.acc_count);
+    assert(!bn_gpu_latent_attention_workspace(1,129,1,1,128,128,&w)&&w.splits==16);
+    assert(!bn_gpu_latent_attention_workspace(1,128,1,1,128,127,&w)&&w.splits==8);
+    assert(!bn_gpu_latent_attention_workspace(273,65537,1,0,128,65264,&w)&&w.splits==1);
+    saved=w;
+#define LATENT_BAD(R,T,M,D,W,P) assert(bn_gpu_latent_attention_workspace(R,T,M,D,W,P,&w)==-1&&!memcmp(&w,&saved,sizeof(w)))
+    LATENT_BAD(0,1,1,1,128,0);LATENT_BAD(16385,1,1,1,128,0);LATENT_BAD(1,-1,1,1,128,0);
+    LATENT_BAD(1,1048577,1,1,128,0);LATENT_BAD(1,1,0,1,128,0);LATENT_BAD(1,1,257,1,128,0);
+    LATENT_BAD(1,1,1,2,128,0);LATENT_BAD(1,1,1,1,129,0);LATENT_BAD(1,1,1,1,128,-1);LATENT_BAD(1,1,1,1,128,INT32_MAX);
+#undef LATENT_BAD
+    assert(bn_gpu_latent_attention_workspace(1,1,1,1,128,0,NULL)==-1);
+    printf("test_source_latent_attention_workspace... PASSED\n");
+}
+
+static void test_source_index_candidate_use_workspace(void) {
+    BnGPUIndexCandidateUseWorkspace v,saved;
+    assert(bn_gpu_index_slab_rows(273)==256&&bn_gpu_index_slab_rows(272)==272&&bn_gpu_index_slab_rows(17)==17&&!bn_gpu_index_slab_rows(0));
+    assert(!bn_gpu_index_candidate_use_workspace(1,1048576,16384,0,1,&v)&&v.capacity==16384&&v.blocks==131073&&v.tiles==513&&!v.select.split_groups);
+    assert(!bn_gpu_index_candidate_use_workspace(4,1048576,65536,0,1,&v)&&v.capacity==65536&&v.select.split_groups==16);
+    saved=v;assert(bn_gpu_index_candidate_use_workspace(273,16385,16512,0,1,&v)==-1&&!memcmp(&v,&saved,sizeof(v)));
+    assert(bn_gpu_index_candidate_use_workspace(1,16384,16384,0,1,&v)==-1);
+    assert(bn_gpu_index_candidate_use_workspace(1,1048576,16383,0,1,&v)==-1);
+    assert(bn_gpu_index_candidate_use_workspace(1,1048576,16385,0,1,&v)==-1);
+    assert(bn_gpu_index_candidate_use_workspace(1,1048576,16384,INT32_MAX,1,&v)==-1);
+    printf("test_source_index_candidate_use_workspace... PASSED\n");
+}
+
+static void test_source_index_candidate_workspace(void) {
+    BnGPUIndexCandidateWorkspace v,saved;
+    assert(!bn_gpu_index_candidate_workspace(1,16385,16512,2176,16384,1,&v)&&v.blocks==2049&&v.drop_count==2049&&v.block_indices_count==2048&&!v.select.split_groups);
+    assert(!bn_gpu_index_candidate_workspace(16,1048576,1048576,131200,1048560,1,&v)&&v.blocks==131073&&v.select.split_groups==8);
+    saved=v;assert(bn_gpu_index_candidate_workspace(1,16384,16384,2176,0,1,&v)==-1&&!memcmp(&v,&saved,sizeof(v)));
+    assert(bn_gpu_index_candidate_workspace(1,16385,16384,2176,0,1,&v)==-1);
+    assert(bn_gpu_index_candidate_workspace(1,16385,16512,2048,0,1,&v)==-1);
+    assert(bn_gpu_index_candidate_workspace(1,16385,16512,2176,INT32_MAX,1,&v)==-1);
+    assert(bn_gpu_index_candidate_workspace(1,16385,16512,2176,16392,1,&v)==-1);
+    assert(bn_gpu_index_candidate_workspace(1,16385,16512,2176,0,0,&v)==-1);
+    assert(!bn_gpu_index_candidate_workspace(1,16385,16512,2176,0,256,&v));
+    printf("test_source_index_candidate_workspace... PASSED\n");
+}
+
+static void test_source_index_topk_workspace(void) {
+    BnGPUF16IndexTopKWorkspace v,saved;
+    assert(!bn_gpu_index_topk_workspace(1,32768,32768,512,512,&v)&&v.split_groups==8&&v.indices_count==4096&&v.scores_count==4096&&v.counts_count==8);
+    assert(!bn_gpu_index_topk_workspace(16,1048576,1048576,1,32,&v)&&v.split_groups==32&&v.indices_count==16384);
+    assert(!bn_gpu_index_topk_workspace(17,32768,32768,512,512,&v)&&!v.split_groups&&!v.indices_count);
+    assert(!bn_gpu_index_topk_workspace(1,32768,32768,4096,4096,&v)&&v.split_groups==2);
+    assert(!bn_gpu_index_topk_workspace(1,32768,32768,4097,4128,&v)&&!v.split_groups);
+    assert(!bn_gpu_index_topk_workspace(1,0,1,0,32,&v)&&!v.split_groups);
+    saved=v;assert(bn_gpu_index_topk_workspace(0,1,1,1,32,&v)==-1&&!memcmp(&v,&saved,sizeof(v)));
+    assert(bn_gpu_index_topk_workspace(1,0,1,1,32,&v)==-1);
+    assert(bn_gpu_index_topk_workspace(1,2,1,1,32,&v)==-1);
+    assert(bn_gpu_index_topk_workspace(1,1,1,33,32,&v)==-1);
+    assert(bn_gpu_index_topk_workspace(1,1,1,1,32,NULL)==-1);
+    printf("test_source_index_topk_workspace... PASSED\n");
+}
+
+static void test_source_swa_ring_plan(void) {
+    BnGPUSWARingUpdateInfo v;
+    assert(bn_gpu_swa_ring_rows(128)==768&&bn_gpu_swa_ring_rows(0)==0);
+    assert(!bn_gpu_swa_ring_update_info(600,0,0,128,768,&v)&&v.mode==BN_GPU_SWA_APPEND&&v.chunk_dst==0&&v.chunk_rows==600);
+    assert(!bn_gpu_swa_ring_update_info(257,600,0,128,768,&v)&&v.mode==BN_GPU_SWA_REBASE&&v.next_beg==512&&v.old_rows==88&&v.ring_src==512&&v.chunk_dst==88&&v.chunk_src==0);
+    assert(!bn_gpu_swa_ring_update_info(1,768,0,128,768,&v)&&v.mode==BN_GPU_SWA_SHIFT&&v.next_beg==256&&v.old_rows==512&&v.chunk_dst==512);
+    assert(!bn_gpu_swa_ring_update_info(1025,1281,768,128,768,&v)&&v.mode==BN_GPU_SWA_REBASE&&v.next_beg==2048&&!v.old_rows&&v.chunk_src==767&&v.chunk_rows==258);
+    BnGPUSWARingUpdateInfo saved=v;
+    assert(bn_gpu_swa_ring_update_info(1,INT32_MAX,0,128,768,&v)==-1&&!memcmp(&v,&saved,sizeof(v)));
+    assert(bn_gpu_swa_ring_update_info(1,512,513,128,768,&v)==-1);
+    assert(bn_gpu_swa_ring_update_info(1,0,0,65536,768,&v)==-1);
+    printf("test_source_swa_ring_plan... PASSED\n");
+}
+
 int main(void) {
+    BnGPUScaledRowsWorkspace rows_shape={0},saved_shape={7,8,9};
+    assert(!bn_gpu_scaled_rows_shape(31744,32,&rows_shape));
+    assert(rows_shape.packed_i32==126976&&rows_shape.scales_f16==31744&&rows_shape.out_bf16==1015808);
+    const int bad_rows[][2]={{0,32},{1,0},{1,31},{1,65568},{1048577,32},{1048576,65536}};
+    for(size_t i=0;i<sizeof(bad_rows)/sizeof(*bad_rows);i++) {
+        rows_shape=saved_shape;assert(bn_gpu_scaled_rows_shape(bad_rows[i][0],bad_rows[i][1],&rows_shape)==-1);
+        assert(!memcmp(&rows_shape,&saved_shape,sizeof(rows_shape)));
+    }
+    assert(bn_gpu_scaled_rows_shape(1,32,NULL)==-1);
+    test_rope_frequency_shape();
+    test_f16_grouped_output_workspace();
+    test_source_latent_attention_workspace();
+    test_source_index_candidate_use_workspace();
+    test_source_index_candidate_workspace();
+    test_source_index_topk_workspace();
+    test_source_swa_ring_plan();
+    test_glm_model_preparation();test_glm_output_orchestration();
+    test_moe_checkpoint_preparation();
+    test_moe_work_continuation();
+    test_mla_preparation();test_mla_orchestration();test_indexer_preparation();
+    test_indexer_orchestration();
+    test_dense_ffn_preparation();
+    test_dense_ffn_orchestration();
+    test_mhc_checkpoint_preparation();
+    test_mhc_kda_orchestration();
+    test_kda_checkpoint_preparation();
+    test_kda_resident_orchestration();
+    test_host_row_gather();
+    test_bf16_hc_preparation();
+    test_bf16_hc_model_preparation();
+    test_bf16_ple_model_preparation();
+    test_bf16_flash_gdn_model_preparation();
+    test_bf16_flash_qsa_model_preparation();
+    test_bf16_preparation_failure();
+    test_bf16_matmul_plan();
     test_rope_activation_plan();
     test_gpu_matmul_batch_retries_single();
     test_moe_combined_prefill_default();
@@ -6970,12 +8214,16 @@ int main(void) {
     test_gpu_upload_weights();
     test_gpu_upload_reference_attention_output_layout();
     test_gpu_upload_aux_decode_ssm_ab_layout();
+    test_gpu_upload_aux_prefill_qk_pair();
+    test_gpu_upload_pread_expert_placement();
     test_gpu_upload_moe_router();
     test_model_gpu_moe_prefill_resident();
     test_gpu_matvec();
     test_gpu_fallback();
     test_gpu_release();
     test_backend_model_release_owns_buffers();
+    test_backend_model_resource_lifecycle();
+    test_backend_model_resource_move();
     test_gpu_batch();
     printf("All GPU backend tests PASSED\n");
     return 0;

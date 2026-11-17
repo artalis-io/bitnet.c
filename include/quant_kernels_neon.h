@@ -13,6 +13,7 @@ void bn_quant_q8_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_neon_sdot_4row_range(void *ctx, int start, int end);
 void bn_quant_q8_repacked_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_neon_range(void *ctx, int start, int end);
+void bn_quant_q8_neon_float_matmul_range(void *ctx, int start, int end);
 void bn_quant_q4_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4_neon_sdot_4row_range(void *ctx, int start, int end);
 void bn_quant_q4_neon_sdot_matmul_range(void *ctx, int start, int end);

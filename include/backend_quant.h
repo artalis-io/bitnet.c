@@ -7,14 +7,84 @@
 #include "model_weights.h"
 #include "quant.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT
 #define BN_BACKEND_QUANT_NATIVE_QUANT_TENSOR_TYPE BN_GGUF_TENSOR_Q8_0
+
+/* Registry-owned row-domain capability, exposed as backend behavior. */
+static inline int bn_backend_quant_rows_support_f16(int format) {
+    const BnQuantRowScaledOps *ops=bn_quant_format_row_scaled_ops(format);
+    return ops&&ops->validate_f16;
+}
+
+/* Storage type mapping for orchestration without GGUF format predicates. */
+typedef enum {
+    BN_BACKEND_SCALAR_F32,
+    BN_BACKEND_SCALAR_BF16,
+    BN_BACKEND_SCALAR_I32,
+    BN_BACKEND_SCALAR_BYTES,
+    BN_BACKEND_SCALAR_F16,
+} BnBackendScalarKind;
+
+static inline int bn_backend_quant_scalar_type(BnBackendScalarKind kind) {
+    switch (kind) {
+        case BN_BACKEND_SCALAR_F32: return BN_GGUF_TENSOR_F32;
+        case BN_BACKEND_SCALAR_BF16: return BN_GGUF_TENSOR_BF16;
+        case BN_BACKEND_SCALAR_I32: return BN_GGUF_TENSOR_I32;
+        case BN_BACKEND_SCALAR_BYTES: return BN_GGUF_TENSOR_I8;
+        case BN_BACKEND_SCALAR_F16: return BN_GGUF_TENSOR_F16;
+        default: return -1;
+    }
+}
+
+/* Registry-owned resident width, exposed by backend scalar role. */
+static inline size_t bn_backend_quant_scalar_bytes(BnBackendScalarKind kind) {
+    return bn_quant_format_resident_scalar_bytes(bn_backend_quant_scalar_type(kind));
+}
+
+/* Resident view tags are already backend scalar storage types. Width remains
+ * quant-registry metadata; orchestration consumes it through this boundary. */
+static inline size_t bn_backend_quant_resident_scalar_bytes(int type) {
+    return bn_quant_format_resident_scalar_bytes(type);
+}
 
 typedef enum {
     BN_BACKEND_QUANT_DENSE_GRAPH_ANY = 0,
     BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT = 1,
 } BnBackendQuantDenseGraphRequirement;
+
+typedef enum {
+    BN_BACKEND_BF16_MATMUL_A8_MMVQ = 1,
+    BN_BACKEND_BF16_MATMUL_DECODED_GEMM,
+    BN_BACKEND_BF16_MATMUL_A8_MMQ,
+} BnBackendBF16MatmulKind;
+
+typedef struct {
+    BnBackendBF16MatmulKind kind;
+    size_t decoded_weight_bytes;
+} BnBackendBF16MatmulPlan;
+
+// Explicit BF16 GGUF linear contract. Small batches use FP16-scale A8 MMVQ;
+// larger ones use format-declared A8 MMQ or an independently owned decoded
+// BF16 layout. This does not change ordinary F32 dispatch.
+// Already-staged BF16 matrices always select GEMM, including one token.
+// Returns -1 without changing plan for unsupported types or invalid shapes.
+int bn_backend_quant_bf16_matmul_plan(int type, int rows, int cols,
+    int n_tokens, BnBackendBF16MatmulPlan *plan);
+
+/* Raw RAM-table row staging, without dequantization or allocation. Rows are
+ * padded to 16-byte strides; padding is zero. Exact output extent, disjoint
+ * from table/indices; invalid IDs reject before writes. Caller budgets storage.
+ */
+size_t bn_backend_quant_host_row_stride(const BnQWeight *weight);
+/* Qualified packed-row BF16 decoder profile, declared by quant registry. */
+int bn_backend_quant_host_rows_bf16_available(const BnQWeight *weight);
+int bn_backend_quant_gather_host_rows(const BnQWeight *weight,
+    const int32_t *indices, size_t n_rows, void *out, size_t out_bytes);
 
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
     switch (type) {
@@ -392,6 +462,11 @@ static inline int bn_backend_quant_moe_gathered_expert_batch(
     int gate_type, int up_type, int down_type) {
     return bn_quant_format_supports_moe_gathered_expert_batch(gate_type,
                                                             up_type, down_type);
+}
+
+static inline int bn_backend_quant_moe_gathered_kquant(
+    int gate_type, int up_type, int down_type) {
+    return bn_quant_format_supports_moe_gathered_kquant(gate_type, up_type, down_type);
 }
 
 static inline int bn_backend_quant_moe_routed_lowbit_block32(
@@ -975,5 +1050,9 @@ void bn_backend_quant_matmul_batch_gpu_buf(const BnMatvecTask *tasks,
                                            int8_t *x_q_buf,
                                            BnThreadPool *pool,
                                            BnGPUBackend *gpu);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // BN_BACKEND_QUANT_H

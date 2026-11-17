@@ -3,6 +3,7 @@
 #include "simd_helpers.h"
 #include <immintrin.h>
 #include <string.h>
+#include <math.h>
 
 static inline float q3k_fp16_to_fp32(uint16_t h) {
 #ifdef __F16C__
@@ -267,6 +268,61 @@ void bn_quant_q3k_avx2_matmul_range(void *ctx, int row_start, int row_end) {
             }
             for (int ti = 0; ti < tile_n; ti++)
                 c->out[(size_t)(t0 + ti) * rows + row] = row_sum[ti];
+        }
+    }
+}
+
+/* Reference-prefill arithmetic, with four tokens sharing weight decoding.
+ * Integer sums are complete within a superblock before applying its scale. */
+void bn_quant_q3k_avx2_tiled_matmul_range(void *ctx, int start, int end) {
+    const BnKQuantMatmulCtx *c = ctx;
+    const int nb = c->cols / BN_QK_K;
+    const BnBlockQ3K *blocks = c->W->data;
+    const __m256i m3 = _mm256_set1_epi8(3);
+    const __m256i one = _mm256_set1_epi8(1);
+    for (int row = start; row < end; row++) {
+        for (int t0 = 0; t0 < c->n_tokens; t0 += 4) {
+            int count = c->n_tokens - t0;
+            if (count > 4) count = 4;
+            float acc[4] = {0};
+            for (int b = 0; b < nb; b++) {
+                const BnBlockQ3K *w = &blocks[(size_t)row * nb + b];
+                uint8_t unpacked[16];
+                bn_q3k_unpack_scales(w->scales, unpacked);
+                __m128i signed_scales = _mm_sub_epi8(
+                    _mm_loadu_si128((const __m128i *)unpacked), _mm_set1_epi8(32));
+                __m256i all = _mm256_cvtepi8_epi16(signed_scales);
+                __m128i lo = _mm256_castsi256_si128(all);
+                __m128i hi = _mm256_extracti128_si256(all, 1);
+                __m256i scales[2] = {_mm256_set_m128i(lo, lo), _mm256_set_m128i(hi, hi)};
+                __m256i hbits = _mm256_loadu_si256((const __m256i *)w->hmask);
+                __m256i sums[4];
+                for (int t = 0; t < count; t++) sums[t] = _mm256_setzero_si256();
+                for (int half = 0; half < 2; half++) {
+                    __m256i packed = _mm256_loadu_si256((const __m256i *)(w->qs + half * 32));
+                    for (int k = 0; k < 4; k++) {
+                        int bit = half * 4 + k;
+                        __m256i low = _mm256_and_si256(_mm256_srli_epi16(packed, k * 2), m3);
+                        __m256i high = _mm256_slli_epi16(_mm256_srli_epi16(
+                            _mm256_andnot_si256(hbits, _mm256_slli_epi16(one, bit)), bit), 2);
+                        __m256i scale = _mm256_shuffle_epi8(scales[half], q3k_scale_shuffle(k));
+                        for (int t = 0; t < count; t++) {
+                            const int8_t *q = c->x_q + (size_t)(t0 + t) * c->cols + b * 256 + bit * 32;
+                            __m256i values = _mm256_loadu_si256((const __m256i *)q);
+                            __m256i dot = _mm256_sub_epi16(_mm256_maddubs_epi16(low, values),
+                                                          _mm256_maddubs_epi16(high, values));
+                            sums[t] = _mm256_add_epi32(sums[t], _mm256_madd_epi16(scale, dot));
+                        }
+                    }
+                }
+                float d = q3k_fp16_to_fp32(w->d);
+                for (int t = 0; t < count; t++) {
+                    float block = d * (float)bn_avx2_hsum_epi32(sums[t]);
+                    acc[t] = fmaf(block, c->x_d[(size_t)(t0 + t) * nb + b], acc[t]);
+                }
+            }
+            for (int t = 0; t < count; t++)
+                c->out[(size_t)(t0 + t) * c->W->rows + row] = acc[t];
         }
     }
 }

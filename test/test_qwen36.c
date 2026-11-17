@@ -4,6 +4,8 @@
 #include "model_arch.h"
 #include "session.h"
 #include "transformer.h"
+#include "transformer_prefill_internal.h"
+#include "ple_ids_reference.h"
 #if defined(BN_QWEN36_TEST_CUDA) && defined(BN_ENABLE_CUDA)
 #include "gpu_cuda.h"
 #endif
@@ -624,13 +626,134 @@ static void test_prefill_output_rows_state(void) {
     printf("PASSED\n");
 }
 
+static void test_prefill_projection_failure(void) {
+    printf("test_prefill_projection_failure... ");
+    uint8_t *buf = calloc(1, 4*1024*1024); assert(buf);
+    BnGGUFFile *gf = build_qwen36_gguf(buf, 4*1024*1024, "qwen35", 0); assert(gf);
+    BnModel model;
+    assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
+    // Force this test through batch prefill even on scalar-only builds.
+    const char *old = getenv("BN_PREFILL_ALLOW_HYBRID_BATCH");
+    char *saved = old ? malloc(strlen(old)+1) : NULL;
+    if (old) { assert(saved); memcpy(saved, old, strlen(old)+1); }
+    assert(setenv("BN_PREFILL_ALLOW_HYBRID_BATCH", "1", 1) == 0);
+    BnThreadPool *pool = bn_tp_create(0); assert(pool);
+    if (saved) { assert(setenv("BN_PREFILL_ALLOW_HYBRID_BATCH", saved, 1) == 0); free(saved); }
+    else assert(unsetenv("BN_PREFILL_ALLOW_HYBRID_BATCH") == 0);
+    bn_model_set_thread_pool(&model, pool, 1);
+    const int tokens[] = {1,2,3,4};
+    BnSession *control = bn_session_create(&model, NULL); assert(control);
+    assert(bn_transformer_prefill(&model, control, tokens, 4, 0));
+    bn_session_free(control, NULL);
+    int layers = bn_model_arch_ssm_layer_count(&model.config);
+    size_t ns = (size_t)layers * model.config.ssm_inner_size * model.config.ssm_state_size;
+    size_t qkv = 2u * model.config.ssm_group_count * model.config.ssm_state_size + model.config.ssm_inner_size;
+    size_t nc = (size_t)layers * (model.config.ssm_conv_kernel-1) * qkv;
+    float *state = malloc(ns*sizeof(float)), *conv = malloc(nc*sizeof(float)); assert(state && conv);
+    int saved_type = model.weights.layers[0].ssm.wz.type;
+    // QKV succeeds, then the unsupported Z format must abort before convolution.
+    model.weights.layers[0].ssm.wz.type = -1;
+    for (int request = 0; request < 3; request++) {
+        BnSession *session = bn_session_create(&model, NULL); assert(session);
+        memcpy(state, session->state.ssm_state, ns*sizeof(float));
+        memcpy(conv, session->state.ssm_conv_state, nc*sizeof(float));
+        float logits[32]; for (int i=0;i<32;i++) logits[i]=NAN;
+        if (request == 0) assert(!bn_transformer_prefill(&model, session, tokens, 4, 0));
+        else if (request == 1) assert(bn_transformer_prefill_no_logits(&model, session, tokens, 4, 0) == -1);
+        else assert(bn_transformer_prefill_all(&model, session, tokens, 4, 0, logits) == -1);
+        assert(session->pos == 0);
+        assert(memcmp(state, session->state.ssm_state, ns*sizeof(float)) == 0);
+        assert(memcmp(conv, session->state.ssm_conv_state, nc*sizeof(float)) == 0);
+        for (int i=0;i<32;i++) assert(isnan(logits[i]));
+        bn_session_free(session, NULL);
+    }
+    model.weights.layers[0].ssm.wz.type = saved_type;
+    free(conv); free(state); bn_model_free(&model); bn_gguf_free(gf); free(buf);
+    printf("PASSED\n");
+}
+
+static void test_ple_batch_ids(void) {
+    size_t words = 0;
+    for (size_t ci = 0; ci < sizeof(ple_ids_reference) / sizeof(ple_ids_reference[0]); ci++) {
+        const BnPLEIdsReference *r = &ple_ids_reference[ci];
+        BnConfig c = {0}; c.ple_ngram_size = r->ng; c.ple_heads_per_ngram = r->hp;
+        c.ple_head_count = (r->ng - 1) * r->hp; c.ple_eos_token_id = 248044;
+        for (int j = 0; j < r->ng; j++)
+            c.ple_layer_multipliers[j] = r->profile == 0 ? UINT64_C(23703573157769) + j * UINT64_C(1000003) :
+                (r->profile == 1 ? UINT64_MAX - (uint64_t)j * 2 : (UINT64_C(1) << 63) + j * UINT64_C(1000003));
+        for (int h = 0; h < c.ple_head_count; h++) {
+            c.ple_head_vocab_sizes[h] = 101 + 2 * h; c.ple_head_offsets[h] = 1000 * h;
+        }
+        int32_t tokens[129], starts[5] = {0}, context[28], result[129 * 56 + 2];
+        for (int i = 0; i < r->nt; i++) tokens[i] = i % 11 == 5 ? 248044 : (i * 37 + r->seed) % 248000;
+        starts[r->nr] = r->nt;
+        if (r->nr == 4) { starts[1] = 0; starts[2] = r->nt / 3; starts[3] = r->nt / 2; }
+        size_t nc = (size_t)r->nr * (r->ng - 1), ny = (size_t)r->nt * c.ple_head_count;
+        for (size_t i = 0; i < nc; i++) context[i] = i % 3 == 0 ? 248044 : (int32_t)((i * 19 + r->seed) % 251);
+        for (size_t i = 0; i < ny + 2; i++) result[i] = 0x5a5a;
+        assert(bn_transformer_prefill_ple_ids(&c, tokens, r->nt, starts, r->nr, context, nc - 1, result + 1, ny) == -1);
+        assert(bn_transformer_prefill_ple_ids(&c, tokens, r->nt, starts, r->nr, context, nc, result + 1, ny - 1) == -1);
+        tokens[r->nt - 1] = -1;
+        assert(bn_transformer_prefill_ple_ids(&c, tokens, r->nt, starts, r->nr, context, nc, result + 1, ny) == -1);
+        tokens[r->nt - 1] = (r->nt - 1) % 11 == 5 ? 248044 : ((r->nt - 1) * 37 + r->seed) % 248000;
+        for (size_t i = 0; i < ny + 2; i++) assert(result[i] == 0x5a5a);
+        assert(!bn_transformer_prefill_ple_ids(&c, tokens, r->nt, starts, r->nr, context, nc, result + 1, ny));
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (size_t i = 0; i < ny; i++) for (int b = 0; b < 4; b++)
+            hash = (hash ^ (((uint32_t)result[i + 1] >> (b * 8)) & 255)) * UINT64_C(1099511628211);
+        assert(hash == r->hash);
+        assert(result[0] == 0x5a5a && result[ny + 1] == 0x5a5a); words += ny;
+    }
+    printf("test_ple_batch_ids... PASSED (%zu exact independent IDs)\n", words);
+}
+
+static void test_native_expert_component_names(void) {
+    char out[128],saved[128];
+    const BnModelTensorRole roles[]={BN_MODEL_TENSOR_MOE_GATE_EXPS,
+        BN_MODEL_TENSOR_MOE_UP_EXPS,BN_MODEL_TENSOR_MOE_DOWN_EXPS};
+    const char *w[]={"w1","w3","w2"};
+    const char *suffix[]={"trellis","suh","svh","mul1"};
+    for(int p=0;p<3;p++)for(int c=0;c<4;c++) {
+        char expected[128];
+        snprintf(expected,sizeof(expected),"layers.39.ffn.experts.383.%s.%s",w[p],suffix[c]);
+        assert(!bn_model_arch_expert_component_name("deepseek_v41",out,
+            sizeof(out),39,383,roles[p],(BnModelExpertComponent)c));
+        assert(!strcmp(out,expected));
+        size_t needed=strlen(expected)+1;
+        assert(!bn_model_arch_expert_component_name("deepseek_v41",out,
+            needed,39,383,roles[p],(BnModelExpertComponent)c));
+        memset(out,0xa5,sizeof(out));memcpy(saved,out,sizeof(out));
+        assert(bn_model_arch_expert_component_name("deepseek_v41",out,
+            needed-1,39,383,roles[p],(BnModelExpertComponent)c)==-1);
+        assert(!memcmp(out,saved,sizeof(out)));
+    }
+    const char *bad_arch[]={NULL,"","deepseek_v4","llama","DeepseekV41ForCausalLM"};
+    for(size_t i=0;i<sizeof(bad_arch)/sizeof(bad_arch[0]);i++) {
+        assert(bn_model_arch_expert_component_name(bad_arch[i],out,sizeof(out),
+            0,0,roles[0],BN_MODEL_EXPERT_COMPONENT_PACKED)==-1);
+        assert(!memcmp(out,saved,sizeof(out)));
+    }
+    assert(bn_model_arch_expert_component_name("deepseek_v41",NULL,128,0,0,roles[0],0)==-1);
+    assert(bn_model_arch_expert_component_name("deepseek_v41",out,0,0,0,roles[0],0)==-1);
+    assert(bn_model_arch_expert_component_name("deepseek_v41",out,sizeof(out),-1,0,roles[0],0)==-1);
+    assert(bn_model_arch_expert_component_name("deepseek_v41",out,sizeof(out),0,-1,roles[0],0)==-1);
+    assert(bn_model_arch_expert_component_name("deepseek_v41",out,sizeof(out),0,0,BN_MODEL_TENSOR_FFN_GATE,0)==-1);
+    assert(bn_model_arch_expert_component_name("deepseek_v41",out,sizeof(out),0,0,roles[0],(BnModelExpertComponent)-1)==-1);
+    assert(bn_model_arch_expert_component_name("deepseek_v41",out,sizeof(out),0,0,roles[0],(BnModelExpertComponent)4)==-1);
+    assert(!memcmp(out,saved,sizeof(out)));
+    puts("Native architecture-owned expert component names PASSED");
+}
+
 int main(void) {
+    test_native_expert_component_names();
     printf("=== Qwen3.6 Architecture Tests ===\n");
+    test_ple_batch_ids();
     test_qwen36_dense();
     test_qwen36_moe();
     test_qwen36_explicit_dense();
     test_qwen36_explicit_moe();
     test_prefill_output_rows_state();
+    test_prefill_projection_failure();
     printf("All Qwen3.6 architecture tests passed!\n");
     return 0;
 }

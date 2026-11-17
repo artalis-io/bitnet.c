@@ -560,11 +560,11 @@ void bn_quant_q5k_avx2_matmul_range(void *ctx, int row_start, int row_end) {
     }
 }
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
-/* Four tokens share weight decoding. The wider register file keeps their
- * independent GEMV accumulators live; no horizontal reduction is moved. */
+/* Four tokens share weight decoding. Legacy GEMV accumulation remains
+ * available to the AVX512 batch entry point; reference prefill uses block
+ * accumulation on both AVX2 and AVX512. */
 static void q5k_sdot_tile4(const BnKQuantMatmulCtx *c, int token,
-                           int row_start, int row_end) {
+                           int row_start, int row_end, int count, int tiled) {
     const int nb = c->cols / BN_QK_K;
     const BnBlockQ5K *blocks = (const BnBlockQ5K *)c->W->data;
     const __m256i mask = _mm256_set1_epi8(15);
@@ -573,6 +573,7 @@ static void q5k_sdot_tile4(const BnKQuantMatmulCtx *c, int token,
         __m256 acc[4] = {_mm256_setzero_ps(), _mm256_setzero_ps(),
                          _mm256_setzero_ps(), _mm256_setzero_ps()};
         float min_sum[4] = {0};
+        float block_sum[4] = {0};
         for (int b = 0; b < nb; b++) {
             const BnBlockQ5K *blk = &blocks[(size_t)row * nb + b];
             uint32_t tmp[4] = {0};
@@ -607,7 +608,7 @@ static void q5k_sdot_tile4(const BnKQuantMatmulCtx *c, int token,
             }
             float wd = bn_fp16_to_fp32(blk->d);
             float wm = bn_fp16_to_fp32(blk->dmin);
-            for (int t = 0; t < 4; t++) {
+            for (int t = 0; t < count; t++) {
                 const int8_t *q = c->x_q + (size_t)(token + t) * c->cols + b * BN_QK_K;
                 const int16_t *bs = c->x_bsums + ((size_t)(token + t) * nb + b) * 16;
                 float dx = c->x_d[(size_t)(token + t) * nb + b];
@@ -616,7 +617,8 @@ static void q5k_sdot_tile4(const BnKQuantMatmulCtx *c, int token,
                                                _mm256_extracti128_si256(bv, 1));
                 __m128i prod = _mm_madd_epi16(mins, pairs);
                 __m128i total = _mm_hadd_epi32(_mm_hadd_epi32(prod, zero), zero);
-                min_sum[t] = fmaf(-dx * wm, (float)_mm_extract_epi32(total, 0), min_sum[t]);
+                if (!tiled)
+                    min_sum[t] = fmaf(-dx * wm, (float)_mm_extract_epi32(total, 0), min_sum[t]);
                 __m256i sum = _mm256_setzero_si256();
                 for (int p = 0; p < 4; p++) {
                     __m256i lo = _mm256_madd_epi16(scale[2 * p], _mm256_maddubs_epi16(
@@ -625,16 +627,25 @@ static void q5k_sdot_tile4(const BnKQuantMatmulCtx *c, int token,
                         weights[2 * p + 1], _mm256_loadu_si256((const __m256i *)(q + p * 64 + 32))));
                     sum = _mm256_add_epi32(sum, _mm256_add_epi32(lo, high));
                 }
-                acc[t] = _mm256_fmadd_ps(_mm256_set1_ps(dx * wd),
-                                        _mm256_cvtepi32_ps(sum), acc[t]);
+                if (tiled) {
+                    __m128i si = _mm_add_epi32(_mm256_castsi256_si128(sum),
+                                              _mm256_extracti128_si256(sum, 1));
+                    si = _mm_hadd_epi32(si, si);
+                    si = _mm_hadd_epi32(si, si);
+                    float value = fmaf(-wm, (float)_mm_extract_epi32(total, 0),
+                                       wd * (float)_mm_cvtsi128_si32(si));
+                    block_sum[t] = fmaf(value, dx, block_sum[t]);
+                } else {
+                    acc[t] = _mm256_fmadd_ps(_mm256_set1_ps(dx * wd),
+                                            _mm256_cvtepi32_ps(sum), acc[t]);
+                }
             }
         }
-        for (int t = 0; t < 4; t++)
+        for (int t = 0; t < count; t++)
             c->out[(size_t)(token + t) * c->W->rows + row] =
-                bn_avx2_hsum_ps(acc[t]) + min_sum[t];
+                tiled ? block_sum[t] : bn_avx2_hsum_ps(acc[t]) + min_sum[t];
     }
 }
-#endif
 
 void bn_quant_q5k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) {
     BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;
@@ -642,7 +653,7 @@ void bn_quant_q5k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) 
     int token = 0;
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
     for (; token + 4 <= c->n_tokens; token += 4)
-        q5k_sdot_tile4(c, token, row_start, row_end);
+        q5k_sdot_tile4(c, token, row_start, row_end, 4, 0);
 #endif
     for (; token < c->n_tokens; token++) {
         BnKQuantSdotCtx one = {
@@ -655,3 +666,21 @@ void bn_quant_q5k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) 
         bn_quant_q5k_avx2_sdot_range(&one, row_start, row_end);
     }
 }
+
+/* Tiled matrix arithmetic: exact integer reduction within each superblock,
+ * fused minimum correction, then fused accumulation across superblocks.
+ * Separate from the GEMV-order entry point until model qualification. */
+void bn_quant_q5k_avx2_tiled_matmul_range(void *ctx, int start, int end) {
+    const BnKQuantMatmulCtx *c = ctx;
+    for (int t = 0; t < c->n_tokens; t += 4) {
+        int count = c->n_tokens - t;
+        if (count > 4) count = 4;
+        q5k_sdot_tile4(c, t, start, end, count, 1);
+    }
+}
+
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+void bn_quant_q5k_avx512_tiled_matmul_range(void *ctx, int start, int end) {
+    bn_quant_q5k_avx2_tiled_matmul_range(ctx, start, end);
+}
+#endif

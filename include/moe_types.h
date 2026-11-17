@@ -4,6 +4,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Allocation advice only; neither value promises a physical page size.
+ * Zero retains the historical best-effort huge-page hint. SYSTEM leaves the
+ * allocation under the OS policy without issuing that hint. */
+typedef enum {
+    BN_MOE_CACHE_PAGES_HUGE_HINT = 0,
+    BN_MOE_CACHE_PAGES_SYSTEM = 1
+} BnMoECachePagePolicy;
+
+/* Container-independent expert reader over immutable model-owned anatomy/I/O.
+ * Identity, context, callback, dimensions and byte counts are fixed for the
+ * lifetime of its cache. Read fills one complete projection bundle, returning
+ * 0/-1; partial I/O failure is permitted but never published by the cache. */
+typedef struct {
+    const void *identity;
+    void *context;
+    int n_layers, n_experts;
+    size_t bytes[3];
+    int (*read)(void *context,int layer,int expert,int projection,
+                void *destination,size_t bytes);
+} BnMoEExpertReader;
 typedef struct BnMoEExpertTensorNames {
     const char *gate;
     const char *up;
@@ -62,6 +82,9 @@ typedef struct {
     int    io_count;          // number of expert projections loaded
     size_t cache_hits;        // expert cache hits (pread only)
     size_t cache_misses;      // expert cache misses (pread only)
+    // Whole-expert RAM-cache accesses made for GPU uploads (not VRAM hits).
+    size_t gpu_host_cache_hits, gpu_host_cache_misses;
+    size_t gpu_host_cache_hit_bytes, gpu_host_cache_miss_bytes;
 } BnMoEStats;
 
 // MoE per-session state (compute buffers + pread staging + stats)

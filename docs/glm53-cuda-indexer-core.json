@@ -1,0 +1,689 @@
+{
+  "scope": "SM120 resident GLM indexer Hadamard/E4M3FN queries, F32 head weights and gated four-token key pool/tail core; synthetic inputs",
+  "whole_goal_complete": false,
+  "gpu": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "storage": {
+    "raw_fp8": "I8 bytes, no signed arithmetic",
+    "scales": "F32 powers of two",
+    "new_model_weight_support": false
+  },
+  "reference": {
+    "query_cases": [
+      {
+        "rows": 1,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 9521082481390710053,
+        "scale": 5436480816041174809,
+        "weighted": 8976160780068444350
+      },
+      {
+        "rows": 1,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 9521082481390710053,
+        "scale": 5436480816041174809,
+        "weighted": 14133343225618380283
+      },
+      {
+        "rows": 2,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 14520622755265816926,
+        "scale": 14560020058057556554,
+        "weighted": 15733576176286951827
+      },
+      {
+        "rows": 2,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 14520622755265816926,
+        "scale": 14560020058057556554,
+        "weighted": 6628882922281654385
+      },
+      {
+        "rows": 31,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 8260812878292286678,
+        "scale": 5906172155029356091,
+        "weighted": 14287409094340063027
+      },
+      {
+        "rows": 31,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 11705178311368990979,
+        "scale": 16195862019758063201,
+        "weighted": 4420678518973500257
+      },
+      {
+        "rows": 32,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 4664257751578120866,
+        "scale": 5135071931924399599,
+        "weighted": 12413817542886157074
+      },
+      {
+        "rows": 32,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 568356583692525627,
+        "scale": 1841018121328366797,
+        "weighted": 18140520016634745926
+      },
+      {
+        "rows": 33,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 10912886513276773643,
+        "scale": 15899823205243032291,
+        "weighted": 5652330401628159425
+      },
+      {
+        "rows": 33,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 7255459472956139888,
+        "scale": 1581644194248596897,
+        "weighted": 17040744142504440846
+      },
+      {
+        "rows": 129,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 8814819448334649134,
+        "scale": 899932179817949923,
+        "weighted": 461982711044382045
+      },
+      {
+        "rows": 129,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 1853939594216444777,
+        "scale": 1290896212829677985,
+        "weighted": 50404808391303941
+      },
+      {
+        "rows": 1025,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 17791764411498909054,
+        "scale": 3912643868789689059,
+        "weighted": 2573673171367680841
+      },
+      {
+        "rows": 1025,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 17304213395641928563,
+        "scale": 8543146602876934561,
+        "weighted": 7849424480689155316
+      },
+      {
+        "rows": 65537,
+        "seed": 0,
+        "factor": 0.015625,
+        "out": 9317860805994409604,
+        "scale": 3126622574359399139,
+        "weighted": 13666446035440376453
+      },
+      {
+        "rows": 65537,
+        "seed": 1,
+        "factor": 0.01234567,
+        "out": 5395290666821211585,
+        "scale": 13624752809039632801,
+        "weighted": 7417403061116010413
+      }
+    ],
+    "pool_cases": [
+      {
+        "position": 0,
+        "tokens": 1,
+        "seed": 0,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 14972498484027490947
+      },
+      {
+        "position": 0,
+        "tokens": 1,
+        "seed": 1,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 3859004669478932069
+      },
+      {
+        "position": 0,
+        "tokens": 3,
+        "seed": 0,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 9437262922125308830
+      },
+      {
+        "position": 0,
+        "tokens": 3,
+        "seed": 1,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 8097759280654462419
+      },
+      {
+        "position": 0,
+        "tokens": 4,
+        "seed": 0,
+        "groups": 1,
+        "out": 6367254594287284068,
+        "scale": 5436489612134200497,
+        "tail": 8581359298320902930
+      },
+      {
+        "position": 0,
+        "tokens": 4,
+        "seed": 1,
+        "groups": 1,
+        "out": 14267380026215388185,
+        "scale": 5436489612134200497,
+        "tail": 7396454941680503696
+      },
+      {
+        "position": 0,
+        "tokens": 5,
+        "seed": 0,
+        "groups": 1,
+        "out": 6367254594287284068,
+        "scale": 5436489612134200497,
+        "tail": 12222851574213135922
+      },
+      {
+        "position": 0,
+        "tokens": 5,
+        "seed": 1,
+        "groups": 1,
+        "out": 14267380026215388185,
+        "scale": 5436489612134200497,
+        "tail": 5711678862060256950
+      },
+      {
+        "position": 0,
+        "tokens": 17,
+        "seed": 0,
+        "groups": 4,
+        "out": 15154616234692069694,
+        "scale": 4480164504387741554,
+        "tail": 13132628901076308776
+      },
+      {
+        "position": 0,
+        "tokens": 17,
+        "seed": 1,
+        "groups": 4,
+        "out": 2334514765993896237,
+        "scale": 18422510376794282101,
+        "tail": 11566220212776983366
+      },
+      {
+        "position": 0,
+        "tokens": 129,
+        "seed": 0,
+        "groups": 32,
+        "out": 6114335339537416685,
+        "scale": 13250442476800934757,
+        "tail": 17432602452787887690
+      },
+      {
+        "position": 0,
+        "tokens": 129,
+        "seed": 1,
+        "groups": 32,
+        "out": 14618646106161868806,
+        "scale": 12013226110821366437,
+        "tail": 11373936558171823652
+      },
+      {
+        "position": 0,
+        "tokens": 4097,
+        "seed": 0,
+        "groups": 1024,
+        "out": 9312065903164066280,
+        "scale": 7954200581780818386,
+        "tail": 12658342667772843368
+      },
+      {
+        "position": 0,
+        "tokens": 4097,
+        "seed": 1,
+        "groups": 1024,
+        "out": 13562316225731105384,
+        "scale": 5619910542784363509,
+        "tail": 7465872312208508176
+      },
+      {
+        "position": 1,
+        "tokens": 1,
+        "seed": 0,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 5355835307780054407
+      },
+      {
+        "position": 1,
+        "tokens": 1,
+        "seed": 1,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 9000960808404653888
+      },
+      {
+        "position": 1,
+        "tokens": 2,
+        "seed": 0,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 9437262922125308830
+      },
+      {
+        "position": 1,
+        "tokens": 2,
+        "seed": 1,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 8097759280654462419
+      },
+      {
+        "position": 1,
+        "tokens": 3,
+        "seed": 0,
+        "groups": 1,
+        "out": 6367254594287284068,
+        "scale": 5436489612134200497,
+        "tail": 8581359298320902930
+      },
+      {
+        "position": 1,
+        "tokens": 3,
+        "seed": 1,
+        "groups": 1,
+        "out": 14267380026215388185,
+        "scale": 5436489612134200497,
+        "tail": 7396454941680503696
+      },
+      {
+        "position": 2,
+        "tokens": 1,
+        "seed": 0,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 9437262922125308830
+      },
+      {
+        "position": 2,
+        "tokens": 1,
+        "seed": 1,
+        "groups": 0,
+        "out": 14695981039346656037,
+        "scale": 14695981039346656037,
+        "tail": 8097759280654462419
+      },
+      {
+        "position": 2,
+        "tokens": 2,
+        "seed": 0,
+        "groups": 1,
+        "out": 6367254594287284068,
+        "scale": 5436489612134200497,
+        "tail": 8581359298320902930
+      },
+      {
+        "position": 2,
+        "tokens": 2,
+        "seed": 1,
+        "groups": 1,
+        "out": 14267380026215388185,
+        "scale": 5436489612134200497,
+        "tail": 7396454941680503696
+      },
+      {
+        "position": 3,
+        "tokens": 1,
+        "seed": 0,
+        "groups": 1,
+        "out": 6367254594287284068,
+        "scale": 5436489612134200497,
+        "tail": 8581359298320902930
+      },
+      {
+        "position": 3,
+        "tokens": 1,
+        "seed": 1,
+        "groups": 1,
+        "out": 14267380026215388185,
+        "scale": 5436489612134200497,
+        "tail": 7396454941680503696
+      },
+      {
+        "position": 3,
+        "tokens": 5,
+        "seed": 0,
+        "groups": 2,
+        "out": 8352463550655221568,
+        "scale": 3424598760428173874,
+        "tail": 13430445521205557690
+      },
+      {
+        "position": 3,
+        "tokens": 5,
+        "seed": 1,
+        "groups": 2,
+        "out": 10374823189693511891,
+        "scale": 3424598760428173874,
+        "tail": 16931510445060125887
+      },
+      {
+        "position": 3,
+        "tokens": 129,
+        "seed": 0,
+        "groups": 33,
+        "out": 3102584039595814751,
+        "scale": 17933437924378430398,
+        "tail": 8676612723108054196
+      },
+      {
+        "position": 3,
+        "tokens": 129,
+        "seed": 1,
+        "groups": 33,
+        "out": 5648567984486467418,
+        "scale": 16235456671981459198,
+        "tail": 9664067315230641023
+      },
+      {
+        "position": 31,
+        "tokens": 1,
+        "seed": 0,
+        "groups": 1,
+        "out": 143059968440735362,
+        "scale": 5436489612134200497,
+        "tail": 14830273023769368183
+      },
+      {
+        "position": 31,
+        "tokens": 1,
+        "seed": 1,
+        "groups": 1,
+        "out": 7557673410320727546,
+        "scale": 5436489612134200497,
+        "tail": 8881513287897178421
+      },
+      {
+        "position": 31,
+        "tokens": 2,
+        "seed": 0,
+        "groups": 1,
+        "out": 143059968440735362,
+        "scale": 5436489612134200497,
+        "tail": 14198958611985097229
+      },
+      {
+        "position": 31,
+        "tokens": 2,
+        "seed": 1,
+        "groups": 1,
+        "out": 7557673410320727546,
+        "scale": 5436489612134200497,
+        "tail": 3168118488145273728
+      },
+      {
+        "position": 31,
+        "tokens": 65,
+        "seed": 0,
+        "groups": 17,
+        "out": 1711364192113122764,
+        "scale": 15119448755891174545,
+        "tail": 11218092268555149873
+      },
+      {
+        "position": 31,
+        "tokens": 65,
+        "seed": 1,
+        "groups": 17,
+        "out": 15983038623670454411,
+        "scale": 481459177767937937,
+        "tail": 10139119092764679826
+      },
+      {
+        "position": 1023,
+        "tokens": 1,
+        "seed": 0,
+        "groups": 1,
+        "out": 17217133832581341847,
+        "scale": 5436489612134200497,
+        "tail": 18348036341461201721
+      },
+      {
+        "position": 1023,
+        "tokens": 1,
+        "seed": 1,
+        "groups": 1,
+        "out": 3208545986504264876,
+        "scale": 5436489612134200497,
+        "tail": 18055622744104006411
+      },
+      {
+        "position": 1023,
+        "tokens": 5,
+        "seed": 0,
+        "groups": 2,
+        "out": 3209073304563694976,
+        "scale": 3424598760428173874,
+        "tail": 1854721764707044293
+      },
+      {
+        "position": 1023,
+        "tokens": 5,
+        "seed": 1,
+        "groups": 2,
+        "out": 13813599640337027430,
+        "scale": 3424598760428173874,
+        "tail": 13231114011953389841
+      },
+      {
+        "position": 1025,
+        "tokens": 129,
+        "seed": 0,
+        "groups": 32,
+        "out": 6321646309193898119,
+        "scale": 14852884290286325666,
+        "tail": 16961023366468486847
+      },
+      {
+        "position": 1025,
+        "tokens": 129,
+        "seed": 1,
+        "groups": 32,
+        "out": 6635834696276859233,
+        "scale": 4894775896955260898,
+        "tail": 18203201837440039492
+      }
+    ],
+    "sources": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/kpool_compress.py": "0d6d71186a9f64b99ffacbbae20d7d1514b3f58911b9a522de627075917230ac",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/common/attention.py": "e83364215dccc2871e47906a8a5286852bd6a922a6a322394ff8f27db80952e0"
+    },
+    "header_sha256": "70526cb1682e7b07982615067544e8378df9d142a9f3ab4e8b21dc3b81c8c23b",
+    "torch": "2.14.0+cu130",
+    "mx_scales": false
+  },
+  "replay": {
+    "query_cases": 16,
+    "pool_cases": 42,
+    "pool_chunk_sizes": [
+      "whole",
+      1,
+      3,
+      7,
+      64
+    ],
+    "schedules": 226,
+    "exact_output_elements": 19069100,
+    "comparison": "direct byte equality against original captures plus model-free FNV64 fixtures",
+    "read_only_input_checks": true,
+    "invalid_metadata_canaries": true
+  },
+  "validation": {
+    "stages": {
+      "clean": 0,
+      "build": 0,
+      "standard": 0,
+      "benches": 0,
+      "cuda": 0,
+      "indexer-direct": 0,
+      "replay-build": 0,
+      "moe-regression": 0,
+      "dense-regression": 0,
+      "indexer-memcheck": 0,
+      "indexer-synccheck": 0,
+      "trace-build": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "full_cuda_diagnostics": true,
+    "cuda_memcheck_errors": 0,
+    "cuda_synccheck_errors": 0,
+    "zero_build_warnings": true,
+    "moe_regression_words": 527733360,
+    "dense_prefix_regression_words": 221074320,
+    "protected_user_binaries": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "trace": {
+    "capture_scope": "Warmed query/head-weight transform plus completed pool at position3 with 32 query heads; supplied synthetic projected inputs and APE, buffers allocated and one identical warmup before capture; excludes projection/LayerNorm/cache addressing/scores/attention",
+    "kernels": [
+      {
+        "name": "fwht_kernel",
+        "start_ns": 26113926,
+        "end_ns": 26114982,
+        "stream": 14
+      },
+      {
+        "name": "weight_scale_kernel",
+        "start_ns": 26140326,
+        "end_ns": 26141062,
+        "stream": 14
+      },
+      {
+        "name": "pool_kernel",
+        "start_ns": 26151206,
+        "end_ns": 26154278,
+        "stream": 14
+      },
+      {
+        "name": "tail_kernel",
+        "start_ns": 26159462,
+        "end_ns": 26161286,
+        "stream": 14
+      }
+    ],
+    "kernel_count": 4,
+    "api_counts": {
+      "cuKernelGetName": 4,
+      "cudaLaunchKernel_v7000": 4,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "copies": [],
+    "synchronization_records": [
+      {
+        "start": 26161393,
+        "end": 26170567,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 14,
+        "correlationId": 1395,
+        "globalPid": 314632996651008,
+        "deprecatedSyncType": null,
+        "syncType": 3,
+        "eventId": 4294967295,
+        "eventSyncId": 0
+      },
+      {
+        "start": 26176325,
+        "end": 26182795,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 1396,
+        "globalPid": 314632996651008,
+        "deprecatedSyncType": null,
+        "syncType": 4,
+        "eventId": 4294967295,
+        "eventSyncId": 0
+      }
+    ],
+    "explicit_host_fences": 1,
+    "exact_post_capture_elements": 5313,
+    "source_sha256": "962586cf431afccc8e3db9b0743de8107e686589244f71b9f4ed027d6f1e5076",
+    "notes": "No allocation or transfer APIs in warmed captured interval. CUPTI records an additional unattributed final context synchronization. First-launch trace with driver module load preserved separately.",
+    "whole_model_or_performance_parity": false
+  },
+  "source_freeze": {
+    "include/gguf.h": "e92fcb5fb8212e3aef8f6c63c1c0e51acd2a02f5d9917d46dd5cd813a4c4b442",
+    "include/quant.h": "37b40698846aeab6763a3b2e8fd1a6c57dfbed69024fb46e35e5add0d9210335",
+    "include/backend_quant.h": "75a0b82666e8d4e41a418b87f70b3ee5622c45018ae6cb867a1a604068894b2f",
+    "src/quant/registry.c": "199af5a4d38a4bf9173bad533f3fb6ac6fbf0740e36ba7a0b8d369e628dd39ca",
+    "include/gpu_backend.h": "ee8425a5a58afc79620c642ce4703e04ef58aeed06cb4bb646bd799f349104e1",
+    "src/gpu_cuda.cu": "ecda28ac82921553e481c3703bfcf8f8cbb7b20e12371fd07111ec5150cbf42f",
+    "src/gpu_cuda_glm_indexer.cuh": "aac972d1e7d0808e471fd9791c2c9cca326ab30618e3b876d37a819cc55c43a2",
+    "src/quant/fp8_e4m3_cuda.cuh": "46680a1546e549216b87bb9573af24fef9232b4163abdc13f8279ce5514fb062",
+    "test/test_quant.c": "19e901464867aa57e0c578d7619a2ac10cf964b562d1914a3595922dc9f3e75c",
+    "test/test_cuda_glm_indexer.c": "31eaa72d98fe25d69ebf6fb8d01a4d154f3f63b13ccfcbac13e12dd8e8b9acdf",
+    "test/cuda_glm_indexer_reference.h": "70526cb1682e7b07982615067544e8378df9d142a9f3ab4e8b21dc3b81c8c23b",
+    "test/reference_cuda_glm_indexer.py": "eeb93db770da5d69a370dcb0d7ddea0bdac87f40a8b5bf69ba6e8577f76eee60",
+    "Makefile": "66dd34c5eb2de8e1f51eaf24d91c7043f63d69ecb05460a318e32931ec393a32"
+  },
+  "evidence_root": "/tmp/bitnet-goal-glm-cuda-indexer",
+  "artifacts": {
+    "reference-final/reference.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-indexer/reference-final/reference.json",
+      "sha256": "e39a8112a1aba7ac2131bb73c60504bc0a0ebbb9f8a38eac129263c2137ba58e"
+    },
+    "reference-final.h": {
+      "path": "/tmp/bitnet-goal-glm-cuda-indexer/reference-final.h",
+      "sha256": "70526cb1682e7b07982615067544e8378df9d142a9f3ab4e8b21dc3b81c8c23b"
+    },
+    "resident-trace-summary.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-indexer/resident-trace-summary.json",
+      "sha256": "0b88b3d84d32277616acb0f68f7f9844b0c4f6506fd95c01f1987f1b7703164d"
+    },
+    "source-freeze.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-indexer/source-freeze.json",
+      "sha256": "6d4bdf5ca63ab211e9458735e07e34a34add6b8e0c462c94d6d9f824b04ac1c7"
+    }
+  },
+  "remaining": [
+    "F32 LayerNorm and actual checkpoint projection/resource binding",
+    "paged FP8 side-cache writer and addressing",
+    "weighted FP8 scores, pool selection/expansion and tail policy",
+    "indexed MLA attention and compressed-latent KV execution",
+    "whole-model resource/session binding and long/chunked/resumed generation",
+    "GLM VRAM expert cache and CPU/backend qualifications",
+    "matched fully resident vLLM prefill/decode within5% and serving tails"
+  ]
+}

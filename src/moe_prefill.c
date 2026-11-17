@@ -762,7 +762,7 @@ int bn_moe_forward_batch_observed(struct BnModel *m, BnSession *sess,
                     continue;
                 BnGPUMoEExpertBuffers expert_gpu;
                 memset(&expert_gpu, 0, sizeof(expert_gpu));
-                if (bn_gpu_moe_bridge_get_expert(
+                if (bn_gpu_moe_bridge_get_prefill_expert(
                         m, sess, lw, l, e, &temps[e], &expert_gpu) != 0 ||
                     temps[e].n_buffers != 0 ||
                     !expert_gpu.gate || !expert_gpu.down ||
@@ -828,29 +828,6 @@ int bn_moe_forward_batch_observed(struct BnModel *m, BnSession *sess,
                    Xb + (size_t)group_token_ids[off + i] * dim,
                    dim * sizeof(float));
 
-        // Load expert weights (mmap: zero-copy pointer)
-        const void *gate_data = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 0);
-        const void *up_data   = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 1);
-        const void *down_data = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 2);
-        if (!gate_data || !up_data || !down_data) continue;
-
-        BnQWeight wgate, wup, wdown;
-        if (!bn_moe_expert_projection_weight(&wgate, gate_data, map, 0) ||
-            !bn_moe_expert_projection_weight(&wup, up_data, map, 1) ||
-            !bn_moe_expert_projection_weight(&wdown, down_data, map, 2))
-            continue;
-
-        BnMoEPrefillProjection gate_prepared = {0};
-        BnMoEPrefillProjection up_prepared = {0};
-        BnMoEPrefillProjection down_prepared = {0};
-        BnThreadPool *pool = bn_model_pool(m);
-        const BnPreparedWeight *gate_prepared_ptr =
-            moe_acquire_projection(&gate_prepared, m, &wgate, T, pool);
-        const BnPreparedWeight *up_prepared_ptr =
-            moe_acquire_projection(&up_prepared, m, &wup, T, pool);
-        const BnPreparedWeight *down_prepared_ptr =
-            moe_acquire_projection(&down_prepared, m, &wdown, T, pool);
-
         t0 = bn_moe_time_ms();
         int used_gpu_expert = 0;
         BnGPUBackend *gpu = prefill_gpu;
@@ -862,7 +839,7 @@ int bn_moe_forward_batch_observed(struct BnModel *m, BnSession *sess,
             BnGPUMoEExpertBuffers expert_gpu;
             memset(&temps, 0, sizeof(temps));
             memset(&expert_gpu, 0, sizeof(expert_gpu));
-            if (bn_gpu_moe_bridge_get_expert(
+            if (bn_gpu_moe_bridge_get_prefill_expert(
                     m, sess, lw, l, e, &temps, &expert_gpu) == 0 &&
                 expert_gpu.gate && expert_gpu.down &&
                 (expert_gpu.up || expert_gpu.use_gateup_split) &&
@@ -883,78 +860,105 @@ int bn_moe_forward_batch_observed(struct BnModel *m, BnSession *sess,
         if (used_gpu_expert) {
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
             ms->stats.down_time_ms += 0.0;
-        } else if (T == 1) {
-            BnMatvecTask gu[2] = {
-                 { gate_buf, &wgate, gate_prepared_ptr, 0 },
-                 { up_buf,   &wup,   up_prepared_ptr, 0 },
-            };
-            bn_moe_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch,
-                                      bn_model_pool(m));
-            ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
-
-            t0 = bn_moe_time_ms();
-            bn_moe_swiglu(gate_buf, gate_buf, up_buf, T * moe_hidden,
-                          exec_policy.uses_reference_silu,
-                          exec_policy.uses_reference_ffn_activation);
-            if (observe) {
-                int tid = group_token_ids[off];
-                int slot = -1;
-                for (int k = 0; k < K; k++)
-                    if (all_indices[(size_t)tid * K + k] == e) {
-                        slot = k;
-                        break;
-                    }
-                observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_ACTIVATION,
-                        tid, slot, e, gate_buf, moe_hidden);
-            }
-            ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
-
-            t0 = bn_moe_time_ms();
-            BnMatvecTask down[1] = {{
-                down_buf, &wdown, down_prepared_ptr, 0
-            }};
-            bn_moe_quant_matvec_batch(down, 1, gate_buf, x_q_scratch,
-                                      bn_model_pool(m));
-            ms->stats.down_time_ms += bn_moe_time_ms() - t0;
         } else {
-            float *gu_out[2] = { gate_buf, up_buf };
-            const BnQWeight *gu_weights[2] = { &wgate, &wup };
-            const BnPreparedWeight *gu_prepared[2] = {
-                gate_prepared_ptr, up_prepared_ptr
-            };
-            bn_moe_quant_matmul_prepared_multi(
-                gu_out, gu_weights, gu_prepared, 2, gather_buf, T,
-                x_q_scratch, pool);
-            ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+            /* A cached GPU expert needs no CPU weight reads or layouts.
+             * Materialize them only when the backend declines execution. */
+            // Load expert weights (mmap: zero-copy pointer)
+            const void *gate_data = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 0);
+            const void *up_data   = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 1);
+            const void *down_data = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 2);
+            if (!gate_data || !up_data || !down_data) continue;
 
+            BnQWeight wgate, wup, wdown;
+            if (!bn_moe_expert_projection_weight(&wgate, gate_data, map, 0) ||
+                !bn_moe_expert_projection_weight(&wup, up_data, map, 1) ||
+                !bn_moe_expert_projection_weight(&wdown, down_data, map, 2))
+                continue;
+
+            BnMoEPrefillProjection gate_prepared = {0};
+            BnMoEPrefillProjection up_prepared = {0};
+            BnMoEPrefillProjection down_prepared = {0};
+            BnThreadPool *pool = bn_model_pool(m);
+            const BnPreparedWeight *gate_prepared_ptr =
+                moe_acquire_projection(&gate_prepared, m, &wgate, T, pool);
+            const BnPreparedWeight *up_prepared_ptr =
+                moe_acquire_projection(&up_prepared, m, &wup, T, pool);
+            const BnPreparedWeight *down_prepared_ptr =
+                moe_acquire_projection(&down_prepared, m, &wdown, T, pool);
             t0 = bn_moe_time_ms();
-            bn_moe_swiglu(gate_buf, gate_buf, up_buf, T * moe_hidden,
-                          exec_policy.uses_reference_silu,
-                          exec_policy.uses_reference_ffn_activation);
-            if (observe) for (int i = 0; i < T; i++) {
-                float *gate_t = gate_buf + (size_t)i * moe_hidden;
-                int tid = group_token_ids[off + i];
-                int slot = -1;
-                for (int k = 0; k < K; k++)
-                    if (all_indices[(size_t)tid * K + k] == e) {
-                        slot = k;
-                        break;
-                    }
-                observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_ACTIVATION,
-                        tid, slot, e, gate_t, moe_hidden);
+            if (T == 1) {
+                BnMatvecTask gu[2] = {
+                     { gate_buf, &wgate, gate_prepared_ptr, 0 },
+                     { up_buf,   &wup,   up_prepared_ptr, 0 },
+                };
+                bn_moe_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch,
+                                          bn_model_pool(m));
+                ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+
+                t0 = bn_moe_time_ms();
+                bn_moe_swiglu(gate_buf, gate_buf, up_buf, T * moe_hidden,
+                              exec_policy.uses_reference_silu,
+                              exec_policy.uses_reference_ffn_activation);
+                if (observe) {
+                    int tid = group_token_ids[off];
+                    int slot = -1;
+                    for (int k = 0; k < K; k++)
+                        if (all_indices[(size_t)tid * K + k] == e) {
+                            slot = k;
+                            break;
+                        }
+                    observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_ACTIVATION,
+                            tid, slot, e, gate_buf, moe_hidden);
+                }
+                ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
+
+                t0 = bn_moe_time_ms();
+                BnMatvecTask down[1] = {{
+                    down_buf, &wdown, down_prepared_ptr, 0
+                }};
+                bn_moe_quant_matvec_batch(down, 1, gate_buf, x_q_scratch,
+                                          bn_model_pool(m));
+                ms->stats.down_time_ms += bn_moe_time_ms() - t0;
+            } else {
+                float *gu_out[2] = { gate_buf, up_buf };
+                const BnQWeight *gu_weights[2] = { &wgate, &wup };
+                const BnPreparedWeight *gu_prepared[2] = {
+                    gate_prepared_ptr, up_prepared_ptr
+                };
+                bn_moe_quant_matmul_prepared_multi(
+                    gu_out, gu_weights, gu_prepared, 2, gather_buf, T,
+                    x_q_scratch, pool);
+                ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+
+                t0 = bn_moe_time_ms();
+                bn_moe_swiglu(gate_buf, gate_buf, up_buf, T * moe_hidden,
+                              exec_policy.uses_reference_silu,
+                              exec_policy.uses_reference_ffn_activation);
+                if (observe) for (int i = 0; i < T; i++) {
+                    float *gate_t = gate_buf + (size_t)i * moe_hidden;
+                    int tid = group_token_ids[off + i];
+                    int slot = -1;
+                    for (int k = 0; k < K; k++)
+                        if (all_indices[(size_t)tid * K + k] == e) {
+                            slot = k;
+                            break;
+                        }
+                    observe(observe_ctx, BN_MOE_OBSERVE_ROUTED_ACTIVATION,
+                            tid, slot, e, gate_t, moe_hidden);
+                }
+                ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
+
+                t0 = bn_moe_time_ms();
+                bn_moe_quant_matmul_prepared(
+                    down_buf, &wdown, down_prepared_ptr, gate_buf, T,
+                    x_q_scratch, pool);
+                ms->stats.down_time_ms += bn_moe_time_ms() - t0;
             }
-            ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
-            t0 = bn_moe_time_ms();
-            bn_moe_quant_matmul_prepared(
-                down_buf, &wdown, down_prepared_ptr, gate_buf, T,
-                x_q_scratch, pool);
-            ms->stats.down_time_ms += bn_moe_time_ms() - t0;
+            moe_release_projection(&gate_prepared, m);
+            moe_release_projection(&up_prepared, m);
+            moe_release_projection(&down_prepared, m);
         }
-
-        moe_release_projection(&gate_prepared, m);
-        moe_release_projection(&up_prepared, m);
-        moe_release_projection(&down_prepared, m);
 
         // Scatter-add with routing weights
         t0 = bn_moe_time_ms();

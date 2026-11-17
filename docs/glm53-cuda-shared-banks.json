@@ -1,0 +1,228 @@
+{
+  "schema": 1,
+  "full_goal_complete": false,
+  "release_ready": false,
+  "evidence_root": "/tmp/bitnet-goal-bf16-shared-banks",
+  "execution": "Current Flash/GLM cohorts use shared expert uploads and joint GPU FFN kernels with private arithmetic, routing and attention/state; current proof is in joint_kernel_followup_evidence.",
+  "maximum_live_requests": 16,
+  "numerical_profile": "Captured cuBLAS13.10.0 provider pair; original BF16 references remain unchanged.",
+  "correctness": {
+    "normal_product_full_heads": 80,
+    "asan_ubsan_product_full_heads": 68,
+    "memcheck_product_full_heads": 12,
+    "lifecycle_recovered_full_heads_per_variant": 2,
+    "lifecycle_variants": [
+      "release",
+      "asan_ubsan",
+      "cuda_memcheck"
+    ],
+    "long_prompt_tokens": 2049,
+    "long_prefill_chunks": [
+      1024,
+      1024,
+      1
+    ],
+    "followed_by_decode": true,
+    "wide_cohort": 16,
+    "wide_prompt_diversity": "Repeated English/Chinese canonical prompts, not a diverse working-set measurement."
+  },
+  "lifetime": "Source completion fences every consumer before bank reuse or teardown. All cohort heads and host history/position publish only after every request succeeds. Invalid input, persistent BUSY, source failure, queued-work failure, head-read failure and fence failure are covered.",
+  "validation": {
+    "protected_clean_build": true,
+    "zero_gcc_product_warnings": true,
+    "standard_suite": true,
+    "full_cuda_suite": true,
+    "asan_ubsan": true,
+    "cuda_memcheck": true,
+    "cuda_initcheck_bank": true,
+    "cuda_synccheck_bank": true
+  },
+  "product_cases": {
+    "final-short": {
+      "metrics": {
+        "calls": 6,
+        "coordinated_moe_layers": 252,
+        "uploads": 3850,
+        "consumers": 7588,
+        "upload_bytes_avoided": 107800428544,
+        "busy_fences": 0,
+        "per_request_ffn_kernels": 1
+      },
+      "requests": 4,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "chinese",
+        "english"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-short-asan": {
+      "metrics": {
+        "calls": 6,
+        "coordinated_moe_layers": 252,
+        "uploads": 3850,
+        "consumers": 7588,
+        "upload_bytes_avoided": 107800428544,
+        "busy_fences": 0,
+        "per_request_ffn_kernels": 1
+      },
+      "requests": 4,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "chinese",
+        "english"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    },
+    "final-long": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 7105,
+        "consumers": 10127,
+        "upload_bytes_avoided": 59573403648,
+        "busy_fences": 0,
+        "per_request_ffn_kernels": 1
+      },
+      "requests": 2,
+      "independent_histories": [
+        "long2049",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 8,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-long-asan": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 7105,
+        "consumers": 10127,
+        "upload_bytes_avoided": 59573403648,
+        "busy_fences": 0,
+        "per_request_ffn_kernels": 1
+      },
+      "requests": 2,
+      "independent_histories": [
+        "long2049",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 8,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    },
+    "final-reversed": {
+      "metrics": {
+        "calls": 6,
+        "coordinated_moe_layers": 252,
+        "uploads": 3850,
+        "consumers": 7588,
+        "upload_bytes_avoided": 107800428544,
+        "busy_fences": 0,
+        "per_request_ffn_kernels": 1
+      },
+      "requests": 4,
+      "independent_histories": [
+        "chinese",
+        "english",
+        "english",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-wide": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 1925,
+        "consumers": 30352,
+        "upload_bytes_avoided": 1036204769280,
+        "busy_fences": 144,
+        "per_request_ffn_kernels": 1
+      },
+      "requests": 16,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 48,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-wide-asan": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 1925,
+        "consumers": 30352,
+        "upload_bytes_avoided": 1036204769280,
+        "busy_fences": 139,
+        "per_request_ffn_kernels": 1
+      },
+      "requests": 16,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 48,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    }
+  },
+  "compatibility": {
+    "dense_full_heads": 128,
+    "flash_full_heads": 4,
+    "native_full_heads": 22,
+    "legacy_qwen_tokens": "192/192"
+  },
+  "limitations": [
+    "GPU request buffers are destroyed on release; GLM request pooling is pending.",
+    "Upload bytes avoided count logical duplicate payloads, not measured PCIe traffic, exposed stalls, throughput or vLLM parity.",
+    "Existing per-request managed payload budgets do not establish aggregate RSS or physical VRAM bounds.",
+    "Continuous external arrivals/cancellation, sustained performance, CPU and Metal qualification remain pending."
+  ],
+  "followup_evidence": "docs/flash-cuda-shared-banks.json",
+  "joint_kernel_followup_evidence": "docs/cuda-joint-expert-kernels.json",
+  "historical_upload_only_execution": "GLM CUDA cohorts share unique raw expert-bank uploads and preserve private request FFN kernels, routing, attention and KV/SSM state.",
+  "historical_evidence_note": "Other validation fields retain the upload-only milestone at evidence_root; the followup records current joint-kernel qualification.",
+  "cache_cohort_followup_evidence": "docs/cuda-joint-expert-cache.json",
+  "serving_memory_followup_evidence": "docs/cuda-serving-memory.json",
+  "serving_memory_followup_scope": "Flash/GLM managed serving payload reservations and retained idle pooling are qualified in the followup. Earlier counts and limitations describe their historical evidence snapshot; physical RSS/VRAM bounds and all-four-profile resource unification remain incomplete."
+}

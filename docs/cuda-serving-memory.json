@@ -1,0 +1,468 @@
+{
+  "status": "implemented_and_qualified_for_declared_payload_scope",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "scope": "Common managed HOST/DEVICE serving ledger across dense Qwen, Flash, GLM and native DeepSeek product adapters; model-owned shape and preparation rules remain separate. See dense_followup_evidence and native_followup_evidence for later qualifications.",
+  "interfaces": {
+    "host_flag": "--serving-host-mb",
+    "host_default_mib": 16384,
+    "device_flag": "--serving-device-mb",
+    "device_default": "90 percent of free CUDA memory snapshot before shared model preparation",
+    "existing_per_request_caps": "Unchanged; both per-request and aggregate checks must pass.",
+    "native": "--host-budget-mb / --device-budget-mb; batch defaults16GiB HOST/90% free DEVICE, explicit0 disables that cap; single defaults uncapped."
+  },
+  "ownership": [
+    "Scheduler module owns a pure caller-serialized host/device reservation ledger.",
+    "Transformer module owns allocation-free request payload plans shared with preparation.",
+    "CLI owns session slots, model/cache budget reservations and pool lifecycle.",
+    "Backend ownership and checkpoint arithmetic are unchanged."
+  ],
+  "lifecycle": [
+    "Reserve shared model preparation budget and cache payload ceilings before model/cache preparation.",
+    "Commit actual retained model payload plus conservative cache ceilings after setup.",
+    "Reserve request preparation peak before allocation; commit retained payload after successful preparation.",
+    "Keep retained idle request storage charged; renew generation on healthy reuse.",
+    "Return BUSY while live leases occupy the budget.",
+    "Reject impossible per-request quotes before scheduling.",
+    "Destroy storage before dropping its reservation."
+  ],
+  "accounted": [
+    "Bounded input/decode/output/prompt payload upper bounds.",
+    "Configured host and device expert-cache payload ceilings.",
+    "Shared GPU model payload, including declared preparation budget.",
+    "Backend request tensors, workspaces, host and pinned staging payloads.",
+    "Public request logits/history arenas and selected request object metadata.",
+    "All retained idle slots in this CLI pool."
+  ],
+  "limits": [
+    "Reservation counters are payload upper bounds; they are not measured physical RSS/VRAM peaks.",
+    "File mappings and immutable GGUF/tokenizer load arenas, thread-pool stacks, opaque allocator/driver/cuBLAS storage and backend-private bookkeeping are outside this payload scope.",
+    "The free-memory snapshot is a default budget choice, not a guarantee against other process allocations.",
+    "Static queued CLI cohorts do not establish sustained external-arrival serving, tail-latency or vLLM parity.",
+    "Input parsing and immutable model/tokenizer loading occur before the serving reservation phase; this does not bound their setup peaks. Retained input is conservatively charged afterward.",
+    "Dense and native pools now reclaim idle storage under common caps, preserving live leases. Dense uses smallest-adequate reuse; native uses exact max_tokens/capacity reuse. Flash/GLM retain their declared fixed request shapes. Physical/setup peaks and external persistent arrival serving remain pending.",
+    "Bounded external transport correctness is documented in external_stdio_followup/product docs; stdio_performance_followup records one Dense resident/SLO workload and sampled physical setup/serving usage. Broader workloads and all-profile physical/setup qualification remain pending."
+  ],
+  "preliminary": {
+    "full_reference_heads_exact": 80,
+    "pooled_default": "Flash28 heads and GLM12 heads; four jobs use two sessions.",
+    "host_pressure": "Flash263 MiB and GLM333 MiB: one live session, three reuses, BUSY backpressure, 20 exact heads.",
+    "device_pressure": "Flash8519 MiB and GLM10091 MiB: one live session, three reuses, BUSY backpressure, 20 exact heads.",
+    "early_rejections": [
+      "Impossible host quote",
+      "Impossible device quote",
+      "Oversized output allocation"
+    ]
+  },
+  "evidence_root": "/tmp/bitnet-goal-resource-admission",
+  "schema": 1,
+  "qualification": {
+    "protected_clean_build": true,
+    "zero_gcc_warnings": true,
+    "standard_suite": true,
+    "full_cuda_suite": true,
+    "diagnostic_isolation": true,
+    "fresh_asan_ubsan_host_objects": 158,
+    "asan_cpu_units": [
+      "tokenizer",
+      "options",
+      "planner_and_memory_ledger",
+      "batch_scheduler"
+    ],
+    "harness_recovery": "Options sanitizer link initially lacked -Isrc. The compile failure is preserved; corrected link and all CPU runs passed.",
+    "flash_product_heads": 303,
+    "glm_product_heads": 148,
+    "flash_lifecycle_heads_per_cached_uncached_release_asan_variant": 7,
+    "glm_lifecycle_heads_per_release_asan_variant": 2,
+    "cuda_product_memcheck_heads": 8,
+    "cuda_product_synccheck_heads": 8,
+    "cuda_cached_lifecycle_memcheck_heads": 7,
+    "budget_pressure_cases": {
+      "preliminary-host-flash": {
+        "metrics": {
+          "host_limit": 275775488,
+          "device_limit": 91153642292,
+          "shared_host_upper": 209535782,
+          "shared_device_upper": 8482313344,
+          "reserved_host": 275332042,
+          "reserved_device": 8931829928,
+          "peak_reserved_host": 275775488,
+          "peak_reserved_device": 12884901888,
+          "busy": 6,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 65796260,
+          "request_host_peak": 65797284,
+          "request_device": 449516584
+        },
+        "exact_full_heads": 8
+      },
+      "preliminary-device-flash": {
+        "metrics": {
+          "host_limit": 17179869184,
+          "device_limit": 8932818944,
+          "shared_host_upper": 209535782,
+          "shared_device_upper": 8482313344,
+          "reserved_host": 275332042,
+          "reserved_device": 8931829928,
+          "peak_reserved_host": 276644646,
+          "peak_reserved_device": 8932818944,
+          "busy": 6,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 65796260,
+          "request_host_peak": 65797284,
+          "request_device": 449516584
+        },
+        "exact_full_heads": 8
+      },
+      "preliminary-host-glm": {
+        "metrics": {
+          "host_limit": 349175808,
+          "device_limit": 91153642292,
+          "shared_host_upper": 206451510,
+          "shared_device_upper": 9916407032,
+          "reserved_host": 348504790,
+          "reserved_device": 10580549092,
+          "peak_reserved_host": 349175808,
+          "peak_reserved_device": 12884901888,
+          "busy": 9,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 142053280,
+          "request_host_peak": 142053280,
+          "request_device": 664142060
+        },
+        "exact_full_heads": 12
+      },
+      "preliminary-device-glm": {
+        "metrics": {
+          "host_limit": 17179869184,
+          "device_limit": 10581180416,
+          "shared_host_upper": 206451510,
+          "shared_device_upper": 9916407032,
+          "reserved_host": 348504790,
+          "reserved_device": 10580549092,
+          "peak_reserved_host": 474886966,
+          "peak_reserved_device": 10581180416,
+          "busy": 9,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 142053280,
+          "request_host_peak": 142053280,
+          "request_device": 664142060
+        },
+        "exact_full_heads": 12
+      },
+      "asan-host-flash": {
+        "metrics": {
+          "host_limit": 275775488,
+          "device_limit": 91153642292,
+          "shared_host_upper": 209535782,
+          "shared_device_upper": 8482313344,
+          "reserved_host": 275332042,
+          "reserved_device": 8931829928,
+          "peak_reserved_host": 275775488,
+          "peak_reserved_device": 12884901888,
+          "busy": 6,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 65796260,
+          "request_host_peak": 65797284,
+          "request_device": 449516584
+        },
+        "exact_full_heads": 8
+      },
+      "asan-device-flash": {
+        "metrics": {
+          "host_limit": 17179869184,
+          "device_limit": 8932818944,
+          "shared_host_upper": 209535782,
+          "shared_device_upper": 8482313344,
+          "reserved_host": 275332042,
+          "reserved_device": 8931829928,
+          "peak_reserved_host": 276644646,
+          "peak_reserved_device": 8932818944,
+          "busy": 6,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 65796260,
+          "request_host_peak": 65797284,
+          "request_device": 449516584
+        },
+        "exact_full_heads": 8
+      },
+      "asan-host-glm": {
+        "metrics": {
+          "host_limit": 349175808,
+          "device_limit": 91153642292,
+          "shared_host_upper": 206451510,
+          "shared_device_upper": 9916407032,
+          "reserved_host": 348504790,
+          "reserved_device": 10580549092,
+          "peak_reserved_host": 349175808,
+          "peak_reserved_device": 12884901888,
+          "busy": 9,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 142053280,
+          "request_host_peak": 142053280,
+          "request_device": 664142060
+        },
+        "exact_full_heads": 12
+      },
+      "asan-device-glm": {
+        "metrics": {
+          "host_limit": 17179869184,
+          "device_limit": 10581180416,
+          "shared_host_upper": 206451510,
+          "shared_device_upper": 9916407032,
+          "reserved_host": 348504790,
+          "reserved_device": 10580549092,
+          "peak_reserved_host": 474886966,
+          "peak_reserved_device": 10581180416,
+          "busy": 9,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 142053280,
+          "request_host_peak": 142053280,
+          "request_device": 664142060
+        },
+        "exact_full_heads": 12
+      },
+      "memcheck-device-flash": {
+        "metrics": {
+          "host_limit": 17179869184,
+          "device_limit": 8932818944,
+          "shared_host_upper": 209535782,
+          "shared_device_upper": 8482313344,
+          "reserved_host": 275332042,
+          "reserved_device": 8931829928,
+          "peak_reserved_host": 276644646,
+          "peak_reserved_device": 8932818944,
+          "busy": 6,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 65796260,
+          "request_host_peak": 65797284,
+          "request_device": 449516584
+        },
+        "exact_full_heads": 8
+      },
+      "memcheck-device-glm": {
+        "metrics": {
+          "host_limit": 17179869184,
+          "device_limit": 10581180416,
+          "shared_host_upper": 206451510,
+          "shared_device_upper": 9916407032,
+          "reserved_host": 348504790,
+          "reserved_device": 10580549092,
+          "peak_reserved_host": 474886966,
+          "peak_reserved_device": 10581180416,
+          "busy": 9,
+          "idle_retained": 1,
+          "slots": 1,
+          "idle": 1,
+          "request_host": 142053280,
+          "request_host_peak": 142053280,
+          "request_device": 664142060
+        },
+        "exact_full_heads": 12
+      }
+    },
+    "early_rejections": [
+      {
+        "name": "impossible-host",
+        "exit": 1,
+        "stage": "request quote/aggregate serving budget",
+        "no_admission": true,
+        "command": [
+          "./bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/flash_next/q4_k_xl/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+          "--profile",
+          "flash-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-resource-admission/preliminary-short-prompts.json",
+          "--batch-live",
+          "2",
+          "--prefill-tokens",
+          "129",
+          "--maxseq",
+          "256",
+          "--ram-cache-mb",
+          "128",
+          "-t",
+          "1",
+          "-n",
+          "2",
+          "--serving-host-mb",
+          "250"
+        ]
+      },
+      {
+        "name": "impossible-device",
+        "exit": 1,
+        "stage": "request quote/aggregate serving budget",
+        "no_admission": true,
+        "command": [
+          "./bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/flash_next/q4_k_xl/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+          "--profile",
+          "flash-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-resource-admission/preliminary-short-prompts.json",
+          "--batch-live",
+          "2",
+          "--prefill-tokens",
+          "129",
+          "--maxseq",
+          "256",
+          "--ram-cache-mb",
+          "128",
+          "-t",
+          "1",
+          "-n",
+          "2",
+          "--serving-device-mb",
+          "8518"
+        ]
+      },
+      {
+        "name": "huge-output",
+        "exit": 1,
+        "stage": "ByteLevel decoder/serving host preflight",
+        "no_admission": true,
+        "command": [
+          "./bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/flash_next/q4_k_xl/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+          "--profile",
+          "flash-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-resource-admission/preliminary-short-prompts.json",
+          "--batch-live",
+          "2",
+          "--prefill-tokens",
+          "129",
+          "--maxseq",
+          "256",
+          "--ram-cache-mb",
+          "128",
+          "-t",
+          "1",
+          "-n",
+          "2147483647"
+        ]
+      }
+    ],
+    "dense_heads": 128,
+    "native_heads": 22,
+    "legacy_qwen_tokens": "192/192",
+    "nsight": {
+      "cache_metrics": {
+        "weight_upload_bytes": 9214361600,
+        "hits": 558,
+        "misses": 2936,
+        "hit_bytes": 1744588800,
+        "fill_copy_bytes": 4272435200,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 9214361600,
+        "evictions": 5,
+        "bypasses": 0
+      },
+      "actual_joint_kernel_launches": 2396,
+      "actual_joint_projection_launches": 1198,
+      "backend_counters_match_trace": true,
+      "multi_request_projection_grid": true,
+      "full_source_heads_exact": 80,
+      "kernels": {
+        "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ4K, (int)2, (bool)0>(bn_cuda_moe_resident::JointGroupedBatch)": {
+          "launches": 586,
+          "max_grid_z": 256,
+          "block_x": [
+            32
+          ]
+        },
+        "bn_cuda_moe_resident::bank_joint_activate(bn_cuda_moe_resident::JointGroupedBatch)": {
+          "launches": 599,
+          "max_grid_z": 16,
+          "block_x": [
+            256
+          ]
+        },
+        "bn_cuda_moe_resident::bank_joint_quantize(bn_cuda_moe_resident::JointGroupedBatch)": {
+          "launches": 599,
+          "max_grid_z": 16,
+          "block_x": [
+            32
+          ]
+        },
+        "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ5_1, (int)1, (bool)1>(bn_cuda_moe_resident::JointGroupedBatch)": {
+          "launches": 533,
+          "max_grid_z": 128,
+          "block_x": [
+            32
+          ]
+        },
+        "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ5K, (int)2, (bool)0>(bn_cuda_moe_resident::JointGroupedBatch)": {
+          "launches": 13,
+          "max_grid_z": 256,
+          "block_x": [
+            32
+          ]
+        },
+        "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ8_0, (int)1, (bool)1>(bn_cuda_moe_resident::JointGroupedBatch)": {
+          "launches": 66,
+          "max_grid_z": 128,
+          "block_x": [
+            32
+          ]
+        }
+      },
+      "not_a_throughput_or_vllm_parity_measurement": true
+    },
+    "offload_control": {
+      "gpu": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+      "matched_workload": "Four identical canonical5-token raw text prompts,2 live,5 greedy outputs each; same129 ceiling/256 context/thread1/RAM128MiB.",
+      "all_40_full_heads_exact": true,
+      "matching_dispatch_geometry": true,
+      "uncached_weight_h2d_payload_bytes": 21917900800,
+      "cached_weight_h2d_payload_bytes": 12113305600,
+      "weight_h2d_payload_bytes_avoided": 9804595200,
+      "cache": {
+        "weight_upload_bytes": 12113305600,
+        "hits": 3137,
+        "misses": 3851,
+        "hit_bytes": 9804595200,
+        "fill_copy_bytes": 4435046400,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 12113305600,
+        "evictions": 49,
+        "bypasses": 0
+      },
+      "gpu_cache_budget_bytes": 4294967296,
+      "scope": "Actual backend cudaMemcpy payload counters; excludes model initialization, metadata and physical PCIe protocol traffic. GPU cache starts empty and repeats canonical work; OS file cache and SSD cold state are not controlled. No timing, diverse-workset or vLLM parity claim."
+    }
+  },
+  "dense_followup_evidence": "docs/dense-cuda-serving-memory.json",
+  "historical_scope": "Flash/GLM CUDA batch CLI managed serving payload admission and pooled request storage",
+  "audit_followup": "The parent historical baseline.log was accidentally overwritten by the next baseline harness; its expected hash is retained and discrepancy is explicit in dense_followup_evidence. Numerical references were unchanged. Fresh complete tests and model qualifications are preserved.",
+  "native_followup_evidence": "docs/native-cuda-serving-memory.json",
+  "external_stdio_followup": {
+    "documentation": "docs/external-stdio-serving.json",
+    "evidence_root": "/tmp/bitnet-goal-external-serving",
+    "release_ready": false
+  },
+  "stdio_performance_followup": "docs/stdio-serving-performance.json"
+}

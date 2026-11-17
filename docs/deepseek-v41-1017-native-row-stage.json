@@ -1,0 +1,341 @@
+{
+  "status": "production backend request staging controller qualified; native whole-model integration/admission remains open",
+  "artifact_directory": "/tmp/bitnet-goal-native-row-stage",
+  "implementation": {
+    "api": "BnBackendRowStage, bn_backend_session_row_stage_plan/init/free/info/submit/current in include/backend_session.h and src/backend_session_rows.c",
+    "ownership": "Embed controller metadata in a session resource owner; borrow its canonical resident request. Request owns all device buffers and pinned leases; destroy request before metadata at teardown. Cache is borrowed only for the submit call.",
+    "budget": "Pure host query; metadata600 bytes on tested64-bit build. Two banks at128 raw rows/256cols reserve65536 pinned payload bytes and167936 device payload bytes. Cache/source/index, owner/request/event/context/allocator overhead separate; tests add device guard padding.",
+    "queue": "Two pinned slots and three device planes per bank; fixed allocation at setup. Nonblocking acquire returns busy without LRU/I/O work. Cache gather and format-owned scale validation precede two H2D submissions and one decoder. Storage reads may block; no GPU completion wait inside submit.",
+    "epochs": "Success publishes view+bank epoch only after all work is queued. Exact canonical-view current check rejects replaced, foreign and failed results. Callers enqueue consumers before reusing a bank and check final GPU completion separately. No model position/KV commit.",
+    "errors": "Preflight/I/O/scale-domain rejection preserves prior epochs; cancels acquired leases. Backend errors poison all results. Failed setup after GPU resource changes requires discarding the unpublished request; partial allocations remain request-owned. Metadata free makes no GPU calls.",
+    "format": "Quant-registry validate_scales callback owns finite nonnegative little-endian FP16 scale policy; scans all65536 scale words in synthetic tests. GPU view/cache/layout structs are named to permit forward declarations without public GPU-header dependencies.",
+    "metrics": "Upload bytes count callbacks reporting successful enqueue, including successful planes before a later failure; not completed physical bytes. Batches/rows/epochs count successful decode submissions only."
+  },
+  "tests": {
+    "synthetic": "Lower-layer cache fixture plus budget/metadata/init faults, overlap, two banks, epoch replacement, foreign request view, first/second acquire busy/error, cancel/lease errors, first/second upload failure, decode failure, I/O/domain retry recovery and teardown. Wrapped allocations cover init failures and zero linked hot allocation calls.",
+    "actual": "Real layer1/14 tables,32KiB/256KiB CPU cache budgets,two passes,72 reference-checked controller submissions;5384448 raw/BF16 bytes exact versus unchanged original Triton captures. Four additional unconsumed submissions are completed by real backend-session resource reset.",
+    "precision": "BF16 output unchanged; no FP16 projection adapter or whole Engram numeric equivalence claimed."
+  },
+  "qualification": {
+    "checks": {
+      "unit": 0,
+      "unit-wrap": 0,
+      "asan-unit-wrap": 0,
+      "scale-domain": 0,
+      "normal-probe": 0,
+      "asan-probe": 0,
+      "memcheck-probe": 0,
+      "initcheck-probe": 0,
+      "bounded-row-race": 0,
+      "nsys-rows128": 0,
+      "export-rows128": 0,
+      "nsys-row1": 0,
+      "export-row1": 0,
+      "source-replay": 0,
+      "qwen27-compat": 0
+    },
+    "records": {
+      "normal-probe": [
+        {
+          "layer": 1,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        }
+      ],
+      "asan-probe": [
+        {
+          "layer": 1,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        }
+      ],
+      "memcheck-probe": [
+        {
+          "layer": 1,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        }
+      ],
+      "initcheck-probe": [
+        {
+          "layer": 1,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 1026,
+          "cache_hits": 1026
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "calls": 18,
+          "exact_bytes": 1346112,
+          "stage_host": 600,
+          "pinned_payload": 65536,
+          "device_payload": 167936,
+          "upload_bytes": 295488,
+          "cache_misses": 2052,
+          "cache_hits": 0
+        }
+      ]
+    },
+    "frozen_sources": 812,
+    "asan_scope": "New staging controller and probe plus backend session teardown, cache/source/storage/JSON/platform and scalar scale validator; other quant objects and CUDA translation units are normal build. Allocation-wrapped unit exercises source/cache/stager allocation failures and zero linked hot allocations.",
+    "gpu_scope": "72 reference-checked controller submits plus4 unconsumed submissions finished by real session reset, for normal/ASAN/MEMCHECK/INITCHECK. Unchanged row kernel bounded36-call race unit, no whole-core/controller race run.",
+    "goal_status": "active"
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "traces": {
+    "rows128": {
+      "raw_rows": 128,
+      "cols": 256,
+      "kernels": 1,
+      "kernel_ns": 992,
+      "transfer_bytes": 18432,
+      "copies": [
+        {
+          "bytes": 16384,
+          "device_ns": 864
+        },
+        {
+          "bytes": 2048,
+          "device_ns": 1216
+        }
+      ],
+      "stream": 14,
+      "completion_fences": 1,
+      "device_allocations": 0,
+      "api": {
+        "cuKernelGetName": 1,
+        "cudaEventQuery_v3020": 2,
+        "cudaEventRecord_v3020": 2,
+        "cudaLaunchKernel_v7000": 1,
+        "cudaMemcpyAsync_v3020": 2,
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "sqlite_sha256": "581a310db40dd66758135de888267f30f665f583a9e88c8ff9721d74b66d8ffb",
+      "scope": "Actual production staging submit with warmed code and managed-cache-cold rows. Two event queries are nonblocking lease acquisition; one caller completion outside controller. Test poison/readbacks outside ROI. Single raw-row samples, not full token workloads or matched latency comparisons."
+    },
+    "row1": {
+      "raw_rows": 1,
+      "cols": 256,
+      "kernels": 1,
+      "kernel_ns": 768,
+      "transfer_bytes": 144,
+      "copies": [
+        {
+          "bytes": 128,
+          "device_ns": 320
+        },
+        {
+          "bytes": 16,
+          "device_ns": 320
+        }
+      ],
+      "stream": 14,
+      "completion_fences": 1,
+      "device_allocations": 0,
+      "api": {
+        "cuKernelGetName": 1,
+        "cudaEventQuery_v3020": 2,
+        "cudaEventRecord_v3020": 2,
+        "cudaLaunchKernel_v7000": 1,
+        "cudaMemcpyAsync_v3020": 2,
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "sqlite_sha256": "a7225129f3065af38a930f2f9f356ff972e2866caea6ed5086b703953c2749fc",
+      "scope": "Actual production staging submit with warmed code and managed-cache-cold rows. Two event queries are nonblocking lease acquisition; one caller completion outside controller. Test poison/readbacks outside ROI. Single raw-row samples, not full token workloads or matched latency comparisons."
+    }
+  },
+  "qwen27": {
+    "strict_cuda_continuation_ids": "192/192",
+    "first_token_ids": "8/8",
+    "count_mismatches": "0/8"
+  },
+  "terminal_handles": {
+    "baseline": 22688,
+    "targeted": 62098,
+    "final_targeted": 2574,
+    "boundary": 63372,
+    "protected_clean_full_build_and_tests": 65333,
+    "normal_sanitizer_probe_builds": 71186,
+    "asan_preliminary": 54516,
+    "final_frozen_qualifier": 87646
+  },
+  "limits": [
+    "Controller is a production library component; native model/session preparation still needs to embed it and bind model-owned table sources/caches. Existing model admission unchanged.",
+    "No asynchronous storage worker, GPU table cache, transfer/compute overlap qualification or phase-specific placement/serving policy.",
+    "Caller serializes each controller and shared cache. Two-bank validity is not a complete serving scheduler.",
+    "Trace rows1/128 are raw table rows, not complete token decode/prefill workloads. Timings are single warmed-code samples, not vLLM parity.",
+    "Native token map/normalizer/PCG64/hash/history and full Engram/HCA/forward/generation gates remain open.",
+    "WASM source list updated; no new WASM/NEON/Metal execution qualification."
+  ]
+}

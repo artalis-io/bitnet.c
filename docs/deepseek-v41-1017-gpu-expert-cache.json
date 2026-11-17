@@ -1,0 +1,93 @@
+{
+  "milestone": "Bounded GPU expert cache reservations and pinned leases",
+  "status": "Qualified component; whole inference goal remains active",
+  "implementation": {
+    "cache": "Existing GPU MoE cache now supports pre-allocation reservations, transactional publication, generation-checked leases, pinned-entry eviction protection, abort, and busy close.",
+    "ownership": "Backend model owns immutable weights; consumers release leases only after queued GPU use completes. Serialized cache access required.",
+    "upload_ordering": "Cold trellis weight construction explicitly waits for default-stream upload completion before publication.",
+    "compatibility": "Legacy lookup remains an unpinned synchronous borrow. Legacy insert allocates before admission and does not establish a transient bound; bounded callers must reserve first. Bridge admission failures now retain temporary ownership or clean up."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "asan-test_gpu_moe_cache-build": 0,
+      "asan-test_gpu_moe_cache": 0,
+      "asan-test_moe-build": 0,
+      "asan-test_moe": 0,
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "native-l0-e0-m1": 0,
+      "native-l0-e0-m7": 0,
+      "native-l0-e0-m64": 0,
+      "native-l0-e0-m256": 0,
+      "native-l39-e383-m1": 0,
+      "native-l39-e383-m7": 0,
+      "native-l39-e383-m64": 0,
+      "native-l39-e383-m256": 0,
+      "asan-native": 0,
+      "memcheck-native": 0,
+      "nsys-lifetime": 0,
+      "nsys-export": 0
+    },
+    "actual_cases": 8,
+    "experts": [
+      "layer 0 expert 0",
+      "layer 39 expert 383"
+    ],
+    "tokens": [
+      1,
+      7,
+      64,
+      256
+    ],
+    "totals": {
+      "reference_f32_words": 23511040,
+      "reference_f16_words": 18137088,
+      "peer_zero_values": 3358720
+    },
+    "mismatches": 0,
+    "one_slot_bytes": 13315584,
+    "traced_peak_compressed_payload_bytes": 13315584,
+    "traced_weight_allocations": 9,
+    "traced_weight_frees": 9,
+    "traced_heap_allocations": 39,
+    "traced_heap_frees": 39,
+    "evictions_per_case": 2,
+    "unit_cache_churn_iterations": 5000
+  },
+  "limitations": [
+    "Compressed-weight payload bound excludes context, library allocations, request tensors/workspace, host cache and host staging.",
+    "Actual checkpoint tests use deterministic FFN inputs and frozen independent references; full model routing and generation are not connected.",
+    "Host RAM selected-expert cache statistics exclude the replacement expert read through a separate bounded staging buffer.",
+    "Storage coldness was not controlled; trace timing is diagnostic, not a performance or vLLM parity result.",
+    "Model-level scheduling, completion-driven lease management, separate prefill staging policy, and asynchronous upload remain to integrate."
+  ],
+  "ordering_primary_source": "https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html",
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-gpu-cache/qualification.json",
+    "profile": "/tmp/bitnet-goal-gpu-cache/profile-analysis.json",
+    "trace": "/tmp/bitnet-goal-gpu-cache/one-slot-lifetime.nsys-rep",
+    "continuation": "/tmp/bitnet-goal-gpu-cache/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/gpu_moe_cache.h": "51a1bc47960cadbe6cc86283e3c14a4f0e99869ec3a54734484d814615eb4caa",
+    "src/gpu_moe_cache.c": "6cdc9b223fdf88bfaedf9853cb7ce88d57db47e9c3bfbb15840bea6f627d9c88",
+    "src/gpu_moe_bridge.c": "995b83117e91f619254a2b28e2a2a206e171f4545d20f8e96e48a60de4879dab",
+    "test/test_gpu_moe_cache.c": "b8a6987201ee0201d22efbbbb49976a9e8f573bfc4294303bb86fa5d72a506c1",
+    "test/test_moe.c": "3ea545af1771aab8e3e9c0c50b39ae9ba01df974279eb2a8047998a77e343a17",
+    "src/gpu_cuda_exl3.cuh": "fc15b3d70700c6d8b0556adc2dec5ae7a04f90caf38daeb8bf6d517165eeb474",
+    "test/cuda_exl3_ffn_checks.h": "74d64ff0b1766fd45c1a7728221dc41fb2d09603029237839655653559b818f0",
+    "Makefile": "a92b3809dafefe672925e6efd4b4ca81100d43270c2bf9ecf190f0e6110591f5"
+  }
+}

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -17,8 +18,8 @@
 static void usage(const char *argv0) {
     std::fprintf(stderr,
                  "usage: %s -m model.gguf (-p prompt | --prompt-token-ids ids) "
-                 "[--pos N] [--ctx N] [--sequential] [--flash|--no-flash] [--no-mmap] [--no-extra-bufts] [--top-logits N] "
-                 "[--generate N | --decode-token-ids ids] [--gpu-layers N] [--kv-f16] [--no-observer]\n",
+                 "[--pos N] [--ctx N] [--sequential | --prefill-chunk N] [--flash|--no-flash] [--no-mmap] [--no-extra-bufts] [--top-logits N] "
+                 "[--generate N | --decode-token-ids ids] [--resume-token-ids ids] [-t N] [--gpu-layers N] [--kv-f16] [--no-observer]\n",
                  argv0);
 }
 
@@ -209,7 +210,8 @@ static void dump_selected_row(const char *tag, const char *name,
     const char *wanted_layer = std::getenv("LLAMA_PROBE_DUMP_LAYER");
     const char *wanted_occurrence =
         std::getenv("LLAMA_PROBE_DUMP_OCCURRENCE");
-    if (!path || !wanted_tag || std::strcmp(tag, wanted_tag) != 0)
+    if (!path || !wanted_tag || (std::strcmp(tag, wanted_tag) != 0 &&
+                                  std::strcmp(wanted_tag, "*") != 0))
         return;
     if (wanted_name && std::strcmp(name, wanted_name) != 0)
         return;
@@ -225,6 +227,17 @@ static void dump_selected_row(const char *tag, const char *name,
     if (std::getenv("LLAMA_PROBE_DUMP_FIRST") && last_dump_pos == pos)
         return;
 
+    char layer_path[4096];
+    const bool all_tags = std::strcmp(wanted_tag, "*") == 0;
+    if ((std::getenv("LLAMA_PROBE_DUMP_PER_LAYER") || all_tags) && layer >= 0) {
+        int length = all_tags
+            ? std::snprintf(layer_path, sizeof(layer_path),
+                            "%s.%s.layer-%d.bin", path, tag, layer)
+            : std::snprintf(layer_path, sizeof(layer_path),
+                            "%s.layer-%d.bin", path, layer);
+        if (length < 0 || (size_t)length >= sizeof(layer_path)) return;
+        path = layer_path;
+    }
     FILE *f = std::fopen(path,
                          std::getenv("LLAMA_PROBE_DUMP_APPEND") ? "ab" : "wb");
     if (!f || std::fwrite(x, sizeof(*x), (size_t)dim, f) != (size_t)dim) {
@@ -244,7 +257,8 @@ static void dump_selected_raw(const char *tag, const char *name,
     const char *wanted_tag = std::getenv("LLAMA_PROBE_DUMP_TAG");
     const char *wanted_name = std::getenv("LLAMA_PROBE_DUMP_NAME");
     const char *wanted_layer = std::getenv("LLAMA_PROBE_DUMP_LAYER");
-    if (!path || !wanted_tag || std::strcmp(tag, wanted_tag) != 0)
+    if (!path || !wanted_tag || (std::strcmp(tag, wanted_tag) != 0 &&
+                                  std::strcmp(wanted_tag, "*") != 0))
         return;
     if (wanted_name && std::strcmp(name, wanted_name) != 0)
         return;
@@ -255,6 +269,17 @@ static void dump_selected_raw(const char *tag, const char *name,
         std::getenv("LLAMA_PROBE_DUMP_OCCURRENCE");
     if (wanted_occurrence && dump_match != std::atoi(wanted_occurrence))
         return;
+    char layer_path[4096];
+    const bool all_tags = std::strcmp(wanted_tag, "*") == 0;
+    if ((std::getenv("LLAMA_PROBE_DUMP_PER_LAYER") || all_tags) && layer >= 0) {
+        int length = all_tags
+            ? std::snprintf(layer_path, sizeof(layer_path),
+                            "%s.%s.layer-%d.bin", path, tag, layer)
+            : std::snprintf(layer_path, sizeof(layer_path),
+                            "%s.layer-%d.bin", path, layer);
+        if (length < 0 || (size_t)length >= sizeof(layer_path)) return;
+        path = layer_path;
+    }
     FILE *f = std::fopen(path, "wb");
     if (!f || std::fwrite(data, 1, size, f) != size)
         std::fprintf(stderr, "failed to dump %s layer %d to %s\n",
@@ -264,6 +289,12 @@ static void dump_selected_raw(const char *tag, const char *name,
 }
 
 static bool capture_layer_boundary(struct ggml_tensor *t, bool ask, void *user_data) {
+    /* Observing every intermediate can disable CUDA graph fusions. Restrict
+     * observation to a stable boundary, then verify sampled IDs against a
+     * no-observer run before using its tensor dump as model evidence. */
+    const char *observe_name = std::getenv("LLAMA_PROBE_OBSERVE_NAME");
+    if (ask && observe_name && std::strcmp(t->name, observe_name) != 0)
+        return false;
     ProbeState *st = (ProbeState *)user_data;
     bool selected_pos = st->current_pos == st->wanted_pos ||
                         std::getenv("LLAMA_PROBE_ALL_POS");
@@ -941,15 +972,23 @@ static bool capture_layer_boundary(struct ggml_tensor *t, bool ask, void *user_d
 }
 
 int main(int argc, char **argv) {
+    if (argc == 2 && std::strcmp(argv[1], "--reference-info") == 0) {
+        std::printf("llama_version=%s\nggml_version=%s\nggml_commit=%s\n",
+                    llama_version(), ggml_version(), ggml_commit());
+        return 0;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--self-test") == 0)
         return probe_self_test();
     std::string model_path;
     std::string prompt;
     std::vector<llama_token> tokens;
     std::vector<llama_token> decode_tokens;
+    std::vector<llama_token> resume_tokens;
+    int threads = 1;
     int wanted_pos = -1;
     int context_size = 0;
     bool sequential = false;
+    int prefill_chunk = 0;
     int flash_mode = 0;
     bool all_heads = false;
     int top_logits = 0;
@@ -975,6 +1014,15 @@ int main(int argc, char **argv) {
             wanted_pos = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--ctx") == 0 && i + 1 < argc) {
             context_size = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--prefill-chunk") == 0 && i + 1 < argc) {
+            char *end = nullptr;
+            errno = 0;
+            long value = std::strtol(argv[++i], &end, 10);
+            if (errno || !end || *end || value <= 0 || value > INT32_MAX) {
+                std::fprintf(stderr, "invalid prefill chunk size\n");
+                return 1;
+            }
+            prefill_chunk = (int)value;
         } else if (std::strcmp(argv[i], "--sequential") == 0) {
             sequential = true;
         } else if (std::strcmp(argv[i], "--flash") == 0) {
@@ -987,6 +1035,21 @@ int main(int argc, char **argv) {
             top_logits = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--generate") == 0 && i + 1 < argc) {
             generate = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "--resume-token-ids") == 0 && i + 1 < argc) {
+            if (!parse_token_ids(argv[++i], &resume_tokens)) {
+                std::fprintf(stderr, "invalid resume token IDs\n");
+                return 1;
+            }
+        } else if ((std::strcmp(argv[i], "-t") == 0 ||
+                    std::strcmp(argv[i], "--threads") == 0) && i + 1 < argc) {
+            char *end = nullptr;
+            errno = 0;
+            long value = std::strtol(argv[++i], &end, 10);
+            if (errno || !end || *end || value < 1 || value > GGML_MAX_N_THREADS) {
+                std::fprintf(stderr, "invalid thread count\n");
+                return 1;
+            }
+            threads = (int)value;
         } else if (std::strcmp(argv[i], "--decode-token-ids") == 0 && i + 1 < argc) {
             if (!parse_token_ids(argv[++i], &decode_tokens)) {
                 std::fprintf(stderr, "invalid decode token IDs\n");
@@ -1011,8 +1074,15 @@ int main(int argc, char **argv) {
 
     if (model_path.empty() || (prompt.empty() && tokens.empty()) ||
         (!prompt.empty() && !tokens.empty()) ||
-        (!decode_tokens.empty() && generate != 0)) {
+        (!decode_tokens.empty() && generate != 0) ||
+        (sequential && prefill_chunk > 0) || generate < 0 ||
+        (!resume_tokens.empty() && (generate == 0 || !decode_tokens.empty()))) {
         usage(argv[0]);
+        return 1;
+    }
+    if ((prefill_chunk > 0 || !resume_tokens.empty()) &&
+        std::getenv("LLAMA_PROBE_LAYER_INPUT_DUMP_PATH")) {
+        std::fprintf(stderr, "chunked/resumed prefill does not aggregate layer-input dumps\n");
         return 1;
     }
     if (!decode_tokens.empty()) generate = (int)decode_tokens.size() + 1;
@@ -1047,6 +1117,13 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+    for (llama_token token : resume_tokens) {
+        if (token >= llama_vocab_n_tokens(vocab)) {
+            std::fprintf(stderr, "resume token ID outside model vocabulary\n");
+            llama_model_free(model);
+            return 1;
+        }
+    }
     if (tokens.empty()) {
         bool add_bos = llama_vocab_get_add_bos(vocab);
         int n_prompt = -llama_tokenize(vocab, prompt.c_str(),
@@ -1068,7 +1145,15 @@ int main(int argc, char **argv) {
     int n_prompt = (int)tokens.size();
 
     int pos = wanted_pos >= 0 ? wanted_pos : n_prompt - 1;
-    int max_observed_pos = n_prompt + generate;
+    int64_t required_context = (int64_t)n_prompt + (resume_tokens.empty()
+        ? std::max(generate, 1) : 2LL * generate + (int64_t)resume_tokens.size());
+    if (required_context > INT32_MAX) {
+        std::fprintf(stderr, "requested token history exceeds context integer range\n");
+        llama_model_free(model);
+        return 1;
+    }
+    int max_observed_pos = resume_tokens.empty() ? n_prompt + generate
+                                                : (int)required_context;
     if (pos < 0 || pos >= max_observed_pos) {
         std::fprintf(stderr, "position %d outside observed token range [0,%d)\n",
                      pos, max_observed_pos);
@@ -1082,16 +1167,21 @@ int main(int argc, char **argv) {
     int native_context = (int)llama_model_n_ctx_train(model);
     int requested_context = context_size > 0 ? context_size : native_context;
     cparams.n_ctx = std::max(requested_context,
-                             n_prompt + std::max(generate, 1));
+                             (int)required_context);
+    cparams.n_threads = cparams.n_threads_batch = threads;
     if (sequential) {
         /* Mirror compare_llama.sh's decode contract (-b 1 -ub 1).  Merely
          * submitting one-token batches with the large defaults can select a
          * different CUDA graph and produce different close logits. */
         cparams.n_batch = 1;
         cparams.n_ubatch = 1;
+    } else if (prefill_chunk > 0) {
+        cparams.n_batch = (uint32_t)prefill_chunk;
+        cparams.n_ubatch = (uint32_t)prefill_chunk;
     } else {
-        cparams.n_batch = std::max(cparams.n_batch, (uint32_t)n_prompt);
-        cparams.n_ubatch = std::max(cparams.n_ubatch, (uint32_t)n_prompt);
+        uint32_t rows = (uint32_t)std::max(tokens.size(), resume_tokens.size());
+        cparams.n_batch = std::max(cparams.n_batch, rows);
+        cparams.n_ubatch = std::max(cparams.n_ubatch, rows);
     }
     cparams.type_k = kv_f16 ? GGML_TYPE_F16 : GGML_TYPE_F32;
     cparams.type_v = kv_f16 ? GGML_TYPE_F16 : GGML_TYPE_F32;
@@ -1125,7 +1215,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    llama_set_n_threads(ctx, 1, 1);
+    llama_set_n_threads(ctx, threads, threads);
 
     const char *layer_input_path =
         std::getenv("LLAMA_PROBE_LAYER_INPUT_DUMP_PATH");
@@ -1145,6 +1235,22 @@ int main(int argc, char **argv) {
                 llama_model_free(model);
                 return 1;
             }
+        }
+    } else if (prefill_chunk > 0) {
+        for (int begin = 0; begin < n_prompt; ) {
+            int count = std::min(prefill_chunk, n_prompt - begin);
+            bool contains_pos = pos >= begin && pos < begin + count;
+            cb_state.current_pos = contains_pos ? pos : begin + count - 1;
+            cb_state.row_pos = cb_state.current_pos - begin;
+            cb_state.n_tokens = count;
+            llama_batch batch = llama_batch_get_one(tokens.data() + begin, count);
+            if (llama_decode(ctx, batch) != 0) {
+                std::fprintf(stderr, "llama_decode failed in prefill chunk at %d\n", begin);
+                llama_free(ctx);
+                llama_model_free(model);
+                return 1;
+            }
+            begin += count;
         }
     } else {
         llama_batch batch = llama_batch_get_one(tokens.data(), (int)tokens.size());
@@ -1230,72 +1336,107 @@ int main(int argc, char **argv) {
         }
     }
 
-    for (int generated = 0; generated < generate; generated++) {
-        int next = greedy_token(captured_logits.data(), vocab_size);
-        if (next < 0) {
-            std::fprintf(stderr, "no eligible token in greedy sample\n");
-            llama_free(ctx);
-            llama_model_free(model);
-            return 1;
-        }
-        std::printf("llama_token_id=%d\n", next);
-        if ((size_t)generated < decode_tokens.size()) {
-            next = decode_tokens[(size_t)generated];
-            std::printf("llama_forced_token_id=%d\n", next);
-        } else if (llama_vocab_is_eog(vocab, next))
-            break;
-        if (generated + 1 == generate)
-            break;
-        cb_state.current_pos = n_prompt + generated;
-        cb_state.row_pos = 0;
-        cb_state.n_tokens = 1;
-        llama_batch batch = llama_batch_get_one(&next, 1);
-        if (llama_decode(ctx, batch) != 0) {
-                std::fprintf(stderr, "llama_decode failed at generated position %d\n",
-                             cb_state.current_pos);
-                llama_free(ctx);
-            llama_model_free(model);
-            return 1;
-        }
-        latest_logits = llama_get_logits_ith(ctx, -1);
-        if (!latest_logits) {
-            std::fprintf(stderr,
-                         "failed to get generated last-token logits\n");
-            llama_free(ctx);
-            llama_model_free(model);
-            return 1;
-        }
-        std::memcpy(captured_logits.data(), latest_logits,
-                    (size_t)vocab_size * sizeof(float));
-        if (top_logits > 0) {
-            std::vector<int> ids;
-            ids.reserve((size_t)std::min(top_logits, vocab_size));
-            for (int id = 0; id < vocab_size; id++) {
-                int j = (int)ids.size();
-                if (j == top_logits &&
-                    captured_logits[(size_t)id] <=
-                        captured_logits[(size_t)ids[(size_t)j - 1]])
-                    continue;
-                if (j < top_logits)
-                    ids.push_back(id);
-                else
-                    j--;
-                while (j > 0 &&
-                       captured_logits[(size_t)id] >
-                           captured_logits[(size_t)ids[(size_t)j - 1]]) {
-                    ids[(size_t)j] = ids[(size_t)j - 1];
-                    j--;
+    // Resumed qualification uses fixed-length greedy phases, including EOS
+    // as a history token. Commit the final sampled token before resumed input.
+    int decode_pos = n_prompt;
+    const int generation_phases = resume_tokens.empty() ? 1 : 2;
+    for (int phase = 0; phase < generation_phases; phase++) {
+        if (phase == 1) {
+            std::printf("llama_resume_prefill pos=%d tokens=%zu chunk=%d\n",
+                        decode_pos, resume_tokens.size(), sequential ? 1 : prefill_chunk);
+            for (size_t begin = 0; begin < resume_tokens.size();) {
+                int limit = sequential ? 1 : prefill_chunk > 0 ? prefill_chunk
+                    : (int)resume_tokens.size();
+                int count = std::min(limit, (int)(resume_tokens.size() - begin));
+                bool contains_pos = pos >= decode_pos && pos < decode_pos + count;
+                cb_state.current_pos = contains_pos ? pos : decode_pos + count - 1;
+                cb_state.row_pos = cb_state.current_pos - decode_pos;
+                cb_state.n_tokens = count;
+                llama_batch batch = llama_batch_get_one(resume_tokens.data() + begin, count);
+                if (llama_decode(ctx, batch) != 0) {
+                    std::fprintf(stderr, "llama_decode failed in resumed prefill at %d\n", decode_pos);
+                    llama_free(ctx); llama_model_free(model); return 1;
                 }
-                ids[(size_t)j] = id;
+                begin += (size_t)count;
+                decode_pos += count;
             }
-            for (int rank = 0; rank < (int)ids.size(); rank++) {
-                int id = ids[(size_t)rank];
-                std::printf("llama_top_logit step=%d rank=%d token=%d "
-                            "attr=%u text=%s logit=%.9g\n",
-                            generated + 1, rank + 1, id,
-                            (unsigned)llama_vocab_get_attr(vocab, id),
-                            llama_vocab_get_text(vocab, id),
-                            captured_logits[(size_t)id]);
+            latest_logits = llama_get_logits_ith(ctx, -1);
+            if (!latest_logits) {
+                std::fprintf(stderr, "missing resumed-prefill logits\n");
+                llama_free(ctx); llama_model_free(model); return 1;
+            }
+            std::memcpy(captured_logits.data(), latest_logits,
+                        (size_t)vocab_size * sizeof(float));
+        }
+        for (int generated = 0; generated < generate; generated++) {
+            int next = greedy_token(captured_logits.data(), vocab_size);
+            if (next < 0) {
+                std::fprintf(stderr, "no eligible token in greedy sample\n");
+                llama_free(ctx);
+                llama_model_free(model);
+                return 1;
+            }
+            std::printf(phase == 0 ? "llama_token_id=%d\n"
+                                   : "llama_resumed_token_id=%d\n", next);
+            if ((size_t)generated < decode_tokens.size()) {
+                next = decode_tokens[(size_t)generated];
+                std::printf("llama_forced_token_id=%d\n", next);
+            } else if (resume_tokens.empty() && llama_vocab_is_eog(vocab, next))
+                break;
+            if (generated + 1 == generate && resume_tokens.empty())
+                break;
+            cb_state.current_pos = decode_pos;
+            cb_state.row_pos = 0;
+            cb_state.n_tokens = 1;
+            llama_batch batch = llama_batch_get_one(&next, 1);
+            if (llama_decode(ctx, batch) != 0) {
+                    std::fprintf(stderr, "llama_decode failed at generated position %d\n",
+                                 cb_state.current_pos);
+                    llama_free(ctx);
+                llama_model_free(model);
+                return 1;
+            }
+            decode_pos++;
+            latest_logits = llama_get_logits_ith(ctx, -1);
+            if (!latest_logits) {
+                std::fprintf(stderr,
+                             "failed to get generated last-token logits\n");
+                llama_free(ctx);
+                llama_model_free(model);
+                return 1;
+            }
+            std::memcpy(captured_logits.data(), latest_logits,
+                        (size_t)vocab_size * sizeof(float));
+            if (top_logits > 0) {
+                std::vector<int> ids;
+                ids.reserve((size_t)std::min(top_logits, vocab_size));
+                for (int id = 0; id < vocab_size; id++) {
+                    int j = (int)ids.size();
+                    if (j == top_logits &&
+                        captured_logits[(size_t)id] <=
+                            captured_logits[(size_t)ids[(size_t)j - 1]])
+                        continue;
+                    if (j < top_logits)
+                        ids.push_back(id);
+                    else
+                        j--;
+                    while (j > 0 &&
+                           captured_logits[(size_t)id] >
+                               captured_logits[(size_t)ids[(size_t)j - 1]]) {
+                        ids[(size_t)j] = ids[(size_t)j - 1];
+                        j--;
+                    }
+                    ids[(size_t)j] = id;
+                }
+                for (int rank = 0; rank < (int)ids.size(); rank++) {
+                    int id = ids[(size_t)rank];
+                    std::printf("llama_top_logit step=%d rank=%d token=%d "
+                                "attr=%u text=%s logit=%.9g\n",
+                                generated + 1, rank + 1, id,
+                                (unsigned)llama_vocab_get_attr(vocab, id),
+                                llama_vocab_get_text(vocab, id),
+                                captured_logits[(size_t)id]);
+                }
             }
         }
     }

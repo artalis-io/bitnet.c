@@ -9,14 +9,18 @@ typedef struct {
     int layer;          // -1 = empty
     int expert_idx;
     int prev, next;     // intrusive LRU doubly-linked list (indices, -1 = sentinel)
+    unsigned pins;     // host expert leases held by synchronous GPU uploads
+    int published;     // reservations stay invisible until every read succeeds
 } BnMoECacheEntry;
 
 struct BnMoECache {
+    BnMoEExpertReader reader; /* Non-NULL identity isolates generic reader caches. */
     uint8_t *slab;              // [n_slots * entry_bytes], 32-byte aligned
     size_t entry_bytes;         // gate_bytes + up_bytes + down_bytes
     size_t gate_bytes;          // size of gate projection
     size_t up_bytes;            // size of up projection
     int n_slots;
+    int pinned_slots;
 
     BnMoECacheEntry *entries;   // [n_slots] metadata
     int *hash_table;            // [hash_size] open-addressing, slot index or -1
@@ -109,6 +113,8 @@ static const uint8_t *moe_cache_lookup(BnMoECache *c, int layer, int expert_idx)
 
 static int moe_cache_evict(BnMoECache *c) {
     int slot = c->lru_tail;
+    while (slot >= 0 && c->entries[slot].pins)
+        slot = c->entries[slot].prev;
     if (slot < 0) return -1;
     // Remove from LRU
     moe_cache_lru_remove(c, slot);
@@ -134,6 +140,7 @@ static uint8_t *moe_cache_insert(BnMoECache *c, int layer, int expert_idx) {
     // Set entry metadata
     c->entries[slot].layer = layer;
     c->entries[slot].expert_idx = expert_idx;
+    c->entries[slot].published = 1;
 
     // Insert into hash table
     uint32_t mask = (uint32_t)(c->hash_size - 1);
@@ -154,11 +161,11 @@ static uint8_t *moe_cache_insert(BnMoECache *c, int layer, int expert_idx) {
 
 
 const uint8_t *bn_moe_cache_lookup_internal(BnMoECache *c, int layer, int expert_idx) {
-    return moe_cache_lookup(c, layer, expert_idx);
+    return c && !c->reader.identity ? moe_cache_lookup(c, layer, expert_idx) : NULL;
 }
 
 uint8_t *bn_moe_cache_insert_internal(BnMoECache *c, int layer, int expert_idx) {
-    return moe_cache_insert(c, layer, expert_idx);
+    return c && !c->reader.identity ? moe_cache_insert(c, layer, expert_idx) : NULL;
 }
 
 size_t bn_moe_cache_gate_bytes(const BnMoECache *c) {
@@ -173,14 +180,27 @@ size_t bn_moe_cache_up_bytes(const BnMoECache *c) {
 
 void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
                             size_t up_bytes, size_t down_bytes) {
+    return bn_moe_cache_create_policy(budget_bytes,gate_bytes,up_bytes,down_bytes,
+        BN_MOE_CACHE_PAGES_HUGE_HINT);
+}
+
+void *bn_moe_cache_create_policy(size_t budget_bytes,size_t gate_bytes,
+    size_t up_bytes,size_t down_bytes,BnMoECachePagePolicy pages) {
+    if(pages!=BN_MOE_CACHE_PAGES_HUGE_HINT&&pages!=BN_MOE_CACHE_PAGES_SYSTEM)
+        return NULL;
 #if !defined(__EMSCRIPTEN__)
     if (budget_bytes == 0) return NULL;
+    if (gate_bytes > SIZE_MAX - up_bytes ||
+        gate_bytes + up_bytes > SIZE_MAX - down_bytes)
+        return NULL;
     size_t entry_bytes = gate_bytes + up_bytes + down_bytes;
     if (entry_bytes == 0) return NULL;
 
     size_t raw_slots = budget_bytes / entry_bytes;
     if (raw_slots < 1) return NULL;
-    if (raw_slots > (size_t)INT_MAX / 2) raw_slots = (size_t)INT_MAX / 2;  // cap to avoid overflow
+    /* The next power-of-two hash size (at least 2*slots) must fit int. */
+    size_t max_slots = ((size_t)INT_MAX + 1u) / 4u;
+    if (raw_slots > max_slots) raw_slots = max_slots;
     int n_slots = (int)raw_slots;
 
     BnMoECache *c = (BnMoECache *)calloc(1, sizeof(BnMoECache));
@@ -200,6 +220,8 @@ void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
     size_t slab_size = (size_t)n_slots * entry_bytes;
     c->slab = (uint8_t *)bn_platform_aligned_alloc(32, slab_size);
     if (!c->slab) { free(c); return NULL; }
+    if(pages==BN_MOE_CACHE_PAGES_HUGE_HINT)
+        bn_platform_advise_huge_pages(c->slab, slab_size);
 
     c->entries = (BnMoECacheEntry *)calloc((size_t)n_slots, sizeof(BnMoECacheEntry));
     c->hash_table = (int *)malloc((size_t)hs * sizeof(int));
@@ -250,7 +272,134 @@ void bn_moe_cache_free(void *cache) {
 }
 
 int bn_moe_cache_capacity_internal(const BnMoECache *c) {
+#if !defined(__EMSCRIPTEN__)
     return c ? c->n_slots : 0;
+#else
+    (void)c;
+    return 0;
+#endif
+}
+
+int bn_moe_cache_available_internal(const BnMoECache *c) {
+#if !defined(__EMSCRIPTEN__)
+    return c ? c->n_slots - c->pinned_slots : 0;
+#else
+    (void)c;
+    return 0;
+#endif
+}
+
+int bn_moe_cache_fits_internal(const BnMoECache *c, const size_t bytes[3]) {
+#if !defined(__EMSCRIPTEN__)
+    return c && bytes && bytes[0] <= c->gate_bytes &&
+        bytes[1] <= c->up_bytes &&
+        bytes[2] <= c->entry_bytes - c->gate_bytes - c->up_bytes;
+#else
+    (void)c; (void)bytes;
+    return 0;
+#endif
+}
+
+const uint8_t *bn_moe_cache_pin_internal(BnMoECache *c, int layer,
+    int expert, int promote, int *slot) {
+#if !defined(__EMSCRIPTEN__)
+    if (!c || !slot) return NULL;
+    int hi = moe_cache_probe(c, layer, expert);
+    if (hi < 0) return NULL;
+    int index = c->hash_table[hi];
+    if (c->entries[index].pins == UINT_MAX) return NULL;
+    if (!c->entries[index].pins) c->pinned_slots++;
+    c->entries[index].pins++;
+    if (promote) {
+        moe_cache_lru_remove(c, index);
+        moe_cache_lru_push_front(c, index);
+    }
+    *slot = index;
+    return c->slab + (size_t)index * c->entry_bytes;
+#else
+    (void)c; (void)layer; (void)expert; (void)promote; (void)slot;
+    return NULL;
+#endif
+}
+
+uint8_t *bn_moe_cache_reserve_internal(BnMoECache *c, int layer,
+    int expert, const size_t bytes[3], int *slot) {
+#if !defined(__EMSCRIPTEN__)
+    if (!slot || !bn_moe_cache_fits_internal(c, bytes) ||
+        moe_cache_probe(c, layer, expert) >= 0) return NULL;
+    int index;
+    if (c->free_head >= 0) {
+        index = c->free_head;
+        c->free_head = c->entries[index].next;
+    } else {
+        index = moe_cache_evict(c);
+        if (index < 0) return NULL;
+    }
+    BnMoECacheEntry *e = &c->entries[index];
+    e->layer = layer; e->expert_idx = expert;
+    e->published = 0; e->pins = 1; c->pinned_slots++;
+    moe_cache_lru_push_front(c, index);
+    *slot = index;
+    return c->slab + (size_t)index * c->entry_bytes;
+#else
+    (void)c; (void)layer; (void)expert; (void)bytes; (void)slot;
+    return NULL;
+#endif
+}
+
+int bn_moe_cache_commit_internal(BnMoECache *c, int slot) {
+#if !defined(__EMSCRIPTEN__)
+    if (!c || slot < 0 || slot >= c->n_slots) return -1;
+    BnMoECacheEntry *e = &c->entries[slot];
+    if (!e->pins || e->published ||
+        moe_cache_probe(c, e->layer, e->expert_idx) >= 0) return -1;
+    uint32_t mask = (uint32_t)(c->hash_size - 1);
+    uint32_t h = moe_cache_hash(e->layer, e->expert_idx) & mask;
+    while (c->hash_table[h] >= 0) h = (h + 1u) & mask;
+    c->hash_table[h] = slot;
+    e->published = 1;
+    return 0;
+#else
+    (void)c; (void)slot;
+    return -1;
+#endif
+}
+
+void bn_moe_cache_unpin_internal(BnMoECache *c, int slot) {
+#if !defined(__EMSCRIPTEN__)
+    if (c && slot >= 0 && slot < c->n_slots && c->entries[slot].pins) {
+        c->entries[slot].pins--;
+        if (!c->entries[slot].pins) {
+            c->pinned_slots--;
+            if (!c->entries[slot].published) {
+                moe_cache_lru_remove(c, slot);
+                c->entries[slot].layer = c->entries[slot].expert_idx = -1;
+                c->entries[slot].next = c->free_head;
+                c->free_head = slot;
+            }
+        }
+    }
+#else
+    (void)c; (void)slot;
+#endif
+}
+
+void bn_moe_cache_invalidate_internal(BnMoECache *c, int layer, int expert) {
+#if !defined(__EMSCRIPTEN__)
+    if (!c) return;
+    int hi = moe_cache_probe(c, layer, expert);
+    if (hi < 0) return;
+    int slot = c->hash_table[hi];
+    if (c->entries[slot].pins) return;
+    moe_cache_lru_remove(c, slot);
+    moe_cache_hash_remove(c, layer, expert);
+    c->entries[slot].layer = -1;
+    c->entries[slot].expert_idx = -1;
+    c->entries[slot].next = c->free_head;
+    c->free_head = slot;
+#else
+    (void)c; (void)layer; (void)expert;
+#endif
 }
 
 void bn_moe_cache_print_stats(const BnMoEState *ms) {
@@ -281,7 +430,7 @@ void bn_moe_release_prepared_projection(
 }
 
 int bn_moe_prepare_mmap_experts(BnModel *m) {
-    if (!m || !bn_moe_io_has_mmap(bn_model_moe_io(m)) ||
+    if (!m || bn_model_anatomy(m) || !bn_moe_io_has_mmap(bn_model_moe_io(m)) ||
         !bn_model_backend(m))
         return -1;
 
@@ -326,7 +475,7 @@ int bn_moe_prepare_mmap_experts(BnModel *m) {
 }
 
 int bn_moe_prefault_mmap(struct BnModel *m) {
-    if (!m || !bn_moe_io_has_mmap(bn_model_moe_io(m)) ||
+    if (!m || bn_model_anatomy(m) || !bn_moe_io_has_mmap(bn_model_moe_io(m)) ||
         !bn_moe_policy_uses_expert_weights(&m->config))
         return -1;
 
@@ -477,4 +626,83 @@ int bn_moe_cache_test(void) {
 const BnPreparedWeight *bn_moe_prepared_dense_projection(
     const BnModel *model, const BnQWeight *weight) {
     return bn_backend_model_prepared_qweight(bn_model_backend(model), weight);
+}
+
+static int valid_reader(const BnMoEExpertReader *reader) {
+    return reader && reader->identity && reader->read && reader->n_layers>0 &&
+        reader->n_experts>0 && reader->bytes[0] && reader->bytes[1] && reader->bytes[2] &&
+        reader->bytes[0]<=SIZE_MAX-reader->bytes[1] &&
+        reader->bytes[0]+reader->bytes[1]<=SIZE_MAX-reader->bytes[2];
+}
+void *bn_moe_cache_create_reader(size_t budget,const BnMoEExpertReader *reader) {
+    return bn_moe_cache_create_reader_policy(budget,reader,BN_MOE_CACHE_PAGES_HUGE_HINT);
+}
+void *bn_moe_cache_create_reader_policy(size_t budget,const BnMoEExpertReader *reader,
+    BnMoECachePagePolicy pages) {
+    if(!valid_reader(reader))return NULL;
+    BnMoECache *cache=bn_moe_cache_create_policy(budget,reader->bytes[0],reader->bytes[1],reader->bytes[2],pages);
+#ifndef __EMSCRIPTEN__
+    if(cache)cache->reader=*reader;
+#endif
+    return cache;
+}
+int bn_moe_host_expert_acquire_reader(const BnMoEExpertReader *reader,void *cache_ptr,
+    BnMoEStats *stats,int layer,int expert,int admit,void *const staging[3],
+    const size_t capacities[3],BnMoEHostExpert *out) {
+    if(!out)return -1;
+    memset(out,0,sizeof(*out));out->slot=-1;
+    if(!valid_reader(reader) || layer<0 || layer>=reader->n_layers ||
+       expert<0 || expert>=reader->n_experts || (admit!=0 && admit!=1))return -1;
+    const uint8_t *entry=NULL;
+    uint8_t *reserved=NULL;
+    BnMoECache *cache=(BnMoECache*)cache_ptr;
+    size_t total=reader->bytes[0]+reader->bytes[1]+reader->bytes[2];
+#ifndef __EMSCRIPTEN__
+    if(cache && (cache->reader.identity!=reader->identity || cache->reader.context!=reader->context ||
+       cache->reader.read!=reader->read || cache->reader.n_layers!=reader->n_layers ||
+       cache->reader.n_experts!=reader->n_experts ||
+       memcmp(cache->reader.bytes,reader->bytes,sizeof(reader->bytes))))return -1;
+    if(cache)entry=bn_moe_cache_pin_internal(cache,layer,expert,admit,&out->slot);
+    if(entry) {
+        if(stats){stats->gpu_host_cache_hits++;stats->gpu_host_cache_hit_bytes+=total;}
+    } else {
+        if(cache && stats){stats->gpu_host_cache_misses++;stats->gpu_host_cache_miss_bytes+=total;}
+        if(cache && admit)reserved=bn_moe_cache_reserve_internal(cache,layer,expert,reader->bytes,&out->slot);
+        if(reserved)out->cache=cache;
+#else
+    if(cache)return -1;
+    {
+#endif
+        if(!reserved)for(int p=0;p<3;p++)
+            if(!staging || !capacities || !staging[p] || capacities[p]<reader->bytes[p])return -1;
+        size_t offset=0;
+        for(int p=0;p<3;p++) {
+            void *dst=reserved?reserved+offset:staging[p];
+            double start=bn_platform_time_ms();
+            int rc=reader->read(reader->context,layer,expert,p,dst,reader->bytes[p]);
+            if(stats)stats->io_time_ms+=bn_platform_time_ms()-start;
+            if(rc){bn_moe_host_expert_release(out);return -1;}
+            out->projection[p]=dst;offset+=reader->bytes[p];
+            if(stats){stats->io_count++;stats->io_bytes+=reader->bytes[p];}
+        }
+#ifndef __EMSCRIPTEN__
+        if(reserved) {
+            if(bn_moe_cache_commit_internal(cache,out->slot)){bn_moe_host_expert_release(out);return -1;}
+            entry=reserved;
+        }
+#endif
+    }
+    if(entry) {
+        out->projection[0]=entry;out->projection[1]=entry+reader->bytes[0];
+        out->projection[2]=entry+reader->bytes[0]+reader->bytes[1];out->cache=cache;
+    }
+    return 0;
+}
+
+int bn_moe_cache_is_reader_internal(const BnMoECache *cache) {
+#ifndef __EMSCRIPTEN__
+    return cache && cache->reader.identity;
+#else
+    (void)cache;return 0;
+#endif
 }

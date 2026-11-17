@@ -19,6 +19,9 @@ echo "Building bitnet.c WASM module..."
 
 emcc \
     "$PROJECT_DIR/src/gguf.c" \
+    "$PROJECT_DIR/src/quant/int4_rows.c" \
+    "$PROJECT_DIR/src/quant/fp8.c" \
+    "$PROJECT_DIR/src/quant/exl3.c" \
     "$PROJECT_DIR/src/quant/fp16.c" \
     "$PROJECT_DIR/src/quant/dequant.c" \
     "$PROJECT_DIR/src/quant/registry.c" \
@@ -79,6 +82,9 @@ emcc \
     "$PROJECT_DIR/src/quant/iq2s_scalar.c" \
     "$PROJECT_DIR/src/turboquant.c" \
     "$PROJECT_DIR/src/model.c" \
+    "$PROJECT_DIR/src/safetensors.c" \
+    "$PROJECT_DIR/src/trellis.c" \
+    "$PROJECT_DIR/src/json.c" \
     "$PROJECT_DIR/src/model_arch.c" \
     "$PROJECT_DIR/src/model_policy.c" \
     "$PROJECT_DIR/src/model_session.c" \
@@ -86,7 +92,9 @@ emcc \
     "$PROJECT_DIR/src/model_embed.c" \
     "$PROJECT_DIR/src/backend_layout.c" \
     "$PROJECT_DIR/src/backend_model.c" \
+    "$PROJECT_DIR/src/backend_model_rows.c" \
     "$PROJECT_DIR/src/backend_session.c" \
+    "$PROJECT_DIR/src/backend_session_rows.c" \
     "$PROJECT_DIR/src/backend_quant.c" \
     "$PROJECT_DIR/src/gpu_policy.c" \
     "$PROJECT_DIR/src/moe.c" \
@@ -109,6 +117,7 @@ emcc \
     "$PROJECT_DIR/src/transformer/gpu_policy.c" \
     "$PROJECT_DIR/src/transformer/gpu_resources.c" \
     "$PROJECT_DIR/src/transformer/gpu.c" \
+    "$PROJECT_DIR/src/transformer/bf16.c" \
     "$PROJECT_DIR/src/transformer/gpu_emit.c" \
     "$PROJECT_DIR/src/transformer/kv.c" \
     "$PROJECT_DIR/src/transformer/kv_backend.c" \

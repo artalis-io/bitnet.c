@@ -75,9 +75,9 @@ make test_coherence
 Modules are organized to avoid circular dependencies and cross-product branches:
 
 1. `platform` — mmap/buffer abstraction, timing
-2. `gguf` — GGUF parser
+2. `json` — bounded immutable configuration documents; `gguf` / `safetensors` — independent storage readers over `platform`; quant behavior stays in the quant registry
 3. `quant` — format metadata, dequantization, CPU kernels, backend capability declarations
-4. `turboquant` — compressed KV support
+4. `trellis` / `turboquant` — immutable checkpoint projection bindings over storage + quant / compressed KV support
 5. `model_arch` — model-family rules and tensor-role mapping
 6. `model` — config, immutable CPU-visible weights, model loading
 7. `backend_layout` / `backend_model` — backend-owned uploads, packed/fused layouts, backend session state
@@ -89,9 +89,11 @@ Modules are organized to avoid circular dependencies and cross-product branches:
 13. `threadpool` — persistent pthread workers
 14. `bn_alloc` — allocator vtable
 15. `prompt_cache` — shared KV prefix cache
-16. `generate` — library API, prefill/generate/chat/SSE/logprobs/stop strings
-17. `gpu_wgpu` / `gpu_metal` — optional backend implementations
-18. `main` — CLI wiring
+16. `generate_batch_plan` — bounded host-only mixed-cohort token budgeting for generation/serving callers
+17. `generate_batch` — bounded FIFO admission, greedy mixed execution, cancellation and cohort token publication
+18. `generate` — library API, prefill/generate/chat/SSE/logprobs/stop strings
+19. `gpu_wgpu` / `gpu_metal` — optional backend implementations
+20. `main` — CLI wiring
 
 Key transformer files:
 
@@ -182,3 +184,5 @@ Key transformer files:
 WASM builds use `platform_load_buffer()` rather than mmap and are constrained by
 wasm32 memory limits. `wasm/api.c` is allowed to use global application state for
 the browser demo. Keep exported functions listed in `wasm/build.sh`.
+
+Explicit resident BF16 execution and request state live in `src/transformer/bf16.c`, and native Trellis FFN request execution lives in `src/transformer/trellis.c`, both within the transformer module and downstream of expert placement; immutable layouts belong to `BnBackendModel` and mutable allocations/metadata belong to `BnBackendSession`.

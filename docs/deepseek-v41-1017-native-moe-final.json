@@ -1,0 +1,200 @@
+{
+  "status": "Device-resident F32 addition implemented and qualified in the learned-router MoE component chain; production session executor remains pending; whole goal active",
+  "implementation": {
+    "api": "BnGPUAddF32ResidentPlan / BnGPUBackend.add_f32_resident",
+    "backend": "CUDA, exposed with existing resident request support on SM80+",
+    "arithmetic": "One __fadd_rn per element, preserving F32 rounding, signed zero and subnormals without casts or fusion.",
+    "validation": "Exact F32 extents, matching request/backend ownership, live views, aligned storage, bounded nonzero count. Read-only inputs may overlap; output must be disjoint from both. Invalid plans queue no work and leave outputs/request usable.",
+    "resources": "No operator workspace or reserve step; one request-stream kernel. No execution allocation, copy or host fence.",
+    "files": [
+      "include/gpu_backend.h",
+      "src/gpu_cuda_gdn.cuh",
+      "src/gpu_cuda.cu",
+      "test/cuda_f32_add_checks.h",
+      "test/cuda_f32_add_reference.h",
+      "test/test_cuda_backend.c",
+      "Makefile"
+    ]
+  },
+  "validation": {
+    "source_edges": {
+      "torch": "2.14.0+cu130",
+      "torch_git": "08187d9e0fba026dc8217405802ab5381dc88d90",
+      "pairs": 32,
+      "reference_sha256": "8ecb852362c2845428a509cd2aa09da8f9384e8ab41bcb88bdc56051aa3c0f1d"
+    },
+    "edge_values_per_run": 36260,
+    "edge_sizes": [
+      1,
+      7,
+      31,
+      32,
+      33,
+      255,
+      256,
+      257,
+      8193
+    ],
+    "edge_scope": "Independent Torch CUDA outputs for 32 directed pairs and their same-input sums: signed zeros, subnormals, normal/subnormal transitions, halfway ties, exact cancellation, overflow and infinities. Two requests, guards, unchanged inputs, alias and foreign/invalid/overflow rejection. Separate two-stream warm probe uses distinct expected outputs.",
+    "full_composition": "Native learned router, assignment sort, actual selected offloaded expert triples, fused and heavy tiers, fixed-k gather, shared F16 FFN, and device F32 routed-plus-shared final. The former CPU final-add diagnostic is removed. All preserved intermediates/final outputs match the paired source byte for byte; routed/shared inputs also remain unchanged after addition.",
+    "normal_composition_cases": 40,
+    "composition_rows": [
+      64,
+      256,
+      1024,
+      4096,
+      8192
+    ],
+    "policies": "Both adaptive FP16-partial settings, both prefill/decode placement policies, and fused windows one/five. Heavy group shape and full-tier fused group width remain source-equivalent.",
+    "checks": {
+      "final-build": 0,
+      "asan-build": 0,
+      "edge-build": 0,
+      "asan-edge-build": 0,
+      "final-prefill-window1": 0,
+      "final-decode-window1": 0,
+      "final-prefill-window5": 0,
+      "final-decode-window5": 0,
+      "asan-prefill": 0,
+      "memcheck-prefill": 0,
+      "memcheck-decode": 0,
+      "native-edge": 0,
+      "asan-edge": 0,
+      "memcheck-edge": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "records": {
+      "final-prefill-window1": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "final-decode-window1": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 1203,
+        "mismatches": 0
+      },
+      "final-prefill-window5": {
+        "cases": 10,
+        "launches": 266,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "final-decode-window5": {
+        "cases": 10,
+        "launches": 266,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 1203,
+        "mismatches": 0
+      },
+      "asan-prefill": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "memcheck-prefill": {
+        "cases": 1,
+        "launches": 91,
+        "compared_bytes": 1669644288,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 1757657088,
+        "upload_bytes": 1757657088,
+        "decode_hits": 0,
+        "decode_misses": 132,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "memcheck-decode": {
+        "cases": 1,
+        "launches": 91,
+        "compared_bytes": 1669644288,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 1757657088,
+        "upload_bytes": 1757657088,
+        "decode_hits": 0,
+        "decode_misses": 132,
+        "decode_evictions": 127,
+        "mismatches": 0
+      }
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "source_files_frozen_and_reverified": 733,
+    "sanitizers": "Host ASAN/UBSAN edge fixture and full ten-case prefill composition; CUDA memcheck/leak check for edge fixture and largest composed case under prefill/decode, zero errors/leaks.",
+    "profile": {
+      "calls": 64,
+      "kernels": 64,
+      "streams": 2,
+      "elements_per_call": 1048577,
+      "kernel_duration_sum_ns": 186881,
+      "runtime_api_counts": {
+        "cuKernelGetName": 64,
+        "cudaGetLastError_v3020": 128,
+        "cudaLaunchKernel_v7000": 64,
+        "cudaSetDevice_v3020": 64
+      },
+      "prohibited_runtime_calls": {},
+      "scope": "Isolated warmed F32 addition; setup/verification excluded; distinct outputs on two independent requests. Not complete MoE or vLLM timing."
+    }
+  },
+  "evidence": {
+    "directory": "/tmp/bitnet-goal-native-final",
+    "qualification_sha256": "eaf4e3a0f6e92e5ebb60760c66142e6cf2c88f837a75106b2724f9c7b751253f",
+    "source_freeze_sha256": "0ba91780f6edba44317a13ac6ea6843774d55463e9326b0c820d1dd95fb01c2b",
+    "probe_sha256": "d00133c930a5fbaf20ba531b520d02ee9a70c7eafd078afafa655c7d9153de8d",
+    "edge_probe_sha256": "43a26e6035349011b35d83ee1e478b41ac6cbedd7e65d6c12e519f675c6efebc",
+    "paired_full_layer_reference_sha256": "a7a4b0ef42022891cb9b91850c049cadbd681656e7de2ca34bc4e7ec7693685f",
+    "prior_component_chain": "docs/deepseek-v41-1017-native-moe-chain.json",
+    "preserved_source_capture": "docs/deepseek-v41-1017-native-moe-layer-reference.json"
+  },
+  "limits": [
+    "The composed schedule is still an external integration harness. Production BnSession/backend request orchestration, bounded reusable workspace setup and failure/cancellation cleanup remain required.",
+    "Native Trellis models currently have no legacy BnConfig vocabulary/context projection; existing backend session creation/matching/reset still uses legacy extents. Session integration must derive immutable native extents rather than mutating the legacy config.",
+    "The source cases use deterministic activations through actual layer39 weights. V4.1 defaults to zero hash-routing layers. Routed <=8 BC decode is outside this qualification.",
+    "Warm profile isolates addition only. Composed offload scans have zero decode-cache hits, synchronous uploads and host metadata planning; no warm-cache/full-inference performance claim.",
+    "Full attention/Engram/forward/generation/CLI, matched resident vLLM parity and continuous/chunked serving remain open."
+  ]
+}

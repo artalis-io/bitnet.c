@@ -1,0 +1,71 @@
+{
+  "status": "qualified Q6_K bank implementation; whole goal incomplete",
+  "changes": [
+    "Added Q6_K MoE metadata to quant registry.",
+    "Factored existing Q6_K vector, DP4A matrix, and integer MMA arithmetic into shared device cores, preserving dense wrappers.",
+    "Added Q6_K down to resident bank format validation and retained per-expert vector/matrix dispatch.",
+    "Grouped vector/DP4A/MMA dispatch reuses same cores, retaining total input batch precision policy.",
+    "Expanded nonzero grouped/per-expert differential from192 to416 cases; added Q5_K/Q6_K down with compatible widths and a vector schedule."
+  ],
+  "qualification": {
+    "clean-exit": {
+      "exit": 0
+    },
+    "banks-exit": {
+      "exit": 0
+    },
+    "standard-exit": {
+      "exit": 0
+    },
+    "benches-exit": {
+      "exit": 0
+    },
+    "synccheck-exit": {
+      "exit": 0
+    },
+    "cuda-exit": {
+      "exit": 0
+    },
+    "build-exit": {
+      "exit": 0
+    },
+    "memcheck-exit": {
+      "exit": 0
+    }
+  },
+  "source_sha256": {
+    "include/quant.h": "f24b37196c7afa9b571485d965a21a0e2e2985e747bfc7ea369f8b5fd4def735",
+    "src/quant/registry.c": "b6c1b74973377b595e025cc12fdaf10ceda7ea00f230eaa74e0e8fb018445486",
+    "src/gpu_cuda.cu": "a40ad78389dd74a06e7496d7fc572016cd13131703045908cdcf4a47652b3d41",
+    "src/quant/kquant_bf16_cuda.cuh": "a56c94afe8326ab2dae49c2ac5b333bb4f6ce4061dce17ec90f417cf55191710",
+    "src/gpu_cuda_moe_resident.cuh": "e96a5022e5ce127d6e3cbbb12a35cfaea2332800ced4c83119e74ccd6e934e3e",
+    "src/gpu_cuda_moe_grouped.cuh": "8b9755b1e4fbd4cfb15d4c761c024e1d82f12345b919e30d60031690fc0a9515",
+    "test/test_quant.c": "80db27670ab9d3ccce0d09696406fe237c95cddd81f2ca12c653a70df388a000",
+    "test/test_cuda_moe_bank.c": "bd2540d9cf185953a39bb196ee85faae7e98f82a2fd6cb68ced65850566dcb77"
+  },
+  "preserved_independent_fixture_sha256": {
+    "test/cuda_bf16_q4q6_reference.h": "ec7cb95ab2eb21ac6dce0d36c9af46629372dd85b5eca51535c85cf66d576084",
+    "test/cuda_bf16_q4q6_ffn_reference.h": "bcbf98fb6f857c47edb7c3fb8f47047d7b2e2c9401ff37707b058412eafdde11",
+    "test/cuda_q6_reference.h": "a064f8bab3f24f2b0df2dcc0e96e14afbf9629b1db9474eebaa7c360cb2f12c6",
+    "test/cuda_q5q6_routed_reference.h": "049cf1ad4aaadebe79442eaf458777366fe1e574c5f8c66a7ebb16d2029c1643"
+  },
+  "cpu": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "grouped_differential_cases": 416,
+  "device_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "limitations": [
+    "No actual checkpoint layer11/12/44 MoE replay yet; binder still restricts Q4_K/Q5_K profile.",
+    "Grouped tests verify grouping, sentinels, and tile tails against retained per-expert execution; independent fixtures verify existing Q6_K arithmetic rather than full new checkpoint layer outputs.",
+    "CUDA bank profile remains qualified on SM120; no CPU/Metal or full-model admission changes.",
+    "No generation, full-model correctness, serving, offload performance, or vLLM parity claim."
+  ]
+}

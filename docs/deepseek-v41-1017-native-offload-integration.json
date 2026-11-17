@@ -1,0 +1,199 @@
+{
+  "checks": {
+    "ram-warm-window1": 0,
+    "decode-window32": 0,
+    "prefill-window32": 0,
+    "asan-build": 0,
+    "asan-decode": 0,
+    "asan-prefill": 0,
+    "memcheck": 0
+  },
+  "records": {
+    "model-window1": {
+      "profiles": 550,
+      "launches": 4400,
+      "compared_bytes": 4595712000,
+      "max_payload": 13315584,
+      "max_staging_one_projection": 4438528,
+      "hits": 0,
+      "misses": 1100,
+      "evictions": 1078,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=3300 bytes=14647142400 host_hits=0 host_misses=1100 host_payload_budget=13315584 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 3300,
+        "bytes": 14647142400,
+        "host_hits": 0,
+        "host_misses": 1100,
+        "host_payload_budget": 13315584,
+        "staging_payload": 13315584
+      }
+    },
+    "prefill-window1": {
+      "profiles": 550,
+      "launches": 4400,
+      "compared_bytes": 4595712000,
+      "max_payload": 13315584,
+      "max_staging_one_projection": 4438528,
+      "hits": 0,
+      "misses": 1100,
+      "evictions": 1078,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=1650 bytes=7323571200 host_hits=550 host_misses=550 host_payload_budget=13315584 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 1650,
+        "bytes": 7323571200,
+        "host_hits": 550,
+        "host_misses": 550,
+        "host_payload_budget": 13315584,
+        "staging_payload": 13315584
+      }
+    },
+    "decode-window32": {
+      "profiles": 550,
+      "launches": 2200,
+      "compared_bytes": 4595712000,
+      "max_payload": 26631168,
+      "max_staging_one_projection": 4438528,
+      "hits": 1056,
+      "misses": 44,
+      "evictions": 0,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=132 bytes=585885696 host_hits=0 host_misses=44 host_payload_budget=13315584 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 132,
+        "bytes": 585885696,
+        "host_hits": 0,
+        "host_misses": 44,
+        "host_payload_budget": 13315584,
+        "staging_payload": 13315584
+      }
+    },
+    "prefill-window32": {
+      "profiles": 550,
+      "launches": 2200,
+      "compared_bytes": 4595712000,
+      "max_payload": 26631168,
+      "max_staging_one_projection": 4438528,
+      "hits": 1056,
+      "misses": 44,
+      "evictions": 0,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=66 bytes=292942848 host_hits=22 host_misses=22 host_payload_budget=13315584 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 66,
+        "bytes": 292942848,
+        "host_hits": 22,
+        "host_misses": 22,
+        "host_payload_budget": 13315584,
+        "staging_payload": 13315584
+      }
+    },
+    "asan-decode": {
+      "profiles": 25,
+      "launches": 200,
+      "compared_bytes": 3072000,
+      "max_payload": 13315584,
+      "max_staging_one_projection": 4438528,
+      "hits": 0,
+      "misses": 50,
+      "evictions": 49,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=150 bytes=665779200 host_hits=0 host_misses=50 host_payload_budget=13315584 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 150,
+        "bytes": 665779200,
+        "host_hits": 0,
+        "host_misses": 50,
+        "host_payload_budget": 13315584,
+        "staging_payload": 13315584
+      }
+    },
+    "asan-prefill": {
+      "profiles": 25,
+      "launches": 200,
+      "compared_bytes": 3072000,
+      "max_payload": 13315584,
+      "max_staging_one_projection": 4438528,
+      "hits": 0,
+      "misses": 50,
+      "evictions": 49,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=75 bytes=332889600 host_hits=25 host_misses=25 host_payload_budget=13315584 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 75,
+        "bytes": 332889600,
+        "host_hits": 25,
+        "host_misses": 25,
+        "host_payload_budget": 13315584,
+        "staging_payload": 13315584
+      }
+    },
+    "memcheck": {
+      "profiles": 25,
+      "launches": 200,
+      "compared_bytes": 3072000,
+      "max_payload": 13315584,
+      "max_staging_one_projection": 4438528,
+      "hits": 0,
+      "misses": 50,
+      "evictions": 49,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=150 bytes=665779200 host_hits=0 host_misses=50 host_payload_budget=13315584 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 150,
+        "bytes": 665779200,
+        "host_hits": 0,
+        "host_misses": 50,
+        "host_payload_budget": 13315584,
+        "staging_payload": 13315584
+      }
+    },
+    "ram-warm-window1": {
+      "profiles": 550,
+      "launches": 4400,
+      "compared_bytes": 4595712000,
+      "max_payload": 13315584,
+      "max_staging_one_projection": 4438528,
+      "hits": 0,
+      "misses": 1100,
+      "evictions": 1078,
+      "mismatches": 0,
+      "host_reader": "MODEL_READER_IO count=6 bytes=26631168 host_hits=1098 host_misses=2 host_payload_budget=26631168 staging_payload=13315584",
+      "host_reader_counters": {
+        "count": 6,
+        "bytes": 26631168,
+        "host_hits": 1098,
+        "host_misses": 2,
+        "host_payload_budget": 26631168,
+        "staging_payload": 13315584
+      }
+    }
+  },
+  "source_files_verified": 727,
+  "probe_sha256": "9c3a577452f2bc7976d0f231f9d63bee69741d8a3e6eaa0abd526dc80546073b",
+  "status": "Checkpoint-reader/RAM-cache/VRAM-lease integration proof; production executor remains incomplete",
+  "scope": "Existing model-owned immutable source catalog, bounded pinned RAM LRU and reserved GPU LRU composed by an external synchronous probe. This evidence adds no production executor or CLI admission.",
+  "reference": {
+    "artifact_directory": "/tmp/bitnet-goal-native-fused",
+    "frames": 22,
+    "widths_per_frame": 25,
+    "profiles_per_full_run": 550,
+    "weights": "Actual layer0 expert0 and layer39 expert383, dimension5120 hidden2304",
+    "comparison": "All uploaded bundles match preserved independent raw-weight captures; weighted slots and ordered final F32 results match original source kernels byte for byte."
+  },
+  "policies": {
+    "decode": "admit=1; cold misses admitted and hits promoted; one-RAM-slot churn and two-RAM-slot warm reuse tested.",
+    "prefill": "admit=0; seed layer0 expert0 before measurement, borrow without promotion, stage other expert without admission; final cache-only lookup proves seeded expert remains.",
+    "gpu": "Existing GPU reserve-before-upload, pinned leases shared by two requests; synchronous immutable upload before publication. Explicit probe synchronization before release between windows."
+  },
+  "limits": [
+    "Only two actual expert triples; metadata catalog covers40layers and384experts, but all-expert numeric execution is not tested here.",
+    "Window32 run has only two active experts, not32 active experts.",
+    "Probe explicitly synchronizes cache windows; asynchronous model executor, transfer overlap and transfer-stall metrics remain incomplete.",
+    "IO byte counters represent reader calls; underlying OS page cache can satisfy them. No claim of physical disk reads.",
+    "RAM/VRAM payload budgets exclude metadata, CUDA/library/context overhead and activation scratch. Staging is a separate one-expert payload.",
+    "ASAN and CUDA memcheck cover selected25-width frame; full550-profile corpus was checked by normal execution.",
+    "Production implementation files were unchanged and all727 frozen hashes were reverified."
+  ]
+}

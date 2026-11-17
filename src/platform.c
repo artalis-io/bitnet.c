@@ -189,6 +189,32 @@ void bn_platform_aligned_free(void *ptr) {
     free(ptr);
 }
 
+void bn_platform_advise_huge_pages(void *ptr, size_t size) {
+#if defined(__linux__) && !defined(__EMSCRIPTEN__) && defined(MADV_HUGEPAGE)
+    uintptr_t begin = (uintptr_t)ptr;
+    if (!ptr || size < 2u * 1024u * 1024u || size > UINTPTR_MAX - begin)
+        return;
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0)
+        return;
+    uintptr_t page = (uintptr_t)page_size;
+    uintptr_t end = begin + size;
+    uintptr_t remainder = begin % page;
+    if (remainder) {
+        uintptr_t skip = page - remainder;
+        if (end - begin < skip)
+            return;
+        begin += skip;
+    }
+    end -= end % page;
+    if (end > begin)
+        (void)madvise((void *)begin, (size_t)(end - begin), MADV_HUGEPAGE);
+#else
+    (void)ptr;
+    (void)size;
+#endif
+}
+
 char *const *bn_platform_environment(void) {
 #if defined(__EMSCRIPTEN__)
     return NULL;

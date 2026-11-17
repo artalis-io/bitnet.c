@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "full_goal_complete": false,
+  "glm_model_qualified": false,
+  "scope": "Explicit portable CPU F32 direct sum-epsilon Q/K normalization and coupled original KDA recurrence. No model registration, GPU normalization path or BF16 output bit parity claim.",
+  "reference": {
+    "cases": [
+      {
+        "case": 0,
+        "tokens": 5,
+        "heads": 2,
+        "dim": 3,
+        "eps": 1e-06,
+        "sha256": "2e04a56208a4fd32121652c2494e9b2a868c8ba76829b983330c307e1ee76977"
+      },
+      {
+        "case": 1,
+        "tokens": 9,
+        "heads": 1,
+        "dim": 1,
+        "eps": 1e-06,
+        "sha256": "d89f6480ed31f30a0f47afd827e638efd126bee9d1ff695da8c60adb7ce88d9f"
+      },
+      {
+        "case": 2,
+        "tokens": 17,
+        "heads": 64,
+        "dim": 128,
+        "eps": 1e-06,
+        "sha256": "a5836e19fd15710d6a0245a53e46b724e34f40a7e657c921e7de9d0a502bf4bf"
+      },
+      {
+        "case": 3,
+        "tokens": 65,
+        "heads": 2,
+        "dim": 128,
+        "eps": 1e-06,
+        "sha256": "a8492efc7e9a706ca91e8969b74104665d0d4ad8fd0479941bd90d108d6fdec4"
+      }
+    ],
+    "source_sha256": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/third_party/flash_linear_attention/ops/l2norm.py": "81465425b0bc974e7ef20ee98ae68c9d16dc09c320fa7bb4b7a444d97ea22652",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/kernels.py": "6f5865164682e2ea475995fbdeb1df6942baecfb06abeee3a4468c7c6344775e",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/fused_recurrent.py": "fa7f1eab41907d93b90d1d08aee2399df45c49a161620d1b790949a6f8a8c7a7"
+    }
+  },
+  "compiled_configurations": {
+    "scalar": [
+      {
+        "case": 0,
+        "state_max_abs": 1.4901161193847656e-08,
+        "out_max_abs": 1.4901161193847656e-08,
+        "norm_max_abs": 5.960464477539063e-08,
+        "compared_values": 360
+      },
+      {
+        "case": 1,
+        "state_max_abs": 1.4901161193847656e-08,
+        "out_max_abs": 1.862645149230957e-09,
+        "norm_max_abs": 5.960464477539063e-08,
+        "compared_values": 72
+      },
+      {
+        "case": 2,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 1.4901161193847656e-08,
+        "norm_max_abs": 2.9802322387695312e-08,
+        "compared_values": 36487168
+      },
+      {
+        "case": 3,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 1.1175870895385742e-08,
+        "norm_max_abs": 2.9802322387695312e-08,
+        "compared_values": 4359680
+      }
+    ],
+    "avx2": [
+      {
+        "case": 0,
+        "state_max_abs": 1.4901161193847656e-08,
+        "out_max_abs": 1.4901161193847656e-08,
+        "norm_max_abs": 5.960464477539063e-08,
+        "compared_values": 360
+      },
+      {
+        "case": 1,
+        "state_max_abs": 1.4901161193847656e-08,
+        "out_max_abs": 1.862645149230957e-09,
+        "norm_max_abs": 5.960464477539063e-08,
+        "compared_values": 72
+      },
+      {
+        "case": 2,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 1.4901161193847656e-08,
+        "norm_max_abs": 2.9802322387695312e-08,
+        "compared_values": 36487168
+      },
+      {
+        "case": 3,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 1.1175870895385742e-08,
+        "norm_max_abs": 2.9802322387695312e-08,
+        "compared_values": 4359680
+      }
+    ],
+    "avx512": [
+      {
+        "case": 0,
+        "state_max_abs": 1.4901161193847656e-08,
+        "out_max_abs": 1.4901161193847656e-08,
+        "norm_max_abs": 5.960464477539063e-08,
+        "compared_values": 360
+      },
+      {
+        "case": 1,
+        "state_max_abs": 1.4901161193847656e-08,
+        "out_max_abs": 1.862645149230957e-09,
+        "norm_max_abs": 5.960464477539063e-08,
+        "compared_values": 72
+      },
+      {
+        "case": 2,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 1.4901161193847656e-08,
+        "norm_max_abs": 2.9802322387695312e-08,
+        "compared_values": 36487168
+      },
+      {
+        "case": 3,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 1.1175870895385742e-08,
+        "norm_max_abs": 2.9802322387695312e-08,
+        "compared_values": 4359680
+      }
+    ]
+  },
+  "comparisons": 122541840,
+  "maximum_errors": {
+    "norm_max_abs": 5.960464477539063e-08,
+    "state_max_abs": 1.7881393432617188e-07,
+    "out_max_abs": 1.4901161193847656e-08
+  },
+  "validation": {
+    "clean_build_zero_warnings": true,
+    "standard": true,
+    "ssm_asan_ubsan": true,
+    "reference_fixture_reproduces_exactly": true,
+    "cuda_regression_suite": true,
+    "cuda_diagnostic_isolation": true,
+    "protected_binaries_preserved": true
+  },
+  "source_sha256": {
+    "include/model_config.h": "8f4f644e76cb3992165df7bebff0e4c86083b6ffb681862bbbef261c668d3497",
+    "include/transformer_ssm_internal.h": "58c51ef2e67abe734d16ec3f61af70dbce8b98c8fe32c1f727db4995047055af",
+    "src/transformer/ssm_scalar.c": "2352ae5c9f36371eef3ca19dab5b36a0586fb83d35fef9aa78cbf887ba5c7f4a",
+    "src/transformer/ssm_avx2.c": "fc672c491ec7e708ec86855d76948aafc785231f471045ce85c878494649aef0",
+    "src/transformer/ssm_neon.c": "23b498dd9c439e33d6f84dc22b12c51372cdd08a1d4a1165d83794a624ca79fb",
+    "src/transformer/ssm_wasm.c": "5d52d9b8c3efa7c4a0c0a3c107bec9d096a03ff3e8df6d98fb8aa56ee0efd0ac",
+    "test/test_ssm.c": "45e05f03c6f8ef0152fc47354e83ad3ed706d92eb217a03b4ee632c952036d20",
+    "test/kda_norm_reference.h": "5e9105e31024d839a1184f46b81ec4d31af8547a01217bef30e86e990eeaea46",
+    "test/kda_norm_reference.json": "b48e8075bbf57be197f6b66f87fe9e8beefd35fccfb4f3ac537048be18bfba09",
+    "test/reference_ssm_kda_norm.py": "ad514e8db1441ab1369e6ceed1f19c675dfd430572e78cb13b5bf26425930841",
+    "test/verify_ssm_kda_norm.py": "882b46561fbbb44281be5914c146f48e53e32e662c01aaafab4ebc442493a70f"
+  },
+  "evidence_directory": "/tmp/bitnet-goal-glm-norm",
+  "limits": [
+    "No GLM model wiring or whole-layer/model qualification",
+    "NEON/WASM routes added but not executed on matching hardware",
+    "Convolution and output gate/rounding need independent complete boundary qualification"
+  ]
+}

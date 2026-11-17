@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_neon_helpers.h"
 #include <arm_neon.h>
 
 void bn_quant_i2s_neon_sdot_range(void *ctx, int row_start, int row_end) {
@@ -28,10 +29,10 @@ void bn_quant_i2s_neon_sdot_range(void *ctx, int row_start, int row_end) {
                 int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one);
                 int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one);
                 int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one);
-                iaccA = vdotq_s32(iaccA, t0, vld1q_s8(xp));
-                iaccB = vdotq_s32(iaccB, t1, vld1q_s8(xp + 32));
-                iaccC = vdotq_s32(iaccC, t2, vld1q_s8(xp + 64));
-                iaccD = vdotq_s32(iaccD, t3, vld1q_s8(xp + 96));
+                iaccA = bn_neon_dot4_i8(iaccA, t0, vld1q_s8(xp));
+                iaccB = bn_neon_dot4_i8(iaccB, t1, vld1q_s8(xp + 32));
+                iaccC = bn_neon_dot4_i8(iaccC, t2, vld1q_s8(xp + 64));
+                iaccD = bn_neon_dot4_i8(iaccD, t3, vld1q_s8(xp + 96));
             }
             {
                 uint8x16_t raw = vld1q_u8(rd + 16);
@@ -40,10 +41,10 @@ void bn_quant_i2s_neon_sdot_range(void *ctx, int row_start, int row_end) {
                 int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one);
                 int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one);
                 int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one);
-                iaccA = vdotq_s32(iaccA, t0, vld1q_s8(xp));
-                iaccB = vdotq_s32(iaccB, t1, vld1q_s8(xp + 32));
-                iaccC = vdotq_s32(iaccC, t2, vld1q_s8(xp + 64));
-                iaccD = vdotq_s32(iaccD, t3, vld1q_s8(xp + 96));
+                iaccA = bn_neon_dot4_i8(iaccA, t0, vld1q_s8(xp));
+                iaccB = bn_neon_dot4_i8(iaccB, t1, vld1q_s8(xp + 32));
+                iaccC = bn_neon_dot4_i8(iaccC, t2, vld1q_s8(xp + 64));
+                iaccD = bn_neon_dot4_i8(iaccD, t3, vld1q_s8(xp + 96));
             }
             rd += 32;
             done += 128;

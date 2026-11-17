@@ -1,0 +1,729 @@
+{
+  "version": 1,
+  "goal_status": "active_incomplete",
+  "scope": "Reusable native full-request storage with exact-shape pooled leases. This qualifies retained sequential request reuse, bounded retained payload and healthy restart; it does not establish continuous GPU batching or performance parity.",
+  "interface": {
+    "header": "include/transformer_internal.h",
+    "implementation": [
+      "src/transformer/trellis_reuse.h",
+      "src/transformer/trellis_pool.h"
+    ],
+    "history_helper": "src/session.c:bn_session_native_history_restart",
+    "operations": [
+      "request_plan",
+      "prepare_request",
+      "session_restart",
+      "pool_init",
+      "pool_acquire",
+      "pool_release",
+      "pool_info",
+      "pool_free"
+    ],
+    "configuration": "Exact max_tokens, context rounded upward to256 and at least max_tokens, fused window, accumulator mode and logits mode; request geometry within caller ceiling. Maximum16 retained slots.",
+    "ownership": "Caller serializes mutations and returns each lease once after generation ends. Pool owns sessions; caller cannot reset/free them. Immutable model, backend and shared cache lifetimes outlive the pool. Copied handles rejected."
+  },
+  "restart": {
+    "boundary": "Only freshly prepared or healthy completed full-forward boundaries. Partial/staged work rejected before GPU calls. Quiesce request work, clear mutable request GPU state, fence completion, then atomically publish empty host native/token history, zero logits and position0 with new request generation.",
+    "preserved": "Request allocation, pinned staging, capacities, immutable KV page table, rotary frequencies, converted producer norms and model weights. Existing epoch/generation counters remain monotonic to expire old forward/index/history borrows.",
+    "failure": "Any clear/fence/history-publication failure after device work discards the entire backend request. Host history, logits and position are preserved until successful publication. Pool release reclaims a failed restart, counts restart_failures/discarded, and completes valid lease cleanup.",
+    "scope": "No GPU allocation, host upload or device readback during healthy restart. Private row-stage upload/workspace allocations retained and overwritten before use; this is not a claim that every retained device byte is privacy-zeroed."
+  },
+  "budgets": {
+    "scope": "All retained idle AND leased request planned payload charged independently in device/host/pinned dimensions. Shared model/expert/row caches, codec workspaces, bounded pool metadata and allocator/driver overhead remain separate; not total physical VRAM/RSS.",
+    "admission": "Reuse exact idle shape. Otherwise test feasibility against live slots before any eviction; BUSY leaves all live and idle state untouched. Reclaim idle largest-device entries as necessary, never live leases. Permanent oversize rejected before allocation. Preparation failure cleans the candidate and leaves accurate accounting.",
+    "sample_two_shapes": {
+      "prompt_tokens": [
+        2050,
+        1026
+      ],
+      "prefill_rows": [
+        2048,
+        1026
+      ],
+      "prepared_context": [
+        2304,
+        1280
+      ],
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    }
+  },
+  "benchmark": {
+    "file": "bench/bench_native_forward.c",
+    "flag": "--session-pool N (1..16), requires --text or --predict-text",
+    "default": "Unchanged fresh-session path. Opt-in pool uses each request prefill geometry and rounded required context; emits native_session_pool JSON counters and retained charges.",
+    "timing": "Existing --text-timing interval excludes acquisition and release; reported context capacity is the actual rounded pooled context. No end-to-end serving latency or reuse speedup claim."
+  },
+  "changes": {
+    "Makefile": {
+      "before": "a40bc07ca4e18dc56c022a9adc63c28e32139b179c40a518e6e136ed135a1adb",
+      "after": "cade733620e3c223d1e5d37e8228ab0c936926f462b6f2e702ab7bfa24f1ea38"
+    },
+    "test/native_session_checks.h": {
+      "before": "aa90f31ade0471fd2144c2097ae5a9802ffeb6b7b74c4273c8cafd33215a077e",
+      "after": "5fe258ca45bbb25c557df71ea28101ff577451caa0191c0ccbe4e098fb88edc5"
+    },
+    "src/session.c": {
+      "before": "d7020e18aaea5c0eef8781b6b879e14be8383d77d6eb8802a07fb6fae307d739",
+      "after": "93150fb5047d06a16cd7bef78302bdd9ec8d8a4cc5bfcf49092aad119eac97cb"
+    },
+    "include/session_internal.h": {
+      "before": "a45a0a2ffcf7e9675ae6e2c62f3cfe727b0fe29bf89c48a3b64086fe28001d3b",
+      "after": "3cd8c10d721c5523dbccfc88ae12fabdbd6411628031ba08df4c124d7a2a76c5"
+    },
+    "include/transformer_internal.h": {
+      "before": "28a10f536f5fd96b33f4bacc970b1c1060f7e6c012a0a900f911c643d3952528",
+      "after": "f607e6d4cadd76a9d0ffcc435e1888b0b72e77a71762db869582cbd06f85954d"
+    },
+    "bench/bench_native_forward.c": {
+      "before": "c41b185be7b4eab86a784433bca251b8b632f6a5e6539389ab17fe08d453fb95",
+      "after": "d49c2dbb241a2cef5ee0d4b1d72e13d9f0764c7500b30148a136f7a425c830c1"
+    },
+    "src/transformer/trellis.c": {
+      "before": "99e7262c2af511302ab3933bf27d9ca0039ed81dbc35620ba1ef264786b15da1",
+      "after": "58b61388affbc9dcba2f546577229ccd575a6647bb8dd0948e665a104933c1b4"
+    },
+    "src/transformer/trellis_reuse.h": {
+      "before": null,
+      "after": "fffc303fd2a48bc9052a66f13bdbc804f7d92543621b2f09124193fad00e19f2"
+    },
+    "src/transformer/trellis_pool.h": {
+      "before": null,
+      "after": "308f08b7622853a1be1e7c62601a487141fce12592262f19af0c08731d73a84b"
+    },
+    "test/test_native_pool.c": {
+      "before": null,
+      "after": "38f2db9dcad3ef87596abad153907b3e29c8690cd2d8532d2cdfd4e5ffede96e"
+    },
+    "test/test_native_restart.c": {
+      "before": null,
+      "after": "b08ec81edda215dd78883bf4e0cf6f555298c74bab70f8bdefd4d9c324eba171"
+    }
+  },
+  "baseline": {
+    "exit": 0,
+    "zero_warnings": true,
+    "prior": {
+      "Makefile": "a40bc07ca4e18dc56c022a9adc63c28e32139b179c40a518e6e136ed135a1adb",
+      "src/session.c": "d7020e18aaea5c0eef8781b6b879e14be8383d77d6eb8802a07fb6fae307d739",
+      "include/session_internal.h": "a45a0a2ffcf7e9675ae6e2c62f3cfe727b0fe29bf89c48a3b64086fe28001d3b",
+      "include/transformer_internal.h": "28a10f536f5fd96b33f4bacc970b1c1060f7e6c012a0a900f911c643d3952528",
+      "src/transformer/trellis.c": "99e7262c2af511302ab3933bf27d9ca0039ed81dbc35620ba1ef264786b15da1",
+      "test/native_session_checks.h": "aa90f31ade0471fd2144c2097ae5a9802ffeb6b7b74c4273c8cafd33215a077e"
+    }
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "qualification": {
+    "checks": {
+      "unit-pool": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./test_native_pool"
+        ]
+      },
+      "unit-restart": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./test_native_restart"
+        ]
+      },
+      "asan-pool": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-pool/asan-pool"
+        ]
+      },
+      "asan-restart": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-pool/asan-restart"
+        ]
+      },
+      "control-long": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048"
+        ]
+      },
+      "control-short": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048"
+        ]
+      },
+      "control512": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-cli/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048"
+        ]
+      },
+      "pool2-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "pool2-ba": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "pool2-ab-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "pool2-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "pool2-release-probe": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-pool/pool-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "pool1-eviction": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "1"
+        ]
+      },
+      "asan-pool2-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-pool/asan-bench",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "asan-pool2-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-pool/asan-bench",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "memcheck-pool2-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/usr/local/cuda/bin/compute-sanitizer",
+          "--tool",
+          "memcheck",
+          "--error-exitcode",
+          "86",
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "initcheck-pool2-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/usr/local/cuda/bin/compute-sanitizer",
+          "--tool",
+          "initcheck",
+          "--error-exitcode",
+          "86",
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "2"
+        ]
+      },
+      "native-legacy": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-forward-resume/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "1",
+          "0"
+        ]
+      },
+      "qwen27-compat": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "bash",
+          "test/compare_llama.sh",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--cuda",
+          "--llama-cuda",
+          "--strict",
+          "-n",
+          "24",
+          "-t",
+          "8",
+          "--maxseq",
+          "512"
+        ]
+      }
+    },
+    "goal_status": "active",
+    "source_files": 891,
+    "reference_files": 51555,
+    "scope": "Full native retained session pool: exact-shape reuse, bounded idle/live payload, source-exact long/short A/B both orders and committed/prediction paths; ASAN/CUDA tools/legacy/Qwen compatibility; no end-to-end performance claim"
+  },
+  "source_exact_requests": {
+    "unit-pool": 0,
+    "unit-restart": 0,
+    "asan-pool": 0,
+    "asan-restart": 0,
+    "control-long": 2,
+    "control-short": 2,
+    "control512": 2,
+    "pool2-ab": 4,
+    "pool2-ba": 4,
+    "pool2-ab-predict": 4,
+    "pool2-ba-predict": 4,
+    "pool2-release-probe": 4,
+    "pool1-eviction": 4,
+    "asan-pool2-ab": 4,
+    "asan-pool2-ba-predict": 4,
+    "memcheck-pool2-ab": 4,
+    "initcheck-pool2-ba-predict": 4,
+    "native-legacy": 0,
+    "qwen27-compat": 0
+  },
+  "source_exact_total": 46,
+  "pooled_source_exact_total": 40,
+  "successful_real_reuses": 18,
+  "pools": {
+    "pool2-ab": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "pool2-ba": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "pool2-ab-predict": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "pool2-ba-predict": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "pool2-release-probe": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "pool1-eviction": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 1,
+      "allocated": 1,
+      "leased": 0,
+      "created": 4,
+      "reused": 0,
+      "released": 4,
+      "evicted": 3,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 1762910235,
+      "reserved_host": 9456296,
+      "reserved_pinned": 12607488
+    },
+    "asan-pool2-ab": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "asan-pool2-ba-predict": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "memcheck-pool2-ab": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    },
+    "initcheck-pool2-ba-predict": {
+      "kind": "native_session_pool",
+      "timing_scope": "generation_only_excludes_acquire_release",
+      "slots": 2,
+      "allocated": 2,
+      "leased": 0,
+      "created": 2,
+      "reused": 2,
+      "released": 4,
+      "evicted": 0,
+      "discarded": 0,
+      "restart_failures": 0,
+      "reserved_device": 4786680158,
+      "reserved_host": 19117008,
+      "reserved_pinned": 37773312
+    }
+  },
+  "restart_proofs": [
+    "POOL_RESTART_VERIFIED zero144 sync2 retained_device3023769923 generation1",
+    "POOL_RESTART_VERIFIED zero144 sync2 retained_device4786680158 generation1",
+    "POOL_RESTART_VERIFIED zero144 sync2 retained_device4786680158 generation2",
+    "POOL_RESTART_VERIFIED zero144 sync2 retained_device4786680158 generation2"
+  ],
+  "source_scope": {
+    "comparison": "Every actual encoded/forward ID, published last F32 vocabulary word, generated ID, counted UTF8 chunk/order/full output and final history position compare exactly with preserved source fixtures. Long2050 chunk2048+2, short1026 chunk1026; old512-chunk control retained.",
+    "fixtures": [
+      "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+      "/tmp/bitnet-goal-native-prefill1026/paired",
+      "/tmp/bitnet-goal-native-cli/paired"
+    ],
+    "profile": "Explicit Diffbot INT4 BF16 lookup to Exllama F16 Engram source adapter, not unmodified Diffbot whole-runtime equivalence.",
+    "matrix": "All four AB/BA x committed/prediction combinations,4 requests each. One-slot alternating shapes forces3 idle evictions. Two ASAN4-request cases; CUDA memcheck committed AB and initcheck prediction BA,4 each. Release probe4 requests. Fresh blocking controls6 requests, legacy native14 checks, fresh Qwen27 strict192/192."
+  },
+  "tests": {
+    "synthetic": "Exact shape/capacity reuse, idle accounting, independently binding budgets, live BUSY without eviction, slot pressure, constructor/prepare/restart failures, invalid/copy/double release and cleanup. Real private restart fixture checks mutable zero/immutable guards, expired epochs and injected first/final fence/partial zero/history failure teardown; real native history helper checks stale tickets and staged rejection.",
+    "asan": "clang18 ASAN/UBSAN pool unit; restart test includes actual trellis implementation and instrumented C dependencies. Benchmark instruments new session/trellis objects plus generation/tokenizer/JSON/bridge/host-cache objects; unchanged GPU/other objects normal. Not whole-runtime ASAN.",
+    "cuda": "Full CUDA suite and diagnostic isolation passed; pooled real-model memcheck/initcheck zero errors; no racecheck claim.",
+    "allocation_probe": "Qualification-only wrapper denies request create, resident allocation/write/read and upload reserve/acquire/submit during healthy release. Real full-forward ticket valid before release, invalid afterward; all retained charges and slot count unchanged; exactly2 fences and mutable zero fills observed.",
+    "reference_audit": "891 frozen sources and all reference contents verified with4 hash workers/all futures examined. Only11 intentional source paths and actual compiler outputs repinned. User4 binaries preserved. No numerical references changed."
+  },
+  "resolved_prequalification_issues": [
+    "Synthetic GPU-view fixture initially used incorrect aggregate field order; changed fixture to designated initializers and byte-width-aware guards. No numerical reference change.",
+    "ASAN compile initially omitted march=native required by existing AVX2 sources. Restored flag. Existing unused static MoE helper warnings under clang suppressed only in the standalone sanitizer command, after Wall; normal clean product/test/CUDA builds have zero warnings. Archived initial logs.",
+    "Temporary release probe initially missed session.h; corrected before freeze.",
+    "Corrected opt-in benchmark context-capacity timing metadata before freeze and recompiled/relinked final binaries."
+  ],
+  "limits": [
+    "Real pooled requests in this component are sequential retained reuse. Multiple active pooled leases and admission under actual interleaved CUDA work still need combined scheduler qualification. Existing scheduler fresh-lease tests remain separately qualified.",
+    "No production CLI/default service adapter or network integration; benchmark pooling is opt-in. No multi-request GEMM or GPU overlap/throughput/tail qualification.",
+    "Source checks copy reference logits and perform file IO during callbacks; their times are correctness evidence only. No new performance or vLLM parity result.",
+    "Two related prompts, five generated tokens, context at most2304; broader domains, longer generation and natural driver failures remain to qualify.",
+    "No new ARM/Metal runtime qualification, all-model completion or fully resident matched vLLM within5% claim."
+  ],
+  "next": "Integrate separately budgeted retained pooling with the native streaming scheduler; qualify interleaved leases/cancellation/refill and request-sized admission. Add lightweight arrival/throughput/tail instrumentation including acquisition/restart cleanup. Continue actual multi-request grouped/tiled execution and matched vLLM comparisons.",
+  "artifacts": "/tmp/bitnet-goal-native-pool"
+}

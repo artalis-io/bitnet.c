@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_neon_helpers.h"
 #include <arm_neon.h>
 
 static inline float q6k_fp16_to_f32(uint16_t h) {
@@ -87,9 +88,9 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
                     const int8x16_t wb = vreinterpretq_s8_u8(        \
                         vorrq_u8((low_b), (high_b)));                 \
                     acc0 = vmlaq_n_s32(                               \
-                        acc0, vdotq_s32(zero, wa, xv), sc0[scale_idx]); \
+                        acc0, bn_neon_dot4_i8(zero, wa, xv), sc0[scale_idx]); \
                     acc1 = vmlaq_n_s32(                               \
-                        acc1, vdotq_s32(zero, wb, xv), sc1[scale_idx]); \
+                        acc1, bn_neon_dot4_i8(zero, wb, xv), sc1[scale_idx]); \
                 } while (0)
 
                 // Keep Q6 values unsigned and apply the -32 correction once
@@ -170,7 +171,7 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
                     const int8x16_t w = vreinterpretq_s8_u8(        \
                         vorrq_u8((low), (high)));                    \
                     acc = vmlaq_n_s32(                               \
-                        acc, vdotq_s32(zero, w,                      \
+                        acc, bn_neon_dot4_i8(zero, w,                      \
                                        vld1q_s8(xb + (xoff))),       \
                         sc[scale_idx]);                              \
                 } while (0)
@@ -259,14 +260,14 @@ void bn_quant_q6k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                     int base = chunk * 8;
                     const int8_t *xbc = xb + chunk * 128;
 
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+0], vld1q_s8(xbc)), (int32_t)sc[0]);
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+1], vld1q_s8(xbc + 16)), (int32_t)sc[1]);
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+2], vld1q_s8(xbc + 32)), (int32_t)sc[2]);
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+3], vld1q_s8(xbc + 48)), (int32_t)sc[3]);
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+4], vld1q_s8(xbc + 64)), (int32_t)sc[4]);
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+5], vld1q_s8(xbc + 80)), (int32_t)sc[5]);
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+6], vld1q_s8(xbc + 96)), (int32_t)sc[6]);
-                    acc = vmlaq_n_s32(acc, vdotq_s32(zero, W_all[base+7], vld1q_s8(xbc + 112)), (int32_t)sc[7]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+0], vld1q_s8(xbc)), (int32_t)sc[0]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+1], vld1q_s8(xbc + 16)), (int32_t)sc[1]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+2], vld1q_s8(xbc + 32)), (int32_t)sc[2]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+3], vld1q_s8(xbc + 48)), (int32_t)sc[3]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+4], vld1q_s8(xbc + 64)), (int32_t)sc[4]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+5], vld1q_s8(xbc + 80)), (int32_t)sc[5]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+6], vld1q_s8(xbc + 96)), (int32_t)sc[6]);
+                    acc = vmlaq_n_s32(acc, bn_neon_dot4_i8(zero, W_all[base+7], vld1q_s8(xbc + 112)), (int32_t)sc[7]);
 
                     sc += 8;
                 }

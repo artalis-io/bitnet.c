@@ -1,0 +1,208 @@
+{
+  "milestone": "Model-owned same-request native Engram stage",
+  "status": "qualified connected Engram stage; full goal remains active",
+  "parent": "docs/deepseek-v41-1017-native-engram-math.json",
+  "implementation": {
+    "architecture": "BnModelNativeEngramMath and bn_model_arch_native_engram_math own the explicit BF16-lookup/F16-math bridge, dimensions and once-rounded gate scale. Model adapter exposes it without transformer architecture calls. Scalar query requires FE_TONEAREST, matching source setup. This is not original Diffbot full-forward arithmetic or CLI admission.",
+    "request": "TrellisEngram extends the existing canonical TrellisRequest. Model-owned native WKV and raw BF16 K/Q handles are borrowed from the same backend core/parameter owner. Hash layouts, row-ID scratch and nine math views are prepared once; request teardown precedes metadata free.",
+    "flow": [
+      "Raw tokens -> model-owned compressed map -> staged session history",
+      "Same history window -> independently resolved layer1/layer14 hash layouts",
+      "Shared bounded RAM row cache -> two pinned plane uploads -> canonical request BF16 row bank",
+      "Same BF16 resident view -> explicit finite-range FP16 bridge -> two strided GEMMs, grouped norms, dot/gate/residual math",
+      "Borrowed result views bound to session, request generation, history epoch, math epoch and row-bank epoch"
+    ],
+    "batching": "Full staged batches must fit a row bank. Capacity is explicit; insufficient capacity rejects during planning. GEMM row counts are preserved rather than silently subdivided into smaller row-bank math tiles.",
+    "history": "Setup requires prepared matching host history. The stage never commits history/position/KV. Probe commits only after both Engram layers complete. Whole-model completion gating and actual KV/recurrent-state rewind remain future integration.",
+    "failure": "Early metadata rejection and busy leave outputs/history unchanged. Busy performs no cache/LRU/source reads. Storage/domain rejection preserves prior resident results; cache fills may remain. Backend failure destroys the canonical request, preserves uncommitted host history, and requires reset/setup. Late host and device setup failures unwind unpublished request resources.",
+    "compatibility": "Existing row-only submit retains its BF16 domain. F16 math uses the new stronger optional submit path, selected through registry-owned behavior and backend policy helpers. No CPU-weight GPU handles, provider math or default generation path added."
+  },
+  "finite_f16_domain": {
+    "registry": "BnQuantRowScaledOps.validate_f16",
+    "implementation": "bn_quant_int4_fp16s32_validate_f16",
+    "backend_entry": "bn_backend_session_row_stage_submit_f16",
+    "boundary": "Validate actual decoded BF16 magnitudes before either DMA. BF16 magnitude>=0x4780 overflows finite FP16; integer source-exact decoding handles high scales. Small scales prove an entire block safe without decoding all nibbles.",
+    "reference": {
+      "source": "/tmp/bitnet-goal-native-engram-rows/exhaustive.bf16",
+      "source_sha256": "6aad26dabe2cea0349070e1b224e1ca69d04e5115a6b168b1b11035f49db2dfb",
+      "method": "Original Diffbot BF16 lookup corpus -> Torch CPU float16 -> isfinite; first16 scalar nibbles per scale",
+      "cases": 507904,
+      "accepted": 479000,
+      "fnv1a": "0xf6e795da027822a9",
+      "torch": "2.14.0+cu130"
+    },
+    "tests": "507904 original-source scale/nibble decisions match Torch half/isfinite; 479000 accepted. Covers high-scale zero rows, late overflow, invalid scales/geometry and preservation of legacy BF16 staging."
+  },
+  "independent_reference": {
+    "producer": "test/reference_native_engram_stage.py",
+    "source_methods": "Unchanged original NGramEmbedding shift/hash AST and unchanged original Engram math function/kernels from the prior independent capture. Actual raw INT4/scales and original WKV/norm captures. No native candidate import or expected-output generation.",
+    "same_history": "Prior per-layer raw-token cases differ. Fresh captures explicitly give both layers the same mapped window; five retained layer1 cases also match every old boundary byte-for-byte. Prior artifacts remain unchanged.",
+    "groups": 12,
+    "layer_cases": 24,
+    "sessions": 2,
+    "batches": [
+      "Independent1/7/17/129/513",
+      "Nonzero single-token decode",
+      "Coherent513-token stream split1/7/17/129/359",
+      "Mapped-history rewind to17 and replay17"
+    ],
+    "streams": "Synthetic F32 residual streams; actual model-owned checkpoint projections/norms and actual table rows. No full-model activation/generation claim.",
+    "replay": "Original packaged-cuBLAS and paired system13.10 captures preserved and replay byte-identically. Native matches paired corpus. Source/parent/input tampering rejects before output; conflicting payload preserved."
+  },
+  "validation": {
+    "baseline": "Full standard suite passed before edits",
+    "clean_product_build": "zero warnings",
+    "standard_suite": "passed",
+    "serving_bench_and_runtime_builds": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "final_probe_and_cpu_sanitizer_builds": "zero warnings",
+    "checks": {
+      "asan-domain": 0,
+      "asan-row-staging": 0,
+      "model-policy": 0,
+      "asan-model-policy": 0,
+      "normal": 0,
+      "asan": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "replay-original": 0,
+      "replay-paired": 0,
+      "negative-reference": 0,
+      "resident-profile": 0,
+      "resident-export": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 839,
+    "per_full_probe": {
+      "calls": 48,
+      "rows": 115008,
+      "exact_bytes": 1933437824,
+      "commits": 24,
+      "hot_heap_calls": 0,
+      "history_bytes": 4198492,
+      "math_host_bytes": 103408,
+      "math_device_bytes": 242702352
+    },
+    "cache": {
+      "layer1_misses": 12336,
+      "layer14_misses": 12311,
+      "logical_source_bytes_requested": 3549168,
+      "evictions": 0,
+      "second_session_calls_with_zero_source_io": 24,
+      "successful_hot_linked_heap_calls": 0,
+      "injected_error_teardown_linked_heap_calls": 13,
+      "scope": "Fresh logical LRU state, not cold physical storage/page cache. Teardown frees are intentionally allowed and separately counted. Shared cache access is caller-serialized."
+    },
+    "faults": "Budget-1 rejection; late host-controller OOM; final GPU allocation failure; bad metadata; forced busy with byte-identical cache statistics; backend rejection poisons/releases request while history stays pending; reset/setup recovery succeeds.",
+    "sanitizers": "ASAN/UBSAN cover all new C controller, quant-domain and probe paths; CUDA translation units use normal builds. Memcheck full leaks and initcheck cover the full real-model pipeline, zero errors/leaks. No new GPU kernels; no unbounded whole-core racecheck.",
+    "qwen27": "Fresh strict CUDA192/192 sampled IDs, first8/8, zero count mismatch, words147/147.",
+    "build_correction": "Initial full standard run caught a direct quant predicate in transformer code. The capability query moved to backend_quant.h; backend matrix and the complete clean build/suites then passed."
+  },
+  "memory_scope": {
+    "max_tokens": 513,
+    "hash_rows_per_bank": 12312,
+    "banks": 2,
+    "math_device_bytes_per_request": 242702352,
+    "math_host_bytes_per_request": 103408,
+    "history_bytes_per_session": 4198492,
+    "row_bank_device_bytes_per_request": 16153344,
+    "row_bank_pinned_bytes_per_request": 6303744,
+    "row_controller_host_bytes_per_request": 600,
+    "ram_cache_budget_per_table": 8388608,
+    "tables": 2,
+    "scope": "Selected extra allocations only. Base session raw history/logits/arena, native FFN/BLAS request resources, model weights/token map, cache/index metadata, allocator/context overhead and OS page cache are separate."
+  },
+  "resident_trace": {
+    "calls": 16,
+    "tokens_per_call": 129,
+    "streams": 2,
+    "kernel_launches": 160,
+    "kernels_per_call": 10,
+    "kernels": [
+      {
+        "name": "bn_cuda_gdn::add_f32_kernel(float *, const float *, const float *, unsigned long)",
+        "calls": 16,
+        "nanoseconds": 782434
+      },
+      {
+        "name": "bn_cuda_native_ple::cast_lookup(const __nv_bfloat16 *, __half *, unsigned long)",
+        "calls": 16,
+        "nanoseconds": 149472
+      },
+      {
+        "name": "bn_cuda_native_ple::gate_value(const float *, const __half *, float *, unsigned long, int, int, float)",
+        "calls": 16,
+        "nanoseconds": 217729
+      },
+      {
+        "name": "bn_cuda_rows::int4_fp16s32_kernel(__nv_bfloat16 *, const unsigned char *, const __half *, unsigned long, int)",
+        "calls": 16,
+        "nanoseconds": 125090
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_256x80x64_2_64x40x64_tmaAB_alignCD4_bz_NNNN",
+        "calls": 16,
+        "nanoseconds": 3239305
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_256x80x64_2_64x40x64_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 16,
+        "nanoseconds": 981250
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 16,
+        "nanoseconds": 758209
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<float, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 16,
+        "nanoseconds": 951683
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "calls": 16,
+        "nanoseconds": 105184
+      },
+      {
+        "name": "void gemv2T_kernel_val<int, int, float, float, float, float, (int)128, (int)16, (int)4, (int)4, (bool)0, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13, T6, T6)",
+        "calls": 16,
+        "nanoseconds": 275805
+      }
+    ],
+    "summed_kernel_nanoseconds": 7586161,
+    "h2d_transfers": 32,
+    "h2d_bytes": 7133184,
+    "h2d_bytes_per_call": 445824,
+    "summed_copy_nanoseconds": 302369,
+    "activation_readbacks": 0,
+    "device_to_device_copies": 0,
+    "captured_cuda_allocations": 0,
+    "captured_memsets": 0,
+    "explicit_caller_device_fences": 1,
+    "primitive_internal_host_fences": 0,
+    "not_ready_event_queries": 168,
+    "runtime_apis": {
+      "cuKernelGetName": 112,
+      "cuKernelSetAttribute": 32,
+      "cuLaunchKernelEx": 32,
+      "cuStreamGetGreenCtx": 96,
+      "cudaDeviceSynchronize_v3020": 1,
+      "cudaEventQuery_v3020": 200,
+      "cudaEventRecord_v3020": 32,
+      "cudaLaunchKernelExC_v11060": 16,
+      "cudaLaunchKernel_v7000": 112,
+      "cudaMemcpyAsync_v3020": 32
+    },
+    "scope": "Warmed row-cache payloads with required pinned packed/scales H2D; private two-request streams. EventQuery NOT_READY is normal nonblocking backpressure. One explicit caller completion fence at capture end. Summed kernel/copy durations are diagnostic, not full-model latency or vLLM parity."
+  },
+  "qualification_artifacts": "/tmp/bitnet-goal-native-engram-stage",
+  "not_claimed": [
+    "Whole-model execution, HCA/residual orchestration, generation or default CLI admission",
+    "Whole-model commit/failure transaction or actual backend KV/recurrent-state rewind",
+    "Native text encoding or multimodal support",
+    "Thread-safe concurrent shared-cache access",
+    "Cold physical-storage performance, serving concurrency/tails or matched vLLM parity",
+    "New CPU/ARM/Metal execution coverage"
+  ]
+}

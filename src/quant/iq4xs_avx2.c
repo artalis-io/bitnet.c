@@ -146,10 +146,12 @@ typedef struct {
 
 static void iq4xs_decode_panel_x8(BnIQ4XSPanelX8 *panel,
                                   const BnQWeight *weight,
-                                  int n_bpr, int row0) {
-    for (int b = 0; b < n_bpr; b++) {
-        BnIQ4XSPanelX8 *dst = &panel[b];
+                                  int n_bpr, int row0, int first, int last) {
+    for (int b = first; b < last; b++) {
+        BnIQ4XSPanelX8 *dst = &panel[b - first];
+        if (weight->rows - row0 < 8) memset(dst, 0, sizeof(*dst));
         for (int r = 0; r < 8; r++) {
+            if (row0 + r >= weight->rows) break;
             size_t index = (size_t)(row0 + r) * n_bpr + b;
             if (weight->type == BN_GGUF_TENSOR_IQ4_XS) {
                 const BnBlockIQ4XS *src =
@@ -240,6 +242,35 @@ static inline __m256i iq4xs_panel_dot4(__m256i acc, __m256i weights,
         acc, _mm256_madd_epi16(pairs, _mm256_set1_epi16(1)));
 }
 
+static inline __m256i iq_panel_superblock_dot(
+    const BnIQ4XSPanelX8 *p, const int8_t *x) {
+    __m256i sumi = _mm256_setzero_si256();
+    for (int sb = 0; sb < BN_QK_K / 16; sb++) {
+        __m128i x16 = _mm_loadu_si128(
+            (const __m128i *)(x + sb * 16));
+        __m256i xv = _mm256_broadcastsi128_si256(x16);
+        __m256i isum = _mm256_setzero_si256();
+        const int8_t *w = p->qs + sb * 128;
+        isum = iq4xs_panel_dot4(
+            isum, _mm256_loadu_si256((const __m256i *)(w + 0)),
+            _mm256_shuffle_epi32(xv, 0x00));
+        isum = iq4xs_panel_dot4(
+            isum, _mm256_loadu_si256((const __m256i *)(w + 32)),
+            _mm256_shuffle_epi32(xv, 0x55));
+        isum = iq4xs_panel_dot4(
+            isum, _mm256_loadu_si256((const __m256i *)(w + 64)),
+            _mm256_shuffle_epi32(xv, 0xaa));
+        isum = iq4xs_panel_dot4(
+            isum, _mm256_loadu_si256((const __m256i *)(w + 96)),
+            _mm256_shuffle_epi32(xv, 0xff));
+        __m256i scales = _mm256_cvtepi8_epi32(
+            _mm_loadl_epi64((const __m128i *)(p->scales + sb * 8)));
+        sumi = _mm256_add_epi32(
+            sumi, _mm256_mullo_epi32(isum, scales));
+    }
+    return sumi;
+}
+
 void bn_quant_iq_panel_avx2_matmul_range(void *ctx,
                                          int group_start,
                                          int group_end) {
@@ -270,37 +301,14 @@ void bn_quant_iq_panel_avx2_matmul_range(void *ctx,
 
     for (int group = group_start; group < group_end; group++) {
         int row0 = group * 8;
-        iq4xs_decode_panel_x8(panel, c->W, n_bpr, row0);
+        iq4xs_decode_panel_x8(panel, c->W, n_bpr, row0, 0, n_bpr);
         for (int t = 0; t < c->n_tokens; t++) {
             __m256 sumf = _mm256_setzero_ps();
             for (int b = 0; b < n_bpr; b++) {
                 const BnIQ4XSPanelX8 *p = &panel[b];
                 const int8_t *x = c->x_q +
                     (size_t)t * c->cols + (size_t)b * BN_QK_K;
-                __m256i sumi = _mm256_setzero_si256();
-                for (int sb = 0; sb < BN_QK_K / 16; sb++) {
-                    __m128i x16 = _mm_loadu_si128(
-                        (const __m128i *)(x + sb * 16));
-                    __m256i xv = _mm256_broadcastsi128_si256(x16);
-                    __m256i isum = _mm256_setzero_si256();
-                    const int8_t *w = p->qs + sb * 128;
-                    isum = iq4xs_panel_dot4(
-                        isum, _mm256_loadu_si256((const __m256i *)(w + 0)),
-                        _mm256_shuffle_epi32(xv, 0x00));
-                    isum = iq4xs_panel_dot4(
-                        isum, _mm256_loadu_si256((const __m256i *)(w + 32)),
-                        _mm256_shuffle_epi32(xv, 0x55));
-                    isum = iq4xs_panel_dot4(
-                        isum, _mm256_loadu_si256((const __m256i *)(w + 64)),
-                        _mm256_shuffle_epi32(xv, 0xaa));
-                    isum = iq4xs_panel_dot4(
-                        isum, _mm256_loadu_si256((const __m256i *)(w + 96)),
-                        _mm256_shuffle_epi32(xv, 0xff));
-                    __m256i scales = _mm256_cvtepi8_epi32(
-                        _mm_loadl_epi64((const __m128i *)(p->scales + sb * 8)));
-                    sumi = _mm256_add_epi32(
-                        sumi, _mm256_mullo_epi32(isum, scales));
-                }
+                __m256i sumi = iq_panel_superblock_dot(p, x);
                 __m256 scale = _mm256_mul_ps(
                     _mm256_loadu_ps(p->d),
                     _mm256_set1_ps(c->x_d[(size_t)t * n_bpr + b]));
@@ -310,6 +318,43 @@ void bn_quant_iq_panel_avx2_matmul_range(void *ctx,
         }
     }
     free(panel);
+}
+
+/* Physical row ranges, including partial panels. No heap allocation or
+ * alternate arithmetic on allocation failure. Decode once per four tokens. */
+void bn_quant_iq_panel_avx2_tiled_matmul_range(void *ctx, int start, int end) {
+    BnKQuantMatmulCtx *c = ctx;
+    int n_bpr = c->cols / BN_QK_K;
+    for (int row0 = start; row0 < end; row0 += 8) {
+        int nr = end - row0;
+        if (nr > 8) nr = 8;
+        for (int t0 = 0; t0 < c->n_tokens; t0 += 4) {
+            int nt = c->n_tokens - t0;
+            if (nt > 4) nt = 4;
+            __m256 sums[4];
+            for (int j = 0; j < nt; j++) sums[j] = _mm256_setzero_ps();
+            for (int b = 0; b < n_bpr; b++) {
+                BnIQ4XSPanelX8 panel;
+                iq4xs_decode_panel_x8(&panel, c->W, n_bpr, row0, b, b + 1);
+                const BnIQ4XSPanelX8 *p = &panel;
+                for (int j = 0; j < nt; j++) {
+                    int t = t0 + j;
+                    const int8_t *x = c->x_q + (size_t)t * c->cols + b * BN_QK_K;
+                    __m256i sumi = iq_panel_superblock_dot(p, x);
+                    __m256 block = _mm256_mul_ps(_mm256_cvtepi32_ps(sumi),
+                                                     _mm256_loadu_ps(p->d));
+                    sums[j] = _mm256_fmadd_ps(block,
+                        _mm256_set1_ps(c->x_d[(size_t)t * n_bpr + b]), sums[j]);
+                }
+            }
+            for (int j = 0; j < nt; j++) {
+                float lanes[8];
+                _mm256_storeu_ps(lanes, sums[j]);
+                memcpy(c->out + (size_t)(t0 + j) * c->W->rows + row0,
+                       lanes, (size_t)nr * sizeof(float));
+            }
+        }
+    }
 }
 
 #define IQ4XS_MATMUL_TILE_T 8

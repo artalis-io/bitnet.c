@@ -1,0 +1,445 @@
+{
+  "schema": 1,
+  "status": "declared_checkpoint_and_numerical_profile_matrix",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "scope": "Four requested modern model families, six backend rows each, exact storage recipes and explicit product profiles. This table records evidence; it does not grant support to arbitrary GGUF formats or architectures.",
+  "models": [
+    {
+      "model": "Qwen3.8 27B",
+      "checkpoint": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "product_entrypoint": "--cuda-batch",
+      "profile": "dense-bf16",
+      "execution_precision": "Explicit BF16 arithmetic profile; role-specific quant execution remains in the quant registry.",
+      "numerical_contract": "Explicit selected normalization/recurrent policy; original vLLM profile scoped to pinned configuration.",
+      "shared_gpu_execution": "Packed dense attention/projection/FFN cohorts",
+      "correctness_evidence": [
+        "docs/gguf-product-batch.json",
+        "docs/external-stdio-serving.json",
+        "docs/vllm-default-resident-performance.json",
+        "docs/vllm-default-reproducibility.json"
+      ],
+      "managed_memory_evidence": "docs/dense-cuda-serving-memory.json",
+      "resident_vllm_timing_qualified_for_declared_workload": true,
+      "production_release_ready": false
+    },
+    {
+      "model": "Qwen3.8 Flash Next",
+      "checkpoint": "/data/models/gguf/qwen3_8/flash_next/q4_k_xl/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "product_entrypoint": "--cuda-batch",
+      "profile": "flash-bf16",
+      "execution_precision": "Explicit BF16 arithmetic profile; role-specific quant execution remains in the quant registry.",
+      "numerical_contract": "Independent declared BF16 head profile; full unmodified-runtime server equivalence is not qualified.",
+      "shared_gpu_execution": "Shared expert uploads and joint cohort FFN launches; request-private attention/recurrent/history; counted singleton fallbacks.",
+      "correctness_evidence": [
+        "docs/gguf-product-batch.json",
+        "docs/external-stdio-serving.json",
+        "docs/cuda-joint-expert-kernels.json"
+      ],
+      "managed_memory_evidence": "docs/cuda-serving-memory.json",
+      "resident_vllm_timing_qualified_for_declared_workload": false,
+      "production_release_ready": false
+    },
+    {
+      "model": "GLM5.3 Flash",
+      "checkpoint": "/data/models/gguf/glm5_3_flash/ud_q4_k_xl/GLM-5.3-Flash-UD-Q4_K_XL-00001-of-00006.gguf",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "product_entrypoint": "--cuda-batch",
+      "profile": "glm-recurrent",
+      "execution_precision": "Explicit BF16 arithmetic profile; role-specific quant execution remains in the quant registry.",
+      "numerical_contract": "Captured cuBLAS13.10 pair, original recurrent-KDA/chronological selected-set loop; not full-plugin/HF equivalence.",
+      "shared_gpu_execution": "Shared expert uploads and joint cohort FFN launches; request-private attention/recurrent/history; counted singleton fallbacks.",
+      "correctness_evidence": [
+        "docs/gguf-product-batch.json",
+        "docs/external-stdio-serving.json",
+        "docs/cuda-joint-expert-kernels.json"
+      ],
+      "managed_memory_evidence": "docs/cuda-serving-memory.json",
+      "resident_vllm_timing_qualified_for_declared_workload": false,
+      "production_release_ready": false
+    },
+    {
+      "model": "DeepSeek V4.1 Flash1017",
+      "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+      "storage_recipe": "Native safetensors EXL3_MUL1_3 experts and INT4_FP16S32 Engram rows",
+      "product_entrypoint": "--native-text",
+      "profile": "exl3-int4-f16",
+      "execution_precision": "Explicit INT4/BF16 lookup adapted to F16 Engram/head/EXL3 arithmetic.",
+      "numerical_contract": "Independent adapted source values; not unmodified Diffbot full-runtime equivalence.",
+      "shared_gpu_execution": "Shared expert leases/transfers, descriptor-joint cooperative fused prefill FFNs and bounded <=8-token decode lease cohorts; decode/folded kernels stay private, mixed small/large fallback is counted.",
+      "correctness_evidence": [
+        "docs/native-product-batch.json",
+        "docs/external-stdio-serving.json",
+        "docs/native-shared-expert-groups.json",
+        "docs/native-joint-fused-prefill.json"
+      ],
+      "managed_memory_evidence": "docs/native-cuda-serving-memory.json",
+      "resident_vllm_timing_qualified_for_declared_workload": false,
+      "production_release_ready": false,
+      "offloaded_measurement_evidence": "docs/native-prefill-offload-measurements.json",
+      "ram_paging_measurement_evidence": "docs/expert-ram-huge-pages.json",
+      "transfer_stall_evidence": "docs/expert-transfer-stall-attribution.json",
+      "expert_wave_lookahead_evidence": "docs/native-expert-wave-lookahead.json",
+      "offload_working_set_evidence": "docs/native-offload-working-sets.json",
+      "ram_page_control_evidence": "docs/native-ram-page-policy-control.json",
+      "ram_page_policy_evidence": "docs/native-ram-page-policy.json",
+      "filesystem_cold_evidence": "docs/native-filesystem-cold-page-policies.json",
+      "sustained_offload_serving_evidence": "docs/native-offload-sustained-serving.json",
+      "shared_decode_lease_evidence": "docs/native-shared-decode-leases.json",
+      "shared_decode_transfer_peak_evidence": "docs/native-decode-transfer-peaks.json"
+    }
+  ],
+  "entries": [
+    {
+      "model": "Qwen3.8 27B",
+      "backend": "CUDA",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": "dense-bf16",
+      "status": "qualified_declared_cuda_correctness_and_serving_workloads; release_incomplete",
+      "product_backend_selection": "CUDA required by explicit entrypoint",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 27B",
+      "backend": "CPU_AVX2",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 27B",
+      "backend": "CPU_AVX512",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 27B",
+      "backend": "CPU_NEON128",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 27B",
+      "backend": "CPU_scalar",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 27B",
+      "backend": "Metal",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 Flash Next",
+      "backend": "CUDA",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": "flash-bf16",
+      "status": "qualified_declared_cuda_correctness_and_serving_workloads; release_incomplete",
+      "product_backend_selection": "CUDA required by explicit entrypoint",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 Flash Next",
+      "backend": "CPU_AVX2",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 Flash Next",
+      "backend": "CPU_AVX512",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 Flash Next",
+      "backend": "CPU_NEON128",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 Flash Next",
+      "backend": "CPU_scalar",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "Qwen3.8 Flash Next",
+      "backend": "Metal",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "GLM5.3 Flash",
+      "backend": "CUDA",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": "glm-recurrent",
+      "status": "qualified_declared_cuda_correctness_and_serving_workloads; release_incomplete",
+      "product_backend_selection": "CUDA required by explicit entrypoint",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "GLM5.3 Flash",
+      "backend": "CPU_AVX2",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "GLM5.3 Flash",
+      "backend": "CPU_AVX512",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "GLM5.3 Flash",
+      "backend": "CPU_NEON128",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "GLM5.3 Flash",
+      "backend": "CPU_scalar",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "GLM5.3 Flash",
+      "backend": "Metal",
+      "storage_recipe": "GGUF UD-Q4_K_XL mixed tensor formats; declared checkpoint only",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "DeepSeek V4.1 Flash1017",
+      "backend": "CUDA",
+      "storage_recipe": "Native safetensors EXL3_MUL1_3 experts and INT4_FP16S32 Engram rows",
+      "modern_product_profile": "exl3-int4-f16",
+      "status": "qualified_declared_cuda_correctness_and_serving_workloads; release_incomplete",
+      "product_backend_selection": "CUDA required by explicit entrypoint",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "DeepSeek V4.1 Flash1017",
+      "backend": "CPU_AVX2",
+      "storage_recipe": "Native safetensors EXL3_MUL1_3 experts and INT4_FP16S32 Engram rows",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "DeepSeek V4.1 Flash1017",
+      "backend": "CPU_AVX512",
+      "storage_recipe": "Native safetensors EXL3_MUL1_3 experts and INT4_FP16S32 Engram rows",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "DeepSeek V4.1 Flash1017",
+      "backend": "CPU_NEON128",
+      "storage_recipe": "Native safetensors EXL3_MUL1_3 experts and INT4_FP16S32 Engram rows",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "DeepSeek V4.1 Flash1017",
+      "backend": "CPU_scalar",
+      "storage_recipe": "Native safetensors EXL3_MUL1_3 experts and INT4_FP16S32 Engram rows",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    },
+    {
+      "model": "DeepSeek V4.1 Flash1017",
+      "backend": "Metal",
+      "storage_recipe": "Native safetensors EXL3_MUL1_3 experts and INT4_FP16S32 Engram rows",
+      "modern_product_profile": null,
+      "status": "no_whole_model_qualification_in_this_matrix",
+      "product_backend_selection": "Not admitted by these explicit CUDA product entrypoints; generic legacy paths have separate capability/qualification scope.",
+      "fallback": "No implicit CPU/Metal fallback in declared CUDA product modes."
+    }
+  ],
+  "backend_notes": {
+    "CUDA": "Whole-model and dynamic stdio correctness in declared profiles. Only one Dense resident timing workload and earlier Dense local stdio SLO workload are qualified.",
+    "CPU_AVX2": "Quant kernel implementation/dispatch is distinct from whole-model qualification; modern profiles need independent end-to-end coverage.",
+    "CPU_AVX512": "Format-local quant kernels remain in src/quant; AVX512 operator checks do not prove these complete model profiles.",
+    "CPU_NEON128": "NEON kernels exist in generic quant paths; no new modern whole-model ARM evidence is claimed.",
+    "CPU_scalar": "Retained generic fallback/compatibility; no new modern model whole-runtime claim.",
+    "Metal": "Existing optional backend/legacy support retained. These modern CUDA product profiles do not admit Metal. Modern whole-model qualification remains pending."
+  },
+  "ownership": {
+    "model_semantics": "include/model_arch.h and architecture registry",
+    "quant_storage_and_role_capabilities": "include/quant.h and src/quant/registry.c",
+    "backend_layouts_and_resources": "BnBackendModel/backend sessions; preparation validates supported weight roles/formats",
+    "requests": "BnSession and shared BnGenerateBatch admission/control; retained idle payload counts"
+  },
+  "rejection_guards": {
+    "options": "src/main_gguf_batch_options.h and src/main_native_options.h strictly validate supported profile names/options.",
+    "topology": "src/main_gguf_batch.h checks architecture-owned BF16 layout before preparing backend state.",
+    "quant": "Backend model preparation consumes quant-registry role capabilities and rejects unsupported weights.",
+    "evidence": {
+      "status": "passed",
+      "cases": [
+        {
+          "case": "cpu-backend-option",
+          "command": [
+            "/home/mark/artalis.io/src/bitnet.c/bitnet",
+            "--cuda-batch",
+            "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "--profile",
+            "dense-bf16",
+            "--batch-prompts",
+            "/tmp/bitnet-goal-default-repro/product-guards/prompts.json",
+            "--backend",
+            "cpu"
+          ],
+          "exit": 2,
+          "expected": 2,
+          "message": null
+        },
+        {
+          "case": "metal-option",
+          "command": [
+            "/home/mark/artalis.io/src/bitnet.c/bitnet",
+            "--cuda-batch",
+            "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "--profile",
+            "dense-bf16",
+            "--batch-prompts",
+            "/tmp/bitnet-goal-default-repro/product-guards/prompts.json",
+            "--metal"
+          ],
+          "exit": 2,
+          "expected": 2,
+          "message": null
+        },
+        {
+          "case": "unknown-profile",
+          "command": [
+            "/home/mark/artalis.io/src/bitnet.c/bitnet",
+            "--cuda-batch",
+            "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "--profile",
+            "unknown",
+            "--batch-prompts",
+            "/tmp/bitnet-goal-default-repro/product-guards/prompts.json"
+          ],
+          "exit": 2,
+          "expected": 2,
+          "message": null
+        },
+        {
+          "case": "dense-as-flash",
+          "command": [
+            "/home/mark/artalis.io/src/bitnet.c/bitnet",
+            "--cuda-batch",
+            "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "--profile",
+            "flash-bf16",
+            "--batch-prompts",
+            "/tmp/bitnet-goal-default-repro/product-guards/prompts.json"
+          ],
+          "exit": 1,
+          "expected": 1,
+          "message": "profile/model topology mismatch"
+        },
+        {
+          "case": "dense-as-glm",
+          "command": [
+            "/home/mark/artalis.io/src/bitnet.c/bitnet",
+            "--cuda-batch",
+            "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "--profile",
+            "glm-recurrent",
+            "--batch-prompts",
+            "/tmp/bitnet-goal-default-repro/product-guards/prompts.json"
+          ],
+          "exit": 1,
+          "expected": 1,
+          "message": "profile/model topology mismatch"
+        },
+        {
+          "case": "native-unknown-profile",
+          "command": [
+            "/home/mark/artalis.io/src/bitnet.c/bitnet",
+            "--native-text",
+            "/unused",
+            "--profile",
+            "unknown",
+            "-p",
+            "probe"
+          ],
+          "exit": 2,
+          "expected": 2,
+          "message": null
+        }
+      ],
+      "cuda_visible_devices": "",
+      "gpu_idle": true,
+      "no_implicit_backend_fallback": true
+    }
+  },
+  "limitations": [
+    "These entries are checkpoint/profile/workload claims, not universal model-family support.",
+    "Managed HOST/DEVICE payload limits are not physical process/device memory caps; opaque setup/driver/library allocations need separate peak evidence.",
+    "Native fused prefill has qualified joint GPU execution; folded/small/mixed-decode execution and full resident/offload performance qualification remain open.",
+    "CPU and Metal rows are unqualified; operator tests, compile support and generic architecture parsing do not establish end-to-end support.",
+    "Legacy models and WebGPU/WASM paths are retained through their existing shared paths; no removal is authorized by this table."
+  ],
+  "next_delivery": [
+    "Qualify current native plus Flash Next/GLM sustained serving with explicit startup/working-set accounting; extend longer/unseen native histories and remaining resident parity/CPU/Metal coverage.",
+    "Qualify diverse cold/warm offloaded working sets, misses/transferred bytes/exposed stalls and setup/physical memory peaks.",
+    "Broaden matched resident prefill/decode and sustained-serving workloads.",
+    "Extend independent whole-model CPU AVX2/AVX512/NEON then Metal coverage."
+  ]
+}

@@ -1,0 +1,159 @@
+{
+  "goal_status": "active",
+  "runtime_changes": false,
+  "checks": {
+    "timing": 0,
+    "observed": 0
+  },
+  "source_files": 881,
+  "schedule": [
+    512,
+    512,
+    2,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "runs": [
+    {
+      "run": 0,
+      "prefill_ms": 14132.778506999999,
+      "first_decode_forward_ms": 405.89098,
+      "terminal_decode_forward_ms": 294.866668,
+      "terminal_upload_bytes": 1171771392,
+      "terminal_ram_miss_bytes": 1171771392,
+      "decode_ms": [
+        405.89098,
+        494.999865,
+        403.212197,
+        379.921517,
+        294.866668
+      ]
+    },
+    {
+      "run": 1,
+      "prefill_ms": 11317.885149,
+      "first_decode_forward_ms": 21.797648,
+      "terminal_decode_forward_ms": 21.776677,
+      "terminal_upload_bytes": 0,
+      "terminal_ram_miss_bytes": 0,
+      "decode_ms": [
+        21.797648,
+        21.97582,
+        21.804599,
+        21.81888,
+        21.776677
+      ]
+    },
+    {
+      "run": 2,
+      "prefill_ms": 11296.532019,
+      "first_decode_forward_ms": 21.579705,
+      "terminal_decode_forward_ms": 21.511261,
+      "terminal_upload_bytes": 0,
+      "terminal_ram_miss_bytes": 0,
+      "decode_ms": [
+        21.579705,
+        21.589029,
+        21.496017,
+        21.535848,
+        21.511261
+      ]
+    }
+  ],
+  "limitations": [
+    "Instrumented run excluded from timing summaries",
+    "Identical IDs replay with retained caches; not general warm-request hit rates",
+    "Filesystem cache and clocks uncontrolled",
+    "Per-forward timers exclude API callbacks/tokenizer/model preparation",
+    "Internal benchmark admits all batches of up to eight rows, including the two-row prompt tail; CLI prefill always bypasses admission. This is a forward-cost diagnostic, not an exact CLI latency benchmark",
+    "Costs are existing forward durations, not measured counterfactual savings or matched vLLM latency"
+  ],
+  "next_contract": {
+    "api": "Keep committed API unchanged; add explicit prediction-first entry point",
+    "output": "Publish selected token before its forward",
+    "final": "Do not forward final reported token or callback-stopped token",
+    "history": "Successful history ends at prompt + max(generated-1,0); output token is not yet in KV",
+    "failure": "A forward failure may follow published output; never retry a partially emitted stream as if atomic",
+    "capacity": "Require only prompt + max(max_new_tokens-1,0) committed history positions",
+    "tests": "Independent source prefix/logit vectors; callback before stage; no final forward; zero/one output; early stop; BUSY no duplicate output; failed forward after output; UTF8 flush/capacity; shared handles and sanitizer controls"
+  },
+  "observed_terminal": [
+    {
+      "run": 0,
+      "rows": 1,
+      "position": 1030,
+      "expert_upload_bytes": 1171771392,
+      "ram_miss_bytes": 1171771392,
+      "read_calls": 81,
+      "read_bytes": 260000,
+      "sync_calls": 92,
+      "decode_calls": 40,
+      "linear_calls": 1,
+      "ffn_calls": 40
+    },
+    {
+      "run": 1,
+      "rows": 1,
+      "position": 1030,
+      "expert_upload_bytes": 0,
+      "ram_miss_bytes": 0,
+      "read_calls": 81,
+      "read_bytes": 260000,
+      "sync_calls": 92,
+      "decode_calls": 40,
+      "linear_calls": 1,
+      "ffn_calls": 40
+    },
+    {
+      "run": 2,
+      "rows": 1,
+      "position": 1030,
+      "expert_upload_bytes": 0,
+      "ram_miss_bytes": 0,
+      "read_calls": 81,
+      "read_bytes": 260000,
+      "sync_calls": 92,
+      "decode_calls": 40,
+      "linear_calls": 1,
+      "ffn_calls": 40
+    }
+  ],
+  "timing_summary": {
+    "first_decode_cold_ms": 405.89098,
+    "terminal_decode_cold_ms": 294.866668,
+    "terminal_decode_cold_upload_bytes": 1171771392,
+    "later_first_decode_median_ms": 21.6886765,
+    "later_terminal_decode_median_ms": 21.643969
+  },
+  "profile": "Explicit EXL3 experts, INT4 BF16 row lookup adapted to Exllama F16 Engram; not original Diffbot whole-runtime equivalence",
+  "correctness": {
+    "per_process_checks": 48,
+    "per_process_compared_gpu_f16_and_host_f32_bytes": 18616320,
+    "per_process_self_fed_tokens": 15,
+    "processes": 2,
+    "independent_source_directory": "/tmp/bitnet-goal-native-cli/paired",
+    "all_frozen_sources_and_reference_manifest_payloads_unchanged": true
+  },
+  "standard_tests": {
+    "exit": 0,
+    "warnings": false,
+    "log": "/tmp/bitnet-goal-native-cli/next-baseline.log"
+  },
+  "hardware": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05, 595.104.02",
+  "selected_gpu_idle_after": true,
+  "evidence_sha256": {
+    "/tmp/bitnet-goal-native-prediction-baseline/run.py": "8c71a436f27dcff6ca27dfc38871ae89729144dbb053d483b4aef8990fa78b70",
+    "/tmp/bitnet-goal-native-prediction-baseline/frozen.json": "463319f61e56b6cb48437cf3020c002f46f9896229cabe53ebe66352751be209",
+    "/tmp/bitnet-goal-native-prediction-baseline/timing.jsonl": "e22d5bbbc67550fdedc2ebe6c6863a58bf43d00b6a5dbc40443db25143676c59",
+    "/tmp/bitnet-goal-native-prediction-baseline/timing.stderr": "ebec5cba00d8634d82d2f72cb4111971d41a2546aea70ffc7af1b6f3aa026415",
+    "/tmp/bitnet-goal-native-prediction-baseline/observed.jsonl": "7b556913d79abdfb22a6d06411453cbcc87e0034b4018d8dd23139fc4364f0f0",
+    "/tmp/bitnet-goal-native-prediction-baseline/observed.stderr": "186ebfc69e80fdb0b07fe79d354af9126f988bbb5c79c4fd252277137b874577",
+    "/tmp/bitnet-goal-native-prediction-baseline/run.log": "ba5bcea787877b59384f544bcd2bf6d5fcdf7b12814ef873283ad797e3ed8f6d",
+    "/tmp/bitnet-goal-native-prediction-baseline/progress.json": "30ebf24de0c642d15076e702ea9643cd5ac1b3e869c44e4d928036ba16db4d04",
+    "/tmp/bitnet-goal-native-prediction-baseline/result.json": "1a6d72d275fe77fabf1a8a2ba133982072372ae2d972cda90d71cb01f7002f1c",
+    "/tmp/bitnet-goal-native-cli/next-baseline.log": "de95fe0dec6cde3999afdf45fe5730a2ee36f04d88ecbaa8c3fc4808e1198f75"
+  }
+}

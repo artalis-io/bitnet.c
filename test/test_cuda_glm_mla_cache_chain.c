@@ -1,0 +1,14 @@
+#define main mla_preindexer_existing_main
+#include "test_cuda_glm_preindexer.c"
+#undef main
+int main(int argc,char**argv){assert(argc==4);BnGGUFFile*f=bn_gguf_open_file(argv[1]);assert(f);BnModelAnatomy*a=malloc(sizeof(*a));assert(a&&!bn_model_arch_plan_anatomy(f,a));BnGPUBackend*g=bn_gpu_cuda_create();assert(g&&g->mla_fp8_cache_append_resident);BnBackendBF16MLAWeights w={0};assert(!bn_backend_layout_bf16_mla_init(&w,g,f,a,3,150000000));int sizes[]={1,2,3,7,17,65,129,1025};size_t total=0;
+ for(int ci=0;ci<8;++ci){int nt=sizes[ci],blocks=(nt+63)/64+2;size_t n=(size_t)nt,bytes=(size_t)blocks*64*656;char dir[1024],name[20];snprintf(dir,sizeof(dir),"%s/%d",argv[2],ci);snprintf(name,sizeof(name),"%d",ci);void*x=load(dir,"x",n*w.dim*2);unsigned char*initial=malloc(bytes);int32_t*slots=malloc(n*4);assert(initial&&slots);memset(initial,0xa5,bytes);for(int j=0;j<nt;++j)slots[j]=(j*37+11)%(blocks*64);
+  for(int mode=0;mode<3;++mode){BnBackendSession*s=bn_backend_session_create();assert(s);void*r=bn_gpu_backend_resident_request(g,s);assert(!g->linear_bf16_reserve(g->ctx,r,n*w.heads*w.key_dim));size_t counts[]={n*w.dim,n*w.q_rank,n*w.q_rank,n*w.kv_rank,n*w.kv_rank,n*w.heads*w.key_dim,n*w.heads*w.kv_rank};BnGPUResidentView v[7];for(int j=0;j<7;++j)v[j]=alloc(g,r,BN_GGUF_TENSOR_BF16,counts[j],j?NULL:x);
+   BnTransformerBF16MLACachePlan p={.prepare={.weights=&w,.layer=3,.n_tokens=nt,.x=v[0],.q_raw=v[1],.qr=v[2],.kv_raw=v[3],.kv=v[4],.q=v[5],.query=v[6]},.num_cache_blocks=blocks,.slots=alloc(g,r,BN_GGUF_TENSOR_I32,n,slots),.cache=alloc(g,r,BN_GGUF_TENSOR_I8,bytes,initial)};
+   /* Chunk only the cache writes: preparation GEMM geometry is fixed and
+      independently qualified. Readbacks and fences stay outside each call. */
+   if(mode==0)assert(!bn_transformer_bf16_mla_cache(r,&p));
+   else{assert(!bn_transformer_bf16_mla_prepare(r,&p.prepare));int chunk=mode==1?1:17;for(int pos=0;pos<nt;){int take=nt-pos;if(take>chunk)take=chunk;BnGPUMlaFP8CacheAppendResidentPlan part={.n_tokens=take,.num_cache_blocks=blocks,.kv=bn_gpu_resident_view_slice(p.prepare.kv,(size_t)pos*512,(size_t)take*512),.slots=bn_gpu_resident_view_slice(p.slots,(size_t)pos,(size_t)take),.cache=p.cache};assert(!g->mla_fp8_cache_append_resident(g->ctx,r,&part));if(mode==2)assert(!g->resident_synchronize(r));pos+=take;}}
+   void*expected=load(argv[3],name,bytes),*actual=malloc(bytes);assert(actual&&!g->resident_read(r,p.cache,actual));assert(!memcmp(expected,actual,bytes));total+=bytes;free(expected);free(actual);check(g,r,p.prepare.kv,dir,"kv");check(g,r,p.prepare.query,dir,"query");bn_backend_session_free(s);
+  }free(x);free(initial);free(slots);printf("projection/cache case%d tokens%d passed\n",ci,nt);fflush(stdout);
+ }printf("MLA projection/cache PASSED %zu cache bytes\n",total);bn_backend_layout_bf16_mla_free(&w);bn_gpu_cuda_destroy(g);bn_gguf_free(f);free(a);return 0;}

@@ -1,0 +1,24 @@
+diff --git a/vllm_gguf_plugin/weights_adapter/qwen3_5.py b/vllm_gguf_plugin/weights_adapter/qwen3_5.py
+index 30797ae..a53131a 100644
+--- a/vllm_gguf_plugin/weights_adapter/qwen3_5.py
++++ b/vllm_gguf_plugin/weights_adapter/qwen3_5.py
+@@ -11,8 +11,8 @@ import gguf
+ import torch
+ from vllm.logger import init_logger
+ from vllm.model_executor.models.utils import WeightsMapper
+-from vllm.transformers_utils.configs.qwen3_5 import Qwen3_5Config
+-from vllm.transformers_utils.configs.qwen3_5_moe import Qwen3_5MoeConfig
++from transformers import Qwen3_5Config
++from transformers import Qwen3_5MoeConfig
+ 
+ from ..gguf_files import GGUFModelFiles
+ from ..gguf_utils import maybe_patch_hf_config_from_gguf
+@@ -37,7 +37,7 @@ QWEN35_MTP_MODEL_TYPES = ("qwen3_5_mtp", "qwen3_5_moe_mtp")
+ QWEN35_MOE_MTP_MODEL_TYPES = ("qwen3_5_moe_mtp",)
+ QWEN35_ARCHITECTURES = {
+     "qwen3_5": "Qwen3_5ForConditionalGeneration",
+-    "qwen3_5_text": "Qwen3_5ForConditionalGeneration",
++    "qwen3_5_text": "Qwen3_5ForCausalLM",
+     "qwen3_5_moe": "Qwen3_5MoeForConditionalGeneration",
+     "qwen3_5_moe_text": "Qwen3_5MoeForConditionalGeneration",
+ }

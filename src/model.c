@@ -8,6 +8,264 @@
 #include <string.h>
 #include <limits.h>
 
+
+struct BnModelExpertSources {
+    BnMoEExpertReader reader;
+    BnTrellisSource *sources;
+    size_t count;
+    const BnSafetensorsIndex *index;
+    const void *index_state;
+};
+
+static const BnTrellisSource *expert_source(const BnModelExpertSources *s,
+    int layer, int expert, int projection) {
+    if (!s || s->index->state != s->index_state || layer < 0 ||
+        layer >= s->reader.n_layers || expert < 0 ||
+        expert >= s->reader.n_experts || projection < 0 || projection >= 3)
+        return NULL;
+    return &s->sources[((size_t)layer * (size_t)s->reader.n_experts +
+                        (size_t)expert) * 3 + (size_t)projection];
+}
+
+static int expert_source_read(void *context, int layer, int expert,
+    int projection, void *destination, size_t bytes) {
+    const BnTrellisSource *source = expert_source(context, layer, expert, projection);
+    return source ? bn_trellis_source_read(source, destination, bytes) : -1;
+}
+
+static void expert_sources_free(BnModelExpertSources *s) {
+    if (!s) return;
+    for (size_t i = 0; i < s->count; i++) bn_trellis_source_free(&s->sources[i]);
+    free(s->sources);
+    free(s);
+}
+
+int bn_model_bind_trellis_experts(BnModel *model,
+    const BnSafetensorsIndex *index, const char *architecture,
+    int n_layers, int n_experts, int dim, int hidden) {
+    if (!model || !index || !index->state || n_layers <= 0 || n_experts <= 0 ||
+        dim <= 0 || hidden <= 0 || dim % 128 || hidden % 128 ||
+        (model->runtime && model->runtime->trellis_experts)) return -1;
+    if ((size_t)n_layers > SIZE_MAX / (size_t)n_experts) return -1;
+    size_t experts = (size_t)n_layers * (size_t)n_experts;
+    /* Four distinct components per projection. Bound metadata allocation by
+     * the admitted directory before multiplying or entering large loops. */
+    if (experts > bn_safetensors_index_count(index) / 12 ||
+        experts > SIZE_MAX / 3 / sizeof(BnTrellisSource)) return -1;
+    BnModelExpertSources *s = calloc(1, sizeof(*s));
+    if (!s) return -1;
+    s->count = experts * 3;
+    s->sources = calloc(s->count, sizeof(*s->sources));
+    if (!s->sources) { free(s); return -1; }
+    s->index = index;
+    s->index_state = index->state;
+    s->reader.identity = s;
+    s->reader.context = s;
+    s->reader.n_layers = n_layers;
+    s->reader.n_experts = n_experts;
+    s->reader.read = expert_source_read;
+    const BnModelTensorRole roles[] = {BN_MODEL_TENSOR_MOE_GATE_EXPS,
+        BN_MODEL_TENSOR_MOE_UP_EXPS, BN_MODEL_TENSOR_MOE_DOWN_EXPS};
+    for (int l = 0; l < n_layers; l++) for (int e = 0; e < n_experts; e++) {
+        for (int p = 0; p < 3; p++) {
+            size_t ids[4];
+            for (int c = 0; c < 4; c++) {
+                char name[128];
+                if (bn_model_arch_expert_component_name(architecture, name,
+                    sizeof(name), l, e, roles[p], (BnModelExpertComponent)c))
+                    goto fail;
+                int id = bn_safetensors_index_find(index, name);
+                if (id < 0) goto fail;
+                ids[c] = (size_t)id;
+            }
+            BnTrellisSource *source = &s->sources[
+                ((size_t)l * (size_t)n_experts + (size_t)e) * 3 + (size_t)p];
+            if (bn_trellis_source_init(source, index,
+                BN_QUANT_FORMAT_EXL3_MUL1_3, ids)) goto fail;
+            const BnTrellisLayout *layout = bn_trellis_source_layout(source);
+            if (!layout || layout->k != (p == 2 ? hidden : dim) ||
+                layout->n != (p == 2 ? dim : hidden)) goto fail;
+            if (!l && !e) s->reader.bytes[p] = layout->bundle_bytes;
+            else if (s->reader.bytes[p] != layout->bundle_bytes) goto fail;
+        }
+    }
+    BnModelRuntime *runtime = model->runtime;
+    if (!runtime) {
+        runtime = calloc(1, sizeof(*runtime));
+        if (!runtime) goto fail;
+    }
+    runtime->trellis_experts = s;
+    model->runtime = runtime;
+    return 0;
+fail:
+    expert_sources_free(s);
+    return -1;
+}
+
+const BnMoEExpertReader *bn_model_trellis_expert_reader(const BnModel *model) {
+    const BnModelExpertSources *s = model && model->runtime
+        ? model->runtime->trellis_experts : NULL;
+    return s && s->index->state == s->index_state ? &s->reader : NULL;
+}
+
+int bn_model_load_trellis_config(BnModel *model, const BnSafetensorsIndex *index,
+    const void *config_json, size_t config_bytes) {
+    if (!model || model->runtime || model->io || model->backend_state ||
+        model->weights.layers || model->config.dim || model->config.n_layers)
+        return -1;
+    BnJSON document = {0};
+    BnModelNativeExpertConfig profile;
+    BnModel next = {0};
+    if (bn_json_init(&document, config_json, config_bytes) ||
+        bn_model_arch_native_expert_config(&document, &profile) ||
+        bn_model_bind_trellis_experts(&next, index, profile.architecture,
+            profile.layers, profile.experts, profile.dim, profile.hidden)) {
+        bn_model_free(&next);
+        bn_json_free(&document);
+        return -1;
+    }
+    next.runtime->native_config = document;
+    document.state = NULL; /* Transfer the sole document ownership. */
+    next.runtime->native_expert_config = profile;
+    *model = next;
+    return 0;
+}
+
+const BnJSON *bn_model_native_config(const BnModel *model) {
+    return model && model->runtime && model->runtime->native_config.state
+        ? &model->runtime->native_config : NULL;
+}
+
+const BnModelNativeExpertConfig *bn_model_native_expert_config(const BnModel *model) {
+    return bn_model_native_config(model) ? &model->runtime->native_expert_config : NULL;
+}
+
+int bn_model_native_rope_frequency(const BnModel*m,int compressed,BnModelNativeRopeFrequency*out) {
+    const BnModelNativeAnatomy*a=bn_model_native_anatomy(m);const BnModelNativeNumerics*p=bn_model_native_numerics(m);
+    return a&&p?bn_model_arch_native_rope_frequency(a->rope_dim,p,compressed,out):-1;
+}
+
+const BnSafetensorsIndex *bn_model_native_index(const BnModel *model) {
+    return bn_model_trellis_expert_reader(model) ? model->runtime->trellis_experts->index : NULL;
+}
+
+int bn_model_prepare_native_anatomy(BnModel *model) {
+    if (!bn_model_native_config(model) || !bn_model_trellis_expert_reader(model) ||
+        model->backend_state || model->runtime->native_anatomy) return -1;
+    BnModelNativeAnatomy *plan = malloc(sizeof(*plan));
+    if (!plan) return -1;
+    if (bn_model_arch_native_anatomy(&model->runtime->native_config,
+        model->runtime->trellis_experts->index, plan)) { free(plan); return -1; }
+    model->runtime->native_anatomy = plan;
+    return 0;
+}
+
+const BnModelNativeAnatomy *bn_model_native_anatomy(const BnModel *model) {
+    return bn_model_trellis_expert_reader(model) ? model->runtime->native_anatomy : NULL;
+}
+
+int bn_model_prepare_native_numerics(BnModel *model) {
+    if (!bn_model_native_anatomy(model) || model->backend_state ||
+        model->runtime->native_numerics_ready) return -1;
+    BnModelNativeNumerics profile;
+    if (bn_model_arch_native_numerics(&model->runtime->native_config, &profile)) return -1;
+    model->runtime->native_numerics = profile;
+    model->runtime->native_numerics_ready = 1;
+    return 0;
+}
+
+const BnModelNativeNumerics *bn_model_native_numerics(const BnModel *model) {
+    return bn_model_native_anatomy(model) && model->runtime->native_numerics_ready
+        ? &model->runtime->native_numerics : NULL;
+}
+int bn_model_native_engram_layout(const BnModel *model,int layer,BnModelNativeEngramLayout *out) {
+    if(!bn_model_native_anatomy(model)||!bn_model_native_numerics(model))return -1;
+    return bn_model_arch_native_engram_layout(bn_model_native_config(model),layer,out);
+}
+
+int bn_model_native_engram_map_spec(const BnModel *model,BnTokenizerMapSpec *out) {
+    return bn_model_arch_native_engram_map_spec(bn_model_native_anatomy(model),bn_model_native_numerics(model),out);
+}
+int bn_model_prepare_native_token_map(BnModel *model,const uint32_t *ids,size_t count,size_t budget) {
+    BnTokenizerMapSpec spec;
+    if(bn_model_native_engram_map_spec(model,&spec)||model->backend_state||model->runtime->native_token_map||
+        !ids||count!=(size_t)spec.vocab_size||count>SIZE_MAX/sizeof(*ids)||budget<count*sizeof(*ids))return -1;
+    uint32_t next=0;
+    for(size_t i=0;i<count;i++) {
+        if(ids[i]>=(uint32_t)spec.compressed_vocab||ids[i]>next)return -1;
+        if(ids[i]==next)next++;
+    }
+    if(next!=(uint32_t)spec.compressed_vocab)return -1;
+    uint32_t *copy=malloc(count*sizeof(*copy));if(!copy)return -1;
+    memcpy(copy,ids,count*sizeof(*copy));model->runtime->native_token_map=copy;return 0;
+}
+const uint32_t *bn_model_native_token_map(const BnModel *model,size_t *count) {
+    const BnModelNativeAnatomy *a=bn_model_native_anatomy(model);
+    if(!a||!model->runtime->native_token_map)return NULL;
+    if(count)*count=(size_t)a->vocab;
+    return model->runtime->native_token_map;
+}
+int bn_model_native_token_map_info(const BnModel *model,BnModelNativeTokenMapInfo *out) {
+    BnTokenizerMapSpec spec;size_t count;const uint32_t *ids=bn_model_native_token_map(model,&count);
+    if(!ids||!out||bn_model_native_engram_map_spec(model,&spec))return -1;
+    *out=(BnModelNativeTokenMapInfo){spec.vocab_size,spec.compressed_vocab,ids[spec.pad_token],count*sizeof(*ids)};return 0;
+}
+static int model_native_map_disjoint(const void *a,size_t n,const void *b,size_t m) {
+    uintptr_t x=(uintptr_t)a,y=(uintptr_t)b;
+    if(n>UINTPTR_MAX-x||m>UINTPTR_MAX-y)return 0;
+    return x+n<=y||y+m<=x;
+}
+int bn_model_native_map_tokens(const BnModel *model,const int *tokens,size_t count,uint32_t *out) {
+    size_t vocab;const uint32_t *ids=bn_model_native_token_map(model,&vocab);
+    if(!ids||count>SIZE_MAX/sizeof(*tokens)||count>SIZE_MAX/sizeof(*out))return -1;
+    if(!count)return 0;
+    if(!tokens||!out||!model_native_map_disjoint(out,count*sizeof(*out),tokens,count*sizeof(*tokens))||
+        !model_native_map_disjoint(out,count*sizeof(*out),ids,vocab*sizeof(*ids))||
+        !model_native_map_disjoint(out,count*sizeof(*out),model,sizeof(*model))||
+        !model_native_map_disjoint(out,count*sizeof(*out),model->runtime,sizeof(*model->runtime)))return -1;
+    for(size_t i=0;i<count;i++)if(tokens[i]<0||(size_t)tokens[i]>=vocab)return -1;
+    for(size_t i=0;i<count;i++)out[i]=ids[tokens[i]];
+    return 0;
+}
+
+int bn_model_prepare_native_rows(BnModel *model) {
+    const BnModelNativeAnatomy *a=bn_model_native_anatomy(model);
+    if(!a||!bn_model_native_numerics(model)||model->backend_state||model->runtime->native_rows)return -1;
+    BnTrellisRowSource *sources=calloc((size_t)a->experts.layers,sizeof(*sources));if(!sources)return -1;
+    int count=0;
+    for(int layer=0;layer<a->experts.layers;layer++)if(a->layers[layer].engram_rows) {
+        int w=a->layers[layer].tensor[BN_NATIVE_ENGRAM_EMBED],s=a->layers[layer].tensor[BN_NATIVE_ENGRAM_SCALE];
+        if(w<0||s<0)goto fail;
+        size_t ids[2]={(size_t)w,(size_t)s};
+        if(bn_trellis_row_source_init(sources+layer,bn_model_native_index(model),a->engram_format,ids))goto fail;
+        const BnTrellisRowLayout *layout=bn_trellis_row_source_layout(sources+layer);
+        if(!layout||layout->rows!=a->layers[layer].engram_rows||layout->cols!=a->engram_dim)goto fail;
+        count++;
+    }
+    if(!count)goto fail;
+    model->runtime->native_rows=sources;return 0;
+fail:
+    for(int layer=0;layer<a->experts.layers;layer++)bn_trellis_row_source_free(sources+layer);
+    free(sources);return -1;
+}
+const BnTrellisRowSource *bn_model_native_row_source(const BnModel *model,int layer) {
+    const BnModelNativeAnatomy *a=bn_model_native_anatomy(model);
+    return a&&model->runtime->native_rows&&layer>=0&&layer<a->experts.layers&&
+        model->runtime->native_rows[layer].state?model->runtime->native_rows+layer:NULL;
+}
+
+const BnTrellisSource *bn_model_trellis_expert_source(const BnModel *model,
+    int layer, int expert, int projection) {
+    return expert_source(model && model->runtime
+        ? model->runtime->trellis_experts : NULL, layer, expert, projection);
+}
+
+void bn_model_trellis_experts_free(BnModel *model) {
+    if (!model || !model->runtime) return;
+    expert_sources_free(model->runtime->trellis_experts);
+    model->runtime->trellis_experts = NULL;
+}
+
 static int model_ensure_runtime(BnModel *m) {
     if (!m) return -1;
     if (!m->runtime) {
@@ -139,6 +397,64 @@ void bn_model_set_gpu_moe_cache(BnModel *model, void *cache) {
 void *bn_model_gpu_moe_cache(const BnModel *model) {
     const BnMoEIO *io = bn_model_moe_io_const(model);
     return io ? io->gpu_moe_cache : NULL;
+}
+
+const BnModelAnatomy *bn_model_anatomy(const BnModel *model) {
+    return model && model->runtime && model->runtime->topology
+        ? &model->runtime->topology->anatomy : NULL;
+}
+
+BnGGUFFile *bn_model_topology_file(const BnModel *model) {
+    return model && model->runtime && model->runtime->topology
+        ? model->runtime->topology->file : NULL;
+}
+
+const BnMoEExpertMap *bn_model_topology_experts(const BnModel *model,
+                                               size_t *count) {
+    const BnModelAnatomy *a = bn_model_anatomy(model);
+    if (count) *count = a ? (size_t)a->n_layers : 0;
+    return a ? model->runtime->topology->experts : NULL;
+}
+
+int bn_model_load_topology(BnModel *model, BnGGUFFile *file, int max_seq_len) {
+    if (!model || !file || max_seq_len < 0) return -1;
+    BnModel next = {0};
+    if (model_ensure_runtime(&next) || model_ensure_io(&next) ||
+        bn_model_ensure_backend(&next)) goto fail;
+    next.runtime->topology = calloc(1, sizeof(*next.runtime->topology));
+    if (!next.runtime->topology) goto fail;
+    BnModelTopology *t = next.runtime->topology;
+    if (bn_model_arch_plan_anatomy(file, &t->anatomy)) goto fail;
+    const BnModelAnatomy *a = &t->anatomy;
+    if (a->n_layers < 1 || a->n_layers > BN_MODEL_ANATOMY_MAX_LAYERS ||
+        a->dim < 1 || a->vocab_size < 1 || a->context_length < 1) goto fail;
+    for (int l = 0; l < a->n_layers; ++l) {
+        const BnModelLayerAnatomy *layer = &a->layers[l];
+        if (!layer->uses_moe) continue;
+        int gate = layer->tensor[BN_MODEL_TENSOR_MOE_GATE_EXPS];
+        int up = layer->tensor[BN_MODEL_TENSOR_MOE_UP_EXPS];
+        int down = layer->tensor[BN_MODEL_TENSOR_MOE_DOWN_EXPS];
+        if (gate < 0 || up < 0 || down < 0 ||
+            (uint64_t)gate >= file->n_tensors ||
+            (uint64_t)up >= file->n_tensors ||
+            (uint64_t)down >= file->n_tensors) goto fail;
+        BnMoEExpertTensorNames names = {
+            .gate = file->tensors[gate].name, .up = file->tensors[up].name,
+            .down = file->tensors[down].name,
+        };
+        if (bn_model_load_moe_expert_map(file, &names, a->experts,
+                                        a->expert_hidden, &t->experts[l])) goto fail;
+    }
+    bn_model_arch_apply_config(&next.config, bn_model_arch_ops_for(
+        bn_gguf_get_str(file, "general.architecture")));
+    if (bn_model_arch_apply_anatomy_config(&next.config, a, max_seq_len)) goto fail;
+    t->file = file;
+    *model = next;
+    return 0;
+fail:
+    fprintf(stderr, "Model topology: failed to bind shared model sources\n");
+    bn_model_free(&next);
+    return -1;
 }
 
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
@@ -289,6 +605,10 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
         SH_LOG_ERROR("No model architecture ops registered");
         return -1;
     }
+    if (arch_ops->plan_anatomy) {
+        SH_LOG_ERROR("Architecture requires a topology-aware weight binder", "architecture", arch);
+        return -1;
+    }
     char prefix[64];
     snprintf(prefix, sizeof(prefix), "%s", arch_ops->prefix(arch));
     bn_model_arch_apply_config(c, arch_ops);
@@ -432,13 +752,14 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
     }
     if (bn_model_arch_uses_positional_layer_embedding(c)) {
         uint64_t n_layers = bn_model_arch_gguf_arr_n(f, "ple.layers");
-        const int32_t *layers =
-            (const int32_t *)bn_model_arch_gguf_arr_data(f, "ple.layers");
+        const void *layers = bn_model_arch_gguf_arr_data(f, "ple.layers");
         if (n_layers != 1 || !layers) {
             SH_LOG_ERROR("PLE requires exactly one layer");
             return -1;
         }
-        c->ple_layer = layers[0];
+        int32_t ple_layer;
+        memcpy(&ple_layer, layers, sizeof(ple_layer));
+        c->ple_layer = ple_layer;
         c->ple_ngram_size = bn_model_arch_gguf_u32(f, "ple.ngram_size");
         c->ple_heads_per_ngram =
             bn_model_arch_gguf_u32(f, "ple.heads_per_ngram");
@@ -455,11 +776,11 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
         uint64_t n_off = bn_model_arch_gguf_arr_n(f, "ple.head_offsets");
         uint64_t n_vocab =
             bn_model_arch_gguf_arr_n(f, "ple.head_vocab_sizes");
-        const uint64_t *mul = (const uint64_t *)
+        const unsigned char *mul =
             bn_model_arch_gguf_arr_data(f, "ple.layer_multipliers");
-        const uint64_t *off = (const uint64_t *)
+        const unsigned char *off =
             bn_model_arch_gguf_arr_data(f, "ple.head_offsets");
-        const uint64_t *vocab = (const uint64_t *)
+        const unsigned char *vocab =
             bn_model_arch_gguf_arr_data(f, "ple.head_vocab_sizes");
         if (c->ple_layer < 0 || c->ple_layer >= c->n_layers ||
             c->ple_ngram_size < 2 || c->ple_ngram_size > 8 ||
@@ -473,15 +794,18 @@ int bn_model_load_with_cpu_preparation(BnModel *m, BnGGUFFile *f,
             return -1;
         }
         for (int i = 0; i < c->ple_ngram_size; i++)
-            c->ple_layer_multipliers[i] = mul[i];
+            memcpy(&c->ple_layer_multipliers[i], mul + (size_t)i * sizeof(uint64_t), sizeof(uint64_t));
         for (int i = 0; i < c->ple_head_count; i++) {
-            if (off[i] > UINT32_MAX || vocab[i] == 0 ||
-                vocab[i] > UINT32_MAX || off[i] + vocab[i] > INT32_MAX) {
+            uint64_t offset, vocab_size;
+            memcpy(&offset, off + (size_t)i * sizeof(offset), sizeof(offset));
+            memcpy(&vocab_size, vocab + (size_t)i * sizeof(vocab_size), sizeof(vocab_size));
+            if (offset > UINT32_MAX || vocab_size == 0 ||
+                vocab_size > UINT32_MAX || offset + vocab_size > INT32_MAX) {
                 SH_LOG_ERROR("Invalid PLE head range");
                 return -1;
             }
-            c->ple_head_offsets[i] = (uint32_t)off[i];
-            c->ple_head_vocab_sizes[i] = (uint32_t)vocab[i];
+            c->ple_head_offsets[i] = (uint32_t)offset;
+            c->ple_head_vocab_sizes[i] = (uint32_t)vocab_size;
         }
     }
 
@@ -1299,10 +1623,26 @@ void bn_model_free(BnModel *m) {
     if (m->runtime)
         sh_arena_free(m->runtime->weight_arena);
     bn_model_backend_free(m);
+    if(m->runtime){free(m->runtime->native_token_map);m->runtime->native_token_map=NULL;}
+    if(m->runtime&&m->runtime->native_rows) {
+        for(int i=0;i<m->runtime->native_expert_config.layers;i++)bn_trellis_row_source_free(m->runtime->native_rows+i);
+        free(m->runtime->native_rows);
+    }
+    bn_model_trellis_experts_free(m);
+    if (m->runtime) free(m->runtime->native_anatomy);
+    if (m->runtime) bn_json_free(&m->runtime->native_config);
     if (m->io)
         bn_platform_unload_file(&m->io->file);
+    if (m->runtime) free(m->runtime->topology);
     free(m->runtime);
     free(m->io);
     free(m->backend_state);
     memset(m, 0, sizeof(BnModel));
+}
+
+int bn_model_native_engram_math(const BnModel *m,int layer,BnModelNativeEngramMath *out) {
+    return bn_model_arch_native_engram_math(bn_model_native_anatomy(m),bn_model_native_numerics(m),layer,out);
+}
+int bn_model_native_head(const BnModel*m,BnModelNativeHead*out) {
+    return bn_model_arch_native_head(bn_model_native_anatomy(m),bn_model_native_numerics(m),out);
 }

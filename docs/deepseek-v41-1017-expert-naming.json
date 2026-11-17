@@ -1,0 +1,80 @@
+{
+  "milestone": "Architecture-owned native DeepSeek V4.1 expert component naming",
+  "status": "Qualified binding primitive; overall inference objective remains active",
+  "behavior": {
+    "architecture": "deepseek_v41",
+    "roles": {
+      "MOE_GATE_EXPS": "w1",
+      "MOE_UP_EXPS": "w3",
+      "MOE_DOWN_EXPS": "w2"
+    },
+    "components": [
+      "trellis",
+      "suh",
+      "svh",
+      "mul1"
+    ],
+    "namespace": "layers.{layer}.ffn.experts.{expert}.{projection}.{component}",
+    "error_contract": "Invalid architecture, role, component, negative indices or inadequate output capacity return -1 without changing output. Caller validates positive index bounds against model config.",
+    "scope": "Native routed expert naming only; existing GGUF architecture admission and execution are unchanged."
+  },
+  "validation": {
+    "baseline_passed": true,
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "asan-index-build": 0,
+      "asan-index": 0,
+      "ffn-build": 0,
+      "ffn-l0-e0-m1": 0,
+      "ffn-l0-e0-m256": 0,
+      "ffn-l39-e383-m1": 0,
+      "ffn-l39-e383-m256": 0
+    },
+    "complete_main_component_count": 184320,
+    "native_vs_independent_index_exact_set": true,
+    "component_metadata_shapes_and_dtypes": true,
+    "sorted_names_sha256": "6e50c0ac4d20067a5b1d792ccd0bd4eba756a715136a2307b618a5e78113e35f",
+    "actual_ffn_cases": [
+      "l0-e0-m1",
+      "l0-e0-m256",
+      "l39-e383-m1",
+      "l39-e383-m256"
+    ],
+    "actual_ffn_mismatches": 0,
+    "actual_ffn_includes": [
+      "Selected expert on two request streams",
+      "Pinned eviction rejection",
+      "Replacement expert and original restore",
+      "Independent frozen gate/up/activation/output references",
+      "Zero-input peer and primary isolation"
+    ]
+  },
+  "limitations": [
+    "No full native config or model executor admission.",
+    "No model-owned full expert catalog or routing scheduler integration yet.",
+    "This turn did not remeasure the previous compressed-weight physical peak or vLLM performance."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-expert-names/qualification.json",
+    "native_name_set": "/tmp/bitnet-goal-expert-names/native-names.txt",
+    "continuation": "/tmp/bitnet-goal-expert-names/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/model_arch.h": "4321a82472993c528444466010a2f989fdfefbf28f40d198a0c4cf5a2c4aa9c1",
+    "src/model_arch.c": "a1b24f605febe227ad8dd05217141ce30930b585312e449c42f766531c19fdbe",
+    "test/test_qwen36.c": "3847a9488e2be34348235e0086ca041d78c44fcc0899d297842a5e579a67f74f"
+  }
+}

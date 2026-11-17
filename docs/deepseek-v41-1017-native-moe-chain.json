@@ -1,0 +1,173 @@
+{
+  "status": "Native learned-router/routed/shared component chain qualified against preserved source references; session executor and device final addition remain pending; whole goal active",
+  "scope": {
+    "layer": 39,
+    "rows": [
+      64,
+      256,
+      1024,
+      4096,
+      8192
+    ],
+    "dim": 5120,
+    "hidden": 2304,
+    "experts": 384,
+    "topk": 6,
+    "expert_union": 132,
+    "activation_limit": 10,
+    "f16acc_policies": [
+      0,
+      1
+    ],
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "reference_profile": "Paired system cuBLAS source reference, with original packaged-library reference retained separately"
+  },
+  "native_chain": [
+    "Prepare the actual immutable core, parameters, learned routers and one model-owned expert store",
+    "Native learned router logits/selection/F16 weights and native assignment index/order/counts/starts",
+    "Existing CPU source-equivalent grouping and slot planning",
+    "Native fused M64/M32/M16 FFNs using actual selected expert triples, full-tier group widths and bounded upload windows",
+    "Native grouped input gather and folded full-B/exact-M FFN with one reusable decoded slab",
+    "One native fixed-top-k reduction over fused weighted and heavy unweighted slots",
+    "Native shared F16 gate/up/half activation/F32 down"
+  ],
+  "comparisons": "Router logits/IDs/weights, assignment order/inverse/counts/starts, planned base/kind tables, complete weighted/unweighted expert slots, routed output and shared gate/up/activation/output are byte-exact. Input remains unchanged. A CPU F32 routed-plus-shared diagnostic additionally matches the source final; it does not qualify a GPU final-add implementation.",
+  "placement": {
+    "fused_window_sizes": [
+      1,
+      5
+    ],
+    "heavy_max_group_experts": 5,
+    "decode_gpu_payload_quota": 66577920,
+    "temporary_gpu_payload_quota": 66577920,
+    "ram_payload_quota": 66577920,
+    "host_staging_payload": 13315584,
+    "observed_max_combined_expert_gpu_payload": 66577920,
+    "quota_note": "The fused one-expert window is not a one-expert total cache quota. Heavy groups retain up to five leased raw triples; their batch and padded row geometry never shrink to match the fused window. Each of the decode and temporary pools has an independent five-entry quota; their possible combined quota is 133155840 bytes.",
+    "prefill": "Misses use temporary GPU reservations without decode/RAM admission; zero decode eviction.",
+    "decode": "Misses admit to the bounded five-entry cache; all consumers synchronize before releasing expert leases.",
+    "limits": "Payload quotas exclude immutable core/parameters, decoded weight scratch, activation/index/state buffers, allocator/driver/library overhead. Uploads are synchronous. Reader bytes are logical source reads, not physical disk I/O. Cache hits are zero in these scans, so warm-cache behavior/performance is not qualified."
+  },
+  "validation": {
+    "checks": {
+      "final-build": 0,
+      "asan-build": 0,
+      "final-prefill-window1": 0,
+      "final-decode-window1": 0,
+      "final-prefill-window5": 0,
+      "final-decode-window5": 0,
+      "asan-prefill": 0,
+      "memcheck-prefill": 0,
+      "memcheck-decode": 0
+    },
+    "records": {
+      "final-prefill-window1": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "final-decode-window1": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 1203,
+        "mismatches": 0
+      },
+      "final-prefill-window5": {
+        "cases": 10,
+        "launches": 266,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "final-decode-window5": {
+        "cases": 10,
+        "launches": 266,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 1203,
+        "mismatches": 0
+      },
+      "asan-prefill": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "memcheck-prefill": {
+        "cases": 1,
+        "launches": 91,
+        "compared_bytes": 1669644288,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 1757657088,
+        "upload_bytes": 1757657088,
+        "decode_hits": 0,
+        "decode_misses": 132,
+        "decode_evictions": 0,
+        "mismatches": 0
+      },
+      "memcheck-decode": {
+        "cases": 1,
+        "launches": 91,
+        "compared_bytes": 1669644288,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 1757657088,
+        "upload_bytes": 1757657088,
+        "decode_hits": 0,
+        "decode_misses": 132,
+        "decode_evictions": 127,
+        "mismatches": 0
+      }
+    },
+    "normal_reference_cases": 40,
+    "asan_reference_cases": 10,
+    "memcheck_reference_cases": 2,
+    "normal_compared_bytes": 22119317504,
+    "standard_tests": "make -j8 test passed without warnings; production/test sources unchanged",
+    "sanitizers": "Clang18 ASAN/UBSAN on the ten-case prefill chain; CUDA memcheck/leak-check on R8192 adaptive policy1 under prefill and decode, zero errors/leaks",
+    "source_files_reverified": 731,
+    "builds": "Normal and host-sanitized probe builds have zero warnings",
+    "negative_evidence": "Initial full probe stopped at R8192 when the harness allocated a zero-length optional router partial buffer. The documented API requires an empty view when no split reduction is needed. The corrected harness passes; the original failure log and pre-fix probe remain preserved."
+  },
+  "artifacts": {
+    "directory": "/tmp/bitnet-goal-native-layer-integration",
+    "qualification_sha256": "30d8871cd7ae103e5ac32130f1d4c11090d8176e792301f59c352e85b02d5bfa",
+    "probe_sha256": "759063e1481a32485977c8b373ccfa26879637dae56e2126291f2d920e8034f4",
+    "paired_reference_sha256": "a7a4b0ef42022891cb9b91850c049cadbd681656e7de2ca34bc4e7ec7693685f",
+    "reference_description": "docs/deepseek-v41-1017-native-moe-layer-reference.json"
+  },
+  "remaining": [
+    "Move the validated schedule into the existing production session/backend request ownership with explicit workspace preflight, reuse and failure cleanup.",
+    "Implement and qualify device-resident final F32 addition, preserving source boundaries and signed-zero behavior.",
+    "Qualify overlapping request consumers, cache-hit/warm behavior, error and cancellation paths at composed-executor scope.",
+    "Port default routed BC decode for <=8 tokens and integrate full-model execution before admission. V4.1 defaults to zero hash-routing layers; no hash-router port is required for this checkpoint.",
+    "Full attention/Engram/generation/CLI, matched vLLM performance parity and serving remain open."
+  ]
+}

@@ -1,0 +1,319 @@
+{
+  "schema": 1,
+  "status": "two_explicit_profiles_qualified_extended_decode; earlier_untraced_profile_retained_unqualified",
+  "evidence_root": "/tmp/bitnet-goal-default-repro",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "changes": "Six additive policy/reference/report files only; no C implementation, CUDA kernel or existing numerical gold changed.",
+  "prior_performance_report": "docs/vllm-default-resident-performance.json",
+  "original": {
+    "image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+    "version": "vLLM v0.1.dev21830+g8244d1c44",
+    "cuda_graph": "FULL_AND_PIECEWISE",
+    "async_scheduling": true,
+    "worker": "Default SyncMPClient with spawn; existing offline GGUF metadata class-name adapter only. No model/kernel/scheduler arithmetic edits.",
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05"
+  },
+  "workload": {
+    "concurrency": 4,
+    "prompt_tokens_each": 129,
+    "output_sequences_per_process": [
+      64,
+      64,
+      96,
+      64,
+      96
+    ],
+    "context": 8192,
+    "prompts": [
+      "# Inference Pipeline\n\nThis document describes the current inference path after the transformer split.\nIt is a code map and execution overview, not a line-by-line math tutorial.\n\n## High-Level Flow\n\n```text\nprompt text\n  -> tokenizer\n  -> optional batch prefill\n  -> per-token transformer forward\n  -> logits\n  -> sampler\n  -> decoded token text\n```\n\nPublic entry points are in `include/generate.h` and `include/transformer.h`.\nThe CLI wiring is in `src/main.c`; the library orchestration is in\n`src/generate.c`.\n\n## Model And Session",
+      "#ference In Pipeline\n\nThis document describes the current inference path after the transformer split.\nIt is a code map and execution overview, not a line-by-line math tutorial.\n\n## High-Level Flow\n\n```text\nprompt text\n  -> tokenizer\n  -> optional batch prefill\n  -> per-token transformer forward\n  -> logits\n  -> sampler\n  -> decoded token text\n```\n\nPublic entry points are in `include/generate.h` and `include/transformer.h`.\nThe CLI wiring is in `src/main.c`; the library orchestration is in\n`src/generate.c`.\n\n## Model And Session",
+      "# Pipelineference In\n\nThis document describes the current inference path after the transformer split.\nIt is a code map and execution overview, not a line-by-line math tutorial.\n\n## High-Level Flow\n\n```text\nprompt text\n  -> tokenizer\n  -> optional batch prefill\n  -> per-token transformer forward\n  -> logits\n  -> sampler\n  -> decoded token text\n```\n\nPublic entry points are in `include/generate.h` and `include/transformer.h`.\nThe CLI wiring is in `src/main.c`; the library orchestration is in\n`src/generate.c`.\n\n## Model And Session",
+      "#\n\nference Pipeline InThis document describes the current inference path after the transformer split.\nIt is a code map and execution overview, not a line-by-line math tutorial.\n\n## High-Level Flow\n\n```text\nprompt text\n  -> tokenizer\n  -> optional batch prefill\n  -> per-token transformer forward\n  -> logits\n  -> sampler\n  -> decoded token text\n```\n\nPublic entry points are in `include/generate.h` and `include/transformer.h`.\nThe CLI wiring is in `src/main.c`; the library orchestration is in\n`src/generate.c`.\n\n## Model And Session"
+    ],
+    "full_prefill_tokens": 516,
+    "mixed_budget": 46,
+    "greedy": true,
+    "ignore_eos": true
+  },
+  "reference_capture": {
+    "successful_processes": 4,
+    "independent_full_heads_checked": 6144,
+    "breakdown": {
+      "hidden-readback profileA": 1536,
+      "logits-only profileB": 1536,
+      "post-init callsite profileA": 1536,
+      "initialization-ledger profileC": 1536
+    },
+    "all_bytes_hash_finite_geometry_argmax_and_token_checks": true,
+    "same_process_repeats": "All overlapping same-profile heads agree, including pairs of96-output batches.",
+    "timings": "All timings in this phase are diagnostic and excluded from performance acceptance; the initialization ledger adds host overhead."
+  },
+  "product_correctness": {
+    "total_exact_heads": 1536,
+    "profiles": {
+      "default-resident": {
+        "status": "passed",
+        "normal_and_asan": [
+          {
+            "mode": "normal",
+            "exact_heads": 384,
+            "all_input_ids_and_generated_tokens": true,
+            "finite": true,
+            "exit": 0
+          },
+          {
+            "mode": "asan",
+            "exact_heads": 384,
+            "all_input_ids_and_generated_tokens": true,
+            "finite": true,
+            "exit": 0
+          }
+        ],
+        "whole_heads": 768,
+        "profile": "bench/policies/qwen38-cuda-default-resident.json",
+        "original_source": "reference-repeats/long96-A",
+        "independent_repeated_reference": "reference-repeats/long96-B",
+        "full_goal_complete": false,
+        "release_ready": false
+      },
+      "init-observed": {
+        "status": "passed",
+        "normal_and_asan": [
+          {
+            "mode": "normal",
+            "exact_heads": 384,
+            "all_input_ids_and_generated_tokens": true,
+            "finite": true,
+            "exit": 0
+          },
+          {
+            "mode": "asan",
+            "exact_heads": 384,
+            "all_input_ids_and_generated_tokens": true,
+            "finite": true,
+            "exit": 0
+          }
+        ],
+        "whole_heads": 768,
+        "profile": "reference-init-ledger/native-batch-policy.json",
+        "original_source": "reference-init-ledger/long96-A",
+        "independent_repeated_reference": "reference-init-ledger/long96-B",
+        "full_goal_complete": false,
+        "release_ready": false
+      }
+    },
+    "acceptance": "All248320 BF16 vocabulary words after exact F32 expansion, prompt/history IDs, finite values and generated tokens must match. No tolerance changes."
+  },
+  "diagnosis": {
+    "proven": "Separate live autotuner instances can share the same generated kernel filename and disk cache key while retaining different selected launch configurations. A saved best_config is not a per-layer runtime contract.",
+    "live_init_profile": {
+      "input_norm_differences_from_default_resident": [
+        [
+          28,
+          2,
+          4
+        ],
+        [
+          33,
+          4,
+          2
+        ]
+      ],
+      "post_norm_differences": [],
+      "prefill_and_captured_four_row_decode_choices_identical": true,
+      "all129_live_norm_choices_recorded": true,
+      "derivation": "Actual selected config and PTX, exact named-parameter pointers, original generated sources; no output fitting."
+    },
+    "earlier_profileB": "The old three-head difference is reproducible without hidden readbacks and persists from decode index61 through95 for request0, at fixed logical geometry. Its complete live per-instance initialization trace was not captured; do not retrospectively assign it a guessed policy or claim its exact layer choice is proven.",
+    "failed_candidate": {
+      "path": "bare-native-policy.json",
+      "published": false,
+      "exact": 96,
+      "different": 288,
+      "reason": "One shared saved cache choice was over-applied to three source-identical layer instances; rejected."
+    },
+    "observer_failure": {
+      "first_attempt": "reference-callsite-kernels",
+      "exit": 1,
+      "reason": "Optional original Python function metadata can be absent after AOT reconstruction.",
+      "correction": "Guard optional metadata; original failed attempt remains preserved; corrected reference run passes."
+    }
+  },
+  "guard_verification": {
+    "status": "passed",
+    "cases": [
+      {
+        "case": "cpu-backend-option",
+        "command": [
+          "/home/mark/artalis.io/src/bitnet.c/bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "dense-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-default-repro/product-guards/prompts.json",
+          "--backend",
+          "cpu"
+        ],
+        "exit": 2,
+        "expected": 2,
+        "message": null
+      },
+      {
+        "case": "metal-option",
+        "command": [
+          "/home/mark/artalis.io/src/bitnet.c/bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "dense-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-default-repro/product-guards/prompts.json",
+          "--metal"
+        ],
+        "exit": 2,
+        "expected": 2,
+        "message": null
+      },
+      {
+        "case": "unknown-profile",
+        "command": [
+          "/home/mark/artalis.io/src/bitnet.c/bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "unknown",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-default-repro/product-guards/prompts.json"
+        ],
+        "exit": 2,
+        "expected": 2,
+        "message": null
+      },
+      {
+        "case": "dense-as-flash",
+        "command": [
+          "/home/mark/artalis.io/src/bitnet.c/bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "flash-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-default-repro/product-guards/prompts.json"
+        ],
+        "exit": 1,
+        "expected": 1,
+        "message": "profile/model topology mismatch"
+      },
+      {
+        "case": "dense-as-glm",
+        "command": [
+          "/home/mark/artalis.io/src/bitnet.c/bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "glm-recurrent",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-default-repro/product-guards/prompts.json"
+        ],
+        "exit": 1,
+        "expected": 1,
+        "message": "profile/model topology mismatch"
+      },
+      {
+        "case": "native-unknown-profile",
+        "command": [
+          "/home/mark/artalis.io/src/bitnet.c/bitnet",
+          "--native-text",
+          "/unused",
+          "--profile",
+          "unknown",
+          "-p",
+          "probe"
+        ],
+        "exit": 2,
+        "expected": 2,
+        "message": null
+      }
+    ],
+    "cuda_visible_devices": "",
+    "gpu_idle": true,
+    "no_implicit_backend_fallback": true
+  },
+  "reproduce": {
+    "producer": "test/reference_qwen38_default_repro.py",
+    "observer": "test/reference_qwen38_init_norm_observer.py",
+    "placement": "Copy producer to /evidence/reference.py and observer to /evidence/sitecustomize.py; include /evidence in PYTHONPATH before starting every original worker. The actual pinned Docker command and private cache are in reference-init-ledger/command.json and vllm-cache.",
+    "command": [
+      "docker",
+      "run",
+      "--rm",
+      "--network",
+      "none",
+      "--gpus",
+      "device=GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+      "-e",
+      "CUDA_VISIBLE_DEVICES=0",
+      "-e",
+      "HF_HUB_OFFLINE=1",
+      "-e",
+      "HF_HUB_DISABLE_TELEMETRY=1",
+      "-e",
+      "VLLM_NO_USAGE_STATS=1",
+      "-e",
+      "DO_NOT_TRACK=1",
+      "-e",
+      "PYTHONPATH=/evidence:/gguf-py",
+      "-v",
+      "/home/mark/artalis.io/tools/llama.cpp/gguf-py:/gguf-py:ro",
+      "-v",
+      "/tmp/bitnet-goal-vllm-parity/wheels:/wheels:ro",
+      "-v",
+      "/tmp/bitnet-goal-flash-experts:/experts:ro",
+      "-v",
+      "/data/models:/data/models:ro",
+      "-v",
+      "/home/mark/artalis.io/src/bitnet.c:/repo:ro",
+      "-v",
+      "/tmp/bitnet-goal-flash-mma/qwen27-hf-validated:/config:ro",
+      "-v",
+      "/tmp/bitnet-goal-default-repro/reference-init-ledger:/evidence",
+      "-v",
+      "/tmp/bitnet-goal-default-repro/reference-init-ledger/vllm-cache:/root/.cache/vllm",
+      "-e",
+      "CUDA_LOG_FILE=stderr",
+      "-e",
+      "VLLM_ALLOW_INSECURE_SERIALIZATION=1",
+      "-e",
+      "LD_LIBRARY_PATH=/usr/local/cuda/compat/lib.real:/usr/local/lib/python3.12/dist-packages/torch/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64",
+      "-v",
+      "/tmp/bitnet-goal-qwen27-engine:/native-prompts:ro",
+      "-e",
+      "VLLM_SCHEDULER_UNCAP_PREFILL_ONLY_STEPS=1",
+      "--ulimit",
+      "core=0",
+      "--cidfile",
+      "/tmp/bitnet-goal-default-repro/reference-init-ledger/container-id.txt",
+      "-e",
+      "VLLM_WORKER_MULTIPROC_METHOD=spawn",
+      "--entrypoint",
+      "python",
+      "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+      "/evidence/reference.py"
+    ],
+    "required_metadata": "Record live per-instance normalization choices during initialization/capture and actual prefill; bind pointer identities to named parameters from that worker; preserve selected PTX. Validate complete heads against an unobserved-token control."
+  },
+  "limitations": [
+    "Only the declared checkpoint, GPU and workloads are qualified. A profile is a pinned arithmetic contract, not universal bit identity across autotuning choices.",
+    "ProfileB remains an explicitly unqualified original profile; all its raw values are preserved.",
+    "The observed initialization-ledger profile has correctness qualification, not new performance or sustained-SLO qualification.",
+    "All-family resident/offload performance, diverse working sets, transfer/stall/physical setup peaks, broader CPU/Metal coverage and native cross-request shared GPU projection work remain open."
+  ],
+  "historical_integrity": {
+    "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+    "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+    "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+    "changed": true
+  }
+}

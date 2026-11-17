@@ -1,0 +1,360 @@
+{
+  "status": "qualified sliding-window storage/visibility component; attention arithmetic and full native forward remain open",
+  "architecture": "DeepseekV41ForCausalLM",
+  "apis": {
+    "backend": [
+      "bn_gpu_swa_ring_rows",
+      "bn_gpu_swa_ring_update_info",
+      "BnGPUSWARingUpdateResidentPlan",
+      "swa_ring_update_f16_resident"
+    ],
+    "transformer": [
+      "bn_transformer_trellis_swa_session_plan",
+      "bn_transformer_trellis_prepare_session_attention",
+      "bn_transformer_trellis_swa_views",
+      "bn_transformer_trellis_swa_commit"
+    ]
+  },
+  "implementation": {
+    "geometry": "Source ring_rows=ceil((sliding_window+512)/256)*256; actual window128 ->768 rows of F16[512]. One independent ring per40layers, one shared serialized move scratch on same FFN/KV resident request. Additional device payload32243712bytes, host ownership explicitly planned.",
+    "update": "Exact source branch semantics: in-place append while chunk fits;256-page shift for small overflowing chunks; page-aligned trailing-window rebase for large chunks. Snapshot old source rows into scratch before moving; fused update gives chunk writes priority and leaves stale/unused rows unchanged. No allocation, host transfer or fence inside backend operation.",
+    "visibility": "Pre-update query returns ring,window_beg,n_prev=min(window-1,pos0-window_beg,pos0),win_floor. Caller queues attention consumers before ring update on same stream. Completion precedes per-layer cursor/window-begin commit. Rewinds may not precede retained begin or exceed cursor; other recurrent state can impose tighter limits. Session whole-model position is not advanced.",
+    "setup": "Separate optional SWA quota alongside existing FFN/KV quotas; all three stages attach only after successful initialization/completion. Matching setup idempotent. Existing FFN-only/KV-only setup remains optional and cannot be upgraded in place. Reset/free owns all device and host resources.",
+    "failure": "Malformed scalar/count/request arguments preserve state; backend rejection/execution failure or completion failure destroys entire native request and invalidates all views until reset/setup. Quota rejection occurs before request creation; staged allocation/setup failures fully roll back.",
+    "boundary": "Private CUDA copy mechanics, transformer-owned mutable state, immutable architecture geometry/weights remain separate. Public planning helper uses checked integer arithmetic. Existing quant/linear/norm/RoPE numerical kernels untouched."
+  },
+  "checkpoint": {
+    "path": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "window": 128,
+    "ring_rows": 768,
+    "dim": 512,
+    "norm_epsilon": 1e-20,
+    "epsilon_source": "Capture reads checkpoint text_config.rms_norm_eps; native producer passes model native numerics. No inherited1e-6 test-default substitution.",
+    "layers": 40,
+    "fully_replayed_layers": [
+      0,
+      1,
+      2,
+      8,
+      14,
+      20,
+      24,
+      39
+    ],
+    "max_tokens": 2049,
+    "maxseq": 8192
+  },
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "license": "third_party/exllamav3/LICENSE",
+    "update": "Unchanged extracted _forward_cached_one ring update Python block executed with original Torch copy_/clone operations.",
+    "update_sha256": "723e10e5af6b0931825b93e7af283749bd1dac4ed23b13cf52e8074777a5acd0",
+    "geometry_and_rollback": "cache/dsa.py DSV4LayerState, DSV4State.rollback_capacity/post_advance; rollback follows retained begin, not a blanket claimed256-token bound.",
+    "projections": "Original330-core F16 capture policy yields actual40WKV matrices; rawBF16 KV norm parameters preserved. Reference uses independent Torch matmul and original fused pair-RMSNorm/RoPE CABI with source frequencies; native uses existing backend core/parameter owners.",
+    "captures": "Both original bundled-cuBLAS and matched-system-cuBLAS captures retained. Combined producer/ring compares matched source; standalone ring additionally consumes original source KV values. No candidate outputs seed goldens.",
+    "cross_library_different_case_counts": {
+      "kvraw": 153,
+      "kv": 147,
+      "ring": 165,
+      "history": 134
+    },
+    "synthetic": {
+      "cases": 40,
+      "source_update_sha256": "723e10e5af6b0931825b93e7af283749bd1dac4ed23b13cf52e8074777a5acd0",
+      "header_sha256": "a6d3aac305ecc35ef5c2cee831ce6ca3bf2a65469a81a95bf1d334d987d85953",
+      "torch": "2.14.0+cu130"
+    }
+  },
+  "correctness": {
+    "actual_cases": 200,
+    "calls_per_run": 400,
+    "comparison": "Two independent sessions; all40layers append a real checkpoint-derived KV row. Eight representative sliding/compressed/owner/reader layers replay full21-frame schedule. Pre-update history and whole pre/post rings, rotated KV, source inputs and immutable frequencies byte-exact; stage guards preserved. Per-layer and per-session cursors isolated, compressed pool cursors remain unchanged.",
+    "modes": [
+      336,
+      16,
+      48
+    ],
+    "schedule": "Sequential chunks1/1/31/32/33/127/128/247/257/1/31/32/33/223/104/1025 reach2306. Then2190+7,2197+33,2230+2049,4096+1,4097+31. Covers old-row retention, overlapping shifts, chunk>ring, multi-page rebases and rewind exactly to retained boundary.",
+    "setup": "Planned allocation delta exactly41resident allocations and32243712payload bytes. Quota-short rejects, idempotence, no live upgrades, all40zero-initialized distinct rings. Three injected SWA allocation failures plus SWA setup completion failure fully detach/free staged request. Completion failure destroys request; reset restores zero ring/cursor. Backend alias rejection invalidates request. Immutable model config preserved.",
+    "synthetic": "40 original Python update fixtures x2requests=80calls; windows1/128/1024/2048, D32/128/512, arbitrary F16 bits inclNaNs, whole scratch/ring/input hashes, guards, aliases/foreign owner/late bad plans. Pure CPU source-derived planning cases and invalid bounds run in standard suite.",
+    "legacy": {
+      "legacy-kv": {
+        "calls": 96,
+        "compared_bytes": 151399320,
+        "hot_allocations": 0,
+        "kv_device_bytes": 5388304,
+        "owners": 4,
+        "setup_failures": 4,
+        "completion_failure_recovered": true
+      },
+      "legacy-ffn": {
+        "decode_cases": 12,
+        "prefill_cases": 4,
+        "compared_bytes": 7046173384,
+        "hot_allocations": 0,
+        "hot_requests": 0,
+        "created": 5,
+        "destroyed": 5,
+        "resident": 0,
+        "reader_bytes": 7203730944,
+        "upload_bytes": 7217046528,
+        "profile_calls": 0,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1
+      }
+    },
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "legacy-kv-build": 0,
+        "legacy-ffn-build": 0,
+        "real": 0,
+        "ring-original": 0,
+        "asan-real": 0,
+        "asan-ring": 0,
+        "memcheck-combined": 0,
+        "memcheck-ring": 0,
+        "initcheck-combined": 0,
+        "initcheck-ring": 0,
+        "racecheck": 0,
+        "legacy-kv": 0,
+        "legacy-ffn": 0,
+        "nsys": 0,
+        "export": 0
+      },
+      "records": {
+        "real": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "ring-original": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "asan-real": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "asan-ring": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "memcheck-combined": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "memcheck-ring": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "initcheck-combined": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "initcheck-ring": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "nsys": {
+          "calls": 400,
+          "compared_bytes": 1395181568,
+          "hot_allocations": 0,
+          "swa_device_bytes": 32243712,
+          "modes": [
+            336,
+            16,
+            48
+          ],
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        }
+      },
+      "frozen_files": 769,
+      "references": {
+        "/tmp/bitnet-goal-native-swa-ring/original-reference": "0f6bc3c7b57a31441b67ec0b4f4801f5ddb7dff39642a300832d2da9388a6e7a",
+        "/tmp/bitnet-goal-native-swa-ring/paired-reference": "a9a530a0e6bce90cbfa07f527c666eb96bdefd931d7ae2a5dfe86cb449fbce22"
+      },
+      "probe_sha256": "10c5aa9ff3cedd748d931ac96ad1f05571b18e0f6c8c1f42da704d38b45c935e"
+    }
+  },
+  "trace": {
+    "kernels": [
+      {
+        "name": "nvjet_sm120_hsh_mma_128x80x64_3_32x40x64_tmaAB_alignCD4_splitK_NNNN",
+        "count": 1,
+        "total_ns": 10016
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 1,
+        "total_ns": 2240
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)1>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "count": 1,
+        "total_ns": 2560
+      },
+      {
+        "name": "bn_cuda_swa_ring::snapshot(const unsigned short *, unsigned short *, unsigned long, unsigned long)",
+        "count": 1,
+        "total_ns": 768
+      },
+      {
+        "name": "bn_cuda_swa_ring::update(const unsigned short *, unsigned short *, const unsigned short *, int, int, int, int, int, int)",
+        "count": 1,
+        "total_ns": 1568
+      }
+    ],
+    "kernel_count": 5,
+    "kernel_total_ns": 17152,
+    "api_calls": [
+      {
+        "name": "cuStreamGetGreenCtx",
+        "count": 2
+      },
+      {
+        "name": "cuKernelSetAttribute",
+        "count": 1
+      },
+      {
+        "name": "cuLaunchKernelEx",
+        "count": 1
+      },
+      {
+        "name": "cudaLaunchKernelExC_v11060",
+        "count": 1
+      },
+      {
+        "name": "cuKernelGetName",
+        "count": 3
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "count": 3
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "count": 1
+      }
+    ],
+    "transfer_calls": 0,
+    "transfer_bytes": 0,
+    "scope": "One warmed layer39 chunk257 from position600, rebase retaining88 old rows. Production F16 KV projection, source fused KV norm/RoPE and transformer ring commit. Input/frequency uploads and source comparisons outside capture. One explicit controller completion; not attention/model throughput."
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "changed_previous_source_files": [
+    "Makefile",
+    "include/gpu_backend.h",
+    "include/transformer_internal.h",
+    "src/gpu_cuda.cu",
+    "test/test_cuda_backend.c",
+    "test/test_gpu_backend.c",
+    "src/transformer/trellis.c"
+  ],
+  "new_source_test_files": [
+    "src/gpu_cuda_swa_ring.cuh",
+    "src/transformer/trellis_swa.h",
+    "test/cuda_native_swa_ring_checks.h",
+    "test/cuda_native_swa_ring_reference.h"
+  ],
+  "artifacts": {
+    "root": "/tmp/bitnet-goal-native-swa-ring",
+    "frozen_source": "/tmp/bitnet-goal-native-swa-ring/frozen-source.json",
+    "qualification": "/tmp/bitnet-goal-native-swa-ring/qualification.json",
+    "original_reference": "/tmp/bitnet-goal-native-swa-ring/original-reference/reference.json",
+    "paired_reference": "/tmp/bitnet-goal-native-swa-ring/paired-reference/reference.json"
+  },
+  "limitations": [
+    "Storage/visibility component only. Producer orchestration is qualified by probe, not integrated full attention. Production frequency and compressor metadata setup remain explicit caller inputs.",
+    "Caller must queue actual attention consumers before ring commit; this qualification checks pre-update history/state, not attention outputs. No index-query scoring/topk/candidate selection, causal attention/F32de-rotation, grouped output projection, Engram or full native generation/CLI admission yet.",
+    "One explicit completion fence per component commit; full-model asynchronous scheduling, batch coordination and parity tuning remain open. No full-model/vLLM or serving-tail claim.",
+    "Existing KV pool scope remains F16 private pages; global cross-request paging/prefix eviction/cache quantization not implemented.",
+    "ASAN/UBSAN instruments host probe, transformer SWA/KV ownership and selected session/model/reader/layout C sources; CUDA TU host validation is not claimed ASAN-instrumented. Device memory/leak/init/race checks passed separately.",
+    "Device qualification selected sm_120a only. CPU planning tested, no changed CPU SIMD kernels or claimed new ARM/Metal execution support."
+  ]
+}

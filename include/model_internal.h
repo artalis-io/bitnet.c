@@ -12,8 +12,24 @@ typedef struct BnBackendModel BnBackendModel;
 typedef struct BnThreadPool BnThreadPool;
 typedef struct BnTQState BnTQState;
 typedef struct BnMoEExpertTensorNames BnMoEExpertTensorNames;
+typedef struct BnModelExpertSources BnModelExpertSources;
+
+typedef struct {
+    BnModelAnatomy anatomy;
+    BnGGUFFile *file; /* Borrowed; immutable directory and source payloads. */
+    BnMoEExpertMap experts[BN_MODEL_ANATOMY_MAX_LAYERS];
+} BnModelTopology;
 
 struct BnModelRuntime {
+    BnModelTopology *topology;
+    BnModelExpertSources *trellis_experts;
+    BnJSON native_config;
+    BnModelNativeExpertConfig native_expert_config;
+    BnModelNativeAnatomy *native_anatomy;
+    BnTrellisRowSource *native_rows;
+    uint32_t *native_token_map;
+    BnModelNativeNumerics native_numerics;
+    int native_numerics_ready;
     BnThreadPool *pool;
     int owns_pool;
     SHArena *weight_arena;
@@ -31,6 +47,10 @@ struct BnModelBackendState {
 };
 
 BnBackendModel *bn_model_backend(const BnModel *model);
+const BnSafetensorsIndex *bn_model_native_index(const BnModel *model);
+BnGGUFFile *bn_model_topology_file(const BnModel *model);
+const BnMoEExpertMap *bn_model_topology_experts(const BnModel *model,
+                                               size_t *count);
 int bn_model_ensure_backend(BnModel *model);
 size_t bn_model_backend_prepared_size(const BnConfig *config,
                                       const BnWeights *weights);
@@ -71,6 +91,7 @@ int bn_model_load_moe_expert_map(BnGGUFFile *file,
                                  int expert_hidden,
                                  BnMoEExpertMap *map);
 void bn_model_moe_io_shutdown(BnModel *model);
+void bn_model_trellis_experts_free(BnModel *model);
 size_t bn_model_session_arena_size(const BnConfig *config,
                                    const BnWeights *weights);
 int bn_model_alloc_session_buffers(const BnConfig *config,
@@ -82,6 +103,7 @@ int bn_model_alloc_session_buffers(const BnConfig *config,
 int bn_model_activation_is_relu2(int activation);
 int bn_model_activation_is_gelu(int activation);
 int bn_model_activation_uses_silu_path(int activation);
+BnModelBF16LayoutKind bn_model_gguf_bf16_layout(BnGGUFFile *file);
 int bn_model_gguf_uses_moe(BnGGUFFile *file);
 int bn_model_gguf_context_length(BnGGUFFile *file);
 int bn_model_gguf_has_auxiliary_prediction_blocks(BnGGUFFile *file);
@@ -156,6 +178,9 @@ int bn_model_moe_policy_uses_reference_router_accumulation(
 int bn_model_moe_policy_uses_separate_router_topk(
     const BnConfig *config);
 int bn_model_moe_policy_uses_dense_residual_branch(const BnConfig *config);
+/* Only for zero-centered Gemma norms; never ordinary SSM RMSNorm scales. */
+float bn_model_backend_policy_zero_centered_norm_storage_offset(const BnConfig *config);
+int bn_model_backend_policy_uses_query_sparse_attention(const BnConfig *config);
 int bn_model_backend_policy_ffn_sub_norm_elements(const BnConfig *config);
 int bn_model_moe_policy_uses_reference_silu(const BnConfig *config);
 int bn_model_moe_policy_activation(const BnConfig *config);

@@ -37,6 +37,136 @@ static int mock_reset_activations(void *ctx) {
     return 0;
 }
 
+typedef struct {
+    BnBackendSession *session;
+    const void *owner;
+    int *release_count;
+    float recurrent_state;
+} MockGPUResources;
+
+static void mock_release_gpu_resources(void *ptr) {
+    MockGPUResources *resources = (MockGPUResources *)ptr;
+    assert(bn_backend_session_gpu_resources(resources->session,
+                                            resources->owner) == NULL);
+    ++*resources->release_count;
+    free(resources);
+}
+
+static MockGPUResources *mock_gpu_resources(BnSession *session,
+    const void *owner, int *release_count) {
+    MockGPUResources *resources = (MockGPUResources *)calloc(1, sizeof(*resources));
+    assert(resources);
+    resources->session = bn_session_backend(session);
+    resources->owner = owner;
+    resources->release_count = release_count;
+    return resources;
+}
+
+static void test_session_gpu_resource_lifetime(void) {
+    printf("test_session_gpu_resource_lifetime... ");
+    BnModel model = {0};
+    init_test_config(&model.config);
+    BnSession *s1 = bn_session_create(&model, NULL);
+    BnSession *s2 = bn_session_create(&model, NULL);
+    assert(s1 && s2);
+    BnBackendSession *b1 = bn_session_backend(s1);
+    BnBackendSession *b2 = bn_session_backend(s2);
+    int owner1 = 0, owner2 = 0, releases1 = 0, releases2 = 0;
+    MockGPUResources *r1 = mock_gpu_resources(s1, &owner1, &releases1);
+    MockGPUResources *r2 = mock_gpu_resources(s2, &owner1, &releases2);
+    assert(bn_backend_session_attach_gpu_resources(NULL, &owner1, r1, mock_release_gpu_resources) == -1);
+    assert(bn_backend_session_attach_gpu_resources(b1, NULL, r1, mock_release_gpu_resources) == -1);
+    assert(bn_backend_session_attach_gpu_resources(b1, &owner1, NULL, mock_release_gpu_resources) == -1);
+    assert(bn_backend_session_attach_gpu_resources(b1, &owner1, r1, NULL) == -1);
+    assert(bn_backend_session_gpu_resources(b1, &owner1) == NULL);
+    assert(bn_backend_session_gpu_resources(NULL, &owner1) == NULL);
+    assert(releases1 == 0);
+    assert(bn_backend_session_attach_gpu_resources(b1, &owner1, r1, mock_release_gpu_resources) == 0);
+    assert(bn_backend_session_attach_gpu_resources(b2, &owner1, r2, mock_release_gpu_resources) == 0);
+    assert(bn_backend_session_gpu_resources(b1, NULL) == NULL);
+    assert(bn_backend_session_gpu_resources(b1, &owner2) == NULL);
+    assert(bn_backend_session_gpu_resources(b1, &owner1) == r1);
+    assert(bn_backend_session_gpu_resources(b2, &owner1) == r2);
+    r1->recurrent_state = 17.0f;
+    r2->recurrent_state = 29.0f;
+    /* A rejected replacement remains caller-owned, including another owner. */
+    MockGPUResources *replacement = mock_gpu_resources(s1, &owner2, &releases1);
+    assert(bn_backend_session_attach_gpu_resources(b1, &owner1, r1, mock_release_gpu_resources) == -1);
+    assert(bn_backend_session_attach_gpu_resources(b1, &owner2, replacement, mock_release_gpu_resources) == -1);
+    assert(releases1 == 0 && r1->recurrent_state == 17.0f);
+    free(replacement);
+    bn_session_reset(s1, &model);
+    assert(releases1 == 1 && releases2 == 0);
+    assert(bn_backend_session_gpu_resources(b1, &owner1) == NULL);
+    assert(bn_backend_session_gpu_resources(b2, &owner1) == r2);
+    assert(r2->recurrent_state == 29.0f);
+    bn_session_reset(s1, &model);
+    assert(releases1 == 1);
+    r1 = mock_gpu_resources(s1, &owner2, &releases1);
+    assert(bn_backend_session_attach_gpu_resources(b1, &owner2, r1, mock_release_gpu_resources) == 0);
+    bn_session_free(s2, NULL);
+    assert(releases1 == 1 && releases2 == 1);
+    bn_session_free(s1, NULL);
+    assert(releases1 == 2 && releases2 == 1);
+    bn_backend_session_release_gpu_resources(NULL);
+    printf("PASSED\n");
+}
+
+typedef struct {
+    BnBackendSession *backend;
+    const void *owner;
+    int *gpu_releases;
+    int expected_gpu_releases;
+    int *host_releases;
+} ExecutionProbe;
+
+static void release_execution_probe(void *ptr) {
+    ExecutionProbe *p = ptr;
+    assert(*p->gpu_releases == p->expected_gpu_releases);
+    assert(!bn_backend_session_has_gpu_resources(p->backend));
+    assert(!bn_backend_session_has_execution_resources(p->backend));
+    assert(bn_backend_session_execution_resources(p->backend, p->owner) == NULL);
+    ++*p->host_releases;
+    free(p);
+}
+
+static void test_session_execution_metadata_lifetime(void) {
+    BnModel model = {0}; init_test_config(&model.config);
+    BnSession *s = bn_session_create(&model, NULL); assert(s);
+    BnBackendSession *b = bn_session_backend(s);
+    int owner = 0, other = 0, gpu_releases = 0, host_releases = 0;
+    ExecutionProbe *p = malloc(sizeof(*p)); assert(p);
+    *p = (ExecutionProbe){b, &owner, &gpu_releases, 1, &host_releases};
+    assert(!bn_backend_session_has_gpu_resources(NULL));
+    assert(!bn_backend_session_has_execution_resources(NULL));
+    assert(bn_backend_session_attach_execution_resources(NULL, &owner, p, release_execution_probe) == -1);
+    assert(bn_backend_session_attach_execution_resources(b, NULL, p, release_execution_probe) == -1);
+    assert(bn_backend_session_attach_execution_resources(b, &owner, NULL, release_execution_probe) == -1);
+    assert(bn_backend_session_attach_execution_resources(b, &owner, p, NULL) == -1);
+    assert(bn_backend_session_execution_resources(NULL, &owner) == NULL);
+    MockGPUResources *gpu = mock_gpu_resources(s, &owner, &gpu_releases);
+    assert(bn_backend_session_attach_gpu_resources(b, &owner, gpu, mock_release_gpu_resources) == 0);
+    assert(bn_backend_session_has_gpu_resources(b));
+    assert(bn_backend_session_attach_execution_resources(b, &owner, p, release_execution_probe) == 0);
+    assert(bn_backend_session_has_execution_resources(b));
+    assert(bn_backend_session_execution_resources(b, &owner) == p);
+    assert(bn_backend_session_execution_resources(b, &other) == NULL);
+    assert(bn_backend_session_execution_resources(b, NULL) == NULL);
+    assert(bn_backend_session_attach_execution_resources(b, &owner, p, release_execution_probe) == -1);
+    assert(bn_backend_session_attach_execution_resources(b, &other, p, release_execution_probe) == -1);
+    bn_session_reset(s, &model);
+    assert(gpu_releases == 1 && host_releases == 1);
+    bn_session_reset(s, &model);
+    assert(gpu_releases == 1 && host_releases == 1);
+    /* Host-only partial setup is released even without a GPU container. */
+    p = malloc(sizeof(*p)); assert(p);
+    *p = (ExecutionProbe){b, &owner, &gpu_releases, 1, &host_releases};
+    assert(bn_backend_session_attach_execution_resources(b, &owner, p, release_execution_probe) == 0);
+    bn_session_free(s, NULL);
+    assert(gpu_releases == 1 && host_releases == 2);
+    puts("test_session_execution_metadata_lifetime... PASSED");
+}
+
 // Test: create and free two sessions from the same model
 static void test_session_create_free(void) {
     printf("test_session_create_free... ");
@@ -48,6 +178,23 @@ static void test_session_create_free(void) {
 
     BnSession *s1 = bn_session_create(&model, NULL);
     assert(s1 != NULL);
+    assert(bn_session_matches_model(s1, &model));
+    assert(!bn_session_matches_model(NULL, &model));
+    assert(!bn_session_matches_model(s1, NULL));
+    BnModel copy = model;
+    assert(!bn_session_matches_model(s1, &copy));
+    s1->pos = 7;
+    bn_session_reset(s1, &copy);
+    assert(s1->pos == 7);
+    bn_session_reset(s1, &model);
+    assert(!s1->pos);
+    model.config.vocab_size++;
+    assert(!bn_session_matches_model(s1, &model));
+    model.config.vocab_size--;
+    model.config.seq_len++;
+    assert(!bn_session_matches_model(s1, &model));
+    model.config.seq_len--;
+    assert(bn_session_matches_model(s1, &model));
     assert(bn_model_backend(&model) == NULL);
     assert(bn_session_backend(s1) != NULL);
     assert(s1->state.x != NULL);
@@ -61,6 +208,12 @@ static void test_session_create_free(void) {
     assert(bn_model_backend(&model) == NULL);
     assert(bn_session_backend(s2) != NULL);
     assert(s2->state.x != NULL);
+
+    assert(!bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(s1)));
+    assert(!bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(s2)));
+    bn_backend_session_set_gpu_decode_ssm_pending(bn_session_backend(s1), 1);
+    assert(bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(s1)));
+    assert(!bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(s2)));
 
     // Sessions should have independent buffers
     assert(s1->state.x != s2->state.x);
@@ -134,6 +287,8 @@ static void test_session_reset(void) {
     }
     s->pos = 10;
     s->state.batched_prompt_contract = 1;
+    s->moe_cache_prefill = 1;
+    bn_backend_session_set_gpu_decode_ssm_pending(bn_session_backend(s), 1);
 
     // Reset
     bn_session_reset(s, &model);
@@ -141,6 +296,8 @@ static void test_session_reset(void) {
     // Verify zeroed
     assert(s->pos == 0);
     assert(s->state.batched_prompt_contract == 0);
+    assert(s->moe_cache_prefill == 0);
+    assert(!bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(s)));
     for (int i = 0; i < kv_dim; i++) {
         assert(s->state.key_cache[i] == 0.0f);
         assert(s->state.value_cache[i] == 0.0f);
@@ -453,8 +610,54 @@ static void test_session_gpu_graph_isolation(void) {
     printf("PASSED\n");
 }
 
+static void test_backend_session_host_storage(void) {
+    printf("test_backend_session_host_storage... ");
+    BnModel model = {0};
+    init_test_config(&model.config);
+    BnSession *a = bn_session_create_backend(&model, NULL);
+    BnSession *b = bn_session_create_backend(&model, NULL);
+    assert(a && b && a->backend_only && b->backend_only);
+    assert(a->arena->capacity < 4096);
+    assert(a->state.logits && a->state.token_history);
+    assert(a->state.logits != b->state.logits);
+    assert(!a->state.x && !a->state.key_cache && !a->state.value_cache);
+    assert(!a->state.ssm_state && !a->state.ssm_conv_state && !a->moe_state);
+    a->state.logits[0] = 7;
+    a->state.token_history[0] = 23;
+    a->pos = 4;
+    int owner = 0, releases = 0;
+    MockGPUResources *r = mock_gpu_resources(a, &owner, &releases);
+    assert(!bn_backend_session_attach_gpu_resources(bn_session_backend(a),
+        &owner, r, mock_release_gpu_resources));
+    bn_session_reset(a, &model);
+    assert(releases == 1 && a->pos == 0 && a->backend_only);
+    assert(a->state.token_history[0] == 0 && b->state.logits[0] == 0);
+    assert(!bn_backend_session_has_gpu_resources(bn_session_backend(a)));
+    bn_session_free(a, NULL);
+    bn_session_free(b, NULL);
+    assert(releases == 1);
+    assert(!bn_session_create_backend(NULL, NULL));
+    model.config.vocab_size = 0;
+    assert(!bn_session_create_backend(&model, NULL));
+    model.config.vocab_size = 100;
+    model.config.seq_len = -1;
+    assert(!bn_session_create_backend(&model, NULL));
+    init_test_config(&model.config);
+    BnModelRuntime runtime={0};model.runtime=&runtime;
+    assert(!bn_json_init(&runtime.native_config,"{}",2));
+    /* A native document without prepared/source-valid anatomy cannot use
+     * otherwise valid legacy host dimensions. */
+    assert(!bn_session_create_backend(&model,NULL));
+    assert(!bn_session_create(&model,NULL));
+    bn_json_free(&runtime.native_config);model.runtime=NULL;
+    puts("PASSED");
+}
+
 int main(void) {
+    test_backend_session_host_storage();
     test_session_create_free();
+    test_session_gpu_resource_lifetime();
+    test_session_execution_metadata_lifetime();
     test_session_kv_isolation();
     test_session_reset();
     test_session_reset_resets_backend_activations();

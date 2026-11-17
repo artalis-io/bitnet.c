@@ -1,0 +1,117 @@
+{
+  "milestone": "Native text storage anatomy and cross-layer sharing plan",
+  "status": "Qualified storage/scheduling component; full inference objective remains active",
+  "implementation": {
+    "architecture": "BnModelNativeAnatomy contains native safetensors IDs (separate from GGUF), tensor geometry, compressed pool/index ownership, candidate mode and Engram rows.",
+    "bindings": "Validates main attention FP8/E8M0 block-32 pairs, BF16 norms/router/compressors/index keys, F32 sinks/HC parameters/biases, shared expert matrices, Engram int4/F16 scale storage and projection, and embedding/head/norm. No tensor payload reads.",
+    "coverage": "Rejects unrecognized layer core tensors; main routed expert namespace is handled by existing trellis catalog. Auxiliary MTP and vision namespaces excluded.",
+    "ownership": "Optional bn_model_prepare_native_anatomy setup stage before backend publication; model owns immutable plan and releases it after backend resources. Errors preserve existing model/catalog and output plan.",
+    "limits": "Storage/scheduling only. Numeric execution settings remain in owned JSON; no full numeric validation, quant execution capability or forward/generation admission is added."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "catalog-build": 0,
+      "catalog": 0,
+      "asan-catalog-build": 0,
+      "asan-catalog": 0,
+      "catalog-shuffled": 0,
+      "ffn-build": 0,
+      "asan-ffn-build": 0,
+      "ffn-l0-e0-m1": 0,
+      "ffn-l0-e0-m7": 0,
+      "ffn-l0-e0-m64": 0,
+      "ffn-l0-e0-m256": 0,
+      "ffn-l39-e383-m1": 0,
+      "ffn-l39-e383-m7": 0,
+      "ffn-l39-e383-m64": 0,
+      "ffn-l39-e383-m256": 0,
+      "asan-ffn": 0,
+      "memcheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "native_core_bindings": 1258,
+    "complete_native_core_name_set_matches_checkpoint": true,
+    "independent_core": {
+      "count": 1258,
+      "original_metadata_sha256": "216f3c1f72380b668655c4f4b1ee1ba752df641647d72f578336952da45d4a09",
+      "sorted_names_sha256": "2c85e103a4d41cb86d123e6db12dd435ffc4dbd5ba853ffd9b965446ab3aa612"
+    },
+    "sharing": {
+      "layers": 40,
+      "pool_owners": 4,
+      "index_sources": 8,
+      "candidate_sources": 1,
+      "candidate_users": 4,
+      "engram_layers": 2
+    },
+    "sharing_matches_pinned_original_constructor": true,
+    "source_id_order_invariance": true,
+    "synthetic_tests": "Independent core namespace fixture with small geometry and zero payloads; missing tensor, dtype, shape, scale shape, extra unknown core tensor, invalid owner/index/candidate geometry and model rollback/teardown checked under ASAN/UBSAN.",
+    "actual_ffn_cases": 8,
+    "actual_ffn_totals": {
+      "reference_f32_words": 23511040,
+      "reference_f16_words": 18137088,
+      "peer_zero_values": 3358720
+    },
+    "actual_ffn_mismatches": 0,
+    "traced_compressed_payload_peak_bytes": 13315584,
+    "traced_weight_allocations": 9,
+    "traced_weight_frees": 9,
+    "traced_heap_allocations": 39,
+    "traced_heap_frees": 39
+  },
+  "reference": {
+    "path": "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/architecture/deepseek_v41.py",
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "sha256": "18e0dc275d300e68ee09e51d890a029907dfd32a2e1c13a53f1b2cc0a3a48aff",
+    "scope": "Original kv_source/make_attn method bodies execute with a fake parent recording constructor arguments; latest full index source tracked per original shared-selection contract. This is a topology reference, not numerical full-model inference."
+  },
+  "limitations": [
+    "Full numerical execution planning, FP8/core kernels, HC4 carry-pre execution, sqrtsoftplus routing, indexed/compressed attention, Engram hashing and generation remain unfinished.",
+    "Actual FFN tests use deterministic inputs and frozen independent FFN references, not full-model hidden states.",
+    "Compressed GPU payload bound excludes context/library, request tensors/workspace and host storage/cache/staging.",
+    "RSS/timing are diagnostic, not total-system, storage-cold or throughput benchmarks.",
+    "WASM dependencies were updated but WASM and NEON were not validated here.",
+    "No vLLM parity claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-native-anatomy/qualification.json",
+    "native_names": "/tmp/bitnet-goal-native-anatomy/native-names.txt",
+    "native_schedule": "/tmp/bitnet-goal-native-anatomy/native-schedule.jsonl",
+    "original_schedule": "/tmp/bitnet-goal-native-anatomy/reference-schedule.json",
+    "profile": "/tmp/bitnet-goal-native-anatomy/profile-analysis.json",
+    "trace": "/tmp/bitnet-goal-native-anatomy/lifetime.nsys-rep",
+    "continuation": "/tmp/bitnet-goal-native-anatomy/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/model_anatomy.h": "5faeaddb6af42938f89aefe26822cfdedb7e104947fe5a303e3222ee090a0dc2",
+    "include/model_arch.h": "acf1a41eba674158d602532ce25fe340a37f0cdb427960ac7787db5810ce84dc",
+    "src/model_arch.c": "2215bb879bbc0a5727354b53dbe97bd6292d70e3d8429d4a32384c999421bc40",
+    "test/native_anatomy_checks.h": "8f3e3fd826ca4307cab4cc3dbbb3ac1d66d762d8c6435803c9341bb1a0db79b2",
+    "test/native_anatomy_reference.h": "aa6fafd675a0bdb91da7700accb2a0fc6dc7b3db230f11f0589cd0cdb813820a",
+    "wasm/build.sh": "d3992db2674df8e584172357086d2e4c98b823600dd16b343756ccf8a346956f",
+    "include/model.h": "8f2771629a135ad67b4e5a28e4f254a16b8078bf9f2d2e9bc975c5df1aa01c37",
+    "include/model_internal.h": "a4692a5a12a27f3774b966a319fc98f7b323368635cef1adc9765a0ceb13fac8",
+    "include/moe.h": "ffc9ab8a02bd0b757ed33cd1f4c622640a1bb96f5f0e26cb24412b434a4dfb62",
+    "include/moe_types.h": "c4b86e8de91a444ae9294e022818d94b474cd22484d82945d597bb1687265a12",
+    "src/model.c": "f3184d2929ae12173e1ef5b83b032d471cfdfa378c9a0d442e8f034f6a73258a",
+    "src/model_moe.c": "e178952a8eb38696b9e0ee9ca1111e0ef1aa1f405494bebd3f3de7bbf2eb0328",
+    "test/test_moe.c": "c584aec1b919618b586c02284e576016082a8f33ff101e1802bffb9c303fbd2b",
+    "Makefile": "9880cd30b1f999e3ca28be79caac869dde2fb44502da23d7b98d99b8fe20ce81"
+  }
+}

@@ -2,9 +2,125 @@
 #include "simd_helpers.h"
 #include <math.h>
 #include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 #if defined(__AVX2__) && defined(__FMA__)
 #include <immintrin.h>
 #endif
+
+static int mhc_finite(const float *values, size_t count) {
+    if (!values) return 0;
+    for (size_t i = 0; i < count; i++) if (!isfinite(values[i])) return 0;
+    return 1;
+}
+
+int bn_transformer_mhc_coefficients(const BnMHCCoeffCtx *c) {
+    if (!c || c->streams < 1 || c->streams > 16 || c->iterations < 1 ||
+        c->iterations > 128 || !isfinite(c->pre_eps) || c->pre_eps < 0 ||
+        !isfinite(c->sinkhorn_eps) || c->sinkhorn_eps <= 0 ||
+        !isfinite(c->post_mult) || c->post_mult < 0 ||
+        !c->pre || !c->post || !c->comb) goto invalid;
+    int h = c->streams, count = 2 * h + h * h;
+    if (!mhc_finite(c->mixes, (size_t)count) ||
+        !mhc_finite(c->base, (size_t)count) || !mhc_finite(c->scale, 3)) goto invalid;
+    float pre[16], post[16], matrix[256];
+    for (int i = 0; i < count; i++) {
+        int group = i < h ? 0 : i < 2 * h ? 1 : 2;
+        volatile float scaled = c->mixes[i] * c->scale[group];
+        float value = scaled + c->base[i];
+        if (i < h) pre[i] = 1.0f / (1.0f + expf(-value)) + c->pre_eps;
+        else if (i < 2 * h)
+            post[i - h] = (1.0f / (1.0f + expf(-value))) * c->post_mult;
+        else {
+            if (!isfinite(value)) goto invalid;
+            matrix[i - 2 * h] = value;
+        }
+    }
+    for (int row = 0; row < h; row++) {
+        float maximum = matrix[row * h], sum = 0;
+        for (int col = 1; col < h; col++)
+            if (matrix[row * h + col] > maximum) maximum = matrix[row * h + col];
+        for (int col = 0; col < h; col++) {
+            matrix[row * h + col] = expf(matrix[row * h + col] - maximum);
+            sum += matrix[row * h + col];
+        }
+        for (int col = 0; col < h; col++)
+            matrix[row * h + col] = matrix[row * h + col] / sum + c->sinkhorn_eps;
+    }
+    /* Initial column normalization follows row softmax; subsequent iterations
+     * alternate row then column normalization, retaining epsilon each time. */
+    for (int iteration = 0; iteration < c->iterations; iteration++) {
+        if (iteration) for (int row = 0; row < h; row++) {
+            float sum = 0;
+            for (int col = 0; col < h; col++) sum += matrix[row * h + col];
+            sum += c->sinkhorn_eps;
+            if (!isfinite(sum) || sum <= 0) goto invalid;
+            for (int col = 0; col < h; col++) matrix[row * h + col] /= sum;
+        }
+        for (int col = 0; col < h; col++) {
+            float sum = 0;
+            for (int row = 0; row < h; row++) sum += matrix[row * h + col];
+            sum += c->sinkhorn_eps;
+            if (!isfinite(sum) || sum <= 0) goto invalid;
+            for (int row = 0; row < h; row++) matrix[row * h + col] /= sum;
+        }
+    }
+    memcpy(c->pre, pre, (size_t)h * sizeof(float));
+    memcpy(c->post, post, (size_t)h * sizeof(float));
+    memcpy(c->comb, matrix, (size_t)h * h * sizeof(float));
+    return 0;
+invalid:
+    fprintf(stderr, "mHC coefficients: invalid inputs or normalization\n");
+    return -1;
+}
+
+static int mhc_shape(int streams, int dim) {
+    return streams >= 1 && streams <= 16 && dim >= 0 &&
+        (size_t)dim <= SIZE_MAX / sizeof(float) / (size_t)streams;
+}
+
+int bn_transformer_mhc_mix_input(float *out, const float *residual,
+    const float *pre, int streams, int dim) {
+    if (!mhc_shape(streams, dim)) goto invalid;
+    if (!dim) return 0;
+    if (!out || !mhc_finite(pre, (size_t)streams) ||
+        !mhc_finite(residual, (size_t)streams * dim)) goto invalid;
+    for (int d = 0; d < dim; d++) {
+        float sum = 0;
+        for (int i = 0; i < streams; i++) {
+            volatile float product = pre[i] * residual[(size_t)i * dim + d];
+            sum += product;
+        }
+        out[d] = sum;
+    }
+    return 0;
+invalid:
+    fprintf(stderr, "mHC input mix: invalid inputs\n");
+    return -1;
+}
+
+int bn_transformer_mhc_mix_output(float *out, const float *residual,
+    const float *branch, const float *post, const float *comb,
+    int streams, int dim) {
+    if (!mhc_shape(streams, dim)) goto invalid;
+    if (!dim) return 0;
+    if (!out || !mhc_finite(branch, (size_t)dim) ||
+        !mhc_finite(residual, (size_t)streams * dim) ||
+        !mhc_finite(post, (size_t)streams) ||
+        !mhc_finite(comb, (size_t)streams * streams)) goto invalid;
+    for (int j = 0; j < streams; j++) for (int d = 0; d < dim; d++) {
+        float sum = 0;
+        for (int i = 0; i < streams; i++)
+            sum = fmaf(comb[i * streams + j], residual[(size_t)i * dim + d], sum);
+        volatile float term = post[j] * branch[d];
+        out[(size_t)j * dim + d] = sum + term;
+    }
+    return 0;
+invalid:
+    fprintf(stderr, "mHC output mix: invalid inputs\n");
+    return -1;
+}
 
 float bn_transformer_fast_exp_scalar(float x) {
     const float r = 0x1.8p23f;
@@ -222,7 +338,9 @@ void bn_transformer_softmax_avx512(float *x, int size) {
         sum += (double)_mm512_reduce_add_ps(value);
     }
     if (i < size) {
-        float tail[16];
+        /* GCC may fold loadu into an aligned vector load after ASAN places
+         * this local on its fake stack. Keep the scratch vector-aligned. */
+        _Alignas(64) float tail[16];
         int count = size - i;
         for (int j = 0; j < 16; j++)
             tail[j] = j < count ? x[i + j] : -INFINITY;

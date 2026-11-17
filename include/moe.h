@@ -5,6 +5,64 @@
 #include "moe_types.h"
 #include <stddef.h>
 
+typedef struct BnMoECache BnMoECache;
+
+/* Executor-serialized cache access, with leases protecting source pointers
+ * across subsequent fetches. CPU insertion also respects these pins. For pread
+ * misses without cache admission, ms->buf/buf2/buf5 must hold gate/up/down bytes.
+ * admit=0 borrows hits without promotion or insertion; admit=1 admits misses.
+ * Release after the last synchronous use/copy, or after asynchronous consumers
+ * finish if they directly reference these pointers. No CPU activation math. */
+typedef struct {
+    const void *projection[3];
+    BnMoECache *cache;
+    int slot;
+} BnMoEHostExpert;
+int bn_moe_host_expert_acquire(const BnMoEIO *io, BnMoEState *ms,
+    const BnMoEExpertMap *map, int layer, int expert, int admit,
+    BnMoEHostExpert *out);
+void bn_moe_host_expert_release(BnMoEHostExpert *expert);
+
+/* Same bounded payload slab/pinned LRU as ordinary MoE; metadata is additional.
+ * NULL means disabled/insufficient budget or allocation failure. Free using
+ * bn_moe_cache_free, after all leases and async consumers have completed. */
+void *bn_moe_cache_create_reader(size_t budget_bytes,const BnMoEExpertReader *reader);
+/* Same allocation/lease contract, with construction-time page advice.
+ * The ordinary constructor retains BN_MOE_CACHE_PAGES_HUGE_HINT. */
+void *bn_moe_cache_create_reader_policy(size_t budget_bytes,
+    const BnMoEExpertReader *reader,BnMoECachePagePolicy pages);
+/* No per-call allocation. admit=1 promotes/admit misses (decode), admit=0
+ * borrows hits without promotion and stages misses (prefill). On a miss with
+ * no available cache slot, caller must supply three staging buffers/capacities.
+ * The unused output lease is cleared on failure; partial staging bytes may be
+ * modified on I/O error. All access serialized, release through the same API
+ * above after synchronous copy or completion of asynchronous consumers. */
+int bn_moe_host_expert_acquire_reader(const BnMoEExpertReader *reader,void *cache,
+    BnMoEStats *stats,int layer,int expert,int admit,void *const staging[3],
+    const size_t capacities[3],BnMoEHostExpert *out);
+
+
+/* EXL3 source tier/group layout (not an executor or arithmetic fallback).
+ * Buffers are caller-owned, disjoint, and at least expert_capacity entries,
+ * starts needs one extra entry. groups needs group_capacity entries. Both
+ * capacities must cover E, so planning never allocates. counts is E+1 with
+ * a zero sentinel bucket; each count<=tokens and sum= tokens*topk.
+ * Fused experts retain expert-ID order; heavier experts sort by descending
+ * count with ID ties, then source 1.1 padding / 16384-row / 16-expert caps.
+ * weight_scratch controls the upstream TWO decoded-slab batch heuristic;
+ * physical workspace/cache admission is the executor's responsibility.
+ * Invalid input leaves outputs untouched. No legacy BnConfig is needed. */
+#define BN_MOE_EXL3_GROUP_MAX 16
+typedef struct {int count,rows,slot;int experts[BN_MOE_EXL3_GROUP_MAX];} BnMoEEXL3Group;
+typedef struct {
+    int *order,*starts,*slot_base,*slot_kind;
+    BnMoEEXL3Group *groups;
+    size_t expert_capacity,group_capacity;
+    int group_count,slot_count,fused_count,batch_cap;
+} BnMoEEXL3Plan;
+int bn_moe_exl3_plan_groups(BnMoEEXL3Plan *out,const int *counts,int experts,
+    int tokens,int topk,int dim,int hidden,int fused_rows,size_t weight_scratch);
+
 struct BnLayerWeights;
 struct BnModel;
 struct BnThreadPool;
@@ -40,11 +98,16 @@ void bn_moe_reset_stats(BnMoEState *ms);
 // includes both single-file mmap and multi-shard mmap bases.
 int bn_moe_io_has_mmap(const BnMoEIO *io);
 
+// True for valid single-file or split-file pread storage without mappings.
+int bn_moe_io_has_pread(const BnMoEIO *io);
+
 // Create expert LRU cache for pread pipeline (no-op on EMSCRIPTEN or mmap).
 // budget_bytes: total cache memory budget (0 to disable).
 // gate/up/down_bytes: per-expert projection sizes from expert_map.
 void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
                            size_t up_bytes, size_t down_bytes);
+void *bn_moe_cache_create_policy(size_t budget_bytes,size_t gate_bytes,
+    size_t up_bytes,size_t down_bytes,BnMoECachePagePolicy pages);
 
 // Free expert cache. Safe to call with NULL.
 void bn_moe_cache_free(void *cache);
@@ -53,6 +116,7 @@ void bn_moe_cache_free(void *cache);
 void bn_moe_cache_print_stats(const BnMoEState *ms);
 
 // Fault all mmap-backed MoE expert projection pages into memory.
+// These CPU-layout helpers reject topology-only model bindings.
 // This is a benchmark/server warmup helper: it increases startup time and RSS
 // so generation does not block on expert page faults.
 int bn_moe_prefault_mmap(struct BnModel *m);
@@ -75,7 +139,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
 
 // Get host pointer to expert projection data (gate=0, up=1, down=2).
 // Returns NULL on failure. Used by GPU path for per-token expert upload.
-const void *bn_moe_get_expert_proj(BnMoEIO *io, BnMoEState *ms,
+const void *bn_moe_get_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     const BnMoEExpertMap *em,
                                     int expert_idx, int proj);
 

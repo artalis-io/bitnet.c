@@ -1,0 +1,6643 @@
+{
+  "schema": 4,
+  "scope": "Independent original mixed scheduler capture; native complete-logit correctness qualified; native mixed serving performance unqualified",
+  "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+  "engine_request": {
+    "model": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "hf_config_path": "/config",
+    "skip_tokenizer_init": true,
+    "dtype": "bfloat16",
+    "quantization": "gguf",
+    "load_format": "gguf",
+    "tensor_parallel_size": 1,
+    "max_model_len": 8192,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 256,
+    "enable_prefix_caching": false,
+    "enable_chunked_prefill": true,
+    "kv_cache_memory_bytes": 2147483648,
+    "mamba_ssm_cache_dtype": "float32",
+    "disable_log_stats": true,
+    "async_scheduling": false,
+    "seed": 0,
+    "compilation_config": {
+      "cudagraph_mode": "NONE"
+    },
+    "additional_config": {
+      "gdn_prefill_backend": "flashinfer",
+      "gdn_decode_kernel": "cuda"
+    },
+    "long_prefill_token_threshold": 64,
+    "max_parallel_prefills": 4,
+    "prefill_policy": "round-robin"
+  },
+  "norm_policy": {
+    "arithmetic": 5,
+    "ffn_arithmetic": 2,
+    "input_norm_reductions": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      6
+    ],
+    "post_norm_reductions": [
+      4,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      4,
+      5,
+      4,
+      5,
+      5,
+      5
+    ],
+    "attention_split_policy": 1
+  },
+  "streams": [
+    {
+      "input_ids": [
+        2,
+        733,
+        2133,
+        39557,
+        271,
+        1919,
+        2128,
+        16067,
+        279,
+        1428,
+        42903,
+        1752,
+        1238,
+        279,
+        41163,
+        6507,
+        13,
+        198,
+        2064,
+        369,
+        264,
+        1970,
+        2336,
+        321,
+        10993,
+        22527,
+        11,
+        524,
+        264,
+        1500,
+        13909,
+        8187,
+        6673,
+        20856,
+        13,
+        271,
+        550,
+        4962,
+        89583,
+        21753,
+        271,
+        71093,
+        1272,
+        198,
+        39242,
+        1414,
+        198,
+        220,
+        1411,
+        44424,
+        198,
+        220,
+        1411,
+        9801,
+        6937,
+        829,
+        7320,
+        198,
+        220,
+        1411,
+        791,
+        33686,
+        41163,
+        4487,
+        198,
+        220,
+        1411,
+        58740,
+        198,
+        220,
+        1411,
+        40420,
+        198,
+        220,
+        1411,
+        28258,
+        3817,
+        1414,
+        198,
+        71093,
+        271,
+        12312,
+        4202,
+        3387,
+        513,
+        303,
+        1510,
+        965,
+        4691,
+        12836,
+        834,
+        63,
+        321,
+        1510,
+        965,
+        14,
+        4549,
+        261,
+        834,
+        27653,
+        198,
+        760,
+        37978,
+        18258,
+        369,
+        303,
+        1510,
+        3431,
+        14905,
+        508,
+        74927,
+        279,
+        6522,
+        67518,
+        2096,
+        369,
+        303,
+        198,
+        63,
+        3431,
+        4691,
+        12836,
+        508,
+        27653,
+        271,
+        550,
+        4744,
+        1541,
+        8891
+      ],
+      "tokens": [
+        18065,
+        271,
+        63,
+        3431,
+        14,
+        4549,
+        261,
+        508,
+        63,
+        23495,
+        1558,
+        8019,
+        321,
+        3669,
+        1528,
+        25,
+        271,
+        12,
+        1510,
+        4549,
+        261,
+        5945,
+        52434,
+        198,
+        220,
+        471,
+        20269,
+        279,
+        54802,
+        19913,
+        999,
+        198,
+        220,
+        471,
+        21426,
+        279,
+        1558,
+        4618,
+        198,
+        220,
+        471,
+        5399,
+        942,
+        81726,
+        6297,
+        198,
+        220,
+        471,
+        45862,
+        12204,
+        26502,
+        198,
+        220,
+        471,
+        55917,
+        279,
+        40420,
+        198,
+        12,
+        1510,
+        4549,
+        261,
+        8636,
+        52434
+      ],
+      "logit_sha256": [
+        "1ce3e6b6fe872268f534de64a08aa03f9c13f910a0c44e0a8004ec55e79020c6",
+        "25ab7986fa7e147392924289fcd5ac9cc2e0fd427ef7e2fae07b82b68c78615d",
+        "3f8e36658bd07ddf0f510d664200029184cc4ff67839c0a3503d83da2c6c1fa0",
+        "d7a6279258e93de9433296af38663eb401b9b65cc3b89f6d672f127204f46fd5",
+        "1284e24ba59eaf7f1ba8c34c669dcb0470a6b1c09363c52f85075449e6edaa46",
+        "c570868131bace23a6ea7f0e40673971b2d3e17a3abdb59e92d98191de7a540c",
+        "9511eb13c693ee2f808ba1f47a287def3edc1d364e9722b9cfce575ee08a33bb",
+        "f5ebfd5a2aa4f0d39ba3fea5d439f901f8ff7a37e80009d8cdc3cf776c5e8836",
+        "4ee971047cb1ecbfcb46fba5d4eb18fcdfc0363901a07d4e4c2fd9850b35307d",
+        "14dcbb04713e661296d2498f5074b26f6e56b6e056e4645218bbfb53a37a6920",
+        "f326c7331e4417b865d9c359f826afb17c5b8e3f558027a9b9893414359c64fd",
+        "a22d48c474f21cc1b972d33d042f61d0a5deed14ee273cbc4c46fe83dd850d1f",
+        "24691402eb23b483b9b995686d0150f37dcaf8bcbd6768a672b28cdad0d93ac1",
+        "a96c551bad7e14ce45f2f3452e88bbd0643cbd8d621dc4fb1e913efc0c303d07",
+        "aea23989adfcf5645bdaf091c59ae2a9441539c36774619f62146d63fa10e809",
+        "16cadc0aacc1fd521d8a5aac25797327ffe9d56483692182845fb97de7f5176e",
+        "e1272d934ecaa2f34b577358a7bcc2b68c0025dbffc916fbfe620a1176d9b063",
+        "3e22df1403866766f46cdd186c8a21785ac68c6cf76df7f6ae58aee624b79a4d",
+        "78bf5e04e1b762958a59c8fc4087488651e1f9af7d6e71d93eb405d321ce4c7f",
+        "b3998cc24f2c5829fb543067a7f5ca19956641474936915501938023b67a0a5f",
+        "2f63fc099e4585a2e59c51ace9b5fed6982ac050ac758a8b385f3a884d6dc2f7",
+        "f709a0c8eecbd34cb7427bfabacc3398e952ae9f96c5c852d97955d4cae5ea20",
+        "592bbb99bb6a1b671f078fe6efaaeedd4adf9318c7a3ecb44a2e8c17ed8677c6",
+        "d28f8f9fc5e6c458dbf10ec7ce9902b972739e46bdec26a0bb2ca91953e8e6f3",
+        "1ebda5c177cecea3f396a4b69d6400cda14a401aa2043107bbb0309269ac35f0",
+        "f1cecb52d0afe1849fb65dd5e735b37290665954e5e21e242d418917c0d2c090",
+        "8a7ba369783a32fb58cec4a6610260a92ca56069ee1189697f0ca00ce019d877",
+        "c89a5803c0c78b40f8ed64066d9b8c9ed4a469a918d30c947a86e6120b7d88f1",
+        "33cfd0e7a0c534fdfb163e6069cc8531f714637710ff3bfe2346afd6e7fbc82e",
+        "2bb935265b5b509eac47ae3ae4ad35c3124e9e5c4846332942cd67c0fed2db4e",
+        "5f33add32b80a7b7f15a96ee38e639896c9c4292ed6521667983962ef8223176",
+        "de78922153b6c3676a1174bc040f02a3a85672d44627684c506b641a7d835fd9",
+        "fcc7cc186fa663406378447f1b5a0b158076ee719eae95d34ef61c35cadf20da",
+        "52b5899b61ef6d1bc7ea213176b9583ee3c146ee0a96e9ed657c664e5c28aa27",
+        "3f0103064465a7e144e37491a50644bdc0de3518cb82a7709653c75dc1227fab",
+        "ec89efa42001bd24dba9b0f91e5dc2d0c736752b84d7f75ce8956279e62da87e",
+        "f71add76abf944a8877a8f4552d300fabd5d50b2da89913f9d801ff19d3b1f55",
+        "858bde31ead7862481a38e10a5f23e229c9a5414fa0ba87b40b046609a523dfd",
+        "c860caf8ea139e44d30df7d9a814091d032e17bdc7fbd24b454d8366645b625c",
+        "ae059755ea8d7874b9407d399ea4086cb0b7a73380b7db40006aa66b9383f5a3",
+        "216c0797003948c861fe3a4fbc870d566a10015cc872afc80311b682e1a984f4",
+        "a329a5129684d9f151a3e5e93737cfaef6d6e5ea8ce74971ae81a209c64fed6c",
+        "1c21d81a16a1930adec8081c9334b84789c875e05291bfc4197becb1ca929977",
+        "aad74444af691840f87d1d68ce5df835ad159356cc274af7d0dacd1518ea62ac",
+        "1257802959678706367c2beef47e50446d142456b67398c37456b51c5fcddd87",
+        "f92fea59c59de20111653a42f0204e17b9512bd515fb8994cbf3e8cf903951a0",
+        "d63b5890c5019529bfc24f32a21d69ced4ff9c09371e95af535ee39d22a70a3a",
+        "ea8a968fa25eb5e73766e5e7aee9d389769642ae1d1028bb6431230cd273b7da",
+        "a08cc9b26964937bd01df8f1c958d096a8458e6105c86fe0a0612f29fba46580",
+        "d6c4939d48927f73cde46eb4750749fde8fc0156a0d7b5073906fff079956892",
+        "b867546a9827e3bbd43676e5b27abeefc6499e5851505b7d76ee53ce82ad1c30",
+        "78462644bc9356b4f8bf9f48d193cf6f24fa65ff50d5a1618d4f92330b9b33b6",
+        "4fefabb9770e79afd2b0ba319fd4877d7e712cdc2695633f22c99f63263a2174",
+        "8437b03c8931b34f2b99d7e25fd10b92aa260cac621b506dc7d0330aa473e36e",
+        "f10ebf0f3b5fbefa8904efcd9360fccc036369b14d4ba630008570074302f17a",
+        "caf5416d1be04c5cdb50a4d83a4023b44722e8e093add1cb484193971451f822",
+        "54eb67298f2d025b8047c47a47ba8fe2d33018bb7adc004600d869597b029d48",
+        "225daee4871b520fbc62d30fce472e8140cbe7d1b6ef8ef1fb3f74add39e7409",
+        "e04b555ef06120633e2ffeaba8c130853902b54c4f13c9deef1e3649dfc48899",
+        "6cb13943b7888ed27e9a35911ac972dc549efd66596d68e62805d95d04025c91",
+        "0f8ee5e6241186003b10b3995d63ae93c4e582fcbcaf2dd4f5ce02d8f2217224",
+        "9d170e3ffcdf5394be262f399a8e5d10e1a51f54a9717bc75016af2120f7d18c",
+        "65aaa864975f49760b825c8c34b592528615a1397b3c38a9602f77854e5dd268",
+        "d3b253fec85aac557130c3f15225f80a93748a00064914ee0b259e0c2c1a595f"
+      ]
+    },
+    {
+      "input_ids": [
+        2,
+        2133,
+        733,
+        39557,
+        271
+      ],
+      "tokens": [
+        2,
+        39557,
+        198,
+        2,
+        39557,
+        369,
+        264,
+        8240,
+        314,
+        7123,
+        421,
+        513,
+        15234,
+        303,
+        1906,
+        13,
+        198,
+        2,
+        8618,
+        2923,
+        369,
+        264,
+        709,
+        421,
+        4829,
+        449,
+        1879,
+        321,
+        4523,
+        449,
+        2468,
+        13,
+        198,
+        2,
+        561,
+        2468,
+        314,
+        799,
+        2923,
+        369,
+        279,
+        1879,
+        314,
+        279,
+        1727,
+        2923,
+        13,
+        198,
+        2,
+        561,
+        1534,
+        2468,
+        314,
+        279,
+        14855,
+        369,
+        279,
+        2468,
+        314,
+        279,
+        1483,
+        2923,
+        13,
+        271
+      ],
+      "logit_sha256": [
+        "cbae62dbc03497869ef1f53287edd860c1293012f7457d5aebc2cee43b86b2e2",
+        "dd0b763829323b51355a9e00e0b2eee5283bc0548f132c4460b6d1327354bb1e",
+        "e68d001d942963d94f0fa76f5d4623f572c1bc0fe0f0120f335933c56f2dfa8b",
+        "145aedc413d81cdbaab60197bb5cfd8df4b54ba68a9bcfb1f24f6b2b3377c800",
+        "1b5d9f333cf4343742397382ddcec7e68a35176aff5e2a2a2ed5d4bf07a100f7",
+        "0a2f45002e236331e2e0665df9d4d26d4046359af8425e0ab8ab863af220ff8b",
+        "177829577ef71459d674ff81a81474ee84d390b67e4e77e649e956a26a65632b",
+        "7ee8acb25b2c3ea3eb8df7a06d7dcaa1ac48b85023eb63feffbd6fa6cf7b196a",
+        "fb19c8bf50b774b18b7396656265c7d63c6f631e24e9205d3c4c33f94a313e88",
+        "5e545354218f43fb6e7d17b4b395979c836e8a4a18b4a1c33959ad7090f4221b",
+        "42058cedf28df960bd7b7d3d64de7657bcac3ed4e446b3b41bfd89aae4762b7e",
+        "0d8328d7f8708bb5377c3bb7aab2be92f859651c1ebb0d5a12af71d6ef72bda2",
+        "c48eccdacf0823883f4241a32e87f5559b41b507a8e07995b48a0ad85fdc5613",
+        "8f30c72cb8d44da4236d9b1b1803a9945a6fd77340ad1885a6b7349d471fc9c2",
+        "e412a4dc3e8828c93332a7f66e969950a97470d2a3daf24d33d82e5e0abc571c",
+        "37932ceac5a16f3bacb4cad513c16b33d320aa73e90037bf9ac63430d89a3e47",
+        "4b4350fa1eb2b0643316496e03e7b48cd7ed0ba820438c675137eefe93bc9571",
+        "db8e6720e22c81ccfcf78cbafcc835aabae0219abc015be132484e2049270780",
+        "31915c57e9ad8e41bd76685642e698099b1bcf398470a4f156c4087d7fc52802",
+        "a1ff8ce350f624f08607a1c04a16ff6f4685289f9a6d863595e88f9dfd68c07d",
+        "d379f37dc2af6b7df0149f2b5ec8163b26e82456e212e1623e58ebbd80645504",
+        "12308126cee3e1df6daebe5de8b3190d0188fa14fa72af4a31bdd79884894f62",
+        "f355077b33605a1744de5eae3a02d4b19f044a05217bf0d08f2c0bb7d6fe738c",
+        "794e3f4d674d7b328c8aa65b352739d2ebff43493a0e80f4a6a787af21e09730",
+        "711e107a917eceef3b79351edce8c61340ff218e43cbeb6f51497c5401af79c3",
+        "0a412d963f4b44e5444487914376307554d7e4f9d4709e6f572c8c603b9d8419",
+        "783216b9b8f8e9920a450b02863400bfb98f3861528730767c24f5f51eba08a2",
+        "5b7039489c46e50823781fa357dc6b2ac07bb5932dfae1ae78111e5a2a7027ce",
+        "5db4e019ecc78c286f895a9e719e548ab9f986ae23090a0dbc768dea1893d3c8",
+        "07071417ad3a9321005940de2e22d573dd6f8ddf6831bb90755ebddca13d94d6",
+        "f5f9ceff2fd958507f848d2c7818bd8142dc3cc06bed29092844300b9b35d797",
+        "b709d88ec8fa49cb54f4de78998c08db6bd05600198013b31d50b99f2cb5f393",
+        "0a80235d158b2097bbc8b133da9c115285fe0ffed970f204ff1caff56fa474b1",
+        "cd6966c258ad9455903a32092fcd5cdac0248056326ec95aff996e01257fe786",
+        "492e63502e9e2449408713452d193f3a08fccab504e68f01b8f4a4be9cb9ed0b",
+        "68854a673187704e9f13036b9a79497331c998ee2e19e8c53c7655411e1393f3",
+        "e687bac99154845eb49f0a928ffd4ab98c1d8767dfb1010a64231f84f0cdb25e",
+        "76c54312357e70fa1ef7d59bf8bfd075d4038657b4272962c3491134598c6c52",
+        "2f4ae2306cfe1b9dffab6edbb58324d8ecf4584cf649f933f4dea1bc6878e8f1",
+        "f430137281a906b2c94e757798c9b8aaded73e87c8b86175876e9cf67032c8bc",
+        "8bbad108941a582e629d9dbeca5bf92a4ef515887ba25d4721a2f37e1268c25a",
+        "1a014ca27b359c9ae46b625fe449aa9eb997fae6aee4aff598c9277e0e87fc9b",
+        "acb8f94acf40cda9ed534afb3e70a9c0ced4f58affc067d3a2b2d8f5a4268149",
+        "13b7b1bce0c22b55a6afd9ba0754addcf2542716c24bc2a14a1b06b02b121398",
+        "42cd5b6dea56953db2e9a7d69bcd60d8758a11bfd737b95a0e88f4bd0bea5926",
+        "f3f13a40d989eb50535760ac0625ce99862dd121f56b1c84f36862f05c6a3f0c",
+        "4e95038c84c3c8c6cfc5ab9c354c04ca12792cf74b506b700ed388c6cb8c8cec",
+        "811be74724d3ce06a283024ddca7e1b14ff9085410bcab9470570403b7c3f613",
+        "e72d63a2e2e4a24e3b44923c6809e230126af5b56274448a1873ae965754c8a6",
+        "fa338d0de7bc92e9c15e019a31fa561a28bc2d71561e055377ac4a2ffe5cde07",
+        "ec1ef05d3d19710b4f0faa42476d5581f02a25748622768378ca24bf4fdde4b0",
+        "3f8fe97907ad0b53b7302d2834a800fc661046bced62ee648754f1fda80b99b8",
+        "09b4bcd5c0696ec6af0b33be1e77df3c5050ab24841e8133602685707e1792d5",
+        "de1c397c8db34c3975f1d89af73a787cebefa988898d441296f5e0742882bdd3",
+        "ddb4836c592e6375bc942a30c0c3b4de8b47994ff01069d2ef6b6c4faff10735",
+        "0c52ed8fd000ed35f5d61dfb5f2d84bda30d7e93d2e5e1deac569e0a3d8a8b21",
+        "ecbe3b8a284ccfc751daf6984b42aa4ed143c6012b4613dd7fbc1d33ab6e5f3f",
+        "4b405ca116edd9403aa5dd87c1c5b0abca99d88aa371bb90dd83fc81180bb066",
+        "661fa5a2c9dca037c7ea3fc7e71eec560f09944fb46ba0dc4131b0ff973e481b",
+        "592867e5e6996b6f978b9013c4c4cbbc95c56f217d3ee22c274c748bdc0a2c21",
+        "f8a7cbc23d2389eaa64b5d0880896e7a4d17eb51e4c1460addd054b714761624",
+        "cbca0b599cabc68de2b6a6f8b2b5560f25e304004484b637f33ff530fc141be6",
+        "fbb3a9a21eef47ce99ef6e5fad48478cf2fbad8330d8c3d1722f98728dc0cddb",
+        "8bd977e5fe2fe9a5b6620a6d98756f2b80441a5bec7a302f47501383ce52b93b"
+      ]
+    },
+    {
+      "input_ids": [
+        2,
+        39557,
+        2133,
+        733,
+        271,
+        1919,
+        2128,
+        16067,
+        279,
+        1428,
+        42903,
+        1752,
+        1238,
+        279,
+        41163,
+        6507,
+        13,
+        198,
+        2064,
+        369,
+        264,
+        1970,
+        2336,
+        321,
+        10993,
+        22527,
+        11,
+        524,
+        264,
+        1500,
+        13909,
+        8187,
+        6673,
+        20856,
+        13,
+        271,
+        550,
+        4962,
+        89583,
+        21753,
+        271,
+        71093,
+        1272,
+        198,
+        39242,
+        1414,
+        198,
+        220,
+        1411,
+        44424,
+        198,
+        220,
+        1411,
+        9801,
+        6937,
+        829,
+        7320,
+        198,
+        220,
+        1411,
+        791,
+        33686,
+        41163,
+        4487,
+        198,
+        220,
+        1411,
+        58740,
+        198,
+        220,
+        1411,
+        40420,
+        198,
+        220,
+        1411,
+        28258,
+        3817,
+        1414,
+        198,
+        71093,
+        271,
+        12312,
+        4202,
+        3387,
+        513,
+        303,
+        1510,
+        965,
+        4691,
+        12836,
+        834,
+        63,
+        321,
+        1510,
+        965,
+        14,
+        4549,
+        261,
+        834,
+        27653,
+        198,
+        760,
+        37978,
+        18258,
+        369,
+        303,
+        1510,
+        3431,
+        14905,
+        508,
+        74927,
+        279,
+        6522,
+        67518,
+        2096,
+        369,
+        303,
+        198,
+        63,
+        3431,
+        4691,
+        12836,
+        508,
+        27653,
+        271,
+        550,
+        4744,
+        1541,
+        8891
+      ],
+      "tokens": [
+        18065,
+        271,
+        12,
+        1510,
+        3431,
+        14,
+        4549,
+        261,
+        508,
+        63,
+        198,
+        220,
+        471,
+        1510,
+        4549,
+        261,
+        5945,
+        52434,
+        198,
+        262,
+        471,
+        20269,
+        1558,
+        10836,
+        321,
+        13914,
+        198,
+        262,
+        471,
+        5399,
+        942,
+        81726,
+        6297,
+        198,
+        262,
+        471,
+        55917,
+        70141,
+        198,
+        262,
+        471,
+        7062,
+        685,
+        279,
+        1558,
+        18336,
+        4487,
+        1752,
+        198,
+        220,
+        471,
+        1510,
+        4549,
+        261,
+        8636,
+        52434,
+        198,
+        262,
+        471,
+        18652,
+        1558,
+        1528,
+        321,
+        81726
+      ],
+      "logit_sha256": [
+        "72a80e05413684ace346cbe7b4adf50ffb048ee11064f6b58091845d599ede20",
+        "f987bb17912cf2457378b529451d163d1bb272b66bcdb0191da71ed37f4e4bd0",
+        "2bd26e4d480bf1588ad2b6690d320c382678450e42e07b2ccbe6bafe32b2ddb3",
+        "2ff7b91a3f30b81ef67c46745db67c96981271886ce0b44feaa0436a0f5f3da9",
+        "e4615cff4b64982d0fe488bf10fd1477a34fb39018dca328804d0c518c61b19b",
+        "3e049ead45d0ce3ab04a264e199f2de12fe36802463b93e50052dbe09d1dee45",
+        "92e7f16a57f999dc1ffa25976191786f61d766269f12fcbcc8b2cc69d74dfac2",
+        "be831cfa73052ca846752700760f3be8a53f276480fd288a086b21f2c2ba63f1",
+        "8ea174ee352ef03751ed65b0ebd3f0ce64defe3a78f9e672e78ae9ac79eb588f",
+        "7f06c8d0016fafb31083418d1f21021ecf708a2a338bf764858c74c7ea015a83",
+        "55386e418882b2d71542fb643ae4e6c1def2172645a6653a1f3cfe0a5de135e1",
+        "6bf5e26f1101b2f49b87fb3a72c1c25f5ac0a2687e0688e830073e4d49bdfe8e",
+        "c99be54b5c50d2ff4d6d4da9274369f2a70022d8defd81f2b9c5c137ce7d11d3",
+        "a3370ad225029395ebfd0a48eeb415e29830c4b4cea9f8b207f1fbc55e69972e",
+        "03424b1eca07e9aada54880209f113620f97c215dfaab4773d79eafb2dcd7f44",
+        "03274b987ad94facc238b7d89ef726ad7fbfc57089a37aff745ab26504e2e0de",
+        "f877f273388574fd98cdb885f85809d37fb9811a56369d681611015a3957257c",
+        "c18014826f8cf59fd0dd093b933453fc274088e10cf035d8002c7c403d1d8041",
+        "85dbc4064aeba94d08e3cb9ced279a9ebad79ab902c2e2c4832d87afd556eef5",
+        "2a547619c14bbb9ce1ca45ac93032d21b620d28a59cfcecf9ebebc629a068fad",
+        "249e15f4a583f6399efbecc3d12385ab4bed185186bb4550ccd64163bedbacbe",
+        "1d247b7a9514f11083a91c448379abfad250454f1116d708a014a2be1390e6c4",
+        "5a6dc60ab7edb18f2d06834cd7eeed3de46db0164e106bfae92026776c024143",
+        "b1803f590b574ca4556756b2dc7d221f219a632a7853288b7581871e4dcbeb83",
+        "585670209a315f9b2db099212789d927680bae928df54d8c2b388fb2a6bd03af",
+        "419b7f79f352306aa10dfa3a895273111b47707ef142751f0ced72b02b4f7712",
+        "e01a6d77fc1d4240225de6402a65af9c35c4dcd691afc0a39d9ebf215a0e1849",
+        "79b4cb3929f09a8612863cceb1feaa6fa8755549a9a91051fb1cd40efe10b16f",
+        "41583758d29e6c1fe82bf6481efc21c99e07278ba4c70f284a1a16b25a4d6854",
+        "a92f851f676784931f9bd4ada2a9be19ddca4ac8fa856abacfb240b07acfcb19",
+        "2de9f20a078eb6c474ca7507466aff75859f638b983e0b187bd7d652975aced3",
+        "656b87c3c60e9798b36a99c18c4358f20f01128ee5855c1c60bf5c88e9366f44",
+        "254c56b0d9e36bc6602d3887b0cc97fe124a73378a3766ec946ccd7bdea5f50f",
+        "94d8dec1e74ba8cc046b089366829e415635bc9ca5ed69d1370aa0eaeea56ba2",
+        "711a1ce936c9474c43203d57160576b120038fbe0380711a9d2b554d3fb52603",
+        "0a15cd69c8abbc47b54b46428814e16e50633cf170887454289c6021da503880",
+        "40d8c15e67dc60aa18aa6a1cd57db60ee8deea52f18984386a677bf8a2b77e16",
+        "349a1b6743818a8d146e99dac708b80cb711f09f9c62556c53f541d255cfd3c2",
+        "51099d9ec9e2febe0389eed08f83f3aeb6ee5c2f4620b08bd8dd4bc3d36a080f",
+        "2704dfc7be2c1f839ceb5cc6c9db6b29792ff75f7e1a35c5899310a7048049a3",
+        "0670807adbfd228ed91f389910951dee9a67939130d7d363132131dde6aeed1d",
+        "87445d43dd3a25e42f3032587409f417f693dc529a4f20e540b5d4d59af740a9",
+        "24d9d195b581711a57ef4b75c3dc87768f81308fe736e1099d4420fca5b22959",
+        "95dc114b6fb3352b4801c44b48a4cd59434099f61913ef39bf1efb2d482abb83",
+        "aaff08ffb21b812ee3a9279c29762fbd6042c80ec624f0d96f52452e3adae942",
+        "8ffdd7e4d5a23262fffe82d78496fb28589a1d14db09ee9e304fe233e9609e16",
+        "5ec66a2db6528143c5c3d39cf00c12a6d68e6b50f72c1ac518be5dfc650dde30",
+        "3c1caed830f7cddf77b17b11dc1a24a290dcc24f04ab161ac920a780fd99fb36",
+        "cf18f1cb1b3f4eee8a490a10fa38b6da375d158273997fd7ea02c6c5b87c3c15",
+        "0d0db3d7afde3eddb875e5c646bc8ece35164744a390805f9fb12ac1c00d2154",
+        "eb29e34e7836b717a08ffee8d401dfd1aa5f86368a74a1cfecf468e699779f72",
+        "594469ffbf9b9ceff74dbb2df467063b77a5ab5bb7909c9ed5f99ea8d0e5cdb2",
+        "de6539691ebf77971041d33abb852af389088ca41b76fa6ade77071da2b4b6ba",
+        "491f38ddf02c64ab5be2694be5e760df4130de7676fa38871e59d8b1becfa05c",
+        "69ddc7ceed7792a088a41ff3fafb0ec668bc038b1cbe601e229d259d7e6c22b5",
+        "d0afd2b67d8ab2b82f9c1903f018700f6467df9bc9b335cabf7157dd30fd35fa",
+        "d49ab0d957fa20416c0aa90c62525122ef03983fa64472ba987334e061748286",
+        "f0579746ebc5a9a2ec635fd0274c61691a7dc59dd3e51a404ba27ab1bd014f99",
+        "6f945b875d61a537f18c26bdf4706afcebc4c6bfc51471ecc0e5a00903ace4df",
+        "94cb0d232d6e216acd08f02b61c098e00b276a905271ed0a8895ce0a8bfda412",
+        "1962c3aa865b0ebaafe9cfd72bf2511a32560a5cb9a7375d175f989b0f2343da",
+        "4fadd40b387532a7fd7a073d6e0a9f353a9194f4e3b0d9ff56b157617d979a2b",
+        "01d58233d73e911e18e2875bf231c58c52fbdd57db68b1fc0262e446092deeb1",
+        "30159484bc1eef6c9073d185f72cee7cdfa8a7fa8bf25a4ded8dc01227cb8b63"
+      ]
+    },
+    {
+      "input_ids": [
+        2,
+        271,
+        2133,
+        39557,
+        733
+      ],
+      "tokens": [
+        2133,
+        39557,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2,
+        198,
+        2
+      ],
+      "logit_sha256": [
+        "74a8737f5cb73c04da4c0d494b97515c730b4fcbf94fb1ffced60eb90866adf1",
+        "0cbda51868c4fbd8e478f5eee3f770d3589600082e197985317441375b927b03",
+        "15ec761cc4eee1777cdd70268f9f4a80a58df44707592194ce7c32f225f0f4c9",
+        "9b86fca746cd51390c8ce862cd061c4d76e0ef05f620a77a0f0264f6c9263e9b",
+        "2e719da333602ea70420882cd24420b2b52a0a12b33161b0b7ce803b34166ffb",
+        "2977ff74b6f5dcd6568065aef19c4053048f6b44d795cf123d5b732c11b58421",
+        "8d3118b00d58a3af3ad75f9d9a655f0c989fac13ce9b407561deb608c5da5f2d",
+        "97d2108c43c6e015ddb3d1ba6d98c0ee68b08f7dc79043dcda2cb3d8566a7ea8",
+        "9fa50afc0d2e0ddedc247112598a1fcec9fab63631ce39bd4d69d7cd5f865102",
+        "92fb27b3961be2224569ce5a2ca55571d616a90f82dbdbb9c0bd5f878c342e94",
+        "38b3af8f6b564d211c4c726db93d539fec5ccc921a0f71338efc0d7dbcff8e44",
+        "1affd1cb0a911e871ca71919c27bee7b4131af5c808bfb8c30d278f3484640b6",
+        "7ec880100da8cd2f382590a4e41c8d6e61a6983796bfc4d64bb6998b8b110093",
+        "b0c563325a086f0f766754e1f8ede5df5b0d766881dcdcb5907d7b6d5c608b92",
+        "dd9a05c20f1252dc9eaf06b0b91c3bf91b6e15fded95ac918a6470bcb7c8fec4",
+        "bbe8ed0fe25317b2298a249ab72ed0ed01422218797e8b8fa52be6e2c3e1a9b4",
+        "763e3d449a775f319086c0eea812456e20f54b12674d3e3f9536ea278095b8db",
+        "b04f0594166c9788778efe24f4ba263becfd9fc07788b98ae8942b392c65ee05",
+        "ecbaec6388d9953a6ff71a8b97772b5b90dfd3885e65e0be222ee759a82b5b60",
+        "9c0f56d6b972ba3b177aa0bfaee2576651857e67a151ee725fabbde881f4c4d9",
+        "7d5414398366af74c575e40030a4fef41beab479b5d860d7b1b8d219fb561636",
+        "14f39d39cdf3466f821b3df63fd9699b1adf01861ed8bfa6ca51d3756c6b95fd",
+        "e60eda67553cacf7e9754db81f988b979b41cef6a723e18bd896453ef6eff91c",
+        "1357a6423279da33e1a4b8e9d9434d6c8ace44c9fcce8040ecca28b5970f6ee7",
+        "8058aa83e5072389208f496befcf96d850e1ed032ce6c8dd1d6a899c989b866e",
+        "d4994f214a8220599c81edcf160e2860d2efba636330ab19aec8c6c49b76faf8",
+        "5f8caef848b0ac0c09c9759c6bb4a53a350c90f08b24b6c973e6abc1bc91526b",
+        "813a1c93c530e3e2bdef9ecf19fd5a819e82f3e7bf684f845c0a9c8ae9f20cb6",
+        "5e89708372db1f1805f18d407a298686fc67ff7b7f928cf4a2330d756dcf9f96",
+        "594c10324f2799090dfc8aff243e9e889ae7bbc6d5a0907c938257a615af3b1d",
+        "2440b356589ec3e1af65574bfc9b6002b7232566ec59262f487a3c806556f87d",
+        "11e32ac729416fed70d882827351cd8cf1fa10b6c48b122570160af58a70142d",
+        "aca39231f8309c804df83f484e1a3e61dc06b27666a7b6bf4380e6571cea9092",
+        "1fff6a8a901f86853084f8abf5adedb5067626c1901106edeef05bcf1502117a",
+        "188fe1f711b2a94c27f7959e7ebb08e6964f87303180b579b9b63442012333bd",
+        "8a7f7ae11730d3a444b3a64492266b6bebe984702f464192db3047c12c90f109",
+        "aeb3403d8ab16f6a59ffb30b53f227f7f1ba3e44623e0672f64e808a9b883d8b",
+        "7f312333a2b7a7ca57eaf3e9b87b46c709abe7d372e8b01126ea172fcb81741d",
+        "7671dd43ca2957706c59629e35f2153826005a7f74d40f647722858b0b8b348b",
+        "abfd229cd0c2832371e79f636271d4d8fb4c51054a6f9284619a9ea5cc5ad5b5",
+        "40679b17d2d4364402f39bdbfe2ca64c564c3a5a6959ac7b5c76f6832b7650f0",
+        "92babad430fb59bb5f69543b628ef18f50a27d2be1d1b2503955dbda97dac78a",
+        "733e4aaf6722a8f12039305fa39ccf62a73cd9e084070885b222c967c6068613",
+        "3f83e32b8ac81b7a7048161e394465a47610c009c1cba3e20b6b6c1d03dd7f74",
+        "7660961e6870938ba50c66f46ac8de4e9e516bc40f2d7d656767fa39a5be6b2e",
+        "d44fb1fe49f0a33f55983d4703e80ab14a2d7b2971bd45502868598b40e3b3f4",
+        "2f14818cba02f9013d00f179ee44e765d88a8251da2e1292389d501a5a648f0c",
+        "664e7fb0c2fe315f7de9412d2cc567d33ae9e831445501efb6993c6637863864",
+        "0023b373f79353e75bd2a58f5ed91e5d785d7419438b168b2fc189ccb846f97b",
+        "779356c6c618fab6587b6d9860872feb0e29e57a2ee2935949f95d4b33fc9fc4",
+        "562fa51bc76170d09b3dea97f1fdb75f9c06d3938f7cfc756d9b32799a5cff6e",
+        "d24f3e5bca4d87a7bfd195dbcdda84f5441c749251326e876848e268e2101735",
+        "3a412c476a0dc57a0b4a3e9a9b671dca6616d6d49590a8d3f45a5c2e410572fd",
+        "98648665d13d4dc8889666b3e4ebe65fcc4a7e7b1a2c5400c41cab002b479b6e",
+        "befdf58f35de03b586225ac215108d63af004f70dbf88c53180dc800f248263b",
+        "2495f5d3d9a4ac7c215682e3113b47cb69bc913f73bddbbe4463823fde90ab5f",
+        "41a32e6fa215bb3435361f751a3d611047decf1c84c854b60895b4e8fc5cc4db",
+        "5538e7aaf03d83880af2d00eb304284501c70a250ca31c6005d0ae54d8118314",
+        "9db8cb748ddfa69bbe2d9df87c6bad680559c8365e9f237fed794ed937adadb5",
+        "1c327c7b64cd85e080c6f5b3defc8204a8a8ec0e9996f995997210e7c7c19148",
+        "366d772f5803cc708064758e92184f60c54e913d93389a8f749c960f72ae31fc",
+        "59ed098fefe83d22dac9416d970d7edde681a619b2ed7e734cf011b9ebe68bbd",
+        "f1f9de73992590d3feb5d3f60c6f5081f0fbac4f92200e517baa31ff05ac53ba",
+        "114dd192d4383900ff5e6aefed88a94536923305cf0d913a4b3db30df422cfd7"
+      ]
+    }
+  ],
+  "full_batch_logits": [
+    {
+      "call": 0,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "20c36ff951ee55e579e9bfb684b1a34b3a2a4b9ff87c8b1915d74745ff3424e3",
+      "request_ids": [
+        1,
+        3,
+        0,
+        2
+      ],
+      "output_steps": [
+        0,
+        0,
+        -65,
+        -65
+      ],
+      "computed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "scheduled": [
+        5,
+        5,
+        64,
+        64
+      ]
+    },
+    {
+      "call": 1,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "bcd4aeb9b6bc0d94c730d7baa43112951578031081b48e63b41f2a70b5d4e1fe",
+      "request_ids": [
+        1,
+        3,
+        0,
+        2
+      ],
+      "output_steps": [
+        1,
+        1,
+        -1,
+        -1
+      ],
+      "computed": [
+        5,
+        5,
+        64,
+        64
+      ],
+      "scheduled": [
+        1,
+        1,
+        64,
+        64
+      ]
+    },
+    {
+      "call": 2,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "a12145b2cc651fa645e1d6d271f165be5ae529d99f1f9749fa047cf037ca2e65",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        0,
+        2,
+        0,
+        2
+      ],
+      "computed": [
+        128,
+        6,
+        128,
+        6
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 3,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "f8375b617f8a2dffb4669a985bd06e84f1852e144bd79368fcd4c061b40f342a",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        1,
+        3,
+        1,
+        3
+      ],
+      "computed": [
+        129,
+        7,
+        129,
+        7
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 4,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "9324df4395ec8670126361abfae990e0b1f0cfbf8719ff1b1d924b6071da5f3d",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        2,
+        4,
+        2,
+        4
+      ],
+      "computed": [
+        130,
+        8,
+        130,
+        8
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 5,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "b474158d6a24d6eb189425b89f64085919f8b608be5077b2bc8811d3f4b11874",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        3,
+        5,
+        3,
+        5
+      ],
+      "computed": [
+        131,
+        9,
+        131,
+        9
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 6,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "87b3d67be9f220b7eade49d65a7be303229a8b5f35451dfcdf1b80ba58a0875d",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        4,
+        6,
+        4,
+        6
+      ],
+      "computed": [
+        132,
+        10,
+        132,
+        10
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 7,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "0a628a312cbd1e017d08f8795ed762d7c8f29a6b16e261464686e9c6dd36c335",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        5,
+        7,
+        5,
+        7
+      ],
+      "computed": [
+        133,
+        11,
+        133,
+        11
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 8,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "7cd9269aa77bff8fc9b2d9aaeee932126c62bdf3b288d41ef5b9d97956696512",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        6,
+        8,
+        6,
+        8
+      ],
+      "computed": [
+        134,
+        12,
+        134,
+        12
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 9,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "3833f1eab7b7a909422a7db509069b0ddcc122aa9af8da2ea61adb60aa3717e5",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        7,
+        9,
+        7,
+        9
+      ],
+      "computed": [
+        135,
+        13,
+        135,
+        13
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 10,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "74b80a4a49d050de411efc45251b4562d495e9e48b39b2493044bfb266b0bb93",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        8,
+        10,
+        8,
+        10
+      ],
+      "computed": [
+        136,
+        14,
+        136,
+        14
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 11,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "cb6de7b2b0e518629573665421f44fc1e0ac9ee4df10b95d2ca5c17c2fc50901",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        9,
+        11,
+        9,
+        11
+      ],
+      "computed": [
+        137,
+        15,
+        137,
+        15
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 12,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "19b469b09c0df7a67eca9e768caf4eca0a5510a176cccc34925099cf3e410480",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        10,
+        12,
+        10,
+        12
+      ],
+      "computed": [
+        138,
+        16,
+        138,
+        16
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 13,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "8e97c1d54f1b2240b4f9c47f24dd7f31b570d2266bbf2856323fb812c2014337",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        11,
+        13,
+        11,
+        13
+      ],
+      "computed": [
+        139,
+        17,
+        139,
+        17
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 14,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "7de54709d873e6217323630ba65ff735a45221e9164c8e05e090c9905eaadd3e",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        12,
+        14,
+        12,
+        14
+      ],
+      "computed": [
+        140,
+        18,
+        140,
+        18
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 15,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "64111185c8bf31f934b46adead01b6f2f575514289b58e52a06335a8c62fd55a",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        13,
+        15,
+        13,
+        15
+      ],
+      "computed": [
+        141,
+        19,
+        141,
+        19
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 16,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "d56b4438808b5f3552a792bd8a7386354d1c3b3b50f81ce8f45d4055d31b82e5",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        14,
+        16,
+        14,
+        16
+      ],
+      "computed": [
+        142,
+        20,
+        142,
+        20
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 17,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "1a56b32e5e819deed9e4b580b89c8d05e03f42bd54d9115817c9bf681f070ec3",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        15,
+        17,
+        15,
+        17
+      ],
+      "computed": [
+        143,
+        21,
+        143,
+        21
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 18,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "b01e9625876ea531ecc2651038f92fe557d35178f6bd019ca1cd8fe9f28adf36",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        16,
+        18,
+        16,
+        18
+      ],
+      "computed": [
+        144,
+        22,
+        144,
+        22
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 19,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "9f6f5b32019de3f53244abf8d70248b54f4112188e0afde682ffe3804f279087",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        17,
+        19,
+        17,
+        19
+      ],
+      "computed": [
+        145,
+        23,
+        145,
+        23
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 20,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "7e80e89b0d061c0f2f5c924c0cf377a8dc3f8a90b1371846bb05196a9ba38b5f",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        18,
+        20,
+        18,
+        20
+      ],
+      "computed": [
+        146,
+        24,
+        146,
+        24
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 21,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "a22b3ba8f534a501c2a78eb112f250c05819f1500042cc1f5386a4877f47c379",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        19,
+        21,
+        19,
+        21
+      ],
+      "computed": [
+        147,
+        25,
+        147,
+        25
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 22,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "0a2e20329d0e055bc8d661aa3bf5c4e6d5121ddde3d84875496cb3d3415ea364",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        20,
+        22,
+        20,
+        22
+      ],
+      "computed": [
+        148,
+        26,
+        148,
+        26
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 23,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "660edebd2fe0d26d95d5ef687973756e93598f9cc30ed921d0e9d8851a066426",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        21,
+        23,
+        21,
+        23
+      ],
+      "computed": [
+        149,
+        27,
+        149,
+        27
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 24,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "9adf5570597f755aee54ff8b7d1f126894162b494bc5e0e356a09f03cde14299",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        22,
+        24,
+        22,
+        24
+      ],
+      "computed": [
+        150,
+        28,
+        150,
+        28
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 25,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "3f146c06deace0231237cd97a58efbc735d0484dae17667174f882a657ad78bb",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        23,
+        25,
+        23,
+        25
+      ],
+      "computed": [
+        151,
+        29,
+        151,
+        29
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 26,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "659e5ec25d1666ab15f962577a21bcd8a47da43d81b1db287103e330bf1c8a92",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        24,
+        26,
+        24,
+        26
+      ],
+      "computed": [
+        152,
+        30,
+        152,
+        30
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 27,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "0b3e7cd9d3b6ffecd35008161edf74e7f2550d7dbb426f82c5e9987ebf72cf96",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        25,
+        27,
+        25,
+        27
+      ],
+      "computed": [
+        153,
+        31,
+        153,
+        31
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 28,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "3cc5cb76c494d9255abc1c29ce0ca132d6baedd7837cd2f73bf1e350fb7d61a4",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        26,
+        28,
+        26,
+        28
+      ],
+      "computed": [
+        154,
+        32,
+        154,
+        32
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 29,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "61517e9765102d904782321e684c3e4132d61f1f9416d30dffa1f1f548bb000e",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        27,
+        29,
+        27,
+        29
+      ],
+      "computed": [
+        155,
+        33,
+        155,
+        33
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 30,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "e266c3ec25c1d5fa4e420c254095344cdd4d86e0f6999d545b5857fd3fe3c134",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        28,
+        30,
+        28,
+        30
+      ],
+      "computed": [
+        156,
+        34,
+        156,
+        34
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 31,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "26934983d5a825dab7261ca518f2e61e33f6c526e0b8cd5e348d9551bb9cdbd4",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        29,
+        31,
+        29,
+        31
+      ],
+      "computed": [
+        157,
+        35,
+        157,
+        35
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 32,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "c398f7508d5b3202f2ab4d75b96bb0820e8316967430b94adddc45fdc772a1b1",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        30,
+        32,
+        30,
+        32
+      ],
+      "computed": [
+        158,
+        36,
+        158,
+        36
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 33,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "5759a04460f04d3499ef8a5153bf78b31fb178fe24eba521520484aab2bd9749",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        31,
+        33,
+        31,
+        33
+      ],
+      "computed": [
+        159,
+        37,
+        159,
+        37
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 34,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "5a5711cf22e2e71a8c6bd4be0d0d0af66c616aaf97177edeac7734b7f2cf02f0",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        32,
+        34,
+        32,
+        34
+      ],
+      "computed": [
+        160,
+        38,
+        160,
+        38
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 35,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "01147f18e9e8537b692912a9bed712e7a20a28077cddd7d6b8c84e218f14e882",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        33,
+        35,
+        33,
+        35
+      ],
+      "computed": [
+        161,
+        39,
+        161,
+        39
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 36,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "76496947a70f0d945e03958bef6f99a26f080c4bcdc366e3ed33beaffb68088f",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        34,
+        36,
+        34,
+        36
+      ],
+      "computed": [
+        162,
+        40,
+        162,
+        40
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 37,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "2db7685be7cebef6c240cb33ab98794a6e7179773cbe41d69f010b201d6543b9",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        35,
+        37,
+        35,
+        37
+      ],
+      "computed": [
+        163,
+        41,
+        163,
+        41
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 38,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "17ebcf5c6c20aabb69ff64c2c93fb8cdc0f662938a267d6dc36690b1047229fb",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        36,
+        38,
+        36,
+        38
+      ],
+      "computed": [
+        164,
+        42,
+        164,
+        42
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 39,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "703234ca3b53ec506f53011f68f8e263b79c51792b0adc60e6540dbb6d6feae5",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        37,
+        39,
+        37,
+        39
+      ],
+      "computed": [
+        165,
+        43,
+        165,
+        43
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 40,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "69754553851e07efecfa6fd982da33c6f3567dfa3459a2db693e2ecf4319dbab",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        38,
+        40,
+        38,
+        40
+      ],
+      "computed": [
+        166,
+        44,
+        166,
+        44
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 41,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "9d607d543d5372804535c920440a832cd56d56a33a6fef798ed7a65e34178835",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        39,
+        41,
+        39,
+        41
+      ],
+      "computed": [
+        167,
+        45,
+        167,
+        45
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 42,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "6dee8f19f8b5cf2a83b525c1655aa5772229c4333f21b248d58ae374b8c87dad",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        40,
+        42,
+        40,
+        42
+      ],
+      "computed": [
+        168,
+        46,
+        168,
+        46
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 43,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "52f8fcfc2ee343126900cfbae982d644d821df1dccbbdef71d2179b98d60b72c",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        41,
+        43,
+        41,
+        43
+      ],
+      "computed": [
+        169,
+        47,
+        169,
+        47
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 44,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "51caaf770f9a9472399c0e6c100016705d781c73bc6865d223c3d479a029294d",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        42,
+        44,
+        42,
+        44
+      ],
+      "computed": [
+        170,
+        48,
+        170,
+        48
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 45,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "a9288a893ae0382b42e8d9d9770f4c378c8284a98cc67876e7466f520dee4233",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        43,
+        45,
+        43,
+        45
+      ],
+      "computed": [
+        171,
+        49,
+        171,
+        49
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 46,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "bf4eadd41863c3bbb397f41e805a8cea7b56ae4a226334f2866673f0fe7f7433",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        44,
+        46,
+        44,
+        46
+      ],
+      "computed": [
+        172,
+        50,
+        172,
+        50
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 47,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "0a0f92cde6e076ab9a766d9fe03ee0a8f9fa371b541eecdc5ea53a7f5be042d9",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        45,
+        47,
+        45,
+        47
+      ],
+      "computed": [
+        173,
+        51,
+        173,
+        51
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 48,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "a481094813e2f43bb1bb8f57e72e891e222e067982ba3f1ddfafd38e1a95b6e0",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        46,
+        48,
+        46,
+        48
+      ],
+      "computed": [
+        174,
+        52,
+        174,
+        52
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 49,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "1c56b1f1e7e8cf2ce79523726a775006cea57464ff84873412458469f44d16f8",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        47,
+        49,
+        47,
+        49
+      ],
+      "computed": [
+        175,
+        53,
+        175,
+        53
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 50,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "6c7ec6d72b2366b4b6897d072ac003b433f140864defb8426608d423a736ee39",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        48,
+        50,
+        48,
+        50
+      ],
+      "computed": [
+        176,
+        54,
+        176,
+        54
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 51,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "189507f4680da1af032e610eac3f81569c092fc3bd41bfca797b3ce031312b10",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        49,
+        51,
+        49,
+        51
+      ],
+      "computed": [
+        177,
+        55,
+        177,
+        55
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 52,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "fff0c5de0c804546b97d9a60f61f9fb932d0a9a80ab04afb3fb9eeab42ce1118",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        50,
+        52,
+        50,
+        52
+      ],
+      "computed": [
+        178,
+        56,
+        178,
+        56
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 53,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "712d7044f920fb49f4c2f22725f2c398d29e86ba220521767f174f64b42daa72",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        51,
+        53,
+        51,
+        53
+      ],
+      "computed": [
+        179,
+        57,
+        179,
+        57
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 54,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "09434b813f0479746473d73697f5e5b87c9ebea3412354a44f209afda7029ca4",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        52,
+        54,
+        52,
+        54
+      ],
+      "computed": [
+        180,
+        58,
+        180,
+        58
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 55,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "ccc15b350488913167f014956cb7a4e5e624e27eebb680bbd96e3fb12e183ee3",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        53,
+        55,
+        53,
+        55
+      ],
+      "computed": [
+        181,
+        59,
+        181,
+        59
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 56,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "25110c8f0fe2134beeda5b8c65b6f4f4cbb1e13760142b5a90e0c607424512fe",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        54,
+        56,
+        54,
+        56
+      ],
+      "computed": [
+        182,
+        60,
+        182,
+        60
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 57,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "d7ed58491b70a2937c8064a223575c0f3aa8af1d5e74124d88c7ec9b7e9520a2",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        55,
+        57,
+        55,
+        57
+      ],
+      "computed": [
+        183,
+        61,
+        183,
+        61
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 58,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "0cde7a0a4555ffbb2dac51e6eb6ae0b2c6da705b2c8e7a2b0ac103026f1a5d2c",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        56,
+        58,
+        56,
+        58
+      ],
+      "computed": [
+        184,
+        62,
+        184,
+        62
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 59,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "345e2e2e49e77a7b44fc9e75c74f6de6698d89a6836d5ef231f94074be441178",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        57,
+        59,
+        57,
+        59
+      ],
+      "computed": [
+        185,
+        63,
+        185,
+        63
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 60,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "78a735183800a8d34a28f8245f7ae25639a3223194ccff7d3209355eeaef29eb",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        58,
+        60,
+        58,
+        60
+      ],
+      "computed": [
+        186,
+        64,
+        186,
+        64
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 61,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "834a529993f051256225b638607f43dc28475b92e903cc2189779f635ee2206b",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        59,
+        61,
+        59,
+        61
+      ],
+      "computed": [
+        187,
+        65,
+        187,
+        65
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 62,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "e654c5a55b7b5f0a8de456b9442e90659eb81fd5e3b73af44e1527ed14a973b2",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        60,
+        62,
+        60,
+        62
+      ],
+      "computed": [
+        188,
+        66,
+        188,
+        66
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 63,
+      "shape": [
+        4,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "8da1e14cfd3414ae1c247b6739dd8ddf74dac8884c8d57a504667e463170bbae",
+      "request_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "output_steps": [
+        61,
+        63,
+        61,
+        63
+      ],
+      "computed": [
+        189,
+        67,
+        189,
+        67
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "call": 64,
+      "shape": [
+        2,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "0a34f4e5988a45f236dcb5a1e0b89c19521c483ac1b2784755f34e59e24bfcd8",
+      "request_ids": [
+        0,
+        2
+      ],
+      "output_steps": [
+        62,
+        62
+      ],
+      "computed": [
+        190,
+        190
+      ],
+      "scheduled": [
+        1,
+        1
+      ]
+    },
+    {
+      "call": 65,
+      "shape": [
+        2,
+        248320
+      ],
+      "dtype": "bfloat16",
+      "sha256": "7f0aff7f1c78d55b68c7396227618556aa5d973c6d34b72a7f828f72b472255e",
+      "request_ids": [
+        0,
+        2
+      ],
+      "output_steps": [
+        63,
+        63
+      ],
+      "computed": [
+        191,
+        191
+      ],
+      "scheduled": [
+        1,
+        1
+      ]
+    }
+  ],
+  "forward_trace": [
+    {
+      "input_ids": [
+        2,
+        2133,
+        733,
+        39557,
+        271,
+        2,
+        271,
+        2133,
+        39557,
+        733,
+        2,
+        733,
+        2133,
+        39557,
+        271,
+        1919,
+        2128,
+        16067,
+        279,
+        1428,
+        42903,
+        1752,
+        1238,
+        279,
+        41163,
+        6507,
+        13,
+        198,
+        2064,
+        369,
+        264,
+        1970,
+        2336,
+        321,
+        10993,
+        22527,
+        11,
+        524,
+        264,
+        1500,
+        13909,
+        8187,
+        6673,
+        20856,
+        13,
+        271,
+        550,
+        4962,
+        89583,
+        21753,
+        271,
+        71093,
+        1272,
+        198,
+        39242,
+        1414,
+        198,
+        220,
+        1411,
+        44424,
+        198,
+        220,
+        1411,
+        9801,
+        6937,
+        829,
+        7320,
+        198,
+        220,
+        1411,
+        791,
+        33686,
+        41163,
+        4487,
+        2,
+        39557,
+        2133,
+        733,
+        271,
+        1919,
+        2128,
+        16067,
+        279,
+        1428,
+        42903,
+        1752,
+        1238,
+        279,
+        41163,
+        6507,
+        13,
+        198,
+        2064,
+        369,
+        264,
+        1970,
+        2336,
+        321,
+        10993,
+        22527,
+        11,
+        524,
+        264,
+        1500,
+        13909,
+        8187,
+        6673,
+        20856,
+        13,
+        271,
+        550,
+        4962,
+        89583,
+        21753,
+        271,
+        71093,
+        1272,
+        198,
+        39242,
+        1414,
+        198,
+        220,
+        1411,
+        44424,
+        198,
+        220,
+        1411,
+        9801,
+        6937,
+        829,
+        7320,
+        198,
+        220,
+        1411,
+        791,
+        33686,
+        41163,
+        4487
+      ],
+      "positions": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        0,
+        1,
+        2,
+        3,
+        4,
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ],
+      "req_ids": [
+        "5-b7b556d9",
+        "7-b20e28e5",
+        "4-91af6e99",
+        "6-846f64d5"
+      ],
+      "computed": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "scheduled": [
+        5,
+        5,
+        64,
+        64
+      ]
+    },
+    {
+      "input_ids": [
+        2,
+        2133,
+        198,
+        220,
+        1411,
+        58740,
+        198,
+        220,
+        1411,
+        40420,
+        198,
+        220,
+        1411,
+        28258,
+        3817,
+        1414,
+        198,
+        71093,
+        271,
+        12312,
+        4202,
+        3387,
+        513,
+        303,
+        1510,
+        965,
+        4691,
+        12836,
+        834,
+        63,
+        321,
+        1510,
+        965,
+        14,
+        4549,
+        261,
+        834,
+        27653,
+        198,
+        760,
+        37978,
+        18258,
+        369,
+        303,
+        1510,
+        3431,
+        14905,
+        508,
+        74927,
+        279,
+        6522,
+        67518,
+        2096,
+        369,
+        303,
+        198,
+        63,
+        3431,
+        4691,
+        12836,
+        508,
+        27653,
+        271,
+        550,
+        4744,
+        1541,
+        198,
+        220,
+        1411,
+        58740,
+        198,
+        220,
+        1411,
+        40420,
+        198,
+        220,
+        1411,
+        28258,
+        3817,
+        1414,
+        198,
+        71093,
+        271,
+        12312,
+        4202,
+        3387,
+        513,
+        303,
+        1510,
+        965,
+        4691,
+        12836,
+        834,
+        63,
+        321,
+        1510,
+        965,
+        14,
+        4549,
+        261,
+        834,
+        27653,
+        198,
+        760,
+        37978,
+        18258,
+        369,
+        303,
+        1510,
+        3431,
+        14905,
+        508,
+        74927,
+        279,
+        6522,
+        67518,
+        2096,
+        369,
+        303,
+        198,
+        63,
+        3431,
+        4691,
+        12836,
+        508,
+        27653,
+        271,
+        550,
+        4744,
+        1541
+      ],
+      "positions": [
+        5,
+        5,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127
+      ],
+      "req_ids": [
+        "5-b7b556d9",
+        "7-b20e28e5",
+        "4-91af6e99",
+        "6-846f64d5"
+      ],
+      "computed": [
+        5,
+        5,
+        64,
+        64
+      ],
+      "scheduled": [
+        1,
+        1,
+        64,
+        64
+      ]
+    },
+    {
+      "input_ids": [
+        8891,
+        39557,
+        8891,
+        39557
+      ],
+      "positions": [
+        128,
+        6,
+        128,
+        6
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        128,
+        6,
+        128,
+        6
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        18065,
+        198,
+        18065,
+        198
+      ],
+      "positions": [
+        129,
+        7,
+        129,
+        7
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        129,
+        7,
+        129,
+        7
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        271,
+        2,
+        271,
+        2
+      ],
+      "positions": [
+        130,
+        8,
+        130,
+        8
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        130,
+        8,
+        130,
+        8
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        63,
+        39557,
+        12,
+        198
+      ],
+      "positions": [
+        131,
+        9,
+        131,
+        9
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        131,
+        9,
+        131,
+        9
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        3431,
+        369,
+        1510,
+        2
+      ],
+      "positions": [
+        132,
+        10,
+        132,
+        10
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        132,
+        10,
+        132,
+        10
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        14,
+        264,
+        3431,
+        198
+      ],
+      "positions": [
+        133,
+        11,
+        133,
+        11
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        133,
+        11,
+        133,
+        11
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        4549,
+        8240,
+        14,
+        2
+      ],
+      "positions": [
+        134,
+        12,
+        134,
+        12
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        134,
+        12,
+        134,
+        12
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        261,
+        314,
+        4549,
+        198
+      ],
+      "positions": [
+        135,
+        13,
+        135,
+        13
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        135,
+        13,
+        135,
+        13
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        508,
+        7123,
+        261,
+        2
+      ],
+      "positions": [
+        136,
+        14,
+        136,
+        14
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        136,
+        14,
+        136,
+        14
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        63,
+        421,
+        508,
+        198
+      ],
+      "positions": [
+        137,
+        15,
+        137,
+        15
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        137,
+        15,
+        137,
+        15
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        23495,
+        513,
+        63,
+        2
+      ],
+      "positions": [
+        138,
+        16,
+        138,
+        16
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        138,
+        16,
+        138,
+        16
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        1558,
+        15234,
+        198,
+        198
+      ],
+      "positions": [
+        139,
+        17,
+        139,
+        17
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        139,
+        17,
+        139,
+        17
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        8019,
+        303,
+        220,
+        2
+      ],
+      "positions": [
+        140,
+        18,
+        140,
+        18
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        140,
+        18,
+        140,
+        18
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        321,
+        1906,
+        471,
+        198
+      ],
+      "positions": [
+        141,
+        19,
+        141,
+        19
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        141,
+        19,
+        141,
+        19
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        3669,
+        13,
+        1510,
+        2
+      ],
+      "positions": [
+        142,
+        20,
+        142,
+        20
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        142,
+        20,
+        142,
+        20
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        1528,
+        198,
+        4549,
+        198
+      ],
+      "positions": [
+        143,
+        21,
+        143,
+        21
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        143,
+        21,
+        143,
+        21
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        25,
+        2,
+        261,
+        2
+      ],
+      "positions": [
+        144,
+        22,
+        144,
+        22
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        144,
+        22,
+        144,
+        22
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        271,
+        8618,
+        5945,
+        198
+      ],
+      "positions": [
+        145,
+        23,
+        145,
+        23
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        145,
+        23,
+        145,
+        23
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        12,
+        2923,
+        52434,
+        2
+      ],
+      "positions": [
+        146,
+        24,
+        146,
+        24
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        146,
+        24,
+        146,
+        24
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        1510,
+        369,
+        198,
+        198
+      ],
+      "positions": [
+        147,
+        25,
+        147,
+        25
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        147,
+        25,
+        147,
+        25
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        4549,
+        264,
+        262,
+        2
+      ],
+      "positions": [
+        148,
+        26,
+        148,
+        26
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        148,
+        26,
+        148,
+        26
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        261,
+        709,
+        471,
+        198
+      ],
+      "positions": [
+        149,
+        27,
+        149,
+        27
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        149,
+        27,
+        149,
+        27
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        5945,
+        421,
+        20269,
+        2
+      ],
+      "positions": [
+        150,
+        28,
+        150,
+        28
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        150,
+        28,
+        150,
+        28
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        52434,
+        4829,
+        1558,
+        198
+      ],
+      "positions": [
+        151,
+        29,
+        151,
+        29
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        151,
+        29,
+        151,
+        29
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        198,
+        449,
+        10836,
+        2
+      ],
+      "positions": [
+        152,
+        30,
+        152,
+        30
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        152,
+        30,
+        152,
+        30
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        220,
+        1879,
+        321,
+        198
+      ],
+      "positions": [
+        153,
+        31,
+        153,
+        31
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        153,
+        31,
+        153,
+        31
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        471,
+        321,
+        13914,
+        2
+      ],
+      "positions": [
+        154,
+        32,
+        154,
+        32
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        154,
+        32,
+        154,
+        32
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        20269,
+        4523,
+        198,
+        198
+      ],
+      "positions": [
+        155,
+        33,
+        155,
+        33
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        155,
+        33,
+        155,
+        33
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        279,
+        449,
+        262,
+        2
+      ],
+      "positions": [
+        156,
+        34,
+        156,
+        34
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        156,
+        34,
+        156,
+        34
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        54802,
+        2468,
+        471,
+        198
+      ],
+      "positions": [
+        157,
+        35,
+        157,
+        35
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        157,
+        35,
+        157,
+        35
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        19913,
+        13,
+        5399,
+        2
+      ],
+      "positions": [
+        158,
+        36,
+        158,
+        36
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        158,
+        36,
+        158,
+        36
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        999,
+        198,
+        942,
+        198
+      ],
+      "positions": [
+        159,
+        37,
+        159,
+        37
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        159,
+        37,
+        159,
+        37
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        198,
+        2,
+        81726,
+        2
+      ],
+      "positions": [
+        160,
+        38,
+        160,
+        38
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        160,
+        38,
+        160,
+        38
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        220,
+        561,
+        6297,
+        198
+      ],
+      "positions": [
+        161,
+        39,
+        161,
+        39
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        161,
+        39,
+        161,
+        39
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        471,
+        2468,
+        198,
+        2
+      ],
+      "positions": [
+        162,
+        40,
+        162,
+        40
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        162,
+        40,
+        162,
+        40
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        21426,
+        314,
+        262,
+        198
+      ],
+      "positions": [
+        163,
+        41,
+        163,
+        41
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        163,
+        41,
+        163,
+        41
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        279,
+        799,
+        471,
+        2
+      ],
+      "positions": [
+        164,
+        42,
+        164,
+        42
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        164,
+        42,
+        164,
+        42
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        1558,
+        2923,
+        55917,
+        198
+      ],
+      "positions": [
+        165,
+        43,
+        165,
+        43
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        165,
+        43,
+        165,
+        43
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        4618,
+        369,
+        70141,
+        2
+      ],
+      "positions": [
+        166,
+        44,
+        166,
+        44
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        166,
+        44,
+        166,
+        44
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        198,
+        279,
+        198,
+        198
+      ],
+      "positions": [
+        167,
+        45,
+        167,
+        45
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        167,
+        45,
+        167,
+        45
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        220,
+        1879,
+        262,
+        2
+      ],
+      "positions": [
+        168,
+        46,
+        168,
+        46
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        168,
+        46,
+        168,
+        46
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        471,
+        314,
+        471,
+        198
+      ],
+      "positions": [
+        169,
+        47,
+        169,
+        47
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        169,
+        47,
+        169,
+        47
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        5399,
+        279,
+        7062,
+        2
+      ],
+      "positions": [
+        170,
+        48,
+        170,
+        48
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        170,
+        48,
+        170,
+        48
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        942,
+        1727,
+        685,
+        198
+      ],
+      "positions": [
+        171,
+        49,
+        171,
+        49
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        171,
+        49,
+        171,
+        49
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        81726,
+        2923,
+        279,
+        2
+      ],
+      "positions": [
+        172,
+        50,
+        172,
+        50
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        172,
+        50,
+        172,
+        50
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        6297,
+        13,
+        1558,
+        198
+      ],
+      "positions": [
+        173,
+        51,
+        173,
+        51
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        173,
+        51,
+        173,
+        51
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        198,
+        198,
+        18336,
+        2
+      ],
+      "positions": [
+        174,
+        52,
+        174,
+        52
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        174,
+        52,
+        174,
+        52
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        220,
+        2,
+        4487,
+        198
+      ],
+      "positions": [
+        175,
+        53,
+        175,
+        53
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        175,
+        53,
+        175,
+        53
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        471,
+        561,
+        1752,
+        2
+      ],
+      "positions": [
+        176,
+        54,
+        176,
+        54
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        176,
+        54,
+        176,
+        54
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        45862,
+        1534,
+        198,
+        198
+      ],
+      "positions": [
+        177,
+        55,
+        177,
+        55
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        177,
+        55,
+        177,
+        55
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        12204,
+        2468,
+        220,
+        2
+      ],
+      "positions": [
+        178,
+        56,
+        178,
+        56
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        178,
+        56,
+        178,
+        56
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        26502,
+        314,
+        471,
+        198
+      ],
+      "positions": [
+        179,
+        57,
+        179,
+        57
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        179,
+        57,
+        179,
+        57
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        198,
+        279,
+        1510,
+        2
+      ],
+      "positions": [
+        180,
+        58,
+        180,
+        58
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        180,
+        58,
+        180,
+        58
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        220,
+        14855,
+        4549,
+        198
+      ],
+      "positions": [
+        181,
+        59,
+        181,
+        59
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        181,
+        59,
+        181,
+        59
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        471,
+        369,
+        261,
+        2
+      ],
+      "positions": [
+        182,
+        60,
+        182,
+        60
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        182,
+        60,
+        182,
+        60
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        55917,
+        279,
+        8636,
+        198
+      ],
+      "positions": [
+        183,
+        61,
+        183,
+        61
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        183,
+        61,
+        183,
+        61
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        279,
+        2468,
+        52434,
+        2
+      ],
+      "positions": [
+        184,
+        62,
+        184,
+        62
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        184,
+        62,
+        184,
+        62
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        40420,
+        314,
+        198,
+        198
+      ],
+      "positions": [
+        185,
+        63,
+        185,
+        63
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        185,
+        63,
+        185,
+        63
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        198,
+        279,
+        262,
+        2
+      ],
+      "positions": [
+        186,
+        64,
+        186,
+        64
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        186,
+        64,
+        186,
+        64
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        12,
+        1483,
+        471,
+        198
+      ],
+      "positions": [
+        187,
+        65,
+        187,
+        65
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        187,
+        65,
+        187,
+        65
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        1510,
+        2923,
+        18652,
+        2
+      ],
+      "positions": [
+        188,
+        66,
+        188,
+        66
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        188,
+        66,
+        188,
+        66
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        4549,
+        13,
+        1558,
+        198
+      ],
+      "positions": [
+        189,
+        67,
+        189,
+        67
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "5-b7b556d9",
+        "6-846f64d5",
+        "7-b20e28e5"
+      ],
+      "computed": [
+        189,
+        67,
+        189,
+        67
+      ],
+      "scheduled": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        261,
+        1528
+      ],
+      "positions": [
+        190,
+        190
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "6-846f64d5"
+      ],
+      "computed": [
+        190,
+        190
+      ],
+      "scheduled": [
+        1,
+        1
+      ]
+    },
+    {
+      "input_ids": [
+        8636,
+        321
+      ],
+      "positions": [
+        191,
+        191
+      ],
+      "req_ids": [
+        "4-91af6e99",
+        "6-846f64d5"
+      ],
+      "computed": [
+        191,
+        191
+      ],
+      "scheduled": [
+        1,
+        1
+      ]
+    }
+  ],
+  "identity_proof": {
+    "method": "Unique literal input-prefix binding, followed by exact full input-token validation for every scheduler row and original API greedy-token validation for all 256 sampled heads; no ID-format assumptions or output fitting",
+    "mapping": {
+      "5-b7b556d9": 1,
+      "7-b20e28e5": 3,
+      "4-91af6e99": 0,
+      "6-846f64d5": 2
+    },
+    "forwards": 66,
+    "input_tokens_validated": 520,
+    "sampled_heads": 256,
+    "partial_heads": 4
+  },
+  "source_program_sha256": "6e40e28038a672bdc58e772b330e915f7de412a1aecc204b922668c85919322e",
+  "performance_qualified": false,
+  "token_budget": 256,
+  "capacity": 8192,
+  "execution_roles": [
+    [
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      1,
+      1
+    ]
+  ],
+  "role_provenance": {
+    "method": "Unmodified pinned pure-host metadata function on exact captured query lengths and prompt-completion state",
+    "source_sha256": "bdcb76c461bd86a0fb8e09a75bc1cc2fc0aecd66675a2eb830dcce8f0a94cdaf",
+    "calls": [
+      {
+        "call": 0,
+        "num_decodes": 0,
+        "num_prefills": 4,
+        "decode_tokens": 0,
+        "prefill_tokens": 138
+      },
+      {
+        "call": 1,
+        "num_decodes": 2,
+        "num_prefills": 2,
+        "decode_tokens": 2,
+        "prefill_tokens": 128
+      },
+      {
+        "call": 2,
+        "num_decodes": 0,
+        "num_prefills": 4,
+        "decode_tokens": 0,
+        "prefill_tokens": 4
+      },
+      {
+        "call": 3,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 4,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 5,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 6,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 7,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 8,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 9,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 10,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 11,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 12,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 13,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 14,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 15,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 16,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 17,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 18,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 19,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 20,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 21,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 22,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 23,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 24,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 25,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 26,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 27,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 28,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 29,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 30,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 31,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 32,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 33,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 34,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 35,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 36,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 37,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 38,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 39,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 40,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 41,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 42,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 43,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 44,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 45,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 46,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 47,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 48,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 49,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 50,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 51,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 52,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 53,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 54,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 55,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 56,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 57,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 58,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 59,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 60,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 61,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 62,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 63,
+        "num_decodes": 4,
+        "num_prefills": 0,
+        "decode_tokens": 4,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 64,
+        "num_decodes": 2,
+        "num_prefills": 0,
+        "decode_tokens": 2,
+        "prefill_tokens": 0
+      },
+      {
+        "call": 65,
+        "num_decodes": 2,
+        "num_prefills": 0,
+        "decode_tokens": 2,
+        "prefill_tokens": 0
+      }
+    ]
+  }
+}

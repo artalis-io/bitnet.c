@@ -23,7 +23,6 @@ typedef struct BnBackendModel BnBackendModel;
 #include <sys/mman.h>
 #endif
 
-typedef struct BnMoECache BnMoECache;
 typedef struct BnMoEPrefetch BnMoEPrefetch;
 
 typedef struct {
@@ -254,6 +253,10 @@ int bn_moe_forward_batch_observed(struct BnModel *m,
                                   void *observe_ctx);
 BnMoEProjectionBufferLayout
 bn_moe_projection_buffer_layout(const BnConfig *c, const BnWeights *w);
+/* Raw source projection extents for either architecture-planned anatomy or
+ * legacy CPU bindings. Does not depend on backend layouts/resident handles. */
+BnMoEProjectionBufferLayout
+bn_moe_model_projection_buffer_layout(const struct BnModel *model);
 BnMoEAllActiveTwoRouteResourcePolicy
 bn_moe_all_active_two_route_resource_policy(const BnConfig *c);
 int bn_moe_policy_uses_expert_weights(const BnConfig *c);
@@ -421,14 +424,27 @@ int bn_moe_cache_capacity_internal(const BnMoECache *c);
 size_t bn_moe_cache_gate_bytes(const BnMoECache *c);
 size_t bn_moe_cache_up_bytes(const BnMoECache *c);
 
+const uint8_t *bn_moe_cache_pin_internal(BnMoECache *cache, int layer,
+    int expert, int promote, int *slot);
+uint8_t *bn_moe_cache_reserve_internal(BnMoECache *cache, int layer,
+    int expert, const size_t bytes[3], int *slot);
+int bn_moe_cache_commit_internal(BnMoECache *cache, int slot);
+void bn_moe_cache_unpin_internal(BnMoECache *cache, int slot);
+void bn_moe_cache_invalidate_internal(BnMoECache *cache, int layer, int expert);
+int bn_moe_cache_available_internal(const BnMoECache *cache);
+int bn_moe_cache_fits_internal(const BnMoECache *cache, const size_t bytes[3]);
+int bn_moe_cache_is_reader_internal(const BnMoECache *cache);
+
 #if !defined(__EMSCRIPTEN__)
-BnMoEPrefetch *bn_moe_prefetch_init_internal(int fd);
+int bn_moe_projection_fd(const BnMoEIO *io,
+                         const BnMoEExpertMap *map, int proj);
+BnMoEPrefetch *bn_moe_prefetch_init_internal(void);
 void bn_moe_prefetch_free_internal(BnMoEPrefetch *pf);
 void bn_moe_prefetch_start2_internal(BnMoEPrefetch *pf,
-                                     uint8_t *buf1, size_t size1, off_t off1,
-                                     uint8_t *buf2, size_t size2, off_t off2);
+                                     int fd1, uint8_t *buf1, size_t size1, off_t off1,
+                                     int fd2, uint8_t *buf2, size_t size2, off_t off2);
 void bn_moe_prefetch_start1_internal(BnMoEPrefetch *pf,
-                                     uint8_t *buf1, size_t size1, off_t off1);
+                                     int fd1, uint8_t *buf1, size_t size1, off_t off1);
 int bn_moe_prefetch_wait_internal(BnMoEPrefetch *pf);
 void bn_moe_prefetch_collect_stats(BnMoEPrefetch *pf, BnMoEStats *stats);
 #endif

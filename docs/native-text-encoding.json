@@ -1,0 +1,277 @@
+{
+  "status": "Qualified native counted UTF8 text encoder component; full goal active and incomplete",
+  "parent": "docs/native-pipelined-expert-upload.json",
+  "runtime_changes": true,
+  "source_changes": {
+    "Makefile": {
+      "before": "5d9caa7fd8fc832629bad0363b543ca6da0bbc808397402812c50f1070cccf4c",
+      "after": "4892516d345bc21d2673d9cec73c287dd9127c8c991e703c62308a4fe451a103"
+    },
+    "test/test_tokenizer.c": {
+      "before": "b1af8e516546519a60299409f36c809fe0859f98815cb7ed438ee6636e056b5c",
+      "after": "a8b8090a484dbb51a77d55dc0f1edb88e1a780e32956562c182c9cec48a89bab"
+    },
+    "src/tokenizer.c": {
+      "before": "5bf71d2b3f2fe6a9952d385fa036ff69e93488e2397b3ab2e6ce10ae712362e4",
+      "after": "fbf55f25ad30b55e30220d50ef2f0bfe1c6531e7099d8301258b5e4da6eb22ca"
+    },
+    "include/tokenizer.h": {
+      "before": "2c994de1e68594b7de36102a72376fbad46a107964667860faf24df82bdac63b",
+      "after": "9062294795245cad37778f6818ac17ab66445e8a3ac4e73e500b85c2a1157a59"
+    },
+    "src/tokenizer_encode.h": {
+      "before": null,
+      "after": "0bef154e46ac25ad23cca0e0f555eb44f4f18887ad55618908bf8c2c5f8a53aa"
+    },
+    "src/tokenizer_encode_unicode.h": {
+      "before": null,
+      "after": "5fdbf51fef23028c2c481b4cb79f24fdd8a237bedb21c9e66f35f3c5fa2dc660"
+    },
+    "test/native_encode_checks.h": {
+      "before": null,
+      "after": "4c9ecf23a86e53d0860bd9d2e09f0fa7a501e7b77e273afdb1d5e72b95fec3de"
+    },
+    "test/native_encode_reference.h": {
+      "before": null,
+      "after": "43e6039a6b5c9175634546ccdb179b251e9946a1e38f2f1a3ec47af603925eaf"
+    },
+    "test/reference_native_encode.py": {
+      "before": null,
+      "after": "eb2b8296075c4a308752013c044345ff1c716dcc5cd873e836ca013cb11b8d5b"
+    },
+    "test/native_encode_edges.h": {
+      "before": null,
+      "after": "11af65319b23823dd5b9483c72c95f9aa71a8d8a2b48551ee5c8af7bf7c07f84"
+    }
+  },
+  "api": {
+    "model": [
+      "bn_tokenizer_encoder_plan",
+      "bn_tokenizer_encoder_init_json",
+      "bn_tokenizer_encoder_free"
+    ],
+    "request": [
+      "bn_tokenizer_encode_scratch_plan",
+      "bn_tokenizer_encode_scratch_init",
+      "bn_tokenizer_encode_scratch_free",
+      "bn_tokenizer_encoder_encode"
+    ],
+    "inspection": "bn_tokenizer_encoder_pretokenize"
+  },
+  "contract": {
+    "profile": "Ranked BPE with complete byte alphabet, exact captured ordered number/CJK/letter-punctuation Split plus ByteLevel profile, identity normalization and non-stripping/non-single-word added tokens. Unknown semantic transforms reject initialization.",
+    "ownership": "Encoder owns immutable sorted vocabulary/merge metadata and added-token trie; strings borrow a caller-owned immutable JSON document that must outlive encoder use. Host budget covers owned metadata, excludes JSON/parser allocator overhead and static program data.",
+    "workspace": "Caller starts with zeroed encoder and scratch handles. One caller-owned bounded block with byte-indexed nodes, priority heap and staged token results. Independent scratch per concurrent request; no initialized handle copies.",
+    "algorithm": "Per-piece ranked min-heap, lazy version invalidation and leftmost rank ties; O(n log n) BPE rather than quadratic rescans. Added-token longest matching precedes model splits. In-place construction heapsorts avoid hidden sort allocations.",
+    "failure": "Malformed UTF8, insufficient output or input capacity, direct input/handle/workspace/metadata aliases and unsupported setup reject without changing caller outputs/written or publishing a partial handle. Caller must provide valid memory spans and disjoint borrowed document storage.",
+    "raw_tokens": "Counted valid UTF8 including NUL. No BOS/EOS/chat-template insertion; IDs match Rust encode(add_special_tokens=false). Diagnostic split API excludes added-vocabulary isolation, matching pre_tokenize_str.",
+    "legacy": "Existing GGUF tokenizer API/representation unchanged; no new GPU kernels, model architecture changes or default inference-path acceleration."
+  },
+  "reference": {
+    "generator": "test/reference_native_encode.py",
+    "tokenizers": "0.23.3",
+    "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw/tokenizer.json",
+    "checkpoint_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+    "method": "Independent pinned Rust tokenizers, no candidate imports. Includes every checkpoint vocabulary token decoded by Rust and re-encoded as text, added-token contexts, random/curated text and long prompts. Full source pre-tokenizer replay plus categories captured separately from source Regex.",
+    "category_flags": "All Unicode scalars classified through independent Rust Regex removals for L/M/N/P/S/whitespace; generated immutable C table is replay-checked.",
+    "unicode_ranges": 2324,
+    "scalar_contexts": 4448256,
+    "scalar_context_piece_boundaries": 7618356,
+    "initial_corpus_preserved": true,
+    "unit_capture": "24 independently captured synthetic cases plus133 ASCII-prefix/mark-tail regressions; source also checks equivalent string/array merge serialization",
+    "guards": "Wrong package version, checkpoint hash and conflicting existing payload reject without overwrite."
+  },
+  "validation": {
+    "del_edge": "Preliminary candidate incorrectly admitted DEL into ASCII punctuation; source diagnostic observed2pieces vs1. Fixed upper bound, added133 source-captured ASCII-prefix/mark-tail tests and a full actual-vocabulary edge replay; all earlier oracle values preserved.",
+    "qualification": {
+      "checks": {
+        "tokenizer-unit": 0,
+        "asan-unit": 0,
+        "actual": 0,
+        "synthetic": 0,
+        "actual-del-edge": 0,
+        "asan-actual": 0,
+        "asan-synthetic": 0,
+        "boundary": 0,
+        "asan-boundary": 0,
+        "threads-actual": 0,
+        "asan-threads-actual": 0,
+        "tsan-threads-actual": 0,
+        "reference-long": 0,
+        "reference-initial": 0,
+        "reference-boundary": 0,
+        "negative-reference": 0,
+        "native-control": 0,
+        "qwen27-compat": 0
+      },
+      "records": {
+        "actual": {
+          "cases": 134033,
+          "ids": 330625,
+          "pieces": 7861709,
+          "host_bytes": 8885376,
+          "scratch_bytes": 19595344
+        },
+        "synthetic": {
+          "cases": 3473,
+          "ids": 347177,
+          "pieces": 89709,
+          "host_bytes": 17424,
+          "scratch_bytes": 19595344
+        },
+        "actual-del-edge": {
+          "cases": 1,
+          "ids": 3,
+          "pieces": 1,
+          "host_bytes": 8885376,
+          "scratch_bytes": 448
+        },
+        "asan-actual": {
+          "cases": 134033,
+          "ids": 330625,
+          "pieces": 7861709,
+          "host_bytes": 8885376,
+          "scratch_bytes": 19595344
+        },
+        "asan-synthetic": {
+          "cases": 3473,
+          "ids": 347177,
+          "pieces": 89709,
+          "host_bytes": 17424,
+          "scratch_bytes": 19595344
+        },
+        "boundary": {
+          "cases": 292561,
+          "ids": 1359035,
+          "pieces": 953893,
+          "host_bytes": 8885376,
+          "scratch_bytes": 1552
+        },
+        "asan-boundary": {
+          "cases": 292561,
+          "ids": 1359035,
+          "pieces": 953893,
+          "host_bytes": 8885376,
+          "scratch_bytes": 1552
+        },
+        "threads-actual": {
+          "cases": 134033,
+          "ids": 330625,
+          "pieces": 243353,
+          "host_bytes": 8885376,
+          "scratch_bytes": 19595344
+        },
+        "asan-threads-actual": {
+          "cases": 134033,
+          "ids": 330625,
+          "pieces": 243353,
+          "host_bytes": 8885376,
+          "scratch_bytes": 19595344
+        },
+        "tsan-threads-actual": {
+          "cases": 134033,
+          "ids": 330625,
+          "pieces": 243353,
+          "host_bytes": 8885376,
+          "scratch_bytes": 19595344
+        }
+      },
+      "frozen_sources": 860,
+      "reference_files": 29538,
+      "goal_status": "active",
+      "scope": "Native bounded JSON byte BPE encoder for exact supported Split/ByteLevel profile, immutable model metadata, explicit request-local heap workspace, added isolation, strict valid counted UTF8 including NUL; independent Rust all-vocabulary text and full-scalar context references, OOM/no-hot-heap/ASAN/UBSAN/TSAN/thread qualification, unchanged native-forward and strict Qwen controls. No streaming decoder, chat/template/native CLI admission or vLLM parity claim."
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "actual_cases": 134033,
+    "actual_ids": 330625,
+    "synthetic_cases": 3473,
+    "synthetic_ids": 347177,
+    "boundary_cases": 292561,
+    "boundary_ids": 1359035,
+    "boundary_pieces": 953893,
+    "linked_hot_heap_calls": 0,
+    "encoder_constructor_allocations": 2,
+    "encoder_constructor_faults": "Both allocation points reject atomically and leak-free; one-byte-short model/request budgets reject. Constructor uses in-place sorts.",
+    "asan_ubsan": "All new JSON/tokenizer/probe C code instrumented; passed full actual/synthetic replay, negative units and two-worker shared encoder.",
+    "threadsanitizer": "All new JSON/tokenizer/probe C code instrumented; two workers, one immutable encoder, independent scratch/output, complete actual case partition and source IDs passed without races.",
+    "reference_replay": "Both initial and long corpora regenerated byte-identically; generated Unicode and unit headers unchanged.",
+    "native_control": "Existing source-indexed DeepSeek full forward: fresh513/resume513/5 self-fed steps,14 exact GPUhalf/CPUfloat checks,5429760 bytes. Does not yet feed the new text encoder into inference.",
+    "qwen27": "Fresh strict192/192 sampled IDs,0/8 count mismatch,147/147 word prefixes",
+    "scope": "No new GPU operations or GPU sanitizer claim; full CUDA suite/diagnostics run as compatibility checks."
+  },
+  "memory": {
+    "actual_encoder_owned_bytes": 8885376,
+    "synthetic_encoder_owned_bytes": 17424,
+    "largest_input_bytes": 212992,
+    "request_scratch_bytes": 19595344,
+    "scope": "Owned payload admission only, excludes borrowed JSON storage, allocator overhead and program/static data. No per-call heap growth."
+  },
+  "artifacts": {
+    "qualification.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/qualification.json",
+      "sha256": "b8389c76681219a912fc6e23da02c43ac955508046a9604983cbc0ad57c79ee1"
+    },
+    "records.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/records.json",
+      "sha256": "4298f5fec1074617a1db820ad91415fc5a1763504063e0104473669d66d361b6"
+    },
+    "frozen-source.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/frozen-source.json",
+      "sha256": "64e3d912e97f04cb1844fefc2b2dd639c96673337ce561d0140b2afffd892498"
+    },
+    "reference-audit.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/reference-audit.json",
+      "sha256": "5f3408e3c63de44b310fa1c64de2d5ab3abd142ec6f3db037d6057ccc59eb5c0"
+    },
+    "intentional-source-changes.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/intentional-source-changes.json",
+      "sha256": "1bec16a9dc41f88d76ae7cca2ff232fb995a360bef9a663e4de341833754241e"
+    },
+    "rebuilt-artifacts.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/rebuilt-artifacts.json",
+      "sha256": "e684874e566797637d057bbf2f9ef0d7907386ede5c56f1afdf1961b343bceea"
+    },
+    "reference-final/manifest.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/reference-final/manifest.json",
+      "sha256": "4351048318d3339368971f9c5c311ac28e2d3b2f2bb92a64391038d2211d1816"
+    },
+    "reference/manifest.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/reference/manifest.json",
+      "sha256": "b6541e33d102a7a93db3b34b50f3bad6e3727bbac0e0894f45cb11db4ed61059"
+    },
+    "reference-boundary/manifest.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/reference-boundary/manifest.json",
+      "sha256": "e58ec38ba083a24b2f953f510d7714a0f4476133c5c1ffd602d3e3201b3b2553"
+    },
+    "build/cpu-build-verification.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/build/cpu-build-verification.json",
+      "sha256": "7efe78e26c830da2d1da500b21112e93630d363ba0a015ea87603dc17984fb7e"
+    },
+    "edge-diagnosis-provenance.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/edge-diagnosis-provenance.json",
+      "sha256": "ff6711d5c8690ae26b3443acb4858c389119094c53c7ec6abce81579a581869f"
+    },
+    "pre-edge/archive-sha.json": {
+      "path": "/tmp/bitnet-goal-native-text-encode/pre-edge/archive-sha.json",
+      "sha256": "0b2ba390fd8a94774af9bdba35ab90e7d9e7269bcc76ebc5bdbc8b488d91a10b"
+    }
+  },
+  "remaining": [
+    "Streaming multi-token UTF8 decoding, chat/BOS/EOS/template policy and native model/CLI admission",
+    "Independent real-text full-model captures, broader native context/candidate/CPU/ARM qualification",
+    "Production offload placement/admission/coldwarm behavior and source/transfer/compute overlap",
+    "Matched resident vLLM within5% prefill/decode, continuous batching/KV scheduling/concurrent throughput/tail latency, all named models/backends"
+  ],
+  "goal_complete": false
+}

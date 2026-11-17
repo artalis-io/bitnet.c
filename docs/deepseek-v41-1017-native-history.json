@@ -1,0 +1,105 @@
+{
+  "milestone": "Budgeted request-local native Engram host history",
+  "status": "qualified host component; full goal remains active",
+  "parent": "docs/deepseek-v41-1017-native-tokenmap.json",
+  "implementation": {
+    "owner": "Optional BnSessionNativeHistory allocation owned by BnSessionBackendState. Model map remains shared and immutable. No default-path execution admission.",
+    "api": [
+      "bn_session_native_history_plan",
+      "bn_session_native_history_prepare",
+      "bn_session_native_history_stage",
+      "bn_session_native_history_view",
+      "bn_session_native_history_abort",
+      "bn_session_native_history_commit",
+      "bn_session_native_history_rewind"
+    ],
+    "allocation": "One budgeted allocation contains metadata, context-capacity compressed history, staged mapped prefix/window and an owned raw-token batch. Stage/view/commit/abort/rewind allocate nothing.",
+    "staging": "Full raw-ID validation before writes; stage copies input without changing committed history, raw session history or position. All layers can consume the same read-only view. Missing context uses model-derived compressed padding, never zero/raw padding by assumption.",
+    "finalization": "Ticket checks session owner, mapped window, epoch, shape and position. Commit copies staged raw/mapped history and advances host position. Abort discards staged host state. Reset cancels pending state, clears history after GPU resource release and invalidates tickets; free releases history after backend resources. Epoch never wraps.",
+    "rewind": "Bookkeeping only, after caller has restored backend compute state and session position. Rejects active transactions, forward extension and position mismatch; preserves prefix and clears discarded suffix. No KV, recurrent or GPU state restoration is implemented by this helper.",
+    "caller_contract": "Caller serializes the session, keeps model immutable/alive, consumes views before finalization, gates commit on successful WHOLE-model completion and handles failed queued work through backend reset/poison policy. View output must be disjoint from session/model storage."
+  },
+  "memory": {
+    "actual_context_capacity": 1048576,
+    "actual_max_staged_tokens": 17,
+    "actual_prefix_tokens": 3,
+    "additional_history_allocation_bytes_per_session": 4194524,
+    "scope": "Exact history allocation including its metadata and arrays. Existing session/backend owner metadata, raw history, logits, arena, model token map, caches, GPU storage and allocator overhead are separate."
+  },
+  "independent_reference": {
+    "source": "Unchanged original raw-token and mapped-history capture in /tmp/bitnet-goal-native-engram/reference-final; immutable native vocabulary/map evidence inherited from parent.",
+    "source_hash_cases": 108,
+    "source_lengths": [
+      1,
+      2,
+      3,
+      4,
+      7,
+      17,
+      64,
+      129,
+      513
+    ],
+    "source_batch_sizes": [
+      1,
+      2
+    ],
+    "chunk_sizes": [
+      1,
+      5,
+      17
+    ],
+    "procedure": "Actual model map is built natively. Each source sequence runs through budgeted session staging, abort/retry, stale-ticket rejection and commit for each chunk size, then midpoint history rewind/replay after simulated backend restoration. Every staged prefix/window and committed raw ID is checked against original data. Generated histories feed existing hash and CUDA lookup probes.",
+    "not_a_compute_rewind_test": true
+  },
+  "validation": {
+    "baseline_before_edits": "passed",
+    "clean_product_build": "zero warnings",
+    "standard_suite": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "serving_bench_and_runtime_builds": "passed",
+    "normal_and_asan_probe_builds": "zero warnings",
+    "frozen_sources": 831,
+    "checks": {
+      "history-unit": 0,
+      "asan-history-unit": 0,
+      "normal-probe": 0,
+      "asan-probe": 0,
+      "memcheck-probe": 0,
+      "initcheck-probe": 0,
+      "bounded-row-race": 0,
+      "qwen27-compat": 0
+    },
+    "history_counters": {
+      "streams": 680,
+      "stages": 19618,
+      "commits": 19108,
+      "aborts": 510,
+      "rejections": 18140,
+      "committed_tokens": 48582,
+      "linked_hot_heap_calls": 0
+    },
+    "hash": {
+      "successful_windows": 15660,
+      "exact_u64_words": 2716416
+    },
+    "cuda_rows": {
+      "new_coupled_submits": 208,
+      "new_exact_bf16_bytes": 13369344,
+      "total_checked_submits": 280,
+      "total_exact_bf16_bytes": 17571840
+    },
+    "unit_cases": "Mapped padding differs from raw ID; budget/reinitialization rejection; late invalid IDs; stale and foreign tickets; borrowed-window input alias; input lifetime; chunk partitioning; pending reset; session isolation; simulated rewind; full1048576-token context fill and overflow rejection.",
+    "allocation_failure": "Denied history constructor allocation leaves the session unprepared; retry succeeds. Budget-1 rejects with zero linked hot heap calls.",
+    "sanitizers": "ASAN/UBSAN instrument new C session/history paths. CUDA memcheck reports zero errors and zero leaked allocations; initcheck passes. Racecheck is limited to unchanged bounded row decoder. Legacy moe_cpu_kernels and CUDA translation units use normal builds.",
+    "qwen27": "Fresh strict CUDA match192/192 sampled IDs, first8/8, zero count mismatches, words147/147.",
+    "integrity": "Source/reference/probe/binary hashes audited at each gate; four user binaries preserved. No production/probe changes after freeze."
+  },
+  "qualification_artifacts": "/tmp/bitnet-goal-native-history",
+  "not_claimed": [
+    "Full-model transaction completion gate or failure rollback",
+    "Actual backend KV/recurrent/GPU rewind or resumed native full-model execution",
+    "PLE/HCA/full native forward/generation admission",
+    "vLLM parity or new AVX2/AVX512/NEON/Metal execution coverage"
+  ]
+}

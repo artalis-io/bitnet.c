@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "goal_status": "active",
+  "component": "Native ByteLevel streaming decoder",
+  "contract": "Python incremental UTF8 replacement chunks and pending bytes; full output and flush independently checked against Rust tokenizers0.23.3 ByteLevel.decode. Not Rust DecodeStream timing.",
+  "source_producer": "test/reference_native_decode_stream.py",
+  "source_sha256": "0d431406b1c8850a2e1dff55cde416197fd11dbb028c35dc98103c88ee56b604",
+  "checkpoint_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "cases": 581470,
+  "ids": 1282874,
+  "steps": 1864344,
+  "output_bytes": 4191788,
+  "mixed_fallback_admitted_cases": 1548,
+  "json_nul_rejected_cases": 6,
+  "actual_owned_bytes": 4266280,
+  "synthetic_owned_bytes": 8653,
+  "host_stream_bytes": 24,
+  "pending_bytes_bound": 3,
+  "constructor_allocations": 2,
+  "hot_heap_operations": 0,
+  "qualification": {
+    "checks": {
+      "tokenizer-unit": 0,
+      "asan-unit": 0,
+      "fallback-diagnosis": 0,
+      "actual": 0,
+      "synthetic": 0,
+      "asan-actual": 0,
+      "asan-synthetic": 0,
+      "threads-actual": 0,
+      "asan-threads-actual": 0,
+      "tsan-threads-actual": 0,
+      "reference-replay": 0,
+      "fallback-reference-replay": 0,
+      "negative-reference": 0,
+      "native-control": 0,
+      "qwen27-compat": 0
+    },
+    "records": {
+      "actual": {
+        "cases": 419754,
+        "ids": 771650,
+        "steps": 1191404,
+        "output_bytes": 3189774,
+        "host_bytes": 4266280,
+        "state_bytes": 24
+      },
+      "synthetic": {
+        "cases": 161716,
+        "ids": 511224,
+        "steps": 672940,
+        "output_bytes": 1002014,
+        "host_bytes": 8653,
+        "state_bytes": 24
+      },
+      "asan-actual": {
+        "cases": 419754,
+        "ids": 771650,
+        "steps": 1191404,
+        "output_bytes": 3189774,
+        "host_bytes": 4266280,
+        "state_bytes": 24
+      },
+      "asan-synthetic": {
+        "cases": 161716,
+        "ids": 511224,
+        "steps": 672940,
+        "output_bytes": 1002014,
+        "host_bytes": 8653,
+        "state_bytes": 24
+      },
+      "threads-actual": {
+        "cases": 419754,
+        "ids": 771650,
+        "steps": 1191404,
+        "output_bytes": 3189774,
+        "host_bytes": 4266280,
+        "state_bytes": 24
+      },
+      "asan-threads-actual": {
+        "cases": 419754,
+        "ids": 771650,
+        "steps": 1191404,
+        "output_bytes": 3189774,
+        "host_bytes": 4266280,
+        "state_bytes": 24
+      },
+      "tsan-threads-actual": {
+        "cases": 419754,
+        "ids": 771650,
+        "steps": 1191404,
+        "output_bytes": 3189774,
+        "host_bytes": 4266280,
+        "state_bytes": 24
+      }
+    },
+    "frozen_sources": 867,
+    "reference_files": 29670,
+    "goal_status": "active",
+    "scope": "Native ByteLevel streaming decode: Python incremental UTF8 chunk/pending contract, complete output checked against Rust full decode, skip/flush/checkpoints/atomic rejection/no-hot-heap, ASAN/UBSAN/TSAN/shared model threads, native forward and strict Qwen controls. No real-text inference/CLI admission or vLLM parity claim."
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "artifacts": "/tmp/bitnet-goal-native-stream-decode",
+  "limitations": [
+    "Borrowed immutable JSON lifetime required",
+    "No text-to-inference or native CLI/chat admission",
+    "No new CPU/ARM model qualification or vLLM parity",
+    "Native control uses existing Diffbot INT4 BF16 lookup to Exllama F16 Engram adapter; not original Diffbot full runtime equivalence"
+  ]
+}

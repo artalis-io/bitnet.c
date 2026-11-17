@@ -158,15 +158,15 @@ void bn_quant_q5k_neon_sdot_range(void *ctx, int row_start, int row_end) {
 
                 int8x16_t w0 = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(raw0, mask_lo), hb0));
                 int8x16_t w1 = vreinterpretq_s8_u8(vorrq_u8(vandq_u8(raw1, mask_lo), hb1));
-                int32x4_t p0 = vdotq_s32(zero, w0, vld1q_s8(xb + j));
-                int32x4_t p1 = vdotq_s32(zero, w1, vld1q_s8(xb + j + 16));
+                int32x4_t p0 = bn_neon_dot4_i8(zero, w0, vld1q_s8(xb + j));
+                int32x4_t p1 = bn_neon_dot4_i8(zero, w1, vld1q_s8(xb + j + 16));
                 acc = vmlaq_n_s32(acc, p0, (int32_t)sc[sub]);
                 acc = vmlaq_n_s32(acc, p1, (int32_t)sc[sub]);
 
                 w0 = vreinterpretq_s8_u8(vorrq_u8(vshrq_n_u8(raw0, 4), hb2));
                 w1 = vreinterpretq_s8_u8(vorrq_u8(vshrq_n_u8(raw1, 4), hb3));
-                p0 = vdotq_s32(zero, w0, vld1q_s8(xb + j + 32));
-                p1 = vdotq_s32(zero, w1, vld1q_s8(xb + j + 48));
+                p0 = bn_neon_dot4_i8(zero, w0, vld1q_s8(xb + j + 32));
+                p1 = bn_neon_dot4_i8(zero, w1, vld1q_s8(xb + j + 48));
                 acc = vmlaq_n_s32(acc, p0, (int32_t)sc[sub + 1]);
                 acc = vmlaq_n_s32(acc, p1, (int32_t)sc[sub + 1]);
 
@@ -259,12 +259,12 @@ void bn_quant_q5k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                 for (int p = 0; p < 4; p++) {
                     int sub = p * 2;
                     int base = p * 64;
-                    int32x4_t p0 = vdotq_s32(zero, w_lo0[p], vld1q_s8(xb + base));
-                    int32x4_t p1 = vdotq_s32(zero, w_lo1[p], vld1q_s8(xb + base + 16));
+                    int32x4_t p0 = bn_neon_dot4_i8(zero, w_lo0[p], vld1q_s8(xb + base));
+                    int32x4_t p1 = bn_neon_dot4_i8(zero, w_lo1[p], vld1q_s8(xb + base + 16));
                     sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) * (int32_t)sc[sub];
 
-                    p0 = vdotq_s32(zero, w_hi0[p], vld1q_s8(xb + base + 32));
-                    p1 = vdotq_s32(zero, w_hi1[p], vld1q_s8(xb + base + 48));
+                    p0 = bn_neon_dot4_i8(zero, w_hi0[p], vld1q_s8(xb + base + 32));
+                    p1 = bn_neon_dot4_i8(zero, w_hi1[p], vld1q_s8(xb + base + 48));
                     sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) * (int32_t)sc[sub + 1];
                 }
 

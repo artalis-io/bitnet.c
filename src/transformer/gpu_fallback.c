@@ -33,7 +33,7 @@ static uint32_t fallback_f32_bits(float value) {
 static int fallback_gpu_positional_layer_embedding(
     const BnGPUBackend *gpu, BnModel *model, BnSession *session,
     BnLayerWeights *layer, int pos, const float *projected_key,
-    const float *projected_value) {
+    const float *projected_value, int batch_tokens) {
     BnConfig *c = &model->config;
     BnRunState *s = &session->state;
     BnTransformerGPUPLEResources resources;
@@ -113,7 +113,7 @@ static int fallback_gpu_positional_layer_embedding(
         "gpu_ple_query_norm", c->ple_layer, pos);
     if (gpu->signed_sqrt_gate(
             gpu->ctx, gate, gated, key, query, value,
-            dim, streams, 512) != 0)
+            dim, streams, batch_tokens == 1 ? 512 : 0, batch_tokens) != 0)
         goto done;
     op.W_buf = resources.norm_conv;
     if (bn_gpu_backend_write_activation(
@@ -175,7 +175,7 @@ int bn_transformer_gpu_fallback_positional_layer_embedding(
               ? bn_transformer_cpu_apply_positional_layer_embedding_host(
                     model, session, layer, pos)
               : fallback_gpu_positional_layer_embedding(
-                    gpu, model, session, layer, pos, NULL, NULL)) != 0 &&
+                    gpu, model, session, layer, pos, NULL, NULL, 1)) != 0 &&
          (use_cpu_exact ||
           bn_transformer_cpu_apply_positional_layer_embedding(
               model, session, layer, pos) != 0)) ||
@@ -189,12 +189,13 @@ int bn_transformer_gpu_fallback_positional_layer_embedding(
 int bn_transformer_gpu_fallback_positional_layer_embedding_projected(
     const BnGPUBackend *gpu, BnModel *model, BnSession *session,
     BnLayerWeights *layer, int pos, const float *projected_key,
-    const float *projected_value) {
+    const float *projected_value, int batch_tokens) {
     if (!gpu || !model || !session || !layer || !projected_key ||
         !projected_value)
         return -1;
     return fallback_gpu_positional_layer_embedding(
-        gpu, model, session, layer, pos, projected_key, projected_value);
+        gpu, model, session, layer, pos, projected_key, projected_value,
+        batch_tokens);
 }
 
 int bn_transformer_gpu_debug_dump_activation(
@@ -4332,7 +4333,7 @@ int bn_transformer_gpu_debug_compare_ssm(
                 &same_input_conv_ctx, 0, shape.qkv_dim);
         BnSSML2NormCtx same_input_l2_ctx = {
             cpu_qkv_raw, cpu_qkv_raw + shape.key_dim,
-            bn_transformer_gpu_norm_epsilon(&m->config), shape.head_k_dim
+            bn_transformer_gpu_norm_epsilon(&m->config), shape.head_k_dim, m->config.ssm_qk_norm
         };
         bn_transformer_cpu_ssm_l2norm_op(
             bn_transformer_cpu_backend_ops(fallback_cpu_runtime(m)))(

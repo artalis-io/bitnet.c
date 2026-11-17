@@ -1,0 +1,158 @@
+{
+  "checkpoint": "GLM-5.3 Flash SM120 signed FP8 causal scorer",
+  "whole_goal_complete": false,
+  "artifact_root": "/tmp/bitnet-goal-glm-cuda-score",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "source_sha256": {
+    "include/gpu_backend.h": "d325415cd41e798ffa300988f8fffec0c7f80255a41890afe17989f7359e95ac",
+    "src/gpu_cuda.cu": "aca73a80a6f6d8f2cda4c892fac247d87b9cbbf6aee61731cdee84e42de9805d",
+    "src/gpu_cuda_glm_indexer.cuh": "2159dd53f331388fc078a49c47c3b906615a9bc439d41dd59d73391206b3d8d5",
+    "test/test_cuda_glm_score.c": "d5439d093fc9508ec4484cc72b54a0cc0658f9deba1d85621f6fc0e703b398b6",
+    "test/cuda_glm_score_reference.h": "e046c3778bcdd5c6ef4f93314892f94f70fc78ce608236d0000d54814d581fa2",
+    "test/reference_cuda_glm_score.py": "0eeda45cc5b44da0d1b0d203ec5dd863b40bb4d35adfdf77099bdbc5d13be0b4",
+    "Makefile": "f06c7f47ab27d9d66362f1b8f23b0c6d5329200b96af8064ee55c8a30d39de67"
+  },
+  "harness_sha256": {
+    "actual.c": "c20628518bb363e5aed8171b8711a93d57bf6d9f10b3950402e8ba712e29b89c",
+    "trace.c": "fb317ce163c0397afd08ad99305db80bf14fb3335850d9b4ab5f5672912f8cb8",
+    "run.py": "1767be9f9793f280676d212a36fd7a0c87d3c0fd0e1919fed2d53a754432e31d",
+    "long-preindex-reference.py": "7fb539349493ee36536f2423b803d6015a96ad68cdb059edb75df8175cb68009",
+    "long-score-reference.py": "e0325d335ee45b4e766555dbb48769d89488a1ddfb76e67fa7e4244d55e7d80e",
+    "build.py": "80817a6758a3c3f2239823719f50d0a794e02448edfd2f5e7d64ca639874ce70",
+    "export.py": "35737399c68119136211134e832772206c4f1512e14228fe8829d7713177e0b2",
+    "probe.cu": "eea8b7f8ed140c54b623fea25d53bbd04aeb6dd3ba92ec2e2a0be1bf1df8a936"
+  },
+  "stages": {
+    "actual-2049-synccheck": 0,
+    "actual-memcheck": 0,
+    "clean": 0,
+    "actual-4097-synccheck": 0,
+    "actual-4097-memcheck": 0,
+    "standard": 0,
+    "benches": 0,
+    "actual-synccheck": 0,
+    "score-direct": 0,
+    "cuda": 0,
+    "score-synccheck": 0,
+    "actual-4097": 0,
+    "trace-build": 0,
+    "actual-2049": 0,
+    "build": 0,
+    "actual": 0,
+    "actual-build": 0,
+    "actual-2049-memcheck": 0,
+    "score-memcheck": 0,
+    "nsys": 0,
+    "nsys-export": 0,
+    "score-build": 0
+  },
+  "preserved_user_binary_sha256": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "reference_repeat": "All synthetic reference files/header identical across independent captures; actual pre-indexer and score captures checked twice by original operators. Original top-k order variation preserved.",
+  "exact_f32_elements": {
+    "synthetic": 350090,
+    "actual_1025": 262400,
+    "actual_2049": 1049088,
+    "actual_4097": 4195328,
+    "total": 5856906
+  },
+  "device_sanitizers": "memcheck/synccheck zero errors for synthetic, actual1025, actual2049, actual4097",
+  "trace": {
+    "kernel_counts": {
+      "score_kernel": 1
+    },
+    "runtime_calls": {
+      "cuKernelGetName": 1,
+      "cudaLaunchKernel_v7000": 1,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "memcpy_activity_records": 0,
+    "synchronization_records": [
+      [
+        39387643,
+        39742194,
+        0,
+        1,
+        0,
+        14,
+        1348,
+        316028491923456,
+        null,
+        3,
+        4294967295,
+        0
+      ],
+      [
+        39747082,
+        39751589,
+        0,
+        1,
+        0,
+        4294967295,
+        1349,
+        316028491923456,
+        null,
+        4,
+        4294967295,
+        0
+      ]
+    ],
+    "kernel_duration_ns": 367777,
+    "scope": "Warmed scorer only, actual 4097-token query/1024 gathered keys. Staging/readback outside capture. One caller final stream fence. Raw CUPTI synchronization records retained, including any context synchronization without matching runtime API. Duration is an observation, not a throughput benchmark or parity claim."
+  },
+  "long_original_reference": {
+    "records": [
+      {
+        "tokens": 2049,
+        "keys": 512,
+        "score_elements": 1049088,
+        "raw_topk_repeat_exact": true,
+        "expanded_repeat_exact": true,
+        "hashes": {
+          "scores": "09983f474b348143e637885a362498aca086608fa7a909b8b2b317b95803decf",
+          "pools": "c7b8ee6b209a09fbd17f638894824f2d762d3bf3d85757f16905abdcb9ea037e",
+          "expanded": "0d703a9c7ac39e1584ef54c4476dc5e1ff3e11a391a5efe818797a46c32af850",
+          "scores-repeat": "09983f474b348143e637885a362498aca086608fa7a909b8b2b317b95803decf",
+          "pools-repeat": "c7b8ee6b209a09fbd17f638894824f2d762d3bf3d85757f16905abdcb9ea037e",
+          "expanded-repeat": "0d703a9c7ac39e1584ef54c4476dc5e1ff3e11a391a5efe818797a46c32af850"
+        },
+        "score_min": -1267.9036865234375,
+        "score_max": 1064.2503662109375
+      },
+      {
+        "tokens": 4097,
+        "keys": 1024,
+        "score_elements": 4195328,
+        "raw_topk_repeat_exact": false,
+        "expanded_repeat_exact": false,
+        "hashes": {
+          "scores": "406b8450d9bd2e6bceb87fb7f4be239576249240a0ec495463ef534c886dd36c",
+          "pools": "307b297f26348c392a5e840ff0e83fa1df8cec15867968e81c143cc2b5c561e1",
+          "expanded": "57438fd827dc0d55a2fd3e089de9f5ff4ee7c832c70a44e524edf810e123305e",
+          "scores-repeat": "406b8450d9bd2e6bceb87fb7f4be239576249240a0ec495463ef534c886dd36c",
+          "pools-repeat": "75aa62f9d3b548224aa9fe659734d317b8145881ceac79d53df2c6fd0ee5989f",
+          "expanded-repeat": "d59007c0317a83516a5533b1d82b1b19ad10f24dbb73b4ac892c75d2678759ce"
+        },
+        "score_min": -1217.0047607421875,
+        "score_max": 1108.9571533203125
+      }
+    ],
+    "sources": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/utils/deep_gemm.py": "0c84d8960edc4e613b79678d3394a2ad6fd3c53b1530a83c2bdaf407dfe41e00",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/kpool_compress.py": "0d6d71186a9f64b99ffacbbae20d7d1514b3f58911b9a522de627075917230ac",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/third_party/deep_gemm/include/deep_gemm/impls/sm120_fp8_mqa_logits.cuh": "6f6dbf1158c2e5571bb90835a673f74cfc64f4c28e22a0f3f77ce73c554d702c"
+    },
+    "profile": "Original FP8 scorer/top-k/expansion on actual raw GGUF block3 pre-indexer captures; scorer only native replay is separate; pool order retained as captured"
+  },
+  "original_topk_repeat": {
+    "rows": 4097,
+    "rows_with_order_difference": 2046,
+    "rows_with_membership_difference": 0,
+    "scope": "Two original top-k invocations; raw order retained in both artifacts, no canonicalized reference."
+  },
+  "scope": "Standalone native scorer on synthetic inputs and original actual-checkpoint pre-indexer outputs. Native pre-indexer/cache/scorer composition, paged decode, native top-k/expansion, MLA, whole-model generation, expert placement and full backend/performance/serving goal remain unqualified."
+}

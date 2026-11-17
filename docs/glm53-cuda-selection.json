@@ -1,0 +1,190 @@
+{
+  "checkpoint": "GLM signed pool top512 and token expansion with native prefill composition",
+  "whole_goal_complete": false,
+  "artifact_root": "/tmp/bitnet-goal-glm-cuda-selection",
+  "source_sha256": {
+    "include/gpu_backend.h": "8ccdae5ceff1ffced37125e81074f86a73de4dc0c180182a8eca229c2b04bd4c",
+    "src/gpu_cuda.cu": "a7dc1cdef4f47aa24d920af3c1ed8abb2e3cc2fe77d6da375f4018cbdccc5301",
+    "src/gpu_cuda_glm_indexer.cuh": "a80d63172f5035fe1914104ec9a5f5fbfa180cb61370298f0f5473bebe2bedad",
+    "src/transformer/bf16.c": "0044c088d33ef8595fc93eb5ee758ab5620c4c067f4fddd287dfddc40c11fce7",
+    "src/transformer/bf16_internal.h": "d5aef509888e2d5f6dbe51196a01a8fd396f3d902b4f0155a454f90dbcb89bce",
+    "test/glm_indexer_layout_checks.h": "80e9841ef959230b15dba5cb77b39195e6d5bff59519898f87f5156fb65db523",
+    "test/test_cuda_glm_select.c": "dc692237019c31e3188353f681099217ea1a1dd34d432ec5f71c352a3e6e0105",
+    "test/test_cuda_glm_indexer_select.c": "dfe70d604705837c541df1fc46d2ffc2896235d28701267773616ba56db45926",
+    "test/reference_glm_selection.py": "b52e81bc0b5457db271b1372b5a6fceb733bbbd41bac5f158c443f7e064b8354",
+    "Makefile": "ca91ca89a40ffc82bded0d08c71ff8234d21c703edfd236071539b94fee0fbab"
+  },
+  "preserved_user_binary_sha256": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "stages": {
+    "select-build": 0,
+    "short-nsys-export": 0,
+    "clean": 0,
+    "standard": 0,
+    "benches": 0,
+    "short-trace-build": 0,
+    "unit-synccheck": 0,
+    "sanitize": 0,
+    "short-nsys": 0,
+    "cuda": 0,
+    "score-regression": 0,
+    "chain-memcheck": 0,
+    "chain": 0,
+    "trace-build": 0,
+    "build": 0,
+    "nsys": 0,
+    "nsys-export": 0,
+    "unit-memcheck": 0,
+    "chain-synccheck": 0
+  },
+  "actual_counts": {
+    "schedules": 9,
+    "phases": 23,
+    "query_rows": 16416,
+    "short_rows": 2060,
+    "sparse_rows": 14356,
+    "raw_exact_preindexer_cache_elements": 146404112,
+    "raw_exact_score_elements": 11548687,
+    "raw_exact_short_token_indices": 4225060,
+    "selection_I32_values_checked_including_diagnostic_pools_and_order_independent_membership": 42074208
+  },
+  "model_free_exact_native_policy_I32_values": 2768040,
+  "original_reference": {
+    "raw_captures_preserved": true,
+    "membership_repeat_identical": true,
+    "rows_with_original_raw_pool_order_change": 4103,
+    "cutoff_audit": {
+      "rows_over_budget": 4105,
+      "rows_tied_at_cutoff": 0
+    },
+    "manifest_sha256": "9b67b8bd7002b03161086000bdc99d07b1bd29d2004fc10ca3e847df6b87d707"
+  },
+  "native_policy": "Chronological selected pools; equal scores prefer lower index; signed zeros tie. Synthetic native-policy sort tests do not prove matching original atomic tied membership. Actual corpus has no cutoff ties.",
+  "sanitizers": "Host ASAN/UBSAN and device memcheck/synccheck unit+actualchain passed",
+  "trace": {
+    "kernel_counts": {
+      "Kernel2": 1,
+      "cache_append_kernel": 1,
+      "cache_gather_kernel": 1,
+      "cast_bf16_f32": 1,
+      "cuda_bf16_q8_mma_kernel": 3,
+      "fwht_kernel": 1,
+      "layernorm_kernel": 1,
+      "pool_kernel": 1,
+      "quantize_bf16_q8_batch_kernel": 3,
+      "score_kernel": 1,
+      "select_kernel": 1,
+      "splitKreduce_kernel": 1,
+      "tail_kernel": 1,
+      "weight_scale_kernel": 1
+    },
+    "total_kernels": 18,
+    "runtime_calls": {
+      "cuKernelGetFunction": 1,
+      "cuKernelGetName": 16,
+      "cuLaunchKernel": 1,
+      "cuStreamGetGreenCtx": 2,
+      "cudaLaunchKernelExC_v11060": 1,
+      "cudaLaunchKernel_v7000": 16,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "memcpy_activity_records": 0,
+    "synchronization_records": [
+      [
+        26381466,
+        29194425,
+        0,
+        1,
+        0,
+        18,
+        3095,
+        316645373378560,
+        null,
+        3,
+        4294967295,
+        0
+      ],
+      [
+        29199533,
+        29203119,
+        0,
+        1,
+        0,
+        4294967295,
+        3096,
+        316645373378560,
+        null,
+        4,
+        4294967295,
+        0
+      ]
+    ],
+    "scope": "Warmed4097-token native pre-indexer/cache/score/select chain, from x/normalizedQR, staging/readback outside capture, one caller stream fence. Raw CUPTI context synchronization without matching API retained. Not MLA/generation/performance parity qualification."
+  },
+  "short_trace": {
+    "kernel_counts": {
+      "Kernel2": 1,
+      "cache_append_kernel": 1,
+      "cache_gather_kernel": 1,
+      "cast_bf16_f32": 1,
+      "cuda_bf16_q8_mma_kernel": 3,
+      "fwht_kernel": 1,
+      "layernorm_kernel": 1,
+      "pool_kernel": 1,
+      "quantize_bf16_q8_batch_kernel": 3,
+      "select_kernel": 1,
+      "splitKreduce_kernel": 1,
+      "tail_kernel": 1,
+      "weight_scale_kernel": 1
+    },
+    "total_kernels": 17,
+    "runtime_calls": {
+      "cuKernelGetFunction": 1,
+      "cuKernelGetName": 15,
+      "cuLaunchKernel": 1,
+      "cuStreamGetGreenCtx": 2,
+      "cudaLaunchKernelExC_v11060": 1,
+      "cudaLaunchKernel_v7000": 15,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "memcpy_activity_records": 0,
+    "synchronization_records": [
+      [
+        26507935,
+        27229217,
+        0,
+        1,
+        0,
+        19,
+        3418,
+        316626398347264,
+        null,
+        3,
+        4294967295,
+        0
+      ],
+      [
+        27233193,
+        27236448,
+        0,
+        1,
+        0,
+        4294967295,
+        3419,
+        316626398347264,
+        null,
+        4,
+        4294967295,
+        0
+      ]
+    ],
+    "scope": "Warmed1025-token short prefill from x/QR; no score kernel,17total kernels; staging/readback outside capture, one caller fence, raw additional CUPTI context sync retained."
+  },
+  "initial_test_warning": "Corrected an unbounded-size compiler warning in the synthetic test helper by asserting input bounds. Full qualification rerun; original warning log preserved under initial-qualified-run. Production source hashes unchanged.",
+  "remaining": "Downstream MLA/order/tie numerical and generation qualification, direct paged decode, full-model admission, expert placement, other model/backend and matched vLLM/serving requirements remain incomplete. WholeGLM admission remains guarded."
+}

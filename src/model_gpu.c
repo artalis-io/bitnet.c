@@ -26,7 +26,7 @@ typedef enum {
 } BnModelGPUUploadMode;
 
 int bn_model_init_gpu_activations(const BnModel *model, BnGPUBackend *gpu) {
-    if (!model || !gpu || !bn_gpu_backend_can_init_activations(gpu))
+    if (!model || bn_model_anatomy(model) || !gpu || !bn_gpu_backend_can_init_activations(gpu))
         return -1;
     const BnConfig *c = &model->config;
     BnMoERoutePolicy route = bn_moe_route_policy(c);
@@ -1055,7 +1055,8 @@ static int resident_moe_f16_cache_layers_that_fit(BnGPUBackend *gpu,
 }
 
 int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
-    if (!model || !bn_gpu_backend_can_create_buffer(gpu)) return -1;
+    if (!model || bn_model_anatomy(model) ||
+        !bn_gpu_backend_can_create_buffer(gpu)) return -1;
     if (bn_model_ensure_backend(model) != 0) return -1;
     BnBackendModel *backend = bn_model_backend(model);
     bn_backend_model_bind_gpu(backend, gpu);
@@ -1074,8 +1075,12 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     int n_layers = c->n_layers;
     int allow_optional_stacked_layouts =
         !bn_model_transformer_policy_has_auxiliary_prediction_blocks(c);
-    int upload_moe_all_model = bn_gpu_policy_moe_resident_routed_ffn_enabled(
-        gpu, can_use_resident_moe_routed_ffn_model(gpu, c, w));
+    /* Full-expert upload borrows or copies mapped projection spans. Pread
+     * storage instead feeds the bounded per-expert cache after base upload. */
+    int upload_moe_all_model =
+        bn_moe_io_has_mmap(bn_model_moe_io_const(model)) &&
+        bn_gpu_policy_moe_resident_routed_ffn_enabled(
+            gpu, can_use_resident_moe_routed_ffn_model(gpu, c, w));
     int upload_moe_all_native_quant_f16_cache = 0;
     int upload_moe_all_gateup_f16_cache = 0;
     int upload_moe_all_f16_cache_layers = 0;
@@ -1559,6 +1564,20 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_QK_STACKED,
                                 qk_stacked_gpu) != 0) {
             bn_gpu_backend_destroy_buffer(gpu, qk_stacked_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
+
+        void *qk_pair_gpu = NULL;
+        /* This metadata-only view does not duplicate optional weight layouts,
+         * including when auxiliary prediction blocks prohibit such copies. */
+        if (!qk_stacked_gpu)
+            qk_pair_gpu = bn_backend_layout_create_prefill_qk_pair(
+                gpu, bn_backend_model_qweight_buf(backend, &lw->attn.wq),
+                bn_backend_model_qweight_buf(backend, &lw->attn.wk));
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_PREFILL_QK_PAIR,
+                                qk_pair_gpu) != 0) {
+            bn_gpu_backend_destroy_buffer(gpu, qk_pair_gpu);
             bn_model_release_gpu(model);
             return -1;
         }

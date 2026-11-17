@@ -37,7 +37,7 @@ int bn_sampler_argmax(const float *v, int n) {
         best_val = vals[0];
         best = ids[0];
         for (int k = 1; k < 4; k++) {
-            if (vals[k] > best_val) {
+            if (vals[k] > best_val || (vals[k] == best_val && ids[k] < best)) {
                 best_val = vals[k];
                 best = ids[k];
             }
@@ -76,7 +76,7 @@ int bn_sampler_argmax(const float *v, int n) {
         best_val = vals[0];
         best = ids[0];
         for (int k = 1; k < 16; k++) {
-            if (vals[k] > best_val) {
+            if (vals[k] > best_val || (vals[k] == best_val && ids[k] < best)) {
                 best_val = vals[k];
                 best = ids[k];
             }
@@ -114,7 +114,7 @@ int bn_sampler_argmax(const float *v, int n) {
         best_val = vals[0];
         best = ids[0];
         for (int k = 1; k < 8; k++) {
-            if (vals[k] > best_val) {
+            if (vals[k] > best_val || (vals[k] == best_val && ids[k] < best)) {
                 best_val = vals[k];
                 best = ids[k];
             }

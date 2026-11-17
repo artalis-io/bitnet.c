@@ -1,0 +1,126 @@
+{
+  "checkpoint": "GLM SM120 direct paged FP8 scorer and no-gather native decode indexer",
+  "whole_goal_complete": false,
+  "artifact_root": "/tmp/bitnet-goal-glm-paged-score",
+  "source_sha256": {
+    "include/gpu_backend.h": "13e57c4d44058d46d7bc1ddfdd3c84a1ff50b9cfa1949d88a4b535fe8d8a6da2",
+    "src/gpu_cuda.cu": "fa18ad9eb6914a9506b82be820cdcb73cf86b845782ae8eca464bf05f3ea2d15",
+    "src/gpu_cuda_glm_indexer.cuh": "e63b9fd836cb4deaf867bfa1f693c03cef4f96f9b0a896c16d026c5461dd5790",
+    "src/transformer/bf16.c": "3048876d3cbabc46ede11c05c0407ba6071cc2b07771d324688ffd4809ccb5b5",
+    "src/transformer/bf16_internal.h": "1a144f270a26356051ba48c2308d3c7eb3909f332140b7bdac9ca512a204c26c",
+    "test/glm_indexer_layout_checks.h": "a1ad150ea1ec7f21f396e3a745bc63496f4695fb72532d5f1aef85ecb000a2cb",
+    "test/test_cuda_glm_paged_score.c": "7d155b5895f89d4b99860c969269cb898e714abefbe2c912331b4b8dc9eb419a",
+    "test/cuda_glm_paged_score_reference.h": "e13c49a1ea0868cf73f75edb2441ee6f1490dc324aabdc507ae82b12cddb3147",
+    "test/reference_cuda_glm_paged_score.py": "6111cf8f962aeb21e7c410ef713191f1d7ff1a29702c7fc4ef866e2614bed110",
+    "test/test_cuda_glm_indexer_decode.c": "5f37e629fdd3d3f4268bf2e04bac2a08c3d4726db053ccad1d10fa6b230b854c",
+    "Makefile": "9fc812c9e3d14283b5458e9a3f6850d0ee15f47a0819b6faa940fae57f739aeb"
+  },
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "stages": {
+    "prefill-regression": 0,
+    "clean": 0,
+    "standard": 0,
+    "benches": 0,
+    "unit-synccheck": 0,
+    "sanitize": 0,
+    "cuda": 0,
+    "score-regression": 0,
+    "chain-memcheck": 0,
+    "chain": 0,
+    "trace-build": 0,
+    "build": 0,
+    "nsys": 0,
+    "nsys-export": 0,
+    "unit-direct": 0,
+    "replay-build": 0,
+    "unit-memcheck": 0,
+    "chain-synccheck": 0
+  },
+  "preserved_user_binary_sha256": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "original_paged_reference": {
+    "manifest_sha256": "4bf3a09a0305e315b026a62b666aa72292f9a23ca13a6181d92999fb36cbf51d",
+    "independent_capture_byte_identical": true,
+    "header_byte_identical": true,
+    "original_paged_and_nonpaged_values_identical": true,
+    "native_exact_F32_elements": 1134288
+  },
+  "actual_native_replay": {
+    "schedules": 9,
+    "phases": 23,
+    "query_rows": 16416,
+    "exact_preindexer_cache_elements": 145015814,
+    "exact_F32_scores": 11548687,
+    "selection_I32_values_checked": 42074208,
+    "selection_comparison": "Original short lists raw exact; sparse pool/token membership exact, ordering/group/tail/padding independently checked; inherited order/tie MLA qualification remains open.",
+    "gather_and_contiguous_score_callbacks_disabled": true,
+    "gathered_history_buffers_allocated": false
+  },
+  "sanitizers": "Host ASAN/UBSAN and unit/actual-chain memcheck/synccheck zero errors",
+  "regressions": "Historical native gathered prefill selection and score chains, standard and complete CUDA suites passed",
+  "trace": {
+    "kernel_counts": {
+      "cast_bf16_f32": 1,
+      "fwht_kernel": 1,
+      "kernel": 1,
+      "layernorm_kernel": 1,
+      "q8_bf16_mmvq_kernel": 3,
+      "quantize_bf16_q8_batch_kernel": 3,
+      "score_kernel": 1,
+      "select_kernel": 1,
+      "tail_kernel": 1,
+      "weight_scale_kernel": 1
+    },
+    "total_kernels": 14,
+    "runtime_calls": {
+      "cuKernelGetName": 14,
+      "cuStreamGetGreenCtx": 2,
+      "cudaLaunchKernel_v7000": 14,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "memcpy_activity_records": 0,
+    "synchronization_records": [
+      [
+        26599338,
+        26611677,
+        0,
+        1,
+        0,
+        22,
+        6535,
+        316934344146944,
+        null,
+        3,
+        4294967295,
+        0
+      ],
+      [
+        26616104,
+        26620220,
+        0,
+        1,
+        0,
+        4294967295,
+        6536,
+        316934344146944,
+        null,
+        4,
+        4294967295,
+        0
+      ]
+    ],
+    "scope": "Warmed single-token submission at position4097 from x/normalizedQR; native prefix cache already populated. No gather, no newly completed pool/append kernel for this phase, one direct paged scorer and selector. All staging/readback outside capture; one caller fence. Additional unattributed CUPTI context sync records retained. Not full-model decode benchmark."
+  },
+  "original_actual_paged_decode": {
+    "manifest_sha256": "89da1ff237bcc384017a7934db2087e7ae1dc3afce763b3fe7072d34fb0b8f1a",
+    "phases": 10,
+    "F32_elements": 10255,
+    "original_paged_repeat_and_preserved_nonpaged_exact": true,
+    "reference_script_sha256": "bb012d4d5c58069c426835b385a3aa95bb887b6bf7cb21473ba04bb321b797a1"
+  },
+  "remaining": "Downstream MLA/order/tie/generation qualification, whole-model admission, expert placement, other backend/model scope, serving and matched resident vLLM parity remain incomplete."
+}

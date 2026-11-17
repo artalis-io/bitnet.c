@@ -1,0 +1,133 @@
+{
+  "status": "qualified component; whole goal remains active",
+  "component": "GLM5.3 Flash non-final block 3: deferred mHC, indexed NoPE MLA, FFN mHC, shared and routed MoE",
+  "exact_reference_elements": 34021730,
+  "schedules": 12,
+  "maximum_position_exclusive": 12,
+  "reference_files_independently_recaptured": 1887,
+  "stages": {
+    "prefix-regression-exit.json": {
+      "exit": 0
+    },
+    "clean-exit.json": {
+      "exit": 0
+    },
+    "indexed-regression-exit.json": {
+      "exit": 0
+    },
+    "standard-exit.json": {
+      "exit": 0
+    },
+    "benches-exit.json": {
+      "exit": 0
+    },
+    "sanitize-exit.json": {
+      "exit": 0
+    },
+    "cuda-exit.json": {
+      "exit": 0
+    },
+    "trace-exit.json": {
+      "exit": 0
+    },
+    "block-memcheck-exit.json": {
+      "exit": 0
+    },
+    "trace-export-exit.json": {
+      "exit": 0
+    },
+    "build-exit.json": {
+      "exit": 0
+    },
+    "block-synccheck-exit.json": {
+      "exit": 0
+    },
+    "replay-build-exit.json": {
+      "exit": 0
+    },
+    "block-exit.json": {
+      "exit": 0
+    }
+  },
+  "cpu": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "source_sha256": {
+    "src/transformer/bf16.c": "cfb10db070058e711a44f962ea13bf6c151ef41cd6c2fc2287c68c0dffa1bcb5",
+    "src/transformer/bf16_internal.h": "b999bbf6a913170c2a61b085e7e42f56af953414051495e07123de77ad546bca",
+    "test/glm_mla_layout_checks.h": "d78c3b7b97e425df802830edf6d7bdd7e8caeb8543a24d2f64d815e369af25c4",
+    "test/test_cuda_glm_mla_block.c": "cea21a30fc30c769e69e3bd19a732ad558c9b3de16f26b79bebbe49784b4cbb6",
+    "test/reference_glm_mla_block.py": "0c878693e792a142c4d26ff307c0708a628f169ceec57369eaa88d7a0ec243c2",
+    "Makefile": "48f861b38b7747ab32b4accf83ed3dcf47c2e07794598d93aaf84136910efc82"
+  },
+  "trace": {
+    "kernels": 66,
+    "copies": [
+      [
+        2,
+        4
+      ],
+      [
+        2,
+        1172
+      ],
+      [
+        1,
+        45613056
+      ],
+      [
+        1,
+        36
+      ],
+      [
+        1,
+        45613056
+      ],
+      [
+        1,
+        36
+      ],
+      [
+        1,
+        30408704
+      ],
+      [
+        1,
+        24
+      ]
+    ],
+    "expert_upload_bytes": 121634816,
+    "descriptor_upload_bytes": 96,
+    "control_read_bytes": 1176,
+    "activation_transfer_bytes": 0,
+    "stream_fences": 3,
+    "runtime_api_counts": {
+      "cuKernelGetFunction": 2,
+      "cuKernelGetName": 64,
+      "cuLaunchKernel": 2,
+      "cudaEventQuery_v3020": 3,
+      "cudaEventRecord_v3020": 6,
+      "cudaLaunchKernel_v7000": 64,
+      "cudaMemcpyAsync_v3020": 8,
+      "cudaMemsetAsync_v3020": 1,
+      "cudaStreamSynchronize_v3020": 3,
+      "cudaStreamWaitEvent_v3020": 3
+    }
+  },
+  "backend_weight_payload_bytes": 183460184,
+  "limitations": [
+    "Inputs are independent original dense-prefix deferred boundary values; native embedding-to-block3 integration is not covered.",
+    "Short causal selection only; long selection ordering and ties require full-model assessment.",
+    "Original operator composition with checkpoint clamp10, full288 expert vector domain; no default whole-plugin or HF generation claim.",
+    "RAM cache hits still upload expert weights; no GLM VRAM expert cache or total process RSS bound.",
+    "No full-model token, serving, or vLLM performance parity claim."
+  ]
+}

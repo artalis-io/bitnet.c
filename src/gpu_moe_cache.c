@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 
 // --- Hash helpers (same algorithm as CPU expert cache in moe.c) ---
 
@@ -84,31 +85,44 @@ static void hash_remove(BnGPUMoECache *c, int layer, int expert_idx) {
 
 // --- Eviction: destroy LRU entry's GPU buffers, return slot ---
 
-static int cache_evict(BnGPUMoECache *c) {
+static void cache_destroy_handles(BnGPUMoECache *c,BnGPUMoECacheEntry *e) {
+    bn_gpu_backend_destroy_buffer(c->gpu,e->gate_gpu);
+    bn_gpu_backend_destroy_buffer(c->gpu,e->up_gpu);
+    bn_gpu_backend_destroy_buffer(c->gpu,e->down_gpu);
+    e->gate_gpu=e->up_gpu=e->down_gpu=NULL;e->retained=0;
+}
+static int cache_evict(BnGPUMoECache *c,int retain) {
     int slot = c->lru_tail;
+    while(slot>=0 && (c->entries[slot].pins || c->entries[slot].generation==UINT64_MAX))
+        slot=c->entries[slot].prev;
     if (slot < 0) return -1;
 
     BnGPUMoECacheEntry *e = &c->entries[slot];
-    bn_gpu_backend_destroy_buffer(c->gpu, e->gate_gpu);
-    bn_gpu_backend_destroy_buffer(c->gpu, e->up_gpu);
-    bn_gpu_backend_destroy_buffer(c->gpu, e->down_gpu);
+    if(retain)e->retained=1;
+    else cache_destroy_handles(c,e);
 
     // Remove from hash + LRU
     hash_remove(c, e->layer, e->expert_idx);
     lru_remove(c, slot);
 
     e->layer = -1;
-    e->gate_gpu = e->up_gpu = e->down_gpu = NULL;
+    e->published=0;c->evictions++;
     return slot;
+}
+
+static int allocation_fits(size_t count,size_t width) {
+    return width && count<=SIZE_MAX/width;
 }
 
 // --- Public API ---
 
 BnGPUMoECache *bn_gpu_moe_cache_create(size_t budget_bytes, size_t entry_bytes,
                                        int max_entries, BnGPUBackend *gpu) {
-    if (!gpu || budget_bytes == 0 || entry_bytes == 0) return NULL;
-
-    int n_slots = (int)(budget_bytes / entry_bytes);
+    if (!gpu || !bn_gpu_backend_can_destroy_buffer(gpu) || budget_bytes == 0 || entry_bytes == 0 || max_entries<0) return NULL;
+    size_t raw_slots=budget_bytes/entry_bytes;
+    size_t limit=((size_t)INT_MAX+1u)/4u;
+    if(raw_slots>limit)raw_slots=limit;
+    int n_slots = (int)raw_slots;
     if (max_entries > 0 && n_slots > max_entries)
         n_slots = max_entries;
     if (n_slots < 1) return NULL;
@@ -116,6 +130,8 @@ BnGPUMoECache *bn_gpu_moe_cache_create(size_t budget_bytes, size_t entry_bytes,
     unsigned hash_size = 1;
     while (hash_size < (unsigned)n_slots * 2) hash_size <<= 1;
 
+    if(!allocation_fits((size_t)n_slots,sizeof(BnGPUMoECacheEntry)) ||
+       !allocation_fits((size_t)hash_size,sizeof(int)))return NULL;
     BnGPUMoECache *c = (BnGPUMoECache *)calloc(1, sizeof(BnGPUMoECache));
     if (!c) return NULL;
     c->entries = (BnGPUMoECacheEntry *)calloc((size_t)n_slots, sizeof(BnGPUMoECacheEntry));
@@ -147,15 +163,16 @@ BnGPUMoECache *bn_gpu_moe_cache_create(size_t budget_bytes, size_t entry_bytes,
     return c;
 }
 
-int bn_gpu_moe_cache_lookup(BnGPUMoECache *c, int layer, int expert_idx,
-                             void **gate_out, void **up_out, void **down_out) {
-    if (!c) return 0;
+static int cache_lookup(BnGPUMoECache *c, int layer, int expert_idx,
+    void **gate_out, void **up_out, void **down_out, int promote) {
+    if (!c || layer<0 || expert_idx<0 || !gate_out || !up_out || !down_out) return 0;
     int slot = cache_probe(c, layer, expert_idx);
-    if (slot < 0) { c->misses++; return 0; }
+    if (slot < 0 || !c->entries[slot].published) { c->misses++; return 0; }
 
-    // Promote to MRU
-    lru_remove(c, slot);
-    lru_push_front(c, slot);
+    if (promote) {
+        lru_remove(c, slot);
+        lru_push_front(c, slot);
+    }
 
     BnGPUMoECacheEntry *e = &c->entries[slot];
     *gate_out = e->gate_gpu;
@@ -165,46 +182,122 @@ int bn_gpu_moe_cache_lookup(BnGPUMoECache *c, int layer, int expert_idx,
     return 1;
 }
 
-int bn_gpu_moe_cache_insert(BnGPUMoECache *c, int layer, int expert_idx,
-                              void *gate_gpu, void *up_gpu, void *down_gpu) {
-    if (!c) return -1;
-
-    int slot;
-    if (c->free_head >= 0) {
-        slot = c->free_head;
-        c->free_head = c->entries[slot].next;
-    } else {
-        slot = cache_evict(c);
-        if (slot < 0) return -1;
-    }
-
-    BnGPUMoECacheEntry *e = &c->entries[slot];
-    e->layer = layer;
-    e->expert_idx = expert_idx;
-    e->gate_gpu = gate_gpu;
-    e->up_gpu = up_gpu;
-    e->down_gpu = down_gpu;
-
-    hash_insert(c, layer, expert_idx, slot);
-    lru_push_front(c, slot);
-
-    /* insert complete */
-    return 0;
+int bn_gpu_moe_cache_lookup(BnGPUMoECache *c, int layer, int expert_idx,
+    void **gate_out, void **up_out, void **down_out) {
+    return cache_lookup(c, layer, expert_idx, gate_out, up_out, down_out, 1);
 }
 
-void bn_gpu_moe_cache_free(BnGPUMoECache *c) {
-    if (!c) return;
-    // Destroy all cached GPU handles
-    for (int i = 0; i < c->n_slots; i++) {
-        BnGPUMoECacheEntry *e = &c->entries[i];
-        if (e->layer < 0) continue;
-        bn_gpu_backend_destroy_buffer(c->gpu, e->gate_gpu);
-        bn_gpu_backend_destroy_buffer(c->gpu, e->up_gpu);
-        bn_gpu_backend_destroy_buffer(c->gpu, e->down_gpu);
+int bn_gpu_moe_cache_lookup_prefill(BnGPUMoECache *c, int layer, int expert_idx,
+    void **gate_out, void **up_out, void **down_out) {
+    return cache_lookup(c, layer, expert_idx, gate_out, up_out, down_out, 0);
+}
+
+static int valid_handles(void *g,void *u,void *d) {
+    return (g||u||d) && (!g||g!=u) && (!g||g!=d) && (!u||u!=d);
+}
+int bn_gpu_moe_cache_acquire(BnGPUMoECache *c,int layer,int expert,int promote,BnGPUMoELease *out) {
+    if(!c || !out || layer<0 || expert<0 || (promote!=0 && promote!=1))return -1;
+    int slot=cache_probe(c,layer,expert);
+    if(slot<0 || !c->entries[slot].published){c->misses++;return 0;}
+    BnGPUMoECacheEntry *e=&c->entries[slot];if(e->pins==UINT_MAX)return -1;
+    if(promote){lru_remove(c,slot);lru_push_front(c,slot);}e->pins++;c->hits++;
+    *out=(BnGPUMoELease){c,slot,e->generation,e->gate_gpu,e->up_gpu,e->down_gpu};return 1;
+}
+int bn_gpu_moe_cache_release(BnGPUMoELease *lease) {
+    if(!lease)return -1;
+    if(!lease->cache)return 0;
+    BnGPUMoECache *c=lease->cache;
+    if(lease->slot<0 || lease->slot>=c->n_slots)return -1;
+    BnGPUMoECacheEntry *e=&c->entries[lease->slot];
+    if(!e->published || !e->pins || e->generation!=lease->generation ||
+       e->gate_gpu!=lease->gate || e->up_gpu!=lease->up || e->down_gpu!=lease->down)return -1;
+    e->pins--;*lease=(BnGPUMoELease){0};return 0;
+}
+static int cache_reserve(BnGPUMoECache *c,int layer,int expert,
+    BnGPUMoEReservation *out,int retain) {
+    if(!c || !out || layer<0 || expert<0)return -1;
+    int found=cache_probe(c,layer,expert);
+    if(found>=0)return c->entries[found].pending?BN_GPU_MOE_CACHE_BUSY:-1;
+    int slot=c->free_head,prev=-1;
+    while(slot>=0 && c->entries[slot].generation==UINT64_MAX){prev=slot;slot=c->entries[slot].next;}
+    if(slot>=0){if(prev<0)c->free_head=c->entries[slot].next;else c->entries[prev].next=c->entries[slot].next;}
+    else slot=cache_evict(c,retain);
+    if(slot<0)return BN_GPU_MOE_CACHE_BUSY;
+    BnGPUMoECacheEntry *e=&c->entries[slot];e->layer=layer;e->expert_idx=expert;
+    e->prev=e->next=-1;e->pending=1;e->published=0;e->pins=0;e->generation++;
+    hash_insert(c,layer,expert,slot);
+    *out=(BnGPUMoEReservation){c,slot,e->generation};return 0;
+}
+int bn_gpu_moe_cache_reserve(BnGPUMoECache *c,int layer,int expert,BnGPUMoEReservation *out) {
+    return cache_reserve(c,layer,expert,out,0);
+}
+int bn_gpu_moe_cache_reserve_reuse(BnGPUMoECache *c,int layer,int expert,BnGPUMoEReservation *out) {
+    return cache_reserve(c,layer,expert,out,1);
+}
+static BnGPUMoECacheEntry *reservation_entry(const BnGPUMoEReservation *r) {
+    if(!r || !r->cache || r->slot<0 || r->slot>=r->cache->n_slots)return NULL;
+    BnGPUMoECacheEntry *e=&r->cache->entries[r->slot];
+    return e->pending && e->generation==r->generation?e:NULL;
+}
+int bn_gpu_moe_cache_reserved_buffers(const BnGPUMoEReservation *r,
+    void **g,void **u,void **d) {
+    const BnGPUMoECacheEntry *e=reservation_entry(r);
+    if(!e||!g||!u||!d)return -1;
+    if(!e->retained)return 0;
+    *g=e->gate_gpu;*u=e->up_gpu;*d=e->down_gpu;return 1;
+}
+int bn_gpu_moe_cache_discard_reserved_buffers(BnGPUMoEReservation *r) {
+    BnGPUMoECacheEntry *e=reservation_entry(r);if(!e)return -1;
+    if(e->retained)cache_destroy_handles(r->cache,e);
+    return 0;
+}
+int bn_gpu_moe_cache_commit(BnGPUMoEReservation *r,void *g,void *u,void *d,BnGPUMoELease *out) {
+    BnGPUMoECacheEntry *e=reservation_entry(r);
+    if(!e || !out || !valid_handles(g,u,d))return -1;
+    if(e->retained&&(g!=e->gate_gpu||u!=e->up_gpu||d!=e->down_gpu))return -1;
+    e->gate_gpu=g;e->up_gpu=u;e->down_gpu=d;e->pending=0;e->published=1;e->pins=1;
+    e->retained=0;
+    lru_push_front(r->cache,r->slot);
+    *out=(BnGPUMoELease){r->cache,r->slot,r->generation,g,u,d};*r=(BnGPUMoEReservation){0};return 0;
+}
+int bn_gpu_moe_cache_abort(BnGPUMoEReservation *r) {
+    BnGPUMoECacheEntry *e=reservation_entry(r);if(!e)return -1;
+    BnGPUMoECache *c=r->cache;hash_remove(c,e->layer,e->expert_idx);
+    if(e->retained)cache_destroy_handles(c,e);
+    e->layer=-1;e->pending=0;e->next=c->free_head;e->prev=-1;c->free_head=r->slot;c->aborts++;
+    *r=(BnGPUMoEReservation){0};return 0;
+}
+int bn_gpu_moe_cache_stats(const BnGPUMoECache *c,BnGPUMoECacheStats *out) {
+    if(!c || !out)return -1;
+    BnGPUMoECacheStats s={0};
+    s.capacity_payload=(size_t)c->n_slots*c->entry_bytes;
+    for(int i=0;i<c->n_slots;i++) {
+        const BnGPUMoECacheEntry *e=&c->entries[i];s.published+=e->published!=0;s.pending+=e->pending!=0;
+        s.pinned_entries+=e->pins!=0;if(s.leases>SIZE_MAX-e->pins)return -1;s.leases+=e->pins;
     }
-    free(c->entries);
-    free(c->hash_table);
-    free(c);
+    s.charged_payload=(s.published+s.pending)*c->entry_bytes;
+    s.hits=c->hits;s.misses=c->misses;s.evictions=c->evictions;s.aborts=c->aborts;*out=s;return 0;
+}
+int bn_gpu_moe_cache_insert(BnGPUMoECache *c,int layer,int expert,void *g,void *u,void *d) {
+    if(!valid_handles(g,u,d))return -1;
+    BnGPUMoEReservation r={0};BnGPUMoELease lease={0};
+    if(bn_gpu_moe_cache_reserve(c,layer,expert,&r))return -1;
+    if(bn_gpu_moe_cache_commit(&r,g,u,d,&lease)){bn_gpu_moe_cache_abort(&r);return -1;}
+    return bn_gpu_moe_cache_release(&lease);
+}
+int bn_gpu_moe_cache_close(BnGPUMoECache *c) {
+    if(!c)return 0;
+    for(int i=0;i<c->n_slots;i++)if(c->entries[i].pins || c->entries[i].pending)return BN_GPU_MOE_CACHE_BUSY;
+    for(int i=0;i<c->n_slots;i++) {
+        BnGPUMoECacheEntry *e=&c->entries[i];if(!e->published)continue;
+        bn_gpu_backend_destroy_buffer(c->gpu,e->gate_gpu);
+        bn_gpu_backend_destroy_buffer(c->gpu,e->up_gpu);
+        bn_gpu_backend_destroy_buffer(c->gpu,e->down_gpu);
+    }
+    free(c->entries);free(c->hash_table);free(c);return 0;
+}
+void bn_gpu_moe_cache_free(BnGPUMoECache *c) {
+    if(bn_gpu_moe_cache_close(c))fprintf(stderr,"GPU MoE cache still has live leases or reservations\n");
 }
 
 void bn_gpu_moe_cache_print_stats(const BnGPUMoECache *c) {

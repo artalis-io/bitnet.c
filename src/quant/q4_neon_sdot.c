@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_neon_helpers.h"
 #include "simd_helpers.h"
 #include <arm_neon.h>
 #include <math.h>
@@ -27,14 +28,14 @@ static inline int32x4_t q4_repacked_dot4_xor(const uint8_t *qbase,
     int8x16_t hi2 = vreinterpretq_s8_u8(vandq_u8(vreinterpretq_u8_s8(raw2), mask_hi));
     int8x16_t hi3 = vreinterpretq_s8_u8(vandq_u8(vreinterpretq_u8_s8(raw3), mask_hi));
 
-    int32x4_t acc02 = vdotq_laneq_s32(zero, lo0, a0, 0);
-    int32x4_t acc13 = vdotq_laneq_s32(zero, lo1, a0, 1);
-    acc02 = vdotq_laneq_s32(acc02, lo2, a0, 2);
-    acc13 = vdotq_laneq_s32(acc13, lo3, a0, 3);
-    int32x4_t acc46 = vdotq_laneq_s32(zero, hi0, a1, 0);
-    int32x4_t acc57 = vdotq_laneq_s32(zero, hi1, a1, 1);
-    acc46 = vdotq_laneq_s32(acc46, hi2, a1, 2);
-    acc57 = vdotq_laneq_s32(acc57, hi3, a1, 3);
+    int32x4_t acc02 = bn_neon_dot4_laneq_i8(zero, lo0, a0, 0);
+    int32x4_t acc13 = bn_neon_dot4_laneq_i8(zero, lo1, a0, 1);
+    acc02 = bn_neon_dot4_laneq_i8(acc02, lo2, a0, 2);
+    acc13 = bn_neon_dot4_laneq_i8(acc13, lo3, a0, 3);
+    int32x4_t acc46 = bn_neon_dot4_laneq_i8(zero, hi0, a1, 0);
+    int32x4_t acc57 = bn_neon_dot4_laneq_i8(zero, hi1, a1, 1);
+    acc46 = bn_neon_dot4_laneq_i8(acc46, hi2, a1, 2);
+    acc57 = bn_neon_dot4_laneq_i8(acc57, hi3, a1, 3);
     return vaddq_s32(vaddq_s32(acc02, acc13), vaddq_s32(acc46, acc57));
 }
 
@@ -64,39 +65,39 @@ static inline void q4_repacked_dot4_panel4_xor(const uint8_t *qbase,
     int8x16_t a6 = vld1q_s8(abase + 96);
     int8x16_t a7 = vld1q_s8(abase + 112);
 
-    acc[0] = vdotq_laneq_s32(acc[0], lo0, a0, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], lo0, a0, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], lo0, a0, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], lo0, a0, 3);
-    acc[0] = vdotq_laneq_s32(acc[0], lo1, a1, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], lo1, a1, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], lo1, a1, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], lo1, a1, 3);
-    acc[0] = vdotq_laneq_s32(acc[0], lo2, a2, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], lo2, a2, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], lo2, a2, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], lo2, a2, 3);
-    acc[0] = vdotq_laneq_s32(acc[0], lo3, a3, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], lo3, a3, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], lo3, a3, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], lo3, a3, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], lo0, a0, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], lo0, a0, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], lo0, a0, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], lo0, a0, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], lo1, a1, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], lo1, a1, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], lo1, a1, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], lo1, a1, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], lo2, a2, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], lo2, a2, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], lo2, a2, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], lo2, a2, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], lo3, a3, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], lo3, a3, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], lo3, a3, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], lo3, a3, 3);
 
-    acc[0] = vdotq_laneq_s32(acc[0], hi0, a4, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], hi0, a4, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], hi0, a4, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], hi0, a4, 3);
-    acc[0] = vdotq_laneq_s32(acc[0], hi1, a5, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], hi1, a5, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], hi1, a5, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], hi1, a5, 3);
-    acc[0] = vdotq_laneq_s32(acc[0], hi2, a6, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], hi2, a6, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], hi2, a6, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], hi2, a6, 3);
-    acc[0] = vdotq_laneq_s32(acc[0], hi3, a7, 0);
-    acc[1] = vdotq_laneq_s32(acc[1], hi3, a7, 1);
-    acc[2] = vdotq_laneq_s32(acc[2], hi3, a7, 2);
-    acc[3] = vdotq_laneq_s32(acc[3], hi3, a7, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], hi0, a4, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], hi0, a4, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], hi0, a4, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], hi0, a4, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], hi1, a5, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], hi1, a5, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], hi1, a5, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], hi1, a5, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], hi2, a6, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], hi2, a6, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], hi2, a6, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], hi2, a6, 3);
+    acc[0] = bn_neon_dot4_laneq_i8(acc[0], hi3, a7, 0);
+    acc[1] = bn_neon_dot4_laneq_i8(acc[1], hi3, a7, 1);
+    acc[2] = bn_neon_dot4_laneq_i8(acc[2], hi3, a7, 2);
+    acc[3] = bn_neon_dot4_laneq_i8(acc[3], hi3, a7, 3);
 }
 
 static inline void q4_repacked_dot4_panel8_xor(const uint8_t *qbase,
@@ -126,38 +127,38 @@ static inline void q4_repacked_dot4_panel8_xor(const uint8_t *qbase,
         int8x16_t a5 = vld1q_s8((abase) + 80);                               \
         int8x16_t a6 = vld1q_s8((abase) + 96);                               \
         int8x16_t a7 = vld1q_s8((abase) + 112);                              \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], lo0, a0, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], lo0, a0, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], lo0, a0, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], lo0, a0, 3);          \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], lo1, a1, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], lo1, a1, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], lo1, a1, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], lo1, a1, 3);          \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], lo2, a2, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], lo2, a2, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], lo2, a2, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], lo2, a2, 3);          \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], lo3, a3, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], lo3, a3, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], lo3, a3, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], lo3, a3, 3);          \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], hi0, a4, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], hi0, a4, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], hi0, a4, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], hi0, a4, 3);          \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], hi1, a5, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], hi1, a5, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], hi1, a5, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], hi1, a5, 3);          \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], hi2, a6, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], hi2, a6, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], hi2, a6, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], hi2, a6, 3);          \
-        acc[(ai) + 0] = vdotq_laneq_s32(acc[(ai) + 0], hi3, a7, 0);          \
-        acc[(ai) + 1] = vdotq_laneq_s32(acc[(ai) + 1], hi3, a7, 1);          \
-        acc[(ai) + 2] = vdotq_laneq_s32(acc[(ai) + 2], hi3, a7, 2);          \
-        acc[(ai) + 3] = vdotq_laneq_s32(acc[(ai) + 3], hi3, a7, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], lo0, a0, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], lo0, a0, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], lo0, a0, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], lo0, a0, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], lo1, a1, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], lo1, a1, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], lo1, a1, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], lo1, a1, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], lo2, a2, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], lo2, a2, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], lo2, a2, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], lo2, a2, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], lo3, a3, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], lo3, a3, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], lo3, a3, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], lo3, a3, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], hi0, a4, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], hi0, a4, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], hi0, a4, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], hi0, a4, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], hi1, a5, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], hi1, a5, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], hi1, a5, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], hi1, a5, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], hi2, a6, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], hi2, a6, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], hi2, a6, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], hi2, a6, 3);          \
+        acc[(ai) + 0] = bn_neon_dot4_laneq_i8(acc[(ai) + 0], hi3, a7, 0);          \
+        acc[(ai) + 1] = bn_neon_dot4_laneq_i8(acc[(ai) + 1], hi3, a7, 1);          \
+        acc[(ai) + 2] = bn_neon_dot4_laneq_i8(acc[(ai) + 2], hi3, a7, 2);          \
+        acc[(ai) + 3] = bn_neon_dot4_laneq_i8(acc[(ai) + 3], hi3, a7, 3);          \
     } while (0)
 
     BN_Q4_ACC_PANEL(0, abase0);
@@ -181,8 +182,8 @@ static float q4_native_row_dot(const BnQWeight *W, int row,
         int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), eight);
         int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), eight);
         const int8_t *xb = x_q + b * 32;
-        int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
-        acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+        int32x4_t acc = bn_neon_dot4_i8(zero, lo, vld1q_s8(xb));
+        acc = bn_neon_dot4_i8(acc, hi, vld1q_s8(xb + 16));
         float scale = q4_neon_fp16_to_fp32(blk->d) * x_scales[b];
         sums[b & 1] = vfmaq_n_f32(sums[b & 1], vcvtq_f32_s32(acc), scale);
     }
@@ -251,8 +252,8 @@ void bn_quant_q4_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) {
                 for (int ti = 0; ti < tn; ti++) {
                     int t = t0 + ti;
                     const int8_t *xb = x_q + (size_t)t * cols + b * 32;
-                    int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
-                    acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+                    int32x4_t acc = bn_neon_dot4_i8(zero, lo, vld1q_s8(xb));
+                    acc = bn_neon_dot4_i8(acc, hi, vld1q_s8(xb + 16));
                     sums[ti] += wd * x_scales[(size_t)t * n_blocks_per_row + b] *
                                 (float)vaddvq_s32(acc);
                 }
@@ -297,8 +298,8 @@ void bn_quant_q4_repacked_neon_sdot_matmul_range(void *ctx, int row_start, int r
                 int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), eight);
                 int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), eight);
                 const int8_t *xb = x_q + (size_t)t * cols + b * 32;
-                int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
-                acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+                int32x4_t acc = bn_neon_dot4_i8(zero, lo, vld1q_s8(xb));
+                acc = bn_neon_dot4_i8(acc, hi, vld1q_s8(xb + 16));
                 sum += wd * x_scales[(size_t)t * n_blocks_per_row + b] *
                        (float)vaddvq_s32(acc);
             }
@@ -352,8 +353,8 @@ void bn_quant_q4_repacked_neon_sdot_matmul_range(void *ctx, int row_start, int r
                 int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), eight);
                 int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), eight);
                 const int8_t *xb = x_q + (size_t)t * cols + b * 32;
-                int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
-                acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+                int32x4_t acc = bn_neon_dot4_i8(zero, lo, vld1q_s8(xb));
+                acc = bn_neon_dot4_i8(acc, hi, vld1q_s8(xb + 16));
                 sum += wd * x_scales[(size_t)t * n_blocks_per_row + b] *
                        (float)vaddvq_s32(acc);
             }

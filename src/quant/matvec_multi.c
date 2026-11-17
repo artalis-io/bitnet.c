@@ -103,7 +103,9 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     q8k_bsums + t * n_bpr * 16,
                     tasks[t].prepared
                 };
+#if defined(__AVX2__)
                 int use_q4k_x8 = 0;
+#endif
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
                 void (*fn)(void *, int, int);
                 if (type0 == BN_GGUF_TENSOR_Q4_K)

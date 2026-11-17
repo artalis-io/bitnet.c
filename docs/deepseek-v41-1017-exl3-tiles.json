@@ -1,0 +1,82 @@
+{
+  "exit": 0,
+  "upstream_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "codebook_entries_exact": 65536,
+  "upstream_scalar_half2_exact": true,
+  "tile_fp16_words_exact": 573440,
+  "synthetic_batches": 64,
+  "checkpoint_batches": 216,
+  "checkpoint_tiles": 1728,
+  "packed_sha256": "d0f11cb2ce54072f827edd6294e65fa8a0fb7a0a14f898c929ca720104709375",
+  "codebook_sha256": "bc48d02cb1c14939dc47b90f870dd689d63e3b1ab69a157e65538db68677a6c8",
+  "reconstructed_sha256": "7b7999c0410ff79d82178769db79dc8079c84db31d2c622829bb456435e6ac4d",
+  "scope": "Native scalar EXL3 MUL1 3bpw rotated tile/codebook decoding vs pinned unchanged original CUDA. 1728 actual checkpoint tiles and 512 synthetic tiles. No sidecar transforms, projection, model admission, or performance claim.",
+  "native_codebook_entries_exact": 65536,
+  "native_tile_fp16_words_exact": 573440,
+  "native_unaligned_input_and_output_canaries": true,
+  "source_sha256": {
+    "src/quant/exl3.c": "04595bb1420d3401fdfd6fdc34e500590376887463f4c13cac8302731217ea52",
+    "src/quant/registry.c": "1e3d986e0519e2fd243a424eaa274a27955bcd520096179cf4fd9fb513d4efae",
+    "include/quant.h": "added7b0409111c7b1c9df42a6cff4000ac79f97d64bbf4790ed6f2e78c94ed8",
+    "test/test_exl3.c": "2dd596de07b1c45c7ff958964312909b1a5d75f0584f29c485ccc1192e3ecf53",
+    "test/test_quant.c": "e2201dd6cbdac7132d28c29e6cd5eb772be4e18364e843d43be38fe83a8cba90",
+    "Makefile": "c0a1f95195fff17cfa31fec84ed7fa4a917eb3fe758e282838b17b01360f3176"
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "focused_checks": {
+    "shared-build": 0,
+    "native-reference": 0,
+    "scalar-build": 0,
+    "scalar": 0,
+    "avx2-build": 0,
+    "avx2": 0,
+    "avx512-build": 0,
+    "avx512": 0,
+    "asan-synthetic-build": 0,
+    "asan-synthetic": 0,
+    "asan-checkpoint-build": 0,
+    "asan-checkpoint": 0
+  },
+  "reference_source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "extracted_reconstruct_text_sha256": "80e2543ba1d3b661dc90c6f381d624b2a3d73dd4e660ed7f3c4716967d34a037",
+    "source_files": {
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/exllamav3_ext/quant/codebook.cuh": "de6606f17b5d29d6d998dd2987cc3c8474028c738edfca54c2d2d541d9a9f989",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/exllamav3_ext/quant/exl3_dq.cuh": "4e48a37af4811e8e0f7e00e86c29c9c044fa0b6a8f6a685855a033684e4d6552",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/exllamav3_ext/util.cuh": "a16b8c0c897b96a1e244073bf2e4b66ee9996b7ded4437838332b82a4bd5da80",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/exllamav3_ext/ptx.cuh": "d78de9b9eb23442ccfa9998b43be67a27eb4f51b0e7d521ac1af66e74e8984df",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/exllamav3_ext/ptx_portable.cuh": "faf499c117d1d1f85059be088b584444329db582268388d88a854d36bb865a71",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/exllamav3_ext/quant/reconstruct.cu": "9dceb44b29d175fb039dcd08359557eefd3fa4161143e134fc64eabd5595511c"
+    },
+    "scope": "Unmodified upstream function bodies; only caller/serialization added"
+  },
+  "artifact_directory": "/tmp/bitnet-goal-exl3-quant",
+  "reference_run": {
+    "exit": 0,
+    "codebook_entries": 65536,
+    "scalar_half2_exact": true,
+    "batches": 280,
+    "half_values": 573440,
+    "sms": 188,
+    "build_note": "Pinned upstream headers produce nvcc defaulted-device-constructor annotation warnings. Native product clean build has zero warnings."
+  },
+  "limitations": [
+    "Rotated tile decode only; no suh/svh Hadamard projection transforms or GEMM admission.",
+    "No DeepSeek forward pass, RAM/VRAM expert placement, or performance qualification.",
+    "AVX2/AVX512 compilation checks exercise the same scalar primitive; no SIMD acceleration claim.",
+    "No ARM NEON hardware execution or WASM build performed.",
+    "Checkpoint samples cover four backbone layers, three experts, all three projections, first/second/last K tiles, and first/last groups of eight N tiles; not exhaustive checkpoint payload decoding."
+  ],
+  "input_manifest_sha256": "5b6e5c799db7bd7758c0ba05df59b6678baeded403361655fc5a7dafc3b1650c"
+}

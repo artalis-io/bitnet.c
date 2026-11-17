@@ -491,13 +491,15 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
         }
     }
 #if !defined(__EMSCRIPTEN__)
-    else if (!used_resident_routed && bn_model_moe_io(m)->fd >= 0 &&
-             !bn_moe_io_has_mmap(bn_model_moe_io(m))) {
+    else if (!used_resident_routed && bn_moe_io_has_pread(bn_model_moe_io(m))) {
         // --- Pipelined pread path with LRU cache ---
         BnMoEPrefetch *pf_gu = (BnMoEPrefetch *)bn_model_moe_io(m)->prefetch;
         BnMoEPrefetch *pf_dn = (BnMoEPrefetch *)bn_model_moe_io(m)->prefetch_down;
         BnMoECache *cache = (BnMoECache *)bn_model_moe_io(m)->cache;
         const BnMoEExpertMap *map = &lw->moe.expert_map;
+        int gate_fd = bn_moe_projection_fd(bn_model_moe_io(m), map, 0);
+        int up_fd = bn_moe_projection_fd(bn_model_moe_io(m), map, 1);
+        int down_fd = bn_moe_projection_fd(bn_model_moe_io(m), map, 2);
 
         // --- Two-phase: separate cache hits from misses ---
         int n_hits = 0, n_misses = 0;
@@ -506,7 +508,7 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
         float route_weights[BN_MAX_MOE_K] = {0};
         const uint8_t *hit_ptrs[BN_MAX_MOE_K];  // cache slab pointers for hits
         int defer_cached_down = cache &&
-            bn_moe_cache_capacity_internal(cache) >= K;
+            bn_moe_cache_available_internal(cache) >= K;
 
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
@@ -611,11 +613,11 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
 
             if (pf_gu)
                 bn_moe_prefetch_start2_internal(
-                    pf_gu, miss_g_dst, miss_g_sz, (off_t)miss_g_off,
-                    miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+                    pf_gu, gate_fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off,
+                    up_fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off);
             if (pf_dn)
                 bn_moe_prefetch_start1_internal(
-                    pf_dn, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
+                    pf_dn, down_fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
             miss_io_started = 1;
         }
 
@@ -623,7 +625,7 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
         // compute. Small or disabled caches retain the sequential path below.
         int pipeline_misses = n_misses > 0 && miss_io_started && cache &&
             pf_gu && pf_dn &&
-            bn_moe_cache_capacity_internal(cache) >= n_misses;
+            bn_moe_cache_available_internal(cache) >= n_misses;
         if (pipeline_misses) {
             uint8_t *g_dst[BN_MAX_MOE_K], *u_dst[BN_MAX_MOE_K];
             uint8_t *d_dst[BN_MAX_MOE_K];
@@ -658,17 +660,21 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                 ms->stats.prefetch_wait_ms += bn_moe_time_ms() - tw;
                 bn_moe_prefetch_collect_stats(pf_gu, &ms->stats);
                 if (!gu_ok) {
-                    if (pread(bn_model_moe_io(m)->fd, g_dst[mi], g_sz[mi],
-                              (off_t)g_off[mi]) != (ssize_t)g_sz[mi])
+                    if (pread(gate_fd, g_dst[mi], g_sz[mi],
+                              (off_t)g_off[mi]) != (ssize_t)g_sz[mi]) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Fallback gate pread failed");
-                    if (pread(bn_model_moe_io(m)->fd, u_dst[mi], u_sz[mi],
-                              (off_t)u_off[mi]) != (ssize_t)u_sz[mi])
+                    }
+                    if (pread(up_fd, u_dst[mi], u_sz[mi],
+                              (off_t)u_off[mi]) != (ssize_t)u_sz[mi]) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Fallback up pread failed");
+                    }
                 }
                 if (mi + 1 < n_misses)
                     bn_moe_prefetch_start2_internal(
-                        pf_gu, g_dst[mi + 1], g_sz[mi + 1],
-                        (off_t)g_off[mi + 1], u_dst[mi + 1], u_sz[mi + 1],
+                        pf_gu, gate_fd, g_dst[mi + 1], g_sz[mi + 1],
+                        (off_t)g_off[mi + 1], up_fd, u_dst[mi + 1], u_sz[mi + 1],
                         (off_t)u_off[mi + 1]);
 
                 t0 = bn_moe_time_ms();
@@ -705,12 +711,14 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                 ms->stats.prefetch_wait_ms += bn_moe_time_ms() - tw;
                 bn_moe_prefetch_collect_stats(pf_dn, &ms->stats);
                 if (!dn_ok &&
-                    pread(bn_model_moe_io(m)->fd, d_dst[mi], d_sz[mi],
-                          (off_t)d_off[mi]) != (ssize_t)d_sz[mi])
+                    pread(down_fd, d_dst[mi], d_sz[mi],
+                          (off_t)d_off[mi]) != (ssize_t)d_sz[mi]) {
+                    bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                     SH_LOG_ERROR("Fallback down pread failed");
+                }
                 if (mi + 1 < n_misses)
                     bn_moe_prefetch_start1_internal(
-                        pf_dn, d_dst[mi + 1], d_sz[mi + 1],
+                        pf_dn, down_fd, d_dst[mi + 1], d_sz[mi + 1],
                         (off_t)d_off[mi + 1]);
 
                 if (!defer_cached_down) {
@@ -739,19 +747,29 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                     ms->stats.prefetch_wait_ms += bn_moe_time_ms() - tw;
                     bn_moe_prefetch_collect_stats(pf_gu, &ms->stats);
                     if (!ok) {
-                        if (pread(bn_model_moe_io(m)->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
+                        if (pread(gate_fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz) {
+                            bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                             SH_LOG_ERROR("Fallback gate pread failed");
-                        if (pread(bn_model_moe_io(m)->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
+                        }
+                        if (pread(up_fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz) {
+                            bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                             SH_LOG_ERROR("Fallback up pread failed");
+                        }
                     }
                 } else {
-                    if (pread(bn_model_moe_io(m)->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
+                    if (pread(gate_fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Sync gate pread failed");
-                    if (pread(bn_model_moe_io(m)->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
+                    }
+                    if (pread(up_fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Sync up pread failed");
+                    }
                     if (!pf_dn)
-                        if (pread(bn_model_moe_io(m)->fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off) != (ssize_t)miss_d_sz)
+                        if (pread(down_fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off) != (ssize_t)miss_d_sz) {
+                            bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                             SH_LOG_ERROR("Sync down pread failed");
+                        }
                 }
                 gate_ptr = miss_g_dst;
                 up_ptr   = miss_u_dst;
@@ -769,11 +787,11 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                 uint8_t *d_dst = slot ? slot + bn_moe_cache_gate_bytes(cache) + bn_moe_cache_up_bytes(cache) : ms->buf5;
 
                 if (pf_gu) {
-                    bn_moe_prefetch_start2_internal(pf_gu, g_dst, g_sz, (off_t)g_off,
-                                               u_dst, u_sz, (off_t)u_off);
+                    bn_moe_prefetch_start2_internal(pf_gu, gate_fd, g_dst, g_sz, (off_t)g_off,
+                                               up_fd, u_dst, u_sz, (off_t)u_off);
                 }
                 if (pf_dn) {
-                    bn_moe_prefetch_start1_internal(pf_dn, d_dst, d_sz, (off_t)d_off);
+                    bn_moe_prefetch_start1_internal(pf_dn, down_fd, d_dst, d_sz, (off_t)d_off);
                 }
 
                 if (pf_gu) {
@@ -782,18 +800,28 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                     ms->stats.prefetch_wait_ms += bn_moe_time_ms() - tw;
                     bn_moe_prefetch_collect_stats(pf_gu, &ms->stats);
                     if (!ok) {
-                        if (pread(bn_model_moe_io(m)->fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
+                        if (pread(gate_fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz) {
+                            bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                             SH_LOG_ERROR("Fallback gate pread failed");
-                        if (pread(bn_model_moe_io(m)->fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
+                        }
+                        if (pread(up_fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz) {
+                            bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                             SH_LOG_ERROR("Fallback up pread failed");
+                        }
                     }
                 } else {
-                    if (pread(bn_model_moe_io(m)->fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
+                    if (pread(gate_fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Sync gate pread failed");
-                    if (pread(bn_model_moe_io(m)->fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
+                    }
+                    if (pread(up_fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Sync up pread failed");
-                    if (pread(bn_model_moe_io(m)->fd, d_dst, d_sz, (off_t)d_off) != (ssize_t)d_sz)
+                    }
+                    if (pread(down_fd, d_dst, d_sz, (off_t)d_off) != (ssize_t)d_sz) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Sync down pread failed");
+                    }
                 }
 
                 gate_ptr = g_dst;
@@ -844,8 +872,10 @@ void bn_moe_forward_observed(struct BnModel *m, BnSession *sess,
                 if (!ok) {
                     size_t d_off, d_sz;
                     bn_moe_proj_info(map, eidx, 2, &d_off, &d_sz);
-                    if (pread(bn_model_moe_io(m)->fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off) != (ssize_t)d_sz)
+                    if (pread(down_fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off) != (ssize_t)d_sz) {
+                        bn_moe_cache_invalidate_internal(cache, l, miss_indices[mi]);
                         SH_LOG_ERROR("Fallback down pread failed");
+                    }
                 }
             }
 

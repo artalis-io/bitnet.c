@@ -1,0 +1,157 @@
+{
+  "milestone": "Registry-owned native E4M3FN/UE8M0 block32 FP16 decoding",
+  "status": "Qualified numerical primitive; whole inference and vLLM parity objective remains active",
+  "implementation": {
+    "format_id": 1025,
+    "format": "E4M3_UE8M0_32",
+    "registry": "Explicit block-scaled decode profile, block32x32, byte weights and byte scales. Ordinary GGUF load, CPU matvec/matmul, BF16 linear and GPU execution capabilities remain disabled.",
+    "conversion": "Finite E4M3FN times 2^(scale_byte-127), retaining original FP32-product then FP16 RN-even results. Integer-only conversion preserves signed zero, subnormals and overflow without host FP environment dependence.",
+    "regions": "No allocation. Row-major matrix rectangle to contiguous FP16 bits; exact input byte sizes, checked capacity/geometry/address overlap; all requested source bytes checked before writes.",
+    "invalid_sources": "E4M3FN NaN codes 127/255 and UE8M0 byte255 reject before output writes. Invalid bytes outside requested rectangle are not scanned.",
+    "partial_blocks": "Ceil-divided block32 grid; validated using unchanged upstream routine on padded complete grids and then cropped. Upstream direct routine itself asserts divisible grid geometry.",
+    "model_integration": "Native anatomy records core_format and derives scale-grid geometry from registered metadata. No GPU handles attached to CPU weights."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "unit-scalar-build": 0,
+      "unit-scalar": 0,
+      "unit-avx2-build": 0,
+      "unit-avx2": 0,
+      "unit-avx512-build": 0,
+      "unit-avx512": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "probe-scalar-build": 0,
+      "native-scalar": 0,
+      "probe-avx2-build": 0,
+      "native-avx2": 0,
+      "probe-avx512-build": 0,
+      "native-avx512": 0,
+      "asan-probe-build": 0,
+      "asan-native": 0
+    },
+    "oracle_captured_before_native_implementation": true,
+    "finite_byte_pairs": {
+      "pairs": 64770,
+      "fnv64": "0x463cac3f204833bd"
+    },
+    "partial_edge_reference": {
+      "scope": "Original routine on zero-padded full 32x32 blocks, cropped to wire geometry; this explicitly tests partial-edge extension beyond upstream divisibility assertion.",
+      "records": [
+        {
+          "rows": 35,
+          "cols": 67,
+          "fnv64": "0x9c9739232c4d4aae",
+          "reference_fp16_sha256": "70c67e82104c5a36ee2dc40fa10a63deed3779f08b49f2d4f4a022decc9bd6fa"
+        },
+        {
+          "rows": 1,
+          "cols": 1,
+          "fnv64": "0x8328807b4eb6fed",
+          "reference_fp16_sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+        },
+        {
+          "rows": 64,
+          "cols": 96,
+          "fnv64": "0x9400df6ff3467df9",
+          "reference_fp16_sha256": "664167f2c7d307f906f4ff5ad14c31dab8ab4776e5bcd44f5157ef9a17b6dce5"
+        },
+        {
+          "rows": 65,
+          "cols": 33,
+          "fnv64": "0xbee657b37d8e81af",
+          "reference_fp16_sha256": "6a6efab15a6c63ab65ce55eb3546e5c1b94b9ca48cd027bbe15795d1e18f79e4"
+        }
+      ]
+    },
+    "whole_checkpoint_matrices": 10,
+    "fp16_words_per_run": 324534272,
+    "native_scalar_avx2_avx512": {
+      "scalar": {
+        "matrices": 10,
+        "decoded_fp16_words": 324534272,
+        "bounded_regions": 160,
+        "region_words": 3360,
+        "native_read_bytes": 324851200,
+        "mismatches": 0
+      },
+      "avx2": {
+        "matrices": 10,
+        "decoded_fp16_words": 324534272,
+        "bounded_regions": 160,
+        "region_words": 3360,
+        "native_read_bytes": 324851200,
+        "mismatches": 0
+      },
+      "avx512": {
+        "matrices": 10,
+        "decoded_fp16_words": 324534272,
+        "bounded_regions": 160,
+        "region_words": 3360,
+        "native_read_bytes": 324851200,
+        "mismatches": 0
+      }
+    },
+    "asan_native": {
+      "matrices": 10,
+      "decoded_fp16_words": 324534272,
+      "bounded_regions": 160,
+      "region_words": 3360,
+      "native_read_bytes": 324851200,
+      "mismatches": 0
+    },
+    "mismatches": 0,
+    "host_rounding_modes": [
+      "nearest",
+      "downward",
+      "upward",
+      "toward zero"
+    ],
+    "coverage": "Whole matrices cover attention Q_A/Q_B/KV/O_A/O_B, shared gate/up/down, index query, and Engram projection. Raw native index reads also match frozen source bytes.",
+    "atomic_rejection": "Bad geometry, sizes, capacity, overlap, late NaN weights and late invalid scale leave output unchanged."
+  },
+  "reference": {
+    "source": "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/linear.py",
+    "source_sha256": "4638fea2f6f2fbf897ea6206f06f06ee45a37848f8f605574b169cd4141671df",
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "method": "Original dequant_e8m0_blocks_ method body extracted unchanged with AST and run on designated GPU. Captures frozen before decoder code was written.",
+    "torch": "2.14.0+cu130",
+    "cuda": "13.0",
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"
+  },
+  "limitations": [
+    "This is FP16 weight materialization, not a matrix multiplication or full native model executor.",
+    "No new GPU FP8 kernel was added; no GPU FP8 compute-sanitizer claim. Complete existing CUDA suite passed.",
+    "Explicit scalar/AVX builds qualify the decoder, not every engine backend path. ARM NEON and WASM execution remain unverified.",
+    "No inference throughput, cold-storage footprint or vLLM parity claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-fp8-core/qualification.json",
+    "frozen_reference": "/tmp/bitnet-goal-fp8-core/reference.json",
+    "continuation": "/tmp/bitnet-goal-fp8-core/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/quant.h": "55a22de13834d7ffd3e528f4077426cce174d4ba8b46c6433f2d3794d7f334ea",
+    "src/quant/registry.c": "d18d490325064a62c38c6c6979c6f2b1efa2a5107d815e432b582ffeae6bef4a",
+    "src/quant/fp8.c": "22cd05ad698aa13622788944362d5abaffff26ffd28903cefeaa958372c8fddd",
+    "include/model_anatomy.h": "00235ab04718377893ee75f8e18b6d51f1669a11fe8ee8957d54bcfabf364e18",
+    "src/model_arch.c": "f22d6748ed2c66ddd12f4805db4250f29b573780d410b385f2bd768d28013307",
+    "test/test_fp8.c": "df09ff4c823fc095e4fde0700376d1f5b4b2f227981c9326e02791d33e5c5743",
+    "test/test_quant.c": "4288fdcd0ebda123bbf3b9dacae30faa7b4b4fb014cce3b84a7fb8afda2fe5d5",
+    "test/native_anatomy_checks.h": "b4a49f7850c41cd489eabe0cde2dff2768b18601e964499534f126f3b544b1f7",
+    "Makefile": "3cbd89db312a14bf7afc32194b6ee150b0b5d0e700aadcfdc1f06923288d1df9",
+    "wasm/build.sh": "6fe26cecaa24a101921d75835b94c5d4109b0c4f6299de76a5e9e6a7e7c5bf50"
+  }
+}

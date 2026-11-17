@@ -1,4 +1,5 @@
 #include "transformer.h"
+#include "transformer_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_batched_attn_internal.h"
@@ -789,6 +790,7 @@ static int mock_prefill_ssm_layer(
     int wqkv_type, int wz_type, int alpha_type, int beta_type,
     int out_type, int hidden_dim, int ffn_gate_type, int ffn_up_type,
     int ffn_down_type, int act_type, int sigmoid_gate, float norm_eps,
+    int qk_norm_mode,
     int *did_ffn) {
     (void)ctx; (void)out; (void)wqkv_buf; (void)wz_buf;
     (void)alpha_buf; (void)beta_buf; (void)qkvz_stacked_buf;
@@ -803,7 +805,7 @@ static int mock_prefill_ssm_layer(
     (void)out_type; (void)hidden_dim; (void)ffn_gate_type;
     (void)ffn_up_type; (void)ffn_down_type; (void)act_type;
     (void)sigmoid_gate;
-    (void)norm_eps; (void)did_ffn;
+    (void)norm_eps; (void)qk_norm_mode; (void)did_ffn;
     return 0;
 }
 
@@ -973,6 +975,25 @@ static void test_runtime_softmax(void) {
         assert(scalar[i] == neon[i]);
 #endif
 
+    printf("PASSED\n");
+}
+
+static void test_softmax_avx512_tails(void) {
+    printf("test_softmax_avx512_tails... ");
+    for (int n = 1; n <= 79; ++n) {
+        /* External inputs remain unaligned; cover every tail plus full-vector
+         * and 64-element normalization boundaries with untouched guards. */
+        float storage[82], expected[80];
+        float *actual = storage + 1;
+        storage[0] = storage[n + 1] = -777.0f;
+        for (int j = 0; j < n; ++j)
+            actual[j] = expected[j] = (float)((j * 17) % 31 - 15) * .25f;
+        bn_transformer_softmax_scalar(expected, n);
+        bn_transformer_softmax_avx512(actual, n);
+        for (int j = 0; j < n; ++j)
+            assert(fabsf(actual[j] - expected[j]) < 2e-6f);
+        assert(storage[0] == -777.0f && storage[n + 1] == -777.0f);
+    }
     printf("PASSED\n");
 }
 
@@ -1338,6 +1359,16 @@ static void test_gpu_capability_routing(void) {
                &routed_projection_flags, 3, 1) == 0);
     assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
                NULL, 0, 1) == 0);
+    routed_projection_flags.gate_type = routed_projection_flags.up_type = BN_GGUF_TENSOR_Q4_K;
+    routed_projection_flags.down_type = BN_GGUF_TENSOR_Q5_1;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags_for(
+        &gpu, &routed_projection_flags, 2, 1) == BN_GPU_OP_FLAG_MATVEC_BLOCK_Q8_ACTIVATION);
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags_for(
+        &gpu, &routed_projection_flags, 2, 0) == 0);
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags_for(
+        &gpu, &routed_projection_flags, 2, 1) == 0);
     assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
                &gpu, BN_GGUF_TENSOR_Q5_K, 0, 1, 1) ==
            BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION);
@@ -1349,8 +1380,22 @@ static void test_gpu_capability_routing(void) {
            BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
     assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
                &gpu, BN_GGUF_TENSOR_Q8_0, 1, 1, 0) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
+    assert(bn_transformer_gpu_moe_shared_gateup_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 0, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
+    assert(bn_transformer_gpu_moe_shared_gateup_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 0, 0) == 0);
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(bn_transformer_gpu_moe_shared_gateup_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 0, 1) ==
            (BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT |
             BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));
+    assert(bn_transformer_gpu_moe_shared_down_matvec_flags(
+               &gpu, BN_GGUF_TENSOR_Q8_0, 0, 1, 0) ==
+           (BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT |
+            BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_moe_dense_residual_down_matvec_flags(
                &gpu, BN_GGUF_TENSOR_Q8_0, 1, 1) ==
            BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
@@ -1615,6 +1660,7 @@ static void test_gpu_capability_routing(void) {
     gpu.caps |= BN_GPU_CAP_LAYERWISE_ROPE;
     assert(bn_transformer_gpu_can_layerwise_rope(&gpu));
 
+    bn_backend_runtime_policy_free(&gpu.runtime_policy);
     printf("PASSED\n");
 }
 
@@ -1670,6 +1716,24 @@ static void test_prefill_microbatch_policy(void) {
     assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
     c.kv_f16=1; c.n_experts=0;
     assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    c.n_experts_active=0;
+    gpu.kind=BN_GPU_BACKEND_CUDA;
+    assert(bn_backend_runtime_policy_set(&gpu.runtime_policy,
+        "BN_CUDA_ENABLE_GQA6_PREFIX","1",1)==0);
+    assert(bn_backend_runtime_policy_set(&gpu.runtime_policy,
+        "BN_CUDA_ENABLE_PREFILL_QK_PAIR","1",1)==0);
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    assert(bn_backend_runtime_policy_set(&gpu.runtime_policy,
+        "BN_CUDA_ENABLE_DENSE_PREFIX_CHAIN","1",1)==0);
+    assert(bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    assert(bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,512));
+    gpu.kind=BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    gpu.kind=BN_GPU_BACKEND_CUDA;
+    c.n_experts=256;
+    assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
+    c.n_experts_active=8;
+    bn_backend_runtime_policy_free(&gpu.runtime_policy);
     c.n_experts=256; c.kv_tq_bits=3;
     assert(!bn_transformer_prefill_prefix_request_allowed(&c,&gpu,512,0));
     c.kv_tq_bits=0; c.hyper_connection_count=4;
@@ -2129,6 +2193,25 @@ static void test_gpu_policy_helpers(void) {
     c.hyper_connection_count = 4;
     assert(bn_transformer_gpu_prefill_ssm_layer_disabled(&gpu, &c));
     assert(bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(&gpu, &c));
+    /* HC prefix chunks must keep batch admission when logits are omitted.
+     * Native chaining is unavailable; sequential dispatch changes both
+     * arithmetic order and performance for these chunks. */
+    BnConfig chunked_hc = {0};
+    chunked_hc.policy_flags = BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
+    chunked_hc.hyper_connection_count = 4;
+    chunked_hc.ssm_inner_size = 16;
+    chunked_hc.full_attn_interval = 4;
+    assert(!bn_transformer_gpu_batch_prefill_enabled(&gpu, &chunked_hc));
+    assert(bn_transformer_prefill_gpu_batch_available(&gpu, &chunked_hc));
+    assert(!bn_transformer_prefill_gpu_batch_available(NULL, &chunked_hc));
+    assert(!bn_transformer_prefill_gpu_batch_available(&gpu, NULL));
+    assert(bn_transformer_prefill_entry_policy(0, 0, 9, 1,
+        bn_transformer_prefill_gpu_batch_available(&gpu, &chunked_hc)).batch);
+    assert(!bn_transformer_prefill_entry_policy(0, 0, 9, 1,
+        bn_transformer_gpu_batch_prefill_enabled(&gpu, &chunked_hc)).batch);
+    assert(!bn_transformer_prefill_entry_policy(1, 0, 9, 1,
+        bn_transformer_prefill_gpu_batch_available(&gpu, &chunked_hc)).batch);
+
     c.policy_flags &= ~BN_MODEL_ARCH_POLICY_HYPER_CONNECTIONS;
     c.hyper_connection_count = 0;
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
@@ -3029,6 +3112,34 @@ static void test_gpu_policy_helpers(void) {
     prefill_attn_lw.attn.q_bias = NULL;
     prefill_attn_lw.attn.k_bias = NULL;
     prefill_attn_lw.attn.v_bias = NULL;
+
+    /* A prefill-only mixed-format view may replace a missing stack for the
+     * dense-layer hook, without advertising it to raw attention operations. */
+    int prefill_dense_pair_handle;
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_QK_STACKED, NULL) == 0);
+    dense_layer_resources = bn_transformer_prefill_dense_layer_gpu_resource_policy(
+        prefill_backend, 7, &prefill_attn_lw, 0, prefill_attn_resource_types,
+        prefill_ssm_resource_types, prefill_dense_ffn_types);
+    assert(!dense_layer_resources.valid);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_PREFILL_QK_PAIR,
+               &prefill_dense_pair_handle) == 0);
+    dense_layer_resources = bn_transformer_prefill_dense_layer_gpu_resource_policy(
+        prefill_backend, 7, &prefill_attn_lw, 0, prefill_attn_resource_types,
+        prefill_ssm_resource_types, prefill_dense_ffn_types);
+    assert(dense_layer_resources.valid);
+    assert(dense_layer_resources.qk == &prefill_dense_pair_handle);
+    raw_attn_resources = bn_transformer_prefill_raw_attention_gpu_resource_policy(
+        prefill_backend, 7, &prefill_attn_lw, prefill_attn_resource_types);
+    assert(!raw_attn_resources.valid);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_QK_STACKED,
+               &prefill_dense_qk_handle) == 0);
+    dense_layer_resources = bn_transformer_prefill_dense_layer_gpu_resource_policy(
+        prefill_backend, 7, &prefill_attn_lw, 0, prefill_attn_resource_types,
+        prefill_ssm_resource_types, prefill_dense_ffn_types);
+    assert(dense_layer_resources.qk == &prefill_dense_qk_handle);
 
     int prefill_moe_qk_handle;
     int prefill_moe_wv_handle;
@@ -5018,6 +5129,17 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0, 1));
     assert(bn_transformer_gpu_moe_prefill_split_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 0));
+    BnMoEExpertMap affine_map = map;
+    affine_map.gate_type = affine_map.up_type = BN_GGUF_TENSOR_Q4_K;
+    affine_map.down_type = BN_GGUF_TENSOR_Q5_1;
+    assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+        &gpu, &c, &affine_map, c.dim, 0, 0));
+    affine_map.down_type = BN_GGUF_TENSOR_Q8_0;
+    assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+        &gpu, &c, &affine_map, c.dim, 0, 0));
+    affine_map.gate_type = affine_map.up_type = BN_GGUF_TENSOR_Q5_K;
+    assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+        &gpu, &c, &affine_map, c.dim, 0, 0));
     assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 1));
     assert(bn_transformer_gpu_moe_prefill_single_expert_batch_available(
@@ -5231,8 +5353,13 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_reference_recurrent_exact_enabled(&gpu, &c));
     gpu.caps |= BN_GPU_CAP_REFERENCE_RECURRENT;
     assert(bn_transformer_gpu_reference_recurrent_exact_enabled(&gpu, &c));
+    assert(bn_transformer_gpu_ple_host_reference_enabled(&gpu, &c));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(!bn_transformer_gpu_ple_host_reference_enabled(&gpu, &c));
+    gpu.kind = BN_GPU_BACKEND_METAL;
     c.policy_flags &= ~BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT;
     assert(!bn_transformer_gpu_reference_recurrent_exact_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_ple_host_reference_enabled(&gpu, &c));
     c.policy_flags &= ~BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY;
     fallback = (BnTransformerGPUCPUFallbackPolicy)
         {-1, -1, -1, -1, -1, -1, -1};
@@ -5889,6 +6016,11 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts_active = 2;
     unsetenv("BN_GPU_ENABLE_MOE_ROUTER_GPU");
 
+    bn_backend_model_bind_gpu(fallback_backend, NULL);
+    bn_backend_model_free(fallback_backend);
+    free(model.backend_state);
+    model.backend_state = NULL;
+    bn_backend_runtime_policy_free(&gpu.runtime_policy);
     printf("PASSED\n");
 }
 
@@ -6157,6 +6289,7 @@ static void test_logits_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_NATIVE_QUANT_LOGITS_REFINE");
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_NATIVE_QUANT_LOGITS_REFINE");
 
+    bn_backend_runtime_policy_free(&gpu.runtime_policy);
     printf("PASSED\n");
 }
 
@@ -6707,6 +6840,17 @@ static void test_model_arch_registry(void) {
     c.n_experts = 0;
     assert(!bn_model_arch_requires_float_kquant_fallback(&c));
 
+    BnConfig norm_config = {0};
+    const char *norm_arches[] = {"qwen35", "qwen35moe", "qwen4exp"};
+    for (unsigned i = 0; i < sizeof(norm_arches)/sizeof(norm_arches[0]); i++) {
+        bn_model_arch_apply_config(&norm_config, bn_model_arch_ops_for(norm_arches[i]));
+        assert(norm_config.ssm_qk_norm == BN_SSM_QK_NORM_RMS_SCALED);
+    }
+    bn_model_arch_apply_config(&norm_config, bn_model_arch_ops_for("bitnet"));
+    assert(norm_config.ssm_qk_norm == BN_SSM_QK_NORM_CLAMPED_L2);
+    norm_config.ssm_qk_norm = BN_SSM_QK_NORM_RMS_SCALED;
+    bn_model_arch_apply_config(&norm_config, NULL);
+    assert(norm_config.ssm_qk_norm == BN_SSM_QK_NORM_CLAMPED_L2);
     const BnModelArchOps *qwen = bn_model_arch_ops_for("qwen35");
     assert(qwen);
     assert(strcmp(qwen->name, "qwen35") == 0);
@@ -6735,6 +6879,7 @@ static void test_model_arch_registry(void) {
            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_ATTENTION);
     BnConfig qwen4exp_config = {0};
     bn_model_arch_apply_config(&qwen4exp_config, qwen4exp);
+    assert(qwen4exp_config.bf16_layout == BN_MODEL_BF16_LAYOUT_FLASH_HC);
     assert(bn_model_arch_uses_hyper_connections(&qwen4exp_config));
     assert(bn_model_arch_uses_query_sparse_attention(&qwen4exp_config));
     assert(bn_model_arch_moe_uses_separate_router_topk(&qwen4exp_config));
@@ -6754,6 +6899,43 @@ static void test_model_arch_registry(void) {
     assert(!bn_transformer_prefill_host_reference_enabled(
         &cuda_prefill_gpu, &c));
     assert(bn_transformer_prefill_host_reference_enabled(NULL, &c));
+    /* Hyperconnection reference arithmetic follows the execution backend;
+     * CUDA uses its qualified operators, CPU/Metal keep host ordering. */
+    BnGPUBackend metal_prefill_gpu = {.kind = BN_GPU_BACKEND_METAL};
+    assert(bn_transformer_prefill_host_reference_enabled(&metal_prefill_gpu, &c));
+    assert(!bn_transformer_prefill_host_reference_enabled(
+        &cuda_prefill_gpu, &qwen4exp_config));
+    assert(bn_transformer_prefill_host_reference_enabled(NULL, &qwen4exp_config));
+    assert(bn_transformer_prefill_prepared_attention_requested(
+        &cuda_prefill_gpu, &qwen4exp_config));
+    assert(!bn_transformer_prefill_prepared_attention_requested(
+        &metal_prefill_gpu, &qwen4exp_config));
+    BnConfig ordinary_prefill = {0};
+    assert(!bn_transformer_prefill_prepared_attention_requested(
+        &cuda_prefill_gpu, &ordinary_prefill));
+    ordinary_prefill.flash_attn = 1;
+    assert(bn_transformer_prefill_prepared_attention_requested(
+        &metal_prefill_gpu, &ordinary_prefill));
+    assert(!bn_transformer_prefill_prepared_attention_requested(
+        &cuda_prefill_gpu, NULL));
+    for (int prefill_rows = 2; prefill_rows <= 1024; prefill_rows *= 2) {
+        assert(bn_transformer_prefill_selects_last_ffn_row(
+            &cuda_prefill_gpu, 0, 47, 48, prefill_rows));
+        assert(bn_transformer_prefill_selects_last_ffn_row(
+            NULL, 0, 47, 48, prefill_rows));
+        assert(!bn_transformer_prefill_selects_last_ffn_row(
+            &cuda_prefill_gpu, 1, 47, 48, prefill_rows));
+        assert(!bn_transformer_prefill_selects_last_ffn_row(
+            &cuda_prefill_gpu, 0, 46, 48, prefill_rows));
+        assert(!bn_transformer_prefill_selects_last_ffn_row(
+            &metal_prefill_gpu, 0, 47, 48, prefill_rows));
+    }
+    assert(!bn_transformer_prefill_selects_last_ffn_row(
+        &cuda_prefill_gpu, 0, 47, 48, 1));
+    assert(!bn_transformer_prefill_selects_last_ffn_row(
+        &cuda_prefill_gpu, 0, -1, 0, 11));
+    assert(!bn_transformer_prefill_selects_last_ffn_row(
+        &cuda_prefill_gpu, 0, 48, 48, 11));
     c.policy_flags &= ~BN_MODEL_ARCH_POLICY_REFERENCE_RECURRENT;
     assert(!bn_model_transformer_policy_requires_host_reference_prefill(&c));
     memset(&c, 0, sizeof(c));
@@ -8901,6 +9083,7 @@ static void test_block_planning(void) {
     test_gpu_runtime_refresh(&prefill_dense_gpu);
     assert(!bn_transformer_prefill_ssm_ffn_fuse_allowed(&prefill_dense_gpu));
     unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
+    bn_backend_runtime_policy_free(&prefill_dense_gpu.runtime_policy);
     memset(&prefill_dense_gpu, 0, sizeof(prefill_dense_gpu));
 
     BnTransformerPrefillSSMMoEChainPolicy ssm_moe_chain =
@@ -9450,6 +9633,12 @@ static void test_block_planning(void) {
     assert(cpu_backend == BN_CPU_BACKEND_AVX512);
 #endif
 
+    bn_backend_runtime_policy_free(&gpu.runtime_policy);
+    bn_backend_runtime_policy_free(&matmul_gpu.runtime_policy);
+    bn_backend_runtime_policy_free(&matmul_batch_gpu.runtime_policy);
+    bn_backend_runtime_policy_free(&moe_prefill_gpu.runtime_policy);
+    bn_backend_runtime_policy_free(&prefill_dense_gpu.runtime_policy);
+    bn_backend_runtime_policy_free(&prefill_gpu.runtime_policy);
     printf("PASSED\n");
 }
 
@@ -10084,6 +10273,7 @@ static void test_gpu_recurrent_quant_contract(void) {
     const int types[] = {BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
                          BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q8_0,
                          BN_GGUF_TENSOR_F32};
+    for (int norm_mode = 0; norm_mode < 2; norm_mode++)
     for (int reference = 0; reference < 2; reference++) {
         for (int block32 = 0; block32 < 2; block32++) {
             for (size_t t = 0; t < sizeof(types) / sizeof(types[0]); t++) {
@@ -10092,6 +10282,8 @@ static void test_gpu_recurrent_quant_contract(void) {
                     (block32 ? BN_GPU_CAP_KQUANT_BLOCK32_RECURRENT : 0);
                 BnConfig config = {0};
                 config.dim = 256;
+                config.ssm_qk_norm = norm_mode ? BN_SSM_QK_NORM_RMS_SCALED
+                                              : BN_SSM_QK_NORM_CLAMPED_L2;
                 config.ssm_group_count = config.ssm_time_step_rank = 1;
                 config.ssm_state_size = config.ssm_inner_size = 128;
                 config.ssm_conv_kernel = 4;
@@ -10121,8 +10313,13 @@ static void test_gpu_recurrent_quant_contract(void) {
                 bn_transformer_gpu_emit_context_ssm(&ctx, &config, &layer,
                     &plan, &res, 256, 0, 0, 0, 1);
                 assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
-                int projections = 0;
+                int projections = 0, norm_ops = 0;
                 for (int i = 0; i < ctx.n; i++) {
+                    if (ops[i].op_code == BN_GPU_CODE_SSM_L2NORM) {
+                        assert(ops[i].p[4] == (uint32_t)(norm_mode ?
+                            BN_GPU_SSM_QK_NORM_RMS_SCALED : BN_GPU_SSM_QK_NORM_CLAMPED_L2));
+                        norm_ops++;
+                    }
                     if (ops[i].op_code != BN_GPU_CODE_MATVEC) continue;
                     assert(projections < 5);
                     assert(ops[i].W_buf == &handles[projections]);
@@ -10131,7 +10328,7 @@ static void test_gpu_recurrent_quant_contract(void) {
                     assert(ops[i].flags == expected);
                     projections++;
                 }
-                assert(projections == 5);
+                assert(projections == 5 && norm_ops == 1);
                 bn_transformer_gpu_emit_context_free(&ctx);
             }
         }
@@ -10175,7 +10372,383 @@ static void test_greedy_token_state_preparation(void) {
     printf("Greedy token state preparation PASSED\n");
 }
 
+typedef struct {
+    int matrix_calls, vector_calls, decline_matrix;
+} LogitsProjectionProbe;
+
+static int logits_probe_matrix(void *ctx, float *out, void *weight,
+    const float *x, int rows, int cols, int nt, int type) {
+    LogitsProjectionProbe *probe = ctx;
+    assert(weight && x && rows == 1 && cols == 32 && nt == 1 &&
+        type == BN_GGUF_TENSOR_Q8_0);
+    probe->matrix_calls++;
+    if (probe->decline_matrix) return -1;
+    out[0] = 123.0f;
+    return 0;
+}
+
+static int logits_probe_vector(void *ctx, float *out, void *weight,
+    const float *x, int rows, int cols, int type) {
+    LogitsProjectionProbe *probe = ctx;
+    assert(weight && x && rows == 1 && cols == 32 &&
+        type == BN_GGUF_TENSOR_Q8_0);
+    probe->vector_calls++;
+    out[0] = 456.0f;
+    return 0;
+}
+
+static void test_moe_shared_math_contract(void) {
+    for(int cuda=0;cuda<2;cuda++) {
+        BnGPUBackend gpu={0};gpu.kind=cuda?BN_GPU_BACKEND_CUDA:BN_GPU_BACKEND_METAL;
+        assert(bn_transformer_gpu_moe_shared_host_reference_enabled(&gpu,1)==!cuda);
+        assert(!bn_transformer_gpu_moe_shared_host_reference_enabled(&gpu,0));
+        BnLayerWeights layer={0};
+        layer.shared.shared_gate=(BnQWeight){.data=(void*)1,.type=BN_GGUF_TENSOR_Q8_0,.rows=32,.cols=256};
+        layer.shared.shared_up=layer.shared.shared_gate;
+        layer.shared.shared_down=(BnQWeight){.data=(void*)2,.type=BN_GGUF_TENSOR_Q8_0,.rows=256,.cols=32};
+        layer.shared.shared_expert_gate=(float*)3;
+        BnMoEExpertMap map={0};map.gate_type=map.up_type=BN_GGUF_TENSOR_Q4_K;
+        map.down_type=BN_GGUF_TENSOR_Q5_1;map.gate_rows=map.up_rows=map.down_cols=32;
+        map.gate_cols=map.up_cols=map.down_rows=256;
+        BnGPUMoEResources moe={.expert_map=&map,.moe_hidden=32};
+        BnTransformerGPUMoESharedResources shared={.gpu=&gpu,.shared_gate=(void*)1,
+            .shared_up=(void*)2,.shared_down=(void*)3,.shared_expert_gate=(void*)4};
+        BnGPUOp ops[32];BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx,ops,32);ctx.gpu=&gpu;
+        bn_transformer_gpu_emit_context_moe(&ctx,&moe,&shared,&layer,256,0,NULL,1,1,1);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx)==0);
+        int activations=0,gates=0;
+        for(int i=0;i<ctx.n;i++) {
+            if(ops[i].op_code==BN_GPU_CODE_SILU_GATE) {
+                assert(!!(ops[i].flags&BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION)==!cuda);
+                activations++;
+            } else if(ops[i].op_code==BN_GPU_CODE_WEIGHTED_ADD_SIGMOID) {
+                assert(ops[i].p[5]==(cuda?0u:BN_GPU_WEIGHTED_ADD_SIGMOID_REFERENCE_DOT));
+                gates++;
+            }
+        }
+        assert(activations==1&&gates==1);bn_transformer_gpu_emit_context_free(&ctx);
+    }
+    printf("test_moe_shared_math_contract... PASSED\n");
+}
+
+static void test_moe_weighted_sum_contract(void) {
+    const int counts[]={1,2,10,15,16};
+    for(int cuda=0;cuda<2;cuda++)for(int preserve=0;preserve<2;preserve++)
+    for(size_t ci=0;ci<sizeof(counts)/sizeof(counts[0]);ci++) {
+        int n=counts[ci],enabled=cuda&&!preserve&&n>=2&&n<=15;
+        BnGPUBackend gpu={0};gpu.kind=cuda?BN_GPU_BACKEND_CUDA:BN_GPU_BACKEND_METAL;
+        gpu.caps=BN_GPU_CAP_WEIGHTED_ADD_SEPARATE_SCALE;
+        assert(bn_transformer_gpu_moe_fused_weighted_sum_enabled(&gpu,n,preserve)==enabled);
+        BnMoEExpertMap map={0};map.gate_type=map.up_type=BN_GGUF_TENSOR_Q4_K;
+        map.down_type=BN_GGUF_TENSOR_Q5_1;map.gate_rows=map.up_rows=map.down_cols=32;
+        map.gate_cols=map.up_cols=map.down_rows=256;
+        BnGPUMoEResolvedExpert experts[16]={0};
+        for(int i=0;i<n;i++) {
+            experts[i].buffers.gate=(void *)1;experts[i].buffers.up=(void *)2;
+            experts[i].buffers.down=(void *)3;experts[i].weight=1.0f/17.0f;
+        }
+        BnGPUMoEResources moe={.expert_map=&map,.experts=experts,.n_experts=n,
+            .moe_hidden=32,.preserve_output=preserve};
+        BnLayerWeights layer={0};BnGPUOp ops[128];BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx,ops,128);ctx.gpu=&gpu;
+        bn_transformer_gpu_emit_context_moe_routed(&ctx,&moe,NULL,&layer,256,1,1);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx)==0);
+        int adds=0;
+        for(int i=0;i<ctx.n;i++)if(ops[i].op_code==BN_GPU_CODE_WEIGHTED_ADD) {
+            assert(ops[i].p[4]==(enabled?(BN_GPU_WEIGHTED_ADD_SEPARATE_SCALE|BN_GPU_WEIGHTED_ADD_FMA):0u));
+            if(enabled)assert(ops[i].p[3]==UINT32_C(0x3f800000));
+            adds++;
+        }
+        assert(adds==n);bn_transformer_gpu_emit_context_free(&ctx);
+        gpu.caps=0;assert(!bn_transformer_gpu_moe_fused_weighted_sum_enabled(&gpu,n,preserve));
+    }
+    assert(!bn_transformer_gpu_moe_fused_weighted_sum_enabled(NULL,10,0));
+    printf("test_moe_weighted_sum_contract... PASSED\n");
+}
+
+static void test_nonflash_attention_dispatch_contract(void) {
+    for(int cuda=0;cuda<2;cuda++)for(int requested=0;requested<2;requested++)
+    for(int kv16=0;kv16<2;kv16++)for(int long_row=0;long_row<2;long_row++) {
+        BnGPUBackend gpu={0};gpu.kind=cuda?BN_GPU_BACKEND_CUDA:BN_GPU_BACKEND_METAL;
+        gpu.caps=BN_GPU_CAP_FLASH_ATTN|BN_GPU_CAP_REFERENCE_ATTENTION|
+                 BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH;
+        BnConfig c={0};c.dim=2560;c.kv_dim=512;c.seq_len=2048;c.n_experts=512;
+        c.policy_flags=BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION;
+        c.flash_attn=requested;c.kv_f16=kv16;
+        BnLayerWeights lw={0};
+        BnLayerShapePlan plan={0};plan.head_size=256;plan.n_heads=24;
+        plan.n_kv_heads=2;plan.kv_mul=12;
+        BnTransformerGPUAttentionResources res={0};res.gpu=&gpu;
+        BnGPUOp ops[32];BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx,ops,32);ctx.gpu=&gpu;
+        int keys=long_row?257:256;
+        bn_transformer_gpu_emit_context_attention_gqa(&ctx,&c,&lw,&res,
+            &plan,keys-1,64,keys,0,(uint32_t)(keys-1)*512,512,1);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx)==0);
+        int reference=cuda&&!requested&&!kv16,flash=0,scores=0;
+        for(int i=0;i<ctx.n;i++) {
+            if(ops[i].op_code==BN_GPU_CODE_FLASH_ATTN) {
+                flash++;
+                assert(!!(ops[i].flags&BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER)==reference);
+            }
+            if(ops[i].op_code==BN_GPU_CODE_GQA_SCORES)scores++;
+        }
+        assert(flash==!(reference&&long_row));
+        assert(scores==(reference&&long_row));
+        bn_transformer_gpu_emit_context_free(&ctx);
+    }
+    printf("test_nonflash_attention_dispatch_contract... PASSED\n");
+}
+
+static void test_router_backend_normalization_contract(void) {
+    BnConfig c={0};c.n_experts=512;c.n_experts_active=10;c.moe_norm_topk_prob=1;
+    c.policy_flags=BN_MODEL_ARCH_POLICY_MOE_SEPARATE_ROUTER_TOPK;
+    assert(bn_transformer_gpu_moe_route_normalization_flags(&c)==BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK);
+    for(int cuda=0;cuda<2;cuda++) {
+        BnGPUBackend gpu={0};gpu.kind=cuda?BN_GPU_BACKEND_CUDA:BN_GPU_BACKEND_METAL;
+        gpu.caps=BN_GPU_CAP_MOE_ROUTED_FFN;gpu.max_moe_route_experts=512;
+        assert(bn_transformer_gpu_moe_backend_route_flags(&gpu,&c)==
+            (cuda?0u:BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK));
+        BnTransformerGPUMoEDecodeRoutePolicy route=
+            bn_transformer_gpu_moe_decode_route_policy(&gpu,&c,NULL,NULL,
+                0,32,(void *)1,NULL,NULL,NULL,NULL);
+        assert(route.route_flags==(cuda?0u:BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK));
+        BnGPUOp ops[1];BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx,ops,1);ctx.gpu=&gpu;
+        assert(bn_transformer_gpu_emit_context_moe_route_topk(&ctx,
+            (void *)1,NULL,BN_GPU_VALUE_XB,BN_GPU_VALUE_HB,BN_GPU_VALUE_XB2,
+            32,512,10,1.0f,route.route_flags)==0);
+        assert(ctx.n==1&&ops[0].flags==route.route_flags);
+        bn_transformer_gpu_emit_context_free(&ctx);
+        c.moe_norm_topk_prob=0;
+        assert(bn_transformer_gpu_moe_backend_route_flags(&gpu,&c)==
+            (BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM|(cuda?0u:BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK)));
+        c.moe_norm_topk_prob=1;
+        c.n_experts=48;
+        assert(bn_transformer_gpu_moe_backend_route_flags(&gpu,&c)==BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK);
+        c.n_experts=512;c.n_experts_active=BN_MAX_MOE_K+1;
+        assert(bn_transformer_gpu_moe_backend_route_flags(&gpu,&c)==BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK);
+        c.n_experts_active=10;gpu.max_moe_route_experts=256;
+        assert(bn_transformer_gpu_moe_backend_route_flags(&gpu,&c)==BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK);
+        gpu.max_moe_route_experts=512;gpu.caps=0;
+        assert(bn_transformer_gpu_moe_backend_route_flags(&gpu,&c)==BN_GPU_OP_FLAG_MOE_ROUTE_SEPARATE_TOPK);
+    }
+    printf("test_router_backend_normalization_contract... PASSED\n");
+}
+
+static void test_attention_projection_contract(void) {
+    for (int cuda = 0; cuda < 2; cuda++) {
+        BnGPUBackend gpu = {0};
+        gpu.kind = cuda ? BN_GPU_BACKEND_CUDA : BN_GPU_BACKEND_METAL;
+        assert(bn_transformer_gpu_attention_projection_reference_flags(
+            &gpu, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, 1) ==
+            (cuda ? BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT :
+                    BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));
+        assert(!bn_transformer_gpu_attention_projection_reference_flags(
+            &gpu, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, 0));
+        assert(bn_transformer_gpu_attention_projection_reference_flags(
+            &gpu, BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32, 1) ==
+                    BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION);
+        assert(bn_transformer_gpu_attention_projection_reference_flags(
+            &gpu, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_K, 1) ==
+            (bn_transformer_gpu_reference_block_accumulation_flags(1) |
+             bn_transformer_gpu_matvec_reference_kquant_flags(BN_GGUF_TENSOR_Q4_K, 1)));
+        BnConfig c = {0}; c.dim = 32;
+        BnLayerWeights lw = {0};
+        lw.attn.wq = (BnQWeight){.type=BN_GGUF_TENSOR_Q8_0,.rows=64,.cols=32};
+        lw.attn.wk = lw.attn.wv =
+            (BnQWeight){.type=BN_GGUF_TENSOR_Q8_0,.rows=16,.cols=32};
+        BnLayerShapePlan plan = {0};
+        plan.q_dim=32; plan.kv_dim=16; plan.head_size=8;
+        plan.n_heads=4; plan.n_kv_heads=2;
+        BnTransformerGPUQKVResources res = {0};
+        res.gpu=&gpu; res.wq=(void *)1; res.wk=(void *)2; res.wv=(void *)3;
+        BnGPUOp ops[32]; BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx, ops, 32); ctx.gpu=&gpu;
+        bn_transformer_gpu_emit_context_qkv(&ctx, &c, &lw, &plan,
+                                            &res, 2, 8, 32, 0, 0, 1);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+        int projections=0;
+        for (int i=0; i<ctx.n; i++) {
+            if (ops[i].op_code != BN_GPU_CODE_MATVEC) continue;
+            assert(ops[i].flags == (cuda ? BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT :
+                BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));
+            projections++;
+        }
+        assert(projections==3);
+        bn_transformer_gpu_emit_context_free(&ctx);
+        lw.attn.wo = (BnQWeight){.type=BN_GGUF_TENSOR_Q8_0,.rows=32,.cols=32};
+        BnTransformerGPUAttentionResources output_res={0};
+        output_res.gpu=&gpu;output_res.wo=(void *)4;
+        bn_transformer_gpu_emit_context_init(&ctx,ops,32);ctx.gpu=&gpu;
+        bn_transformer_gpu_emit_context_attention_finish(&ctx,&c,&lw,&output_res,
+            32,32,8,0,0,0,1,1);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx)==0);
+        projections=0;
+        for(int i=0;i<ctx.n;i++)if(ops[i].op_code==BN_GPU_CODE_MATVEC) {
+            assert(ops[i].flags==(cuda?BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT:
+                BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));projections++;
+        }
+        assert(projections==1);
+        bn_transformer_gpu_emit_context_free(&ctx);
+        assert(bn_transformer_gpu_attention_output_reference_flags(
+            &gpu,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q4_K,1)==
+            BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION);
+    }
+    printf("test_attention_projection_contract... PASSED\n");
+}
+
+static void test_hyper_projection_contract(void) {
+    for (int cuda = 0; cuda < 2; cuda++) {
+        BnGPUBackend gpu = {0};
+        gpu.kind = cuda ? BN_GPU_BACKEND_CUDA : BN_GPU_BACKEND_METAL;
+        uint32_t expected = cuda ? BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT
+            : BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION;
+        assert(bn_transformer_gpu_hyper_host_reference_order(&gpu, 0) == !cuda);
+        assert(!bn_transformer_gpu_hyper_host_reference_order(&gpu, 1));
+        assert(bn_transformer_gpu_hyper_projection_matvec_flags(
+            &gpu, BN_GGUF_TENSOR_Q8_0, 0) == expected);
+        assert(bn_transformer_gpu_hyper_projection_matvec_flags(
+            &gpu, BN_GGUF_TENSOR_F32, 0) ==
+                (cuda ? 0u : BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION));
+        assert(bn_transformer_gpu_hyper_projection_matvec_flags(
+            &gpu, BN_GGUF_TENSOR_Q8_0, 1) == 0);
+        BnHyperConnectionWeights weights = {0};
+        weights.down = (BnQWeight){.rows=32, .cols=64, .type=BN_GGUF_TENSOR_Q8_0};
+        weights.up = (BnQWeight){.rows=64, .cols=32, .type=BN_GGUF_TENSOR_Q8_0};
+        weights.inject = (BnQWeight){.rows=2, .cols=64, .type=BN_GGUF_TENSOR_F32};
+        BnTransformerGPUHyperConnectionResources resources = {
+            .valid=1, .norm=(void *)1, .down=(void *)2, .up=(void *)3,
+            .inject=(void *)4};
+        BnGPUOp ops[32]; BnTransformerGPUEmitContext ctx;
+        bn_transformer_gpu_emit_context_init(&ctx, ops, 32); ctx.gpu = &gpu;
+        assert(bn_transformer_gpu_emit_context_hyper_mix(
+            &ctx, &weights, &resources, 32, 2, 32, 0, 1, 0) == 0);
+        assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+        int projections = 0, injections = 0, norms = 0, reductions = 0;
+        for (int i=0; i<ctx.n; i++) {
+            if (ops[i].op_code == BN_GPU_CODE_MATVEC) {
+                if (ops[i].type == BN_GGUF_TENSOR_F32) {
+                    assert(ops[i].flags == (cuda ? 0u :
+                        BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION |
+                        BN_GPU_OP_FLAG_REFERENCE_WIDE_ACCUMULATION));
+                    injections++;
+                } else {
+                    assert(ops[i].flags == expected); projections++;
+                }
+            } else if (ops[i].op_code == BN_GPU_CODE_HC_STREAM_RMSNORM) {
+                assert(ops[i].p[3] == (uint32_t)!cuda); norms++;
+            } else if (ops[i].op_code == BN_GPU_CODE_HC_GATED_REDUCE) {
+                assert(ops[i].p[2] == (uint32_t)!cuda); reductions++;
+            }
+        }
+        assert(projections == 2 && injections == 1 && norms == 1 && reductions == 1);
+        bn_transformer_gpu_emit_context_free(&ctx);
+    }
+    printf("test_hyper_projection_contract... PASSED\n");
+}
+
+static void test_native_logits_projection_contract(void) {
+    BnBlockQ8_0 block = {0}; float x[32] = {0};
+    BnQWeight weight = {0}; weight.data = &block;
+    weight.type = BN_GGUF_TENSOR_Q8_0; weight.rows = 1; weight.cols = 32;
+    for (int cuda = 0; cuda < 2; cuda++) for (int decline = 0; decline < 2; decline++) {
+        LogitsProjectionProbe probe = {0}; probe.decline_matrix = decline;
+        BnGPUBackend gpu = {0}; gpu.ctx = &probe;
+        gpu.kind = cuda ? BN_GPU_BACKEND_CUDA : BN_GPU_BACKEND_METAL;
+        gpu.matmul = logits_probe_matrix; gpu.matvec = logits_probe_vector;
+        float out = -1.0f;
+        bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
+            &out, &weight, NULL, &block, x, NULL, NULL, &gpu);
+        assert(probe.matrix_calls == cuda);
+        assert(probe.vector_calls == (!cuda || decline));
+        assert(out == (cuda && !decline ? 123.0f : 456.0f));
+    }
+    printf("test_native_logits_projection_contract... PASSED\n");
+}
+
+typedef struct {
+    int reads;
+    int fail_read;
+    size_t state_values;
+    size_t conv_values;
+} RecurrentReadbackFixture;
+
+static int recurrent_readback_fixture_read(void *opaque, int value, void *out,
+                                           size_t bytes, size_t offset) {
+    RecurrentReadbackFixture *f = opaque;
+    f->reads++;
+    assert(offset == 0);
+    assert(value == BN_GPU_VALUE_SSM_STATE ||
+           value == BN_GPU_VALUE_SSM_CONV_STATE);
+    size_t count = value == BN_GPU_VALUE_SSM_STATE ? f->state_values : f->conv_values;
+    assert(bytes == count * sizeof(float));
+    if (f->reads == f->fail_read) return -1;
+    float *x = out;
+    for (size_t i = 0; i < count; i++)
+        x[i] = value == BN_GPU_VALUE_SSM_STATE ? (float)i * 0.25f : -(float)i * 0.5f;
+    return 0;
+}
+
+static void test_recurrent_decode_prefill_readback(void) {
+    printf("test_recurrent_decode_prefill_readback... ");
+    BnModel model = {0};
+    BnConfig *c = &model.config;
+    c->dim=64; c->hidden_dim=128; c->n_layers=4;
+    c->n_heads=4; c->n_kv_heads=4; c->head_size=16; c->kv_dim=64; c->kv_mul=1;
+    c->vocab_size=100; c->seq_len=32; c->norm_eps=1e-5f; c->rope_theta=10000.f;
+    c->ssm_inner_size=16; c->ssm_state_size=8; c->ssm_time_step_rank=2;
+    c->ssm_group_count=1; c->ssm_conv_kernel=4; c->full_attn_interval=2;
+    BnSession *session=bn_session_create(&model,NULL);
+    assert(session && session->state.ssm_state && session->state.ssm_conv_state);
+    BnTransformerSSMShapePolicy shape;
+    assert(bn_transformer_ssm_shape_policy(&shape,c));
+    size_t layers=(size_t)bn_transformer_ssm_layer_count(c);
+    RecurrentReadbackFixture fixture={0};
+    fixture.state_values=layers*shape.num_v_heads*shape.head_k_dim*shape.head_v_dim;
+    fixture.conv_values=layers*(shape.conv_kernel-1)*shape.qkv_dim;
+    assert(fixture.state_values && fixture.conv_values);
+    BnGPUBackend gpu={0}; gpu.ctx=&fixture;
+    gpu.read_activation=recurrent_readback_fixture_read;
+    assert(bn_model_ensure_backend(&model)==0);
+    bn_backend_model_bind_gpu(bn_model_backend(&model),&gpu);
+    assert(bn_transformer_gpu_prefill_ssm_readback_backend_run(&model,session)==0);
+    assert(fixture.reads==0);
+    bn_transformer_gpu_mark_decode_ssm_pending(&model,session);
+    assert(bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(session)));
+    fixture.fail_read=2;
+    assert(bn_transformer_gpu_prefill_ssm_readback_backend_run(&model,session)==-1);
+    assert(fixture.reads==2);
+    assert(bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(session)));
+    fixture.fail_read=0; fixture.reads=0;
+    assert(bn_transformer_gpu_prefill_ssm_readback_backend_run(&model,session)==0);
+    assert(fixture.reads==2);
+    assert(!bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(session)));
+    for(size_t i=0;i<fixture.state_values;i++)assert(session->state.ssm_state[i]==(float)i*0.25f);
+    for(size_t i=0;i<fixture.conv_values;i++)assert(session->state.ssm_conv_state[i]==-(float)i*0.5f);
+    assert(bn_transformer_gpu_prefill_ssm_readback_backend_run(&model,session)==0);
+    assert(fixture.reads==2); /* Host-only chunks do not repeat the transfer. */
+    bn_transformer_gpu_mark_decode_ssm_pending(&model,session);
+    bn_transformer_gpu_mark_host_ssm_current(session);
+    assert(!bn_backend_session_gpu_decode_ssm_pending(bn_session_backend(session)));
+    bn_session_free(session,NULL);
+    bn_backend_model_bind_gpu(bn_model_backend(&model),NULL);
+    bn_model_free(&model);
+    printf("PASSED\n");
+}
+
+#include "glm_anatomy_checks.h"
+
 int main(void) {
+    test_recurrent_decode_prefill_readback();
+    test_moe_shared_math_contract();
+    test_moe_weighted_sum_contract();
+    test_nonflash_attention_dispatch_contract();
+    test_router_backend_normalization_contract();
+    test_attention_projection_contract();
+    test_hyper_projection_contract();
+    test_native_logits_projection_contract();
     test_greedy_token_state_preparation();
     test_prefill_expert_batch_geometry();
     test_prefill_logical_projection_rows();
@@ -10193,6 +10766,7 @@ int main(void) {
     test_scaled_residual_rounding();
     test_softmax();
     test_runtime_softmax();
+    test_softmax_avx512_tails();
     test_rope();
     test_fp16_embed();
     test_fast_silu();
@@ -10205,6 +10779,7 @@ int main(void) {
     test_gpu_op_kind_mapping();
     test_gpu_staged_value_normalization();
     test_model_arch_registry();
+    test_glm_model_anatomy();
     test_layer_shape_planning();
     test_block_planning();
     test_batched_attn_padded_alias();

@@ -1,0 +1,1794 @@
+{
+  "status": "Qualified component extension; full goal ACTIVE and incomplete",
+  "component": "DeepSeek V4.1 Flash1017 whole-model CUDA original index selection across top512 followed by greedy decode",
+  "parent": "docs/deepseek-v41-1017-native-forward-heavy.json",
+  "runtime_changes": false,
+  "implementation": "test/reference_native_forward_index.py",
+  "reference": {
+    "method": "Pinned prior whole-model source graph and preserved original grouped-layer initialization; original learned router, fused experts and reconstructed heavy experts with unchanged projection AST/full B-M grouping/f16acc0, fixed-K gather and shared FFN; actual checkpoint selected expert components and all preceding activations; original source head with full-R or last-only M1 geometry. No candidate code or candidate expected values. Original _indexer_topk AST with live checkpoint projections, original RoPE/Triton score kernels and top-k packer, per-query causal masking, source256/finaltail16 slabs and shared-reader rules.",
+    "profile": "Explicit Diffbot INT4 BF16 row lookup -> Exllama F16 Engram execution adapter, not original Diffbot whole-model equivalence",
+    "blocks": 240,
+    "grouped_blocks": 40,
+    "frames": [
+      {
+        "name": "prefill513",
+        "tokens": 513,
+        "position": 0,
+        "reset": true,
+        "generated": false,
+        "argmax_all": 2152,
+        "argmax_last": 2152
+      },
+      {
+        "name": "greedy-0",
+        "tokens": 1,
+        "position": 513,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 1156,
+        "argmax_last": 1156
+      },
+      {
+        "name": "greedy-1",
+        "tokens": 1,
+        "position": 514,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 223,
+        "argmax_last": 223
+      },
+      {
+        "name": "greedy-2",
+        "tokens": 1,
+        "position": 515,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 748,
+        "argmax_last": 748
+      },
+      {
+        "name": "greedy-3",
+        "tokens": 1,
+        "position": 516,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 11216,
+        "argmax_last": 11216
+      },
+      {
+        "name": "greedy-4",
+        "tokens": 1,
+        "position": 517,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 201,
+        "argmax_last": 201
+      }
+    ],
+    "context_max": 518,
+    "expert_tiles": [
+      16,
+      32,
+      64
+    ],
+    "max_rows_per_expert": 512,
+    "hc": "Original F32 HC fn path for prefill513 and F16 HC fn for greedy R1; same carried-pre ordering",
+    "heavy_reconstruction": true,
+    "libraries": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13": "25cde432108543626df85d887c730bf2cab96803ca16f9654e4abc8d2b45833e",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublasLt.so.13": "1489aeb75d55ee55782798343ac66f57771d561cc1fe1e0491568deefa0e6515",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20": "34e7a85fe998f33cff4e66968eb32b86ae973e10a66fc62e9ddb58d37763a1ff",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20": "b43f57b2185afdc10537b8422177edc7c1436f98cced0d2dc216b5acf9eeb00c"
+    },
+    "boundaries": {
+      "sliding_window": 128,
+      "page_source_tokens": 256,
+      "physical_swa_ring_rows": 768,
+      "source_pool_tokens": 1024,
+      "physical_swa_wrap": false,
+      "indexed_selection": true
+    },
+    "indexed": {
+      "scope": "Actual 40-layer prefill513 and five self-fed greedy steps with original live index projections, scoring, top512 packing and shared readers; context518; heavy experts/f16acc0; no candidate two-level selection or physical SWA ring wrap",
+      "heavy_parent_sha256": "b2ec65e2c1fa78fb45cfe80019f0eff5d2e2bc20971ebdd08bf7dd3ab4eb2254",
+      "producer_sha256": "1f3101297f420318ba7cc2da48a7d88f43f309a867dc5bca8f5f11ce9c1d5cad",
+      "context": 518,
+      "steps": [
+        {
+          "tag": "index.p0.r513.l20",
+          "layer": 20,
+          "source": 20,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 0,
+              "rows": 256,
+              "entries": 513,
+              "scores": "index.p0.r513.l20.p0.scores"
+            },
+            {
+              "position": 256,
+              "rows": 257,
+              "entries": 513,
+              "scores": "index.p0.r513.l20.p256.scores"
+            }
+          ],
+          "indices": "index.p0.r513.l20.indices",
+          "queries": "index.p0.r513.l20.queries",
+          "weights": "index.p0.r513.l20.weights"
+        },
+        {
+          "tag": "index.p0.r513.l21",
+          "layer": 21,
+          "source": 20,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l22",
+          "layer": 22,
+          "source": 20,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l23",
+          "layer": 23,
+          "source": 20,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l24",
+          "layer": 24,
+          "source": 24,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 0,
+              "rows": 256,
+              "entries": 513,
+              "scores": "index.p0.r513.l24.p0.scores"
+            },
+            {
+              "position": 256,
+              "rows": 257,
+              "entries": 513,
+              "scores": "index.p0.r513.l24.p256.scores"
+            }
+          ],
+          "indices": "index.p0.r513.l24.indices",
+          "queries": "index.p0.r513.l24.queries",
+          "weights": "index.p0.r513.l24.weights"
+        },
+        {
+          "tag": "index.p0.r513.l25",
+          "layer": 25,
+          "source": 24,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l26",
+          "layer": 26,
+          "source": 24,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l27",
+          "layer": 27,
+          "source": 24,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l28",
+          "layer": 28,
+          "source": 28,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 0,
+              "rows": 256,
+              "entries": 513,
+              "scores": "index.p0.r513.l28.p0.scores"
+            },
+            {
+              "position": 256,
+              "rows": 257,
+              "entries": 513,
+              "scores": "index.p0.r513.l28.p256.scores"
+            }
+          ],
+          "indices": "index.p0.r513.l28.indices",
+          "queries": "index.p0.r513.l28.queries",
+          "weights": "index.p0.r513.l28.weights"
+        },
+        {
+          "tag": "index.p0.r513.l29",
+          "layer": 29,
+          "source": 28,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l30",
+          "layer": 30,
+          "source": 28,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l31",
+          "layer": 31,
+          "source": 28,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l32",
+          "layer": 32,
+          "source": 32,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 0,
+              "rows": 256,
+              "entries": 513,
+              "scores": "index.p0.r513.l32.p0.scores"
+            },
+            {
+              "position": 256,
+              "rows": 257,
+              "entries": 513,
+              "scores": "index.p0.r513.l32.p256.scores"
+            }
+          ],
+          "indices": "index.p0.r513.l32.indices",
+          "queries": "index.p0.r513.l32.queries",
+          "weights": "index.p0.r513.l32.weights"
+        },
+        {
+          "tag": "index.p0.r513.l33",
+          "layer": 33,
+          "source": 32,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l34",
+          "layer": 34,
+          "source": 32,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l35",
+          "layer": 35,
+          "source": 32,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l36",
+          "layer": 36,
+          "source": 36,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 0,
+              "rows": 256,
+              "entries": 513,
+              "scores": "index.p0.r513.l36.p0.scores"
+            },
+            {
+              "position": 256,
+              "rows": 257,
+              "entries": 513,
+              "scores": "index.p0.r513.l36.p256.scores"
+            }
+          ],
+          "indices": "index.p0.r513.l36.indices",
+          "queries": "index.p0.r513.l36.queries",
+          "weights": "index.p0.r513.l36.weights"
+        },
+        {
+          "tag": "index.p0.r513.l37",
+          "layer": 37,
+          "source": 36,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l38",
+          "layer": 38,
+          "source": 36,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p0.r513.l39",
+          "layer": 39,
+          "source": 36,
+          "owner": 20,
+          "position": 0,
+          "rows": 513,
+          "entries": 513,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l20",
+          "layer": 20,
+          "source": 20,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 513,
+              "rows": 1,
+              "entries": 514,
+              "scores": "index.p513.r1.l20.p513.scores"
+            }
+          ],
+          "indices": "index.p513.r1.l20.indices",
+          "queries": "index.p513.r1.l20.queries",
+          "weights": "index.p513.r1.l20.weights"
+        },
+        {
+          "tag": "index.p513.r1.l21",
+          "layer": 21,
+          "source": 20,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l22",
+          "layer": 22,
+          "source": 20,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l23",
+          "layer": 23,
+          "source": 20,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l24",
+          "layer": 24,
+          "source": 24,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 513,
+              "rows": 1,
+              "entries": 514,
+              "scores": "index.p513.r1.l24.p513.scores"
+            }
+          ],
+          "indices": "index.p513.r1.l24.indices",
+          "queries": "index.p513.r1.l24.queries",
+          "weights": "index.p513.r1.l24.weights"
+        },
+        {
+          "tag": "index.p513.r1.l25",
+          "layer": 25,
+          "source": 24,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l26",
+          "layer": 26,
+          "source": 24,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l27",
+          "layer": 27,
+          "source": 24,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l28",
+          "layer": 28,
+          "source": 28,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 513,
+              "rows": 1,
+              "entries": 514,
+              "scores": "index.p513.r1.l28.p513.scores"
+            }
+          ],
+          "indices": "index.p513.r1.l28.indices",
+          "queries": "index.p513.r1.l28.queries",
+          "weights": "index.p513.r1.l28.weights"
+        },
+        {
+          "tag": "index.p513.r1.l29",
+          "layer": 29,
+          "source": 28,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l30",
+          "layer": 30,
+          "source": 28,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l31",
+          "layer": 31,
+          "source": 28,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l32",
+          "layer": 32,
+          "source": 32,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 513,
+              "rows": 1,
+              "entries": 514,
+              "scores": "index.p513.r1.l32.p513.scores"
+            }
+          ],
+          "indices": "index.p513.r1.l32.indices",
+          "queries": "index.p513.r1.l32.queries",
+          "weights": "index.p513.r1.l32.weights"
+        },
+        {
+          "tag": "index.p513.r1.l33",
+          "layer": 33,
+          "source": 32,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l34",
+          "layer": 34,
+          "source": 32,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l35",
+          "layer": 35,
+          "source": 32,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l36",
+          "layer": 36,
+          "source": 36,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 513,
+              "rows": 1,
+              "entries": 514,
+              "scores": "index.p513.r1.l36.p513.scores"
+            }
+          ],
+          "indices": "index.p513.r1.l36.indices",
+          "queries": "index.p513.r1.l36.queries",
+          "weights": "index.p513.r1.l36.weights"
+        },
+        {
+          "tag": "index.p513.r1.l37",
+          "layer": 37,
+          "source": 36,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l38",
+          "layer": 38,
+          "source": 36,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p513.r1.l39",
+          "layer": 39,
+          "source": 36,
+          "owner": 20,
+          "position": 513,
+          "rows": 1,
+          "entries": 514,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l20",
+          "layer": 20,
+          "source": 20,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 514,
+              "rows": 1,
+              "entries": 515,
+              "scores": "index.p514.r1.l20.p514.scores"
+            }
+          ],
+          "indices": "index.p514.r1.l20.indices",
+          "queries": "index.p514.r1.l20.queries",
+          "weights": "index.p514.r1.l20.weights"
+        },
+        {
+          "tag": "index.p514.r1.l21",
+          "layer": 21,
+          "source": 20,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l22",
+          "layer": 22,
+          "source": 20,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l23",
+          "layer": 23,
+          "source": 20,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l24",
+          "layer": 24,
+          "source": 24,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 514,
+              "rows": 1,
+              "entries": 515,
+              "scores": "index.p514.r1.l24.p514.scores"
+            }
+          ],
+          "indices": "index.p514.r1.l24.indices",
+          "queries": "index.p514.r1.l24.queries",
+          "weights": "index.p514.r1.l24.weights"
+        },
+        {
+          "tag": "index.p514.r1.l25",
+          "layer": 25,
+          "source": 24,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l26",
+          "layer": 26,
+          "source": 24,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l27",
+          "layer": 27,
+          "source": 24,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l28",
+          "layer": 28,
+          "source": 28,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 514,
+              "rows": 1,
+              "entries": 515,
+              "scores": "index.p514.r1.l28.p514.scores"
+            }
+          ],
+          "indices": "index.p514.r1.l28.indices",
+          "queries": "index.p514.r1.l28.queries",
+          "weights": "index.p514.r1.l28.weights"
+        },
+        {
+          "tag": "index.p514.r1.l29",
+          "layer": 29,
+          "source": 28,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l30",
+          "layer": 30,
+          "source": 28,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l31",
+          "layer": 31,
+          "source": 28,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l32",
+          "layer": 32,
+          "source": 32,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 514,
+              "rows": 1,
+              "entries": 515,
+              "scores": "index.p514.r1.l32.p514.scores"
+            }
+          ],
+          "indices": "index.p514.r1.l32.indices",
+          "queries": "index.p514.r1.l32.queries",
+          "weights": "index.p514.r1.l32.weights"
+        },
+        {
+          "tag": "index.p514.r1.l33",
+          "layer": 33,
+          "source": 32,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l34",
+          "layer": 34,
+          "source": 32,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l35",
+          "layer": 35,
+          "source": 32,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l36",
+          "layer": 36,
+          "source": 36,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 514,
+              "rows": 1,
+              "entries": 515,
+              "scores": "index.p514.r1.l36.p514.scores"
+            }
+          ],
+          "indices": "index.p514.r1.l36.indices",
+          "queries": "index.p514.r1.l36.queries",
+          "weights": "index.p514.r1.l36.weights"
+        },
+        {
+          "tag": "index.p514.r1.l37",
+          "layer": 37,
+          "source": 36,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l38",
+          "layer": 38,
+          "source": 36,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p514.r1.l39",
+          "layer": 39,
+          "source": 36,
+          "owner": 20,
+          "position": 514,
+          "rows": 1,
+          "entries": 515,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l20",
+          "layer": 20,
+          "source": 20,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 515,
+              "rows": 1,
+              "entries": 516,
+              "scores": "index.p515.r1.l20.p515.scores"
+            }
+          ],
+          "indices": "index.p515.r1.l20.indices",
+          "queries": "index.p515.r1.l20.queries",
+          "weights": "index.p515.r1.l20.weights"
+        },
+        {
+          "tag": "index.p515.r1.l21",
+          "layer": 21,
+          "source": 20,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l22",
+          "layer": 22,
+          "source": 20,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l23",
+          "layer": 23,
+          "source": 20,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l24",
+          "layer": 24,
+          "source": 24,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 515,
+              "rows": 1,
+              "entries": 516,
+              "scores": "index.p515.r1.l24.p515.scores"
+            }
+          ],
+          "indices": "index.p515.r1.l24.indices",
+          "queries": "index.p515.r1.l24.queries",
+          "weights": "index.p515.r1.l24.weights"
+        },
+        {
+          "tag": "index.p515.r1.l25",
+          "layer": 25,
+          "source": 24,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l26",
+          "layer": 26,
+          "source": 24,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l27",
+          "layer": 27,
+          "source": 24,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l28",
+          "layer": 28,
+          "source": 28,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 515,
+              "rows": 1,
+              "entries": 516,
+              "scores": "index.p515.r1.l28.p515.scores"
+            }
+          ],
+          "indices": "index.p515.r1.l28.indices",
+          "queries": "index.p515.r1.l28.queries",
+          "weights": "index.p515.r1.l28.weights"
+        },
+        {
+          "tag": "index.p515.r1.l29",
+          "layer": 29,
+          "source": 28,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l30",
+          "layer": 30,
+          "source": 28,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l31",
+          "layer": 31,
+          "source": 28,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l32",
+          "layer": 32,
+          "source": 32,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 515,
+              "rows": 1,
+              "entries": 516,
+              "scores": "index.p515.r1.l32.p515.scores"
+            }
+          ],
+          "indices": "index.p515.r1.l32.indices",
+          "queries": "index.p515.r1.l32.queries",
+          "weights": "index.p515.r1.l32.weights"
+        },
+        {
+          "tag": "index.p515.r1.l33",
+          "layer": 33,
+          "source": 32,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l34",
+          "layer": 34,
+          "source": 32,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l35",
+          "layer": 35,
+          "source": 32,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l36",
+          "layer": 36,
+          "source": 36,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 515,
+              "rows": 1,
+              "entries": 516,
+              "scores": "index.p515.r1.l36.p515.scores"
+            }
+          ],
+          "indices": "index.p515.r1.l36.indices",
+          "queries": "index.p515.r1.l36.queries",
+          "weights": "index.p515.r1.l36.weights"
+        },
+        {
+          "tag": "index.p515.r1.l37",
+          "layer": 37,
+          "source": 36,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l38",
+          "layer": 38,
+          "source": 36,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p515.r1.l39",
+          "layer": 39,
+          "source": 36,
+          "owner": 20,
+          "position": 515,
+          "rows": 1,
+          "entries": 516,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l20",
+          "layer": 20,
+          "source": 20,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 516,
+              "rows": 1,
+              "entries": 517,
+              "scores": "index.p516.r1.l20.p516.scores"
+            }
+          ],
+          "indices": "index.p516.r1.l20.indices",
+          "queries": "index.p516.r1.l20.queries",
+          "weights": "index.p516.r1.l20.weights"
+        },
+        {
+          "tag": "index.p516.r1.l21",
+          "layer": 21,
+          "source": 20,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l22",
+          "layer": 22,
+          "source": 20,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l23",
+          "layer": 23,
+          "source": 20,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l24",
+          "layer": 24,
+          "source": 24,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 516,
+              "rows": 1,
+              "entries": 517,
+              "scores": "index.p516.r1.l24.p516.scores"
+            }
+          ],
+          "indices": "index.p516.r1.l24.indices",
+          "queries": "index.p516.r1.l24.queries",
+          "weights": "index.p516.r1.l24.weights"
+        },
+        {
+          "tag": "index.p516.r1.l25",
+          "layer": 25,
+          "source": 24,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l26",
+          "layer": 26,
+          "source": 24,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l27",
+          "layer": 27,
+          "source": 24,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l28",
+          "layer": 28,
+          "source": 28,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 516,
+              "rows": 1,
+              "entries": 517,
+              "scores": "index.p516.r1.l28.p516.scores"
+            }
+          ],
+          "indices": "index.p516.r1.l28.indices",
+          "queries": "index.p516.r1.l28.queries",
+          "weights": "index.p516.r1.l28.weights"
+        },
+        {
+          "tag": "index.p516.r1.l29",
+          "layer": 29,
+          "source": 28,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l30",
+          "layer": 30,
+          "source": 28,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l31",
+          "layer": 31,
+          "source": 28,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l32",
+          "layer": 32,
+          "source": 32,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 516,
+              "rows": 1,
+              "entries": 517,
+              "scores": "index.p516.r1.l32.p516.scores"
+            }
+          ],
+          "indices": "index.p516.r1.l32.indices",
+          "queries": "index.p516.r1.l32.queries",
+          "weights": "index.p516.r1.l32.weights"
+        },
+        {
+          "tag": "index.p516.r1.l33",
+          "layer": 33,
+          "source": 32,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l34",
+          "layer": 34,
+          "source": 32,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l35",
+          "layer": 35,
+          "source": 32,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l36",
+          "layer": 36,
+          "source": 36,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 516,
+              "rows": 1,
+              "entries": 517,
+              "scores": "index.p516.r1.l36.p516.scores"
+            }
+          ],
+          "indices": "index.p516.r1.l36.indices",
+          "queries": "index.p516.r1.l36.queries",
+          "weights": "index.p516.r1.l36.weights"
+        },
+        {
+          "tag": "index.p516.r1.l37",
+          "layer": 37,
+          "source": 36,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l38",
+          "layer": 38,
+          "source": 36,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p516.r1.l39",
+          "layer": 39,
+          "source": 36,
+          "owner": 20,
+          "position": 516,
+          "rows": 1,
+          "entries": 517,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l20",
+          "layer": 20,
+          "source": 20,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 517,
+              "rows": 1,
+              "entries": 518,
+              "scores": "index.p517.r1.l20.p517.scores"
+            }
+          ],
+          "indices": "index.p517.r1.l20.indices",
+          "queries": "index.p517.r1.l20.queries",
+          "weights": "index.p517.r1.l20.weights"
+        },
+        {
+          "tag": "index.p517.r1.l21",
+          "layer": 21,
+          "source": 20,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l22",
+          "layer": 22,
+          "source": 20,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l23",
+          "layer": 23,
+          "source": 20,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l24",
+          "layer": 24,
+          "source": 24,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 517,
+              "rows": 1,
+              "entries": 518,
+              "scores": "index.p517.r1.l24.p517.scores"
+            }
+          ],
+          "indices": "index.p517.r1.l24.indices",
+          "queries": "index.p517.r1.l24.queries",
+          "weights": "index.p517.r1.l24.weights"
+        },
+        {
+          "tag": "index.p517.r1.l25",
+          "layer": 25,
+          "source": 24,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l26",
+          "layer": 26,
+          "source": 24,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l27",
+          "layer": 27,
+          "source": 24,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l28",
+          "layer": 28,
+          "source": 28,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 517,
+              "rows": 1,
+              "entries": 518,
+              "scores": "index.p517.r1.l28.p517.scores"
+            }
+          ],
+          "indices": "index.p517.r1.l28.indices",
+          "queries": "index.p517.r1.l28.queries",
+          "weights": "index.p517.r1.l28.weights"
+        },
+        {
+          "tag": "index.p517.r1.l29",
+          "layer": 29,
+          "source": 28,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l30",
+          "layer": 30,
+          "source": 28,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l31",
+          "layer": 31,
+          "source": 28,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l32",
+          "layer": 32,
+          "source": 32,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 517,
+              "rows": 1,
+              "entries": 518,
+              "scores": "index.p517.r1.l32.p517.scores"
+            }
+          ],
+          "indices": "index.p517.r1.l32.indices",
+          "queries": "index.p517.r1.l32.queries",
+          "weights": "index.p517.r1.l32.weights"
+        },
+        {
+          "tag": "index.p517.r1.l33",
+          "layer": 33,
+          "source": 32,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l34",
+          "layer": 34,
+          "source": 32,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l35",
+          "layer": 35,
+          "source": 32,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l36",
+          "layer": 36,
+          "source": 36,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": false,
+          "slabs": [
+            {
+              "position": 517,
+              "rows": 1,
+              "entries": 518,
+              "scores": "index.p517.r1.l36.p517.scores"
+            }
+          ],
+          "indices": "index.p517.r1.l36.indices",
+          "queries": "index.p517.r1.l36.queries",
+          "weights": "index.p517.r1.l36.weights"
+        },
+        {
+          "tag": "index.p517.r1.l37",
+          "layer": 37,
+          "source": 36,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l38",
+          "layer": 38,
+          "source": 36,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        },
+        {
+          "tag": "index.p517.r1.l39",
+          "layer": 39,
+          "source": 36,
+          "owner": 20,
+          "position": 517,
+          "rows": 1,
+          "entries": 518,
+          "borrowed": true
+        }
+      ],
+      "index_capture_sha256": "d28de46631b6eb3ae4a7e9f65de26c8a4af3085fa87e0907f6893dfe7fb4eadb",
+      "sources": {
+        "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/dsv4.py": "ed8573473ff2284fc97c0dba6f6eebf627612219719ac72ee594c90c451759ff",
+        "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/attention_fn/dsa_triton.py": "5ce9b120f1ab339bb2035d1a7af9363d3aae7ba264ab25f1bac7c154cc3521b6"
+      },
+      "binaries": {
+        "/tmp/bitnet-goal-native-index-topk/source.so": "4d67f4b1bee118b6ec3f7b01d01ea0cbdec1b3bab29f0d687c16113ed0553e0e",
+        "/tmp/bitnet-goal-native-attention-qkv/reference.so": "13da6c34769cfece929d4b7ee85cbda2084b5d000a615169a02788ddc0b3b257"
+      },
+      "heavy_layers": 33,
+      "source_swa_window": 128,
+      "source_ring_rows": 768,
+      "source_pool_tokens": 1024
+    },
+    "producing_steps": 30,
+    "borrowed_steps": 90,
+    "heavy_groups": 56
+  },
+  "qualification": {
+    "artifact": "/tmp/bitnet-goal-native-forward-index/qualification.json",
+    "checks": {
+      "normal": 0,
+      "busy": 0,
+      "asan": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "qwen27-compat": 0
+    },
+    "records": {
+      "normal": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 141690880
+      },
+      "busy": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 141690880
+      },
+      "asan": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 141690880
+      },
+      "memcheck": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 141690880
+      },
+      "initcheck": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 141690880
+      }
+    },
+    "normal_method": "Protected product objects, normal backend callbacks; no execution spies or added intermediate readbacks. Source comparisons only after whole forward returns.",
+    "busy_method": "Placement-only fault after layer32 index selection and attention, inside second heavy group B2/M369 (expert184 after240 leased) after B1/M473 expert70 completed. Assert live_leases1 at fault and0 after BUSY; host logits/output/pos unchanged and historyuncommitted. Two retries finish source-exact. Count-only index callbacks add no GPU operations or intermediate readbacks; queries60/scores70/topks70 equal independent source totals, proving retry/cache sharing add no repeated index work.",
+    "sanitizers": "Clang18 runtime C ASAN/UBSAN with leak detection (existing CPU expert-kernel and CUDA objects retained); CUDA memcheck full leak check and initcheck; all zero errors/leaks",
+    "source_replay": "Immutable byte-for-byte source replay, including every saved layer boundary and final logits, then independent IEEE half->float host replay",
+    "frozen_sources": 851,
+    "reference_files": 22207,
+    "zero_warnings": true,
+    "user_binaries_preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    },
+    "rebuilt_products": [
+      {
+        "file": "/home/mark/artalis.io/src/bitnet.c/bitnet",
+        "previous": "8f2c9e8b764621d703858a2266c83981d7cd86df51603217c1653692dc046515",
+        "current": "11f79bcb2e4489821a6b06a9068540f599094b23d044535141e9cd8715b2701a"
+      },
+      {
+        "file": "/home/mark/artalis.io/src/bitnet.c/test_cuda_backend",
+        "previous": "898cdec44a5d176e4825c4c0af90d4083a808bccf12ee8307fefd243b98b50ab",
+        "current": "6ceb2d07e5b6bc8e3724aad08e35b12642bfc578da48bd456287c2a4d35c70aa"
+      }
+    ],
+    "direct_index_data": {
+      "normal_exit": 0,
+      "zero_warnings": true,
+      "record": {
+        "queries": 60,
+        "scores": 70,
+        "topks": 70,
+        "attentions": 240,
+        "checks": 500,
+        "exact_bytes": 101124260
+      },
+      "published_record": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 141690880
+      },
+      "method": "Separate product-linked diagnostic probe; original compute callbacks plus focused readbacks. Query/weights compare after projection+RoPE; scores compare only logical columns (source and native padding differ); packed indices compare per slab; all indexed attention consumers compare source producer arrays, including borrowed readers. Added completion fences are diagnostic, not production ordering/performance evidence. Frozen main normal graph already qualified without intermediate readbacks.",
+      "unchanged_main_sources_and_references": true,
+      "artifact_hashes": {
+        "/tmp/bitnet-goal-native-forward-index/diag-prefix.h": "dc215c888ea3a5e4585f922cac776cf6d0aa4932a934095ca9dbbb1d4169bfac",
+        "/tmp/bitnet-goal-native-forward-index/diag-main.h": "4e1c7cf6737e6e12f53d9c5d66c4edd1a1d9cd0a947a3474bb5620cebd738d88",
+        "/tmp/bitnet-goal-native-forward-index/diag-probe.c": "332d55b35f571f0c36625653f90231a87d6a55972a30c14f5311c3e6a4e390ed",
+        "/tmp/bitnet-goal-native-forward-index/diag-probe": "87f38db0637624dbf7a0802492396f5c4a9c5b9373ddffe0d16f10b5dfc74081",
+        "/tmp/bitnet-goal-native-forward-index/build-diag.py": "001f22ebdb5061149d2506a465c70cf4da8964e8bdd84861066a8521dca31e63",
+        "/tmp/bitnet-goal-native-forward-index/diag-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "/tmp/bitnet-goal-native-forward-index/diag-normal.log": "aeb1d0e6f75942fe992f6fd1e4228acc83a3f13246a560d9fd63ca20f01c908c",
+        "/tmp/bitnet-goal-native-forward-index/audit-diag.py": "141affeaac96a0b012d3829236f78137fbd5823ae818dbdb132910036075323a"
+      }
+    }
+  },
+  "ownership": "Existing immutable BnModel/backend weights and bounded expert store; two independent BnSession requests, explicit planned component budgets and transactional final publication. Existing CPU history and forward result lifetime rules apply.",
+  "performance": {
+    "claim": "No performance-parity or cold/warm benchmark claim",
+    "fixture": "fused_window1, f16acc0, temporary expert admission0; grouped batched math, existing per-projection upload/allocation/fence overhead remains",
+    "source_pages": "OS page-cache warmth uncontrolled"
+  },
+  "remaining": [
+    "Long indexed attention beyond this518-token boundary, candidate two-level selection beyond16384entries, larger cohorts/f16acc1 qualification",
+    "Longer contexts beyond this518-token case, physical SWA ring wrap, pool/table growth, two-level candidates and long resumed prefill/decode",
+    "Native CPU/CUDA model coherence, native text encoder/stream decoder/chat/CLI admission, and compute-state rewind or reset/replay",
+    "Phase-specific bounded RAM/VRAM placement and measured cold/warm/miss-byte/transfer-stall accounting",
+    "Remove measured per-projection allocation/upload/synchronization overhead; qualify resident batched execution and within5% matched vLLM prefill/decode",
+    "Continuous batching, chunked serving and KV scheduling, concurrent throughput/tails, remaining named models and CPU SIMD/secondary Metal scope"
+  ],
+  "source_sha256": {
+    "test/reference_native_forward_index.py": "1f3101297f420318ba7cc2da48a7d88f43f309a867dc5bca8f5f11ce9c1d5cad"
+  },
+  "processes": "All qualification jobs terminal before document publication; no commits or subagents"
+}

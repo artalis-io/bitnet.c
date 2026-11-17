@@ -1,0 +1,85 @@
+{
+  "milestone": "Native Engram canonical keys and immutable compressed token map",
+  "status": "qualified component; full goal remains active",
+  "parent": "docs/deepseek-v41-1017-native-vocab.json",
+  "implementation": {
+    "profile": "Architecture-selected V4.1 tokenizer map policy exposed through model adapters. Generic Unicode tables, no model-specific precomputed map.",
+    "normalization": "Unicode9 compatibility decomposition and removal of all Mark categories; Unicode17 per-character lowercase; source ASCII whitespace collapse, Unicode whitespace trim and literal U+E000 replacement order. Replacement-containing decoded tokens use raw pieces; empty normalization uses original decoded bytes. Keys are byte-counted and may contain NUL.",
+    "compression": "Token-ID ascending first-seen key order, counted-byte hashing and comparison. One owned, budgeted builder allocation; independent immutable model copy bound before backend publication.",
+    "failure": "Allocation/budget/configuration failures preserve empty handles. Raw-token mapping validates the entire batch before writes; invalid IDs and prohibited aliases reject atomically. No implicit identity fallback.",
+    "ownership": "Builder owns its keys and IDs after vocabulary/document teardown. Model owns copied IDs after builder teardown. No model dependency on tokenizer implementation."
+  },
+  "memory": {
+    "actual_vocabulary": 129280,
+    "compressed_vocabulary": 99092,
+    "mapped_pad": 2,
+    "builder_host_bytes": 3419072,
+    "builder_key_bytes": 819055,
+    "model_owned_bytes": 517120,
+    "scope": "JSON, vocabulary metadata, allocator overhead, row cache, backend and session storage have separate budgets."
+  },
+  "independent_reference": {
+    "source_architecture_sha256": "18e0dc275d300e68ee09e51d890a029907dfd32a2e1c13a53f1b2cc0a3a48aff",
+    "method": "Unchanged pinned source normalizer and complete token-map function executed with Rust tokenizers0.23.3. Every real canonical key and compressed ID compared. Unicode tables generated separately from hash-pinned official UCD files.",
+    "unicode_cases": 2224144,
+    "unicode_normalized_bytes": 14435820,
+    "unicode_coverage": "Every valid scalar alone and in a context string, plus curated cases. Separate exhaustive diagnostics establish Unicode9 decomposition/mark behavior and Unicode17 lowercase.",
+    "immutable_replay": "Table and Rust capture replay byte-identically; altered source/data rejected and conflicting reference payload preserved.",
+    "reference": "/tmp/bitnet-goal-native-tokenmap/reference/reference.json"
+  },
+  "validation": {
+    "baseline": "Passed before edits",
+    "clean_product_build": "zero warnings",
+    "standard_suite": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "probe_builds": "zero warnings",
+    "frozen_sources": 831,
+    "checks": {
+      "tokenmap-unit": 0,
+      "asan-tokenmap-unit": 0,
+      "model-map-unit": 0,
+      "asan-model-map-unit": 0,
+      "map-probe": 0,
+      "asan-map-probe": 0,
+      "unicode-probe": 0,
+      "asan-unicode-probe": 0,
+      "normal-probe": 0,
+      "asan-probe": 0,
+      "memcheck-probe": 0,
+      "initcheck-probe": 0,
+      "bounded-row-race": 0,
+      "table-replay": 0,
+      "reference-replay": 0,
+      "negative-reference": 0,
+      "qwen27-compat": 0
+    },
+    "raw_mapping": {
+      "successful_batches": 112,
+      "atomic_rejections": 112,
+      "tokens": 13864
+    },
+    "hash": {
+      "source_cases": 108,
+      "successful_windows": 15660,
+      "exact_u64_words": 2716416
+    },
+    "cuda_rows": {
+      "new_coupled_submits": 208,
+      "new_exact_bf16_bytes": 13369344,
+      "total_checked_submits": 280,
+      "total_exact_bf16_bytes": 17571840,
+      "sessions": 2
+    },
+    "hot_linked_heap_calls": 0,
+    "sanitizers": "ASAN/UBSAN on new C paths; CUDA memcheck including full leaks and initcheck pass. Racecheck limited to bounded unchanged row decoder. Legacy moe_cpu_kernels and CUDA translation units use normal builds.",
+    "qwen27": "Fresh strict CUDA comparison: 192/192 sampled token IDs, 8/8 first IDs, zero count mismatches; 147/147 word prefix matches.",
+    "integrity": "Source/reference/probe/binary hashes checked throughout; four user binaries preserved."
+  },
+  "qualification_artifacts": "/tmp/bitnet-goal-native-tokenmap",
+  "not_claimed": [
+    "Native text encoding or streaming multi-token decoding",
+    "Request-local mapped history transactions, reset, rewind or resumed full-model execution",
+    "PLE/HCA/full forward/generation admission",
+    "vLLM parity, serving concurrency or new ARM/Metal coverage"
+  ]
+}

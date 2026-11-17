@@ -1,0 +1,151 @@
+{
+  "source_sha256": "2cbb55a3f85bd2834c618f360bcf827462b042d78f5aa8b76d863d8dbcbddca9",
+  "image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+  "device": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+  "multiprocessors": 188,
+  "torch": "2.14.0a0+4fdf77b940.nv26.08",
+  "cuda": "13.4",
+  "source": "Unchanged public flash_attn_varlen_func,fa_version=2,num_splits=0",
+  "generator": "test/reference_cuda_bf16_attention_batch.py",
+  "fixture": "test/cuda_bf16_attention_batch_reference.h",
+  "fixture_sha256": "946a037d680ef2c2572162aea6b9196f9544d8c6c7cef12c18440b551c697b0d",
+  "head_size": 256,
+  "query_heads": 24,
+  "kv_heads": 4,
+  "cases": [
+    {
+      "batch": 1,
+      "seed": 3,
+      "lengths": [
+        2049
+      ],
+      "hashes": [
+        4096548048630701597
+      ],
+      "sha256": "5ec9b94ba372cf47c6667e7dedefbe3ed40c93113c2ecdfd05e67878e4ad35d3"
+    },
+    {
+      "batch": 2,
+      "seed": 4,
+      "lengths": [
+        2049,
+        2049
+      ],
+      "hashes": [
+        288627989871308349,
+        18331220692330417541
+      ],
+      "sha256": "30f20fb331c9e6cb05b494dd712fb5a229d44926a133d80fea4dac5482709aa6"
+    },
+    {
+      "batch": 4,
+      "seed": 5,
+      "lengths": [
+        129,
+        129,
+        129,
+        129
+      ],
+      "hashes": [
+        18045013326888993289,
+        5131666249559385119,
+        18378863264178043877,
+        16572364822182469369
+      ],
+      "sha256": "bcd56842ed7a708419f2c663de883a7b0f4e6aa3d75bd11d32ec27db088cdd20"
+    },
+    {
+      "batch": 4,
+      "seed": 6,
+      "lengths": [
+        1025,
+        1025,
+        1025,
+        1025
+      ],
+      "hashes": [
+        4443882788462359713,
+        13603478470392507885,
+        3466826774920423157,
+        17034705137671940225
+      ],
+      "sha256": "63a62f3877136d6fb6a315c399d7a4caea2a1df9b8818c8fc00602fce3e67baa"
+    },
+    {
+      "batch": 4,
+      "seed": 7,
+      "lengths": [
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "hashes": [
+        4554111535234025384,
+        16946492341970912482,
+        11268507237302251044,
+        8279451246868475151
+      ],
+      "sha256": "237ebc11ff3992a79f1a6f7c139e10db0dc8af83324d66c340c7f7151bfa7279"
+    },
+    {
+      "batch": 4,
+      "seed": 8,
+      "lengths": [
+        4097,
+        4097,
+        4097,
+        4097
+      ],
+      "hashes": [
+        1373955683866606785,
+        14908495776428507639,
+        8077879215650055207,
+        7423366242096232217
+      ],
+      "sha256": "94449a732290fdf7fe7a7a1c44227680dfd833a206395cd0b0dc72210fff87d6"
+    },
+    {
+      "batch": 4,
+      "seed": 9,
+      "lengths": [
+        65,
+        257,
+        1025,
+        2049
+      ],
+      "hashes": [
+        6378052882579102276,
+        10231947111893457399,
+        17565134096750310162,
+        13578783762136250966
+      ],
+      "sha256": "483790788589d8cdc0221d3bda37aad55b07a8305af8bf690d100e4ad1474d16"
+    },
+    {
+      "batch": 8,
+      "seed": 10,
+      "lengths": [
+        65,
+        129,
+        257,
+        513,
+        1025,
+        2049,
+        4097,
+        2113
+      ],
+      "hashes": [
+        9783413040533749509,
+        886803656231342548,
+        689287750357425829,
+        98421123497463840,
+        375184503888132960,
+        2868205301768054299,
+        7111156090837707680,
+        8521253139433356101
+      ],
+      "sha256": "de56f80af373ebc19afe05333d4b2d149f2548ba84a1bded1fb9d43c932c1c07"
+    }
+  ]
+}

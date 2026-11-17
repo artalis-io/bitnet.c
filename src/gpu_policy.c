@@ -1126,6 +1126,14 @@ int bn_gpu_policy_moe_quant_only_after_cache(int tensor_type,
                                                  native_quant_f16_cache);
 }
 
+int bn_gpu_policy_moe_gathered_prefill_quant_only_enabled(
+    const BnGPUBackend *gpu, int gate_type, int up_type, int down_type) {
+    return bn_gpu_backend_is_cuda(gpu) &&
+           bn_gpu_backend_can_create_quant_only_buffer(gpu) &&
+           bn_quant_format_supports_moe_gathered_kquant(
+               gate_type, up_type, down_type);
+}
+
 int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
                                          int tensor_type) {
     return gpu_policy_backend_caps(gpu)->moe_prefers_quant_only &&
@@ -2246,6 +2254,8 @@ int bn_gpu_policy_cuda_moe_block_prepared_decode_enabled(const BnBackendRuntimeP
 
 int bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(const BnBackendRuntimePolicy *policy, int hidden_dim) {
     return hidden_dim <= 1024 &&
+           bn_backend_runtime_policy_enabled(
+               policy, "BN_CUDA_ENABLE_MOE_NATIVE_QUANT_GATEUP_2ROW") &&
            !gpu_policy_moe_gateup_block_2row_disabled(policy);
 }
 
@@ -2256,7 +2266,15 @@ int bn_gpu_policy_cuda_moe_down_block_4row_enabled(const BnBackendRuntimePolicy 
 
 int bn_gpu_policy_cuda_moe_down_block_2row_enabled(const BnBackendRuntimePolicy *policy, int hidden_dim) {
     return hidden_dim <= 1024 &&
+           bn_backend_runtime_policy_enabled(
+               policy, "BN_CUDA_ENABLE_MOE_NATIVE_QUANT_DOWN_2ROW") &&
            !gpu_policy_moe_down_block_2row_disabled(policy);
+}
+
+int bn_gpu_policy_cuda_native_quant_mma_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(
+        policy, "BN_CUDA_ENABLE_NATIVE_QUANT_MMA");
 }
 
 int bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
@@ -3522,6 +3540,46 @@ int bn_gpu_policy_cuda_prefill_dense_layer_disabled(
     return gpu_policy_cuda_prefill_dense_layer_disabled(policy);
 }
 
+int bn_gpu_policy_cuda_gqa6_prefix_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(policy,
+                                              "BN_CUDA_ENABLE_GQA6_PREFIX");
+}
+
+int bn_gpu_policy_cuda_gdn_decode_order_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(policy, "BN_CUDA_ENABLE_GDN_DECODE_ORDER");
+}
+
+int bn_gpu_policy_cuda_fused_hc_post_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(policy, "BN_CUDA_ENABLE_FUSED_HC_POST");
+}
+
+int bn_gpu_policy_cuda_fused_hc_mean_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(policy, "BN_CUDA_ENABLE_FUSED_HC_MEAN");
+}
+
+int bn_gpu_policy_cuda_dense_prefix_chain_requested(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(policy,
+                                           "BN_CUDA_ENABLE_DENSE_PREFIX_CHAIN");
+}
+
+int bn_gpu_policy_prefill_dense_prefix_chain_enabled(const BnGPUBackend *gpu) {
+    return bn_gpu_backend_is_cuda(gpu) &&
+        bn_gpu_policy_cuda_gqa6_prefix_enabled(&gpu->runtime_policy) &&
+        bn_gpu_policy_cuda_prefill_qk_pair_enabled(&gpu->runtime_policy) &&
+        bn_gpu_policy_cuda_dense_prefix_chain_requested(&gpu->runtime_policy);
+}
+
+int bn_gpu_policy_cuda_prefill_qk_pair_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(policy,
+                                              "BN_CUDA_ENABLE_PREFILL_QK_PAIR");
+}
+
 int bn_gpu_policy_cuda_prefill_dense_debug_enabled(
     const BnBackendRuntimePolicy *policy) {
     return gpu_policy_cuda_prefill_dense_debug_requested(policy);
@@ -4235,6 +4293,12 @@ int bn_gpu_policy_cuda_cublas_cache_max_mb(
     if (max_env && *max_env)
         max_mb = atoi(max_env);
     return max_mb;
+}
+
+int bn_gpu_policy_cuda_weight_pool_enabled(
+    const BnBackendRuntimePolicy *policy) {
+    return bn_backend_runtime_policy_enabled(
+        policy, "BN_CUDA_ENABLE_WEIGHT_POOL");
 }
 
 int bn_gpu_policy_cuda_eager_kquant_aux_cache_enabled(

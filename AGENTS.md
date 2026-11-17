@@ -16,7 +16,9 @@ docs/      — documentation and roadmap
 
 Modules have strict, one-directional dependencies. When modifying a module, only its own files and downstream consumers should be affected. Never introduce circular dependencies.
 
-**Dependency order**: platform -> gguf -> quant -> turboquant -> model_arch -> model -> backend_layout/backend_model -> tokenizer -> moe -> session -> transformer -> sampler -> threadpool -> bn_alloc -> prompt_cache -> generate -> gpu_wgpu/gpu_metal (optional) -> main
+**Dependency order**: platform -> {json, gguf, safetensors} -> quant -> trellis -> turboquant -> model_arch -> model -> backend_layout/backend_model -> tokenizer -> moe -> session -> transformer -> sampler -> threadpool -> bn_alloc -> prompt_cache -> generate_batch_plan -> generate_batch -> generate -> gpu_wgpu/gpu_metal (optional) -> main
+
+`json` owns bounded immutable configuration documents and has no model or backend dependencies. `gguf` and `safetensors` are independent storage readers over `platform`; neither depends on the other. Safetensors dtype tags describe storage, while quant execution remains in the quant registry. `trellis` binds explicit tensor IDs to immutable CPU projection sources; it borrows storage and owns no GPU handles or model-family names.
 
 Architecture ownership rules:
 
@@ -82,7 +84,7 @@ Architecture ownership rules:
 - **Model/Session split**: `BnModel` is shared and immutable after load. `BnSession` holds per-request mutable state. All forward pass and generation functions take both `BnModel *` and `BnSession *`.
 - **Backend state split**: GPU handles and packed/fused backend layouts do not live on `BnQWeight` or `BnLayerWeights`; use `BnBackendModel` and backend session state.
 - **GPU vtable**: `BnGPUBackend` in `include/gpu_backend.h` abstracts GPU compute. wgpu-native lives in `src/gpu_wgpu.c` and is gated by `BN_ENABLE_WEBGPU`; Metal lives in `src/gpu_metal.m` and is gated by `BN_ENABLE_METAL`. `BN_ENABLE_GPU` is a compatibility alias for WebGPU.
-- **Transformer split**: `src/transformer.c` is top-level orchestration. Planning lives in `src/transformer/plan.c`, CPU execution in `src/transformer/cpu.c`, GPU orchestration/emission in `src/transformer/gpu.c` and `src/transformer/gpu_emit.c`, KV/logits/prefill helpers in `src/transformer/{kv,logits,prefill}.c`.
+- **Transformer split**: `src/transformer.c` is top-level orchestration. Planning lives in `src/transformer/plan.c`, CPU execution in `src/transformer/cpu.c`, GPU orchestration/emission in `src/transformer/gpu.c` and `src/transformer/gpu_emit.c`, KV/logits/prefill helpers in `src/transformer/{kv,logits,prefill}.c`. Explicit resident BF16 execution and request state live in `src/transformer/bf16.c`; native Trellis FFN request execution lives in `src/transformer/trellis.c`. Both remain within the transformer module and consume the expert bridge only through its placement API.
 - Platform-specific code gated by `#ifdef __EMSCRIPTEN__`
 
 ## Performance Considerations

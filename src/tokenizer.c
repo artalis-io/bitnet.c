@@ -156,7 +156,7 @@ static unsigned tokenizer_char_flags(uint32_t cp) {
 
 /* Ordered alternatives of letter-based BPE pretokenizers. Byte offsets keep
  * UTF-8 codepoints intact before the byte-to-Unicode BPE mapping. */
-static int tokenizer_piece_end(const char *s, int start, int len, int marks) {
+static int tokenizer_piece_end(const char *s, int start, int len, int marks, int number_group) {
     uint32_t cp, next_cp;
     int next = tokenizer_codepoint(s, start, len, &cp);
     tokenizer_codepoint(s, next, len, &next_cp);
@@ -181,7 +181,14 @@ static int tokenizer_piece_end(const char *s, int start, int len, int marks) {
         }
         return end;
     }
-    if (flags & TOKENIZER_NUMBER) return next;
+    if (flags & TOKENIZER_NUMBER) {
+        for (int n = 1; n < number_group && next < len; n++) {
+            int after = tokenizer_codepoint(s, next, len, &next_cp);
+            if (!(tokenizer_char_flags(next_cp) & TOKENIZER_NUMBER)) break;
+            next = after;
+        }
+        return next;
+    }
     unsigned excluded = word | TOKENIZER_NUMBER | TOKENIZER_SPACE;
     int pos = cp == ' ' ? next : start;
     int end = pos;
@@ -216,6 +223,224 @@ static void tokenizer_add_eog(BnTokenizer *t, int token) {
             return;
     if (t->n_eog < BN_TOKENIZER_MAX_EOG)
         t->eog_ids[t->n_eog++] = token;
+}
+
+#include "tokenizer_nfc_data.h"
+
+static unsigned tokenizer_nfc_ccc(uint32_t cp) {
+    size_t lo = 0, hi = sizeof(tokenizer_nfc_classes) / sizeof(tokenizer_nfc_classes[0]);
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (tokenizer_nfc_classes[mid].cp < cp) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo < sizeof(tokenizer_nfc_classes) / sizeof(tokenizer_nfc_classes[0]) &&
+        tokenizer_nfc_classes[lo].cp == cp ? tokenizer_nfc_classes[lo].ccc : 0;
+}
+
+static uint32_t tokenizer_nfc_compose(uint32_t a, uint32_t b) {
+    /* Hangul composition is algorithmic, including LV + trailing Jamo. */
+    if (a >= 0x1100 && a < 0x1113 && b >= 0x1161 && b < 0x1176)
+        return 0xac00 + ((a - 0x1100) * 21 + b - 0x1161) * 28;
+    if (a >= 0xac00 && a < 0xd7a4 && (a - 0xac00) % 28 == 0 &&
+        b > 0x11a7 && b < 0x11c3) return a + b - 0x11a7;
+    size_t lo = 0, hi = sizeof(tokenizer_nfc_compositions) / sizeof(tokenizer_nfc_compositions[0]);
+    uint64_t key = ((uint64_t)a << 32) | b;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        uint64_t entry = ((uint64_t)tokenizer_nfc_compositions[mid].a << 32) |
+            tokenizer_nfc_compositions[mid].b;
+        if (entry < key) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo < sizeof(tokenizer_nfc_compositions) / sizeof(tokenizer_nfc_compositions[0]) &&
+        tokenizer_nfc_compositions[lo].a == a && tokenizer_nfc_compositions[lo].b == b)
+        return tokenizer_nfc_compositions[lo].composed;
+    return 0;
+}
+
+/* Invalid UTF-8 bytes remain individual opaque barriers. They cannot acquire
+ * combining classes or compose across a malformed sequence. */
+static uint32_t tokenizer_nfc_read(const unsigned char *s, size_t len, size_t *pos) {
+    size_t start = *pos;
+    unsigned a = s[start], width;
+    uint32_t cp, minimum;
+    if (a < 0x80) { (*pos)++; return a; }
+    if (a >= 0xc2 && a <= 0xdf) { width = 2; cp = a & 31; minimum = 0x80; }
+    else if (a >= 0xe0 && a <= 0xef) { width = 3; cp = a & 15; minimum = 0x800; }
+    else if (a >= 0xf0 && a <= 0xf4) { width = 4; cp = a & 7; minimum = 0x10000; }
+    else goto invalid;
+    if (width > len - start) goto invalid;
+    for (unsigned i = 1; i < width; i++) {
+        if ((s[start + i] & 0xc0) != 0x80) goto invalid;
+        cp = (cp << 6) | (s[start + i] & 63);
+    }
+    if (cp < minimum || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) goto invalid;
+    *pos += width;
+    return cp;
+invalid:
+    (*pos)++;
+    return 0x110000 + a;
+}
+
+static size_t tokenizer_nfc_decompose(uint32_t cp, uint32_t *out) {
+    if (cp >= 0xac00 && cp < 0xd7a4) {
+        uint32_t index = cp - 0xac00;
+        out[0] = 0x1100 + index / 588;
+        out[1] = 0x1161 + index % 588 / 28;
+        if (index % 28) { out[2] = 0x11a7 + index % 28; return 3; }
+        return 2;
+    }
+    size_t lo = 0, hi = sizeof(tokenizer_nfc_decompositions) / sizeof(tokenizer_nfc_decompositions[0]);
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (tokenizer_nfc_decompositions[mid].cp < cp) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo < sizeof(tokenizer_nfc_decompositions) / sizeof(tokenizer_nfc_decompositions[0]) &&
+        tokenizer_nfc_decompositions[lo].cp == cp) {
+        size_t n = tokenizer_nfc_decompositions[lo].n;
+        memcpy(out, tokenizer_nfc_decompositions[lo].values, n * sizeof(uint32_t));
+        return n;
+    }
+    out[0] = cp;
+    return 1;
+}
+
+/* Stable merge ordering avoids quadratic work for long runs of combining marks. */
+static void tokenizer_nfc_order(uint32_t *cp, uint32_t *scratch, size_t n) {
+    if (n < 2) return;
+    size_t middle = n / 2;
+    tokenizer_nfc_order(cp, scratch, middle);
+    tokenizer_nfc_order(cp + middle, scratch + middle, n - middle);
+    size_t i = 0, j = middle, out = 0;
+    while (i < middle && j < n)
+        scratch[out++] = tokenizer_nfc_ccc(cp[i]) <= tokenizer_nfc_ccc(cp[j]) ? cp[i++] : cp[j++];
+    while (i < middle) scratch[out++] = cp[i++];
+    while (j < n) scratch[out++] = cp[j++];
+    memcpy(cp, scratch, n * sizeof(uint32_t));
+}
+
+static size_t tokenizer_nfc_prepare(const char *text,size_t len,uint32_t *cp,uint32_t *provided) {
+    size_t n = 0, pos = 0;
+    while (pos < len) {
+        uint32_t value = tokenizer_nfc_read((const unsigned char *)text, len, &pos);
+        n += tokenizer_nfc_decompose(value, cp + n);
+    }
+    uint32_t *scratch = provided;
+    for (size_t start = 0; start < n; ) {
+        if (!tokenizer_nfc_ccc(cp[start])) { start++; continue; }
+        size_t end = start + 1;
+        unsigned previous = tokenizer_nfc_ccc(cp[start]);
+        int ordered = 1;
+        while (end < n) {
+            unsigned current = tokenizer_nfc_ccc(cp[end]);
+            if (!current) break;
+            if (current < previous) ordered = 0;
+            previous = current;
+            end++;
+        }
+        if (!ordered) {
+            if (!scratch) scratch = malloc(n * sizeof(uint32_t));
+            if (!scratch)return SIZE_MAX;
+            tokenizer_nfc_order(cp + start, scratch + start, end - start);
+        }
+        start = end;
+    }
+    if(!provided)free(scratch);
+    size_t out = 0, starter = SIZE_MAX;
+    unsigned previous = 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned current = tokenizer_nfc_ccc(cp[i]);
+        uint32_t combined = starter == SIZE_MAX ? 0 : tokenizer_nfc_compose(cp[starter], cp[i]);
+        if (combined && (previous == 0 || previous < current)) cp[starter] = combined;
+        else {
+            if (!current) starter = out;
+            cp[out++] = cp[i];
+            previous = current;
+        }
+    }
+    return out;
+}
+static size_t tokenizer_nfc_write(const uint32_t *cp,size_t out,char *result) {
+    size_t written = 0;
+    for (size_t i = 0; i < out; i++) {
+        uint32_t c = cp[i];
+        if (c > 0x10ffff) result[written++] = (char)(c - 0x110000);
+        else if (c < 0x80) result[written++] = (char)c;
+        else if (c < 0x800) {
+            result[written++] = (char)(0xc0 | (c >> 6));
+            result[written++] = (char)(0x80 | (c & 63));
+        } else if (c < 0x10000) {
+            result[written++] = (char)(0xe0 | (c >> 12));
+            result[written++] = (char)(0x80 | ((c >> 6) & 63));
+            result[written++] = (char)(0x80 | (c & 63));
+        } else {
+            result[written++] = (char)(0xf0 | (c >> 18));
+            result[written++] = (char)(0x80 | ((c >> 12) & 63));
+            result[written++] = (char)(0x80 | ((c >> 6) & 63));
+            result[written++] = (char)(0x80 | (c & 63));
+        }
+    }
+    result[written] = 0;
+    return written;
+}
+static char *tokenizer_normalize_nfc(const char *text, size_t len) {
+    if(len>SIZE_MAX/(4*sizeof(uint32_t)))return NULL;
+    uint32_t *cp=malloc((len?len:1)*4*sizeof(uint32_t));if(!cp)return NULL;
+    size_t out=tokenizer_nfc_prepare(text,len,cp,NULL);
+    if(out==SIZE_MAX||out>(SIZE_MAX-1)/4){free(cp);return NULL;}
+    char *result=malloc(out*4+1);if(!result){free(cp);return NULL;}
+    (void)tokenizer_nfc_write(cp,out,result);free(cp);
+    return result;
+}
+
+static int tokenizer_added_at(const BnTokenizer *t, const char *text, size_t remaining, size_t *length) {
+    int added = -1;
+    *length = 0;
+    if (!remaining || !t->added_prefix[(unsigned char)text[0]]) return -1;
+    for (int j = 0; j < t->n_added; j++) {
+        int id = t->added_ids[j];
+        size_t len = strlen(t->vocab[id]);
+        if (len > *length && len <= remaining && memcmp(text, t->vocab[id], len) == 0) {
+            added = id;
+            *length = len;
+        }
+    }
+    return added;
+}
+
+static int tokenizer_encode_nfc(const BnTokenizer *t, const char *text, int add_bos,
+                                int *tokens, int max_tokens) {
+    BnTokenizer plain = *t;
+    plain.normalize_nfc = 0;
+    plain.n_added = 0;
+    memset(plain.added_prefix, 0, sizeof(plain.added_prefix));
+    size_t len = strlen(text), start = 0;
+    if (len > INT_MAX - 1) return 0;
+    int n = 0;
+    if (add_bos) tokens[n++] = t->bos_id;
+    while (start < len && n < max_tokens) {
+        size_t end = start, added_len = 0;
+        int added = -1;
+        while (end < len) {
+            added = tokenizer_added_at(t, text + end, len - end, &added_len);
+            if (added >= 0) break;
+            end++;
+        }
+        if (end > start) {
+            char *normalized = tokenizer_normalize_nfc(text + start, end - start);
+            if (!normalized) return 0;
+            int encoded = bn_tokenizer_encode(&plain, normalized, 0, tokens + n, max_tokens - n);
+            int missing = normalized[0] && encoded == 0;
+            free(normalized);
+            if (missing) return 0;
+            n += encoded;
+        }
+        if (added >= 0 && n < max_tokens) tokens[n++] = added;
+        start = end + added_len;
+    }
+    return n;
 }
 
 int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
@@ -256,6 +481,28 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
         if (len > t->max_token_length) t->max_token_length = len;
     }
 
+    /* Added tokens are isolated before byte-level pretokenization. */
+    int types_idx = bn_gguf_find_key(f, "tokenizer.ggml.token_type");
+    if (!bn_model_tokenizer_uses_metaspace(bn_gguf_get_str(f, "tokenizer.ggml.model")) && types_idx >= 0) {
+        const BnGGUFKeyValue *kv = &f->kvs[types_idx];
+        if (kv->type != BN_GGUF_TYPE_ARRAY ||
+            kv->value.arr.elem_type != BN_GGUF_TYPE_INT32 ||
+            kv->value.arr.n < (uint64_t)t->vocab_size || !kv->value.arr.data) {
+            bn_tokenizer_free(t);
+            return -1;
+        }
+        t->added_ids = malloc((size_t)t->vocab_size * sizeof(int));
+        if (!t->added_ids) { bn_tokenizer_free(t); return -1; }
+        for (int i = 0; i < t->vocab_size; i++) {
+            int32_t type;
+            memcpy(&type, (const unsigned char *)kv->value.arr.data + (size_t)i * 4, 4);
+            if ((type == 3 || type == 4) && t->vocab[i][0]) {
+                t->added_ids[t->n_added++] = i;
+                t->added_prefix[(unsigned char)t->vocab[i][0]] = 1;
+            }
+        }
+    }
+
     // Load scores (optional — some tokenizers don't have scores)
     // #16: Check allocation
     t->scores = (float *)calloc(t->vocab_size, sizeof(float));
@@ -277,6 +524,8 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
 
     const char *model_name = bn_gguf_get_str(f, "tokenizer.ggml.model");
     t->metaspace = bn_model_tokenizer_uses_metaspace(model_name);
+    t->normalize_nfc = bn_model_tokenizer_normalizes_nfc(
+        bn_gguf_get_str(f, "tokenizer.ggml.pre"));
 
     // Special token IDs
     int idx;
@@ -343,6 +592,11 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     for (size_t i = 0; i < sizeof(eog_spellings) / sizeof(eog_spellings[0]); i++)
         tokenizer_add_eog(t, vocab_lookup(t, eog_spellings[i]));
 
+    for (int i = 0; ; i++) {
+        const char *extra = bn_model_tokenizer_extra_eog(tokenizer_pre, i);
+        if (!extra) break;
+        tokenizer_add_eog(t, vocab_lookup(t, extra));
+    }
     return 0;
 }
 
@@ -361,6 +615,7 @@ void bn_tokenizer_free(BnTokenizer *t) {
         for (int i = 0; i < t->vocab_size; i++) free(t->vocab[i]);
         free(t->vocab);
     }
+    free(t->added_ids);
     free(t->merges);
     free(t->scores);
     free(t->sorted_indices);
@@ -420,41 +675,108 @@ static int tokenizer_init_metaspace_work(const BnTokenizer *t, const char *text,
     return n_work;
 }
 
-// Encode text using BPE merge algorithm
-int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
-                     int *tokens, int max_tokens) {
+typedef struct {
+    const BnTokenizerGGUFScratch *owner;const BnTokenizer *tokenizer;
+    size_t input_capacity,work_capacity,merge_bytes;int *work;char *merge;
+    int normalize_nfc;uint32_t *codepoints,*order;char *normalized;int *normalized_tokens;
+} GGUFScratch;
+typedef struct {size_t capacity,work,merge,codepoints,normalized,tokens,total;} GGUFScratchPlan;
+static int tokenizer_gguf_scratch_shape(const BnTokenizer *t,size_t input_capacity,GGUFScratchPlan *out) {
+    if(!t||!out||!t->vocab||!t->sorted_indices||t->vocab_size<1||t->metaspace||
+       (t->normalize_nfc!=0&&t->normalize_nfc!=1)||
+       t->max_token_length<1||t->max_token_length>(INT_MAX-4)/2||!input_capacity||input_capacity>INT_MAX-1||
+       input_capacity+1>SIZE_MAX/(2*sizeof(int)))return -1;
+    GGUFScratchPlan p={0};p.capacity=input_capacity;
+    if(t->normalize_nfc) {
+        /* The pinned normalizer bounds canonical codepoints at4 per input
+         * byte; UTF8 encoding then needs at most16 bytes per input byte. */
+        if(input_capacity>(INT_MAX-1)/16||input_capacity>SIZE_MAX/(4*sizeof(uint32_t)))return -1;
+        p.capacity=input_capacity*16;p.codepoints=input_capacity*4*sizeof(uint32_t);
+        p.normalized=p.capacity+1;
+    }
+    if(p.capacity+1>SIZE_MAX/(2*sizeof(int)))return -1;
+    p.work=(p.capacity+1)*2*sizeof(int);p.merge=(size_t)t->max_token_length*2+4;
+    if(t->normalize_nfc)p.tokens=(p.capacity+1)*sizeof(int);
+    const size_t parts[]={sizeof(GGUFScratch),p.work,p.merge,p.codepoints,p.codepoints,p.normalized,p.tokens};
+    for(size_t i=0;i<sizeof(parts)/sizeof(parts[0]);i++){if(parts[i]>SIZE_MAX-p.total)return -1;p.total+=parts[i];}
+    *out=p;return 0;
+}
+int bn_tokenizer_gguf_scratch_plan(const BnTokenizer *t,size_t input_capacity,size_t *host_bytes) {
+    GGUFScratchPlan p;if(!host_bytes||tokenizer_gguf_scratch_shape(t,input_capacity,&p))return -1;
+    *host_bytes=p.total;return 0;
+}
+int bn_tokenizer_gguf_scratch_init(BnTokenizerGGUFScratch *scratch,const BnTokenizer *t,
+    size_t input_capacity,size_t host_budget) {
+    GGUFScratchPlan p;
+    if(!scratch||scratch->state||tokenizer_gguf_scratch_shape(t,input_capacity,&p)||p.total>host_budget)return -1;
+    GGUFScratch *s=calloc(1,sizeof(*s));if(!s)return -1;
+    s->work=malloc(p.work);s->merge_bytes=p.merge;
+    s->merge=malloc(s->merge_bytes);
+    if(t->normalize_nfc) {
+        s->codepoints=malloc(p.codepoints);s->order=malloc(p.codepoints);
+        s->normalized=malloc(p.normalized);s->normalized_tokens=malloc(p.tokens);
+    }
+    if(!s->work||!s->merge||(t->normalize_nfc&&(!s->codepoints||!s->order||!s->normalized||!s->normalized_tokens))) {
+        free(s->work);free(s->merge);free(s->codepoints);free(s->order);free(s->normalized);free(s->normalized_tokens);free(s);return -1;
+    }
+    s->owner=scratch;s->tokenizer=t;s->input_capacity=input_capacity;s->work_capacity=p.capacity+1;s->normalize_nfc=t->normalize_nfc;
+    scratch->state=s;return 0;
+}
+void bn_tokenizer_gguf_scratch_free(BnTokenizerGGUFScratch *scratch) {
+    GGUFScratch *s=scratch?scratch->state:NULL;if(!s||s->owner!=scratch)return;
+    free(s->work);free(s->merge);free(s->codepoints);free(s->order);free(s->normalized);free(s->normalized_tokens);
+    free(s);scratch->state=NULL;
+}
+// Original ranked/score BPE algorithm, shared by allocating and retained paths.
+static int tokenizer_encode_work(const BnTokenizer *t,const char *text,int add_bos,
+    int *tokens,int max_tokens,GGUFScratch *scratch,size_t input_len) {
     if (!text || !tokens || max_tokens <= 0) return 0;
+    if (t->normalize_nfc) {
+        const unsigned char *p = (const unsigned char *)text;
+        while (*p && *p < 0x80) p++;
+        if (*p) return tokenizer_encode_nfc(t, text, add_bos, tokens, max_tokens);
+    }
 
     int n_tokens = 0;
 
     // Add BOS if requested
     if (add_bos && n_tokens < max_tokens) {
-        tokens[n_tokens++] = t->bos_id;
+        if(!scratch)tokens[n_tokens]=t->bos_id;
+        n_tokens++;
     }
 
     // Initial tokenization: encode each byte/char as individual token
     // For UTF-8 text, first try to find each character as a token
-    size_t input_len = strlen(text);
     size_t expansion = t->metaspace ? 3u : 1u;
     if (input_len > (INT_MAX - 1) / expansion) return n_tokens;
     size_t capacity = input_len * expansion + 1;
     if (capacity > SIZE_MAX / (2 * sizeof(int))) return n_tokens;
     int text_len = (int)input_len;
-    if (text_len == 0) return n_tokens;
+    if (text_len == 0) {if(scratch&&n_tokens)tokens[0]=t->bos_id;return n_tokens;}
 
     // Step 1: Initialize with individual character tokens
     // #17: Check allocations
-    int *work = (int *)calloc(capacity, 2 * sizeof(int));
+    int *work = scratch?scratch->work:(int *)calloc(capacity, 2 * sizeof(int));
     if (!work) return n_tokens;
     int n_work = 0;
-    int *groups = work + capacity;
+    int *groups = work + (scratch?scratch->work_capacity:capacity);
     int piece_end = 0;
 
     if (t->metaspace) {
         n_work = tokenizer_init_metaspace_work(t, text, work, groups, (int)capacity);
     } else for (int i = 0; i < text_len; ) {
+        size_t added_len;
+        int added = tokenizer_added_at(t, text + i, (size_t)(text_len - i), &added_len);
+        if (added >= 0) {
+            groups[n_work] = -(i + 1);
+            work[n_work++] = added;
+            i += (int)added_len;
+            piece_end = i;
+            continue;
+        }
         if (t->pretokenizer != BN_TOKENIZER_PRE_NONE && i >= piece_end)
-            piece_end = tokenizer_piece_end(text, i, text_len, t->pretokenizer == BN_TOKENIZER_PRE_LETTERS_MARKS);
+            piece_end = tokenizer_piece_end(text, i, text_len, t->pretokenizer == BN_TOKENIZER_PRE_LETTERS_MARKS,
+                t->pretokenizer == BN_TOKENIZER_PRE_GLM4 ? 3 : 1);
         groups[n_work] = piece_end;
         unsigned char byte = (unsigned char)text[i];
         char bpe_char[4];
@@ -515,7 +837,7 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
     // Step 2: BPE merges within each pretokenizer piece. Ranked BPE uses
     // the lowest pair rank; legacy score-based tokenizers use the highest score.
     // #17: Check allocation
-    char *merge_buf = (char *)malloc(t->max_token_length * 2 + 4);
+    char *merge_buf = scratch?scratch->merge:(char *)malloc(t->max_token_length * 2 + 4);
     if (!merge_buf) {
         // Copy what we have and return
         for (int i = 0; i < n_work && n_tokens < max_tokens; i++) {
@@ -565,15 +887,65 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
         n_work--;
     }
 
-    free(merge_buf);
+    if(!scratch)free(merge_buf);
+
+    if(scratch) {
+        if(n_work>max_tokens-n_tokens)return -1;
+        if(n_tokens)tokens[0]=t->bos_id;
+    }
 
     // Copy results
     for (int i = 0; i < n_work && n_tokens < max_tokens; i++) {
         tokens[n_tokens++] = work[i];
     }
 
-    free(work);
+    if(!scratch)free(work);
     return n_tokens;
+}
+
+int bn_tokenizer_encode(const BnTokenizer *t,const char *text,int add_bos,int *tokens,int max_tokens) {
+    if(!text||!tokens||max_tokens<=0)return 0;
+    return tokenizer_encode_work(t,text,add_bos,tokens,max_tokens,NULL,strlen(text));
+}
+static int tokenizer_gguf_encode_nfc(const BnTokenizer *t,GGUFScratch *s,const char *text,size_t len,
+    int add_bos,int *tokens,int max_tokens) {
+    BnTokenizer plain=*t;plain.normalize_nfc=0;plain.n_added=0;memset(plain.added_prefix,0,sizeof(plain.added_prefix));
+    int count=0;if(add_bos)s->normalized_tokens[count++]=t->bos_id;
+    size_t start=0;
+    while(start<len) {
+        size_t end=start,added_len=0;int added=-1;
+        while(end<len){added=tokenizer_added_at(t,text+end,len-end,&added_len);if(added>=0)break;end++;}
+        if(end>start) {
+            size_t n=tokenizer_nfc_prepare(text+start,end-start,s->codepoints,s->order);
+            if(n==SIZE_MAX||n>(s->work_capacity-1)/4)return -1;
+            size_t written=tokenizer_nfc_write(s->codepoints,n,s->normalized);
+            int encoded=tokenizer_encode_work(&plain,s->normalized,0,s->normalized_tokens+count,
+                (int)(s->work_capacity-(size_t)count),s,written);
+            if(encoded<0||(written&&!encoded))return -1;
+            count+=encoded;
+        }
+        if(added>=0) {
+            if((size_t)count==s->work_capacity)return -1;
+            s->normalized_tokens[count++]=added;end+=added_len;
+        }
+        start=end;
+    }
+    if(count>max_tokens)return -1;
+    memcpy(tokens,s->normalized_tokens,(size_t)count*sizeof(int));return count;
+}
+int bn_tokenizer_gguf_encode(const BnTokenizer *t,BnTokenizerGGUFScratch *scratch,
+    const char *text,int add_bos,int *tokens,int max_tokens) {
+    GGUFScratch *s=scratch?scratch->state:NULL;
+    if(!s||s->owner!=scratch||s->tokenizer!=t||!text||!tokens||max_tokens<1||
+       (add_bos!=0&&add_bos!=1)||t->metaspace||t->normalize_nfc!=s->normalize_nfc||t->max_token_length<1||
+       (size_t)t->max_token_length>(s->merge_bytes-4)/2)return -1;
+    size_t bytes=0;while(bytes<=s->input_capacity&&text[bytes])bytes++;
+    if(bytes>s->input_capacity)return -1;
+    if(t->normalize_nfc) {
+        size_t i=0;while(i<bytes&&(unsigned char)text[i]<128)i++;
+        if(i<bytes)return tokenizer_gguf_encode_nfc(t,s,text,bytes,add_bos,tokens,max_tokens);
+    }
+    return tokenizer_encode_work(t,text,add_bos,tokens,max_tokens,s,bytes);
 }
 
 int bn_tokenizer_lookup(const BnTokenizer *t, const char *str) {
@@ -691,3 +1063,11 @@ const char *bn_tokenizer_decode(const BnTokenizer *t, int token) {
     tl_decode_buf[out_pos] = '\0';
     return tl_decode_buf;
 }
+
+#include "tokenizer_vocab.h"
+
+#include "tokenizer_map.h"
+
+#include "tokenizer_encode.h"
+
+#include "tokenizer_decode_stream.h"

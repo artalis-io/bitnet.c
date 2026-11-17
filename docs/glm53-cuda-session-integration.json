@@ -1,0 +1,226 @@
+{
+  "scope": "Complete GLM shared BnSession, public transformer/prefill, greedy generation, and automatic chunk dispatch under the qualified recurrent-KDA/chronological sparse-index profile",
+  "whole_goal_complete": false,
+  "ordinary_generation_admitted": false,
+  "generation_dispatch_integrated": true,
+  "performance_parity_claimed": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-session-integration",
+  "source_sha256": {
+    "src/transformer/bf16.c": "5d8c112d599f327f7e2ca88d035a08ec5ce206839f07f176daf4e02bc5fcdd68",
+    "src/transformer/bf16_internal.h": "b4ec70142e9f0d44c90d60fd491dd31e8d5f6a6fd1f82bfdb2191daf6c491d3f",
+    "test/glm_anatomy_checks.h": "df9393ceced28d31f1b24750962d1aae4c960d90a691b5804c939149f1d5e236",
+    "Makefile": "29055658e9a0e8586d383ff4e5cb0a54887d89472cef14e2aad8d1b0af45fda3",
+    "include/session_internal.h": "00f7f3dfd3d7cde086850dbc8e401e305ce0e5ba1c4c4655acfe7a790ce7d9fa",
+    "src/session.c": "31998431fac6029e495f8b513c9ef8305f692d186390adf305348e105c97fc7f",
+    "test/test_session.c": "1e2d77cc5832afcaa80986ec28866c61dff8306c6c22c1583c26e039619e85e2",
+    "src/generate.c": "37a72851e948d48aac3fe683c86f69c7be18ca3a61dcf8c8caa9f87225dd98cc",
+    "test/test_cuda_glm_context.c": "a71e0dc87a8fcab47b37a4579f8e175907eb335db8276d304ce5a70a96294b3b"
+  },
+  "validation": {
+    "baseline": {
+      "exit": 0
+    },
+    "clean": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "short-native": {
+      "exit": 0
+    },
+    "long-native": {
+      "exit": 0
+    },
+    "automatic-reference": {
+      "exit": 0
+    },
+    "automatic-native": {
+      "exit": 0
+    },
+    "private-regression": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "sanitize-test_session-build": {
+      "exit": 0
+    },
+    "sanitize-test_session": {
+      "exit": 0
+    },
+    "sanitize-test_generate-build": {
+      "exit": 0
+    },
+    "sanitize-test_generate": {
+      "exit": 0
+    },
+    "sanitize-test_transformer-build": {
+      "exit": 0
+    },
+    "sanitize-test_transformer": {
+      "exit": 0
+    },
+    "sanitize-context-build": {
+      "exit": 0
+    },
+    "sanitize-context": {
+      "exit": 0
+    }
+  },
+  "protected_user_binaries": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "exact_comparisons": {
+    "short": {
+      "frames": [
+        {
+          "nt": 3,
+          "position": 0,
+          "head": 1,
+          "state": 1
+        },
+        {
+          "nt": 6,
+          "position": 3,
+          "head": 1,
+          "state": 1
+        },
+        {
+          "nt": 1,
+          "position": 9,
+          "head": 1,
+          "state": 1
+        }
+      ],
+      "batch": 6,
+      "capacity": 64,
+      "exact_files": 846,
+      "exact_typed_elements": 125862696,
+      "generation": [
+        369,
+        279
+      ],
+      "reference": "/tmp/bitnet-goal-glm-chunked/chunked-reference",
+      "scope": "All captured values exact. Automatic no-head intermediate chunks intentionally omit final tuple/head and idle-state capture; all45 committed states and heads verified at public return boundaries."
+    },
+    "long": {
+      "frames": [
+        {
+          "nt": 4097,
+          "position": 0,
+          "head": 1,
+          "state": 1
+        },
+        {
+          "nt": 1,
+          "position": 4097,
+          "head": 1,
+          "state": 1
+        },
+        {
+          "nt": 3,
+          "position": 4098,
+          "head": 1,
+          "state": 1
+        },
+        {
+          "nt": 1,
+          "position": 4101,
+          "head": 1,
+          "state": 1
+        }
+      ],
+      "batch": 4097,
+      "capacity": 4160,
+      "exact_files": 1260,
+      "exact_typed_elements": 4225638922,
+      "generation": [
+        50,
+        197
+      ],
+      "reference": "/tmp/bitnet-goal-glm-long/long-reference",
+      "scope": "All captured values exact. Automatic no-head intermediate chunks intentionally omit final tuple/head and idle-state capture; all45 committed states and heads verified at public return boundaries."
+    },
+    "automatic": {
+      "frames": [
+        {
+          "nt": 3,
+          "position": 0,
+          "head": 0,
+          "state": 0
+        },
+        {
+          "nt": 3,
+          "position": 3,
+          "head": 0,
+          "state": 0
+        },
+        {
+          "nt": 3,
+          "position": 6,
+          "head": 1,
+          "state": 1
+        },
+        {
+          "nt": 1,
+          "position": 9,
+          "head": 1,
+          "state": 1
+        }
+      ],
+      "batch": 3,
+      "capacity": 64,
+      "exact_files": 916,
+      "exact_typed_elements": 86860464,
+      "generation": [
+        369,
+        279
+      ],
+      "reference": "/tmp/bitnet-goal-glm-session-integration/automatic-reference",
+      "scope": "All captured values exact. Automatic no-head intermediate chunks intentionally omit final tuple/head and idle-state capture; all45 committed states and heads verified at public return boundaries."
+    }
+  },
+  "exact_typed_elements": 4438362082,
+  "exact_files": 3022,
+  "admission_and_ownership": [
+    "Backend-only session must have been created for this exact BnModel and retain its original host vocabulary/context extents. Wrong owner/config reset rejects before releasing resources.",
+    "Preparation includes preallocated token conversion and BF16 head readback buffers in the explicit request host budget. Existing BnSession host arena and shared model/source-cache storage are separate. Exact device/host budgets and one-byte-short failures qualified.",
+    "Generation validates model identity and external position before sampling or callbacks, including one-token generation. Whole prompt validation precedes any automatic chunk.",
+    "Logits expand BF16 bits to F32; logits/history/session position publish only after readback and final state commit. Read or fence failure poisons request and preserves host output/history/logical position. Reset/reprepare recovers.",
+    "Model, backend weights/GPU, and borrowed source I/O/cache outlive requests. Calls sharing model/source I/O are serialized; no concurrent serving claim."
+  ],
+  "no_logits_and_automatic_chunks": [
+    "No-logits skips final mHC collapse, output normalization, and vocabulary projection after all45 layers; commits state and preserves host logits.",
+    "All45 committed states and subsequent logits compare byte-for-byte between a full-head prefix and an otherwise identical no-logits prefix.",
+    "A single nine-token bn_prefill with max batch3 uses3+3+3 internally; first two heads are skipped. All available early tuples plus all45 committed states/heads at public return boundaries match independent unmodified original-operator captures. Uncaptured intermediate idle states and unused heads are not claimed."
+  ],
+  "sanitizers": {
+    "compiler": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "isa_macros": {
+      "__AVX512F__": true,
+      "__AVX512DQ__": true,
+      "__AVX2__": true,
+      "__FMA__": true
+    },
+    "cpu": "Full session, generation, and transformer test suites, ASAN/UBSAN with leak detection enabled.",
+    "actual_cuda_host": "Common GLM context harness3+6, all captured values equal release build; budgets, BUSY/restart, no-logits state equivalence, cross-model/position rejection, read/fence failures and reset/reprepare included.",
+    "scopes": "Changed host controllers/model/session/generation/layout code instrumented. Device kernels unchanged; no new device-instrumentation claim. GCC13 ASAN fake-stack alignment issue and independent Clang rationale recorded in preceding model-binding evidence. No ISA or sanitizer checks disabled."
+  },
+  "limitations": [
+    "Normal model loader topology guard remains. CLI GLM admission and natural-text prompt coherence have not yet been qualified.",
+    "Uses fused-recurrent KDA and deterministic chronological sparse selection profile; automatic default HF/vLLM whole-generation or default chunk-KDA parity not established.",
+    "Fixture token IDs with real tokenizer/sampler validate shared generation mechanics; they are not natural-prompt quality evidence.",
+    "Output-all-positions, speculative generation, GLM continuous batching/KV scheduling, CPU/Metal GLM execution, and performance parity remain unqualified."
+  ]
+}

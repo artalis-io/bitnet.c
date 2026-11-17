@@ -1,0 +1,301 @@
+{
+  "scope": "Qualified matched cases only; full inference/serving/offload goal remains active",
+  "full_goal_complete": false,
+  "reference_image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+  "hardware": {
+    "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "multiprocessors": 188,
+    "total_memory": 101973491712,
+    "compute_capability": [
+      12,
+      0
+    ],
+    "torch_cuda": "13.4"
+  },
+  "graphs_enabled": false,
+  "cases": {
+    "single129": {
+      "reference": "test/bf16_cuda_single_traced_reference.json",
+      "reference_sha256": "1fb899e60bae1a336fa6610a7998deb5095c78d49d666af0f49af6e303df6e58",
+      "copied_from": "/tmp/bitnet-goal-packed-b1/reference-cp.json",
+      "source_sha256": "1fb899e60bae1a336fa6610a7998deb5095c78d49d666af0f49af6e303df6e58",
+      "policy": "bench/policies/qwen38-cuda-single129.json",
+      "policy_sha256": "5f8fe76f7ecd7be2a8c5117722df7741ad1f23659d0a51b94d6ba36ef6273712",
+      "requests": 1,
+      "prompt_tokens_each": 129,
+      "output_tokens_each": 64,
+      "prefill_chunk_tokens": 129,
+      "metrics": {
+        "requests": 1,
+        "prompt_tokens": 129,
+        "samples_each": 3,
+        "raw_logits_exact": 64,
+        "native_prefill_ms": 188.592186,
+        "reference_prefill_ms": 361.165032023564,
+        "prefill_throughput_ratio": 1.9150583048205612,
+        "native_decode_ms": 16.349053047619048,
+        "reference_decode_ms": 20.836920682562603,
+        "decode_latency_ratio": 0.7846194404963478,
+        "prefill_within_5_percent": true,
+        "decode_within_5_percent": true,
+        "full_goal_complete": false
+      },
+      "policy_scope": "Explicit capture-specific normalization and recurrence contracts derived from original execution; no default-path change."
+    },
+    "batch4_1025": {
+      "reference": "test/bf16_cuda_batch4_1025_reference.json",
+      "reference_sha256": "9c2025af5e6feaeb1e2c90959c6acfbd8791a93f67e82eaea8da4c4d5d022566",
+      "copied_from": "/tmp/bitnet-goal-attention-batch-splits/1025-batch-reference.json",
+      "source_sha256": "9c2025af5e6feaeb1e2c90959c6acfbd8791a93f67e82eaea8da4c4d5d022566",
+      "policy": "bench/policies/qwen38-cuda-batch4_1025.json",
+      "policy_sha256": "c4b1a7617c00d09b97903451eea5a842c53b8b8b596404ef3f1d66a9c58e1936",
+      "requests": 4,
+      "prompt_tokens_each": 1025,
+      "output_tokens_each": 64,
+      "prefill_chunk_tokens": 1025,
+      "metrics": {
+        "samples_each": 3,
+        "native_prefill_ms": 4362.056781,
+        "reference_prefill_ms": 10290.434745023958,
+        "prefill_throughput_ratio": 2.3590785864701376,
+        "native_decode_batch_ms": 38.8106872063492,
+        "reference_decode_batch_ms": 38.688342330888624,
+        "decode_latency_ratio": 1.0031623188818535,
+        "prefill_within_5_percent": true,
+        "decode_within_5_percent": true
+      },
+      "policy_scope": "Explicit capture-specific normalization and recurrence contracts derived from original execution; no default-path change."
+    },
+    "batch4_2048": {
+      "reference": "test/bf16_cuda_batch4_2048_reference.json",
+      "reference_sha256": "19cdd708838121b973987bb711485bff8ebf54de1621a7b13b4d54c673b101d6",
+      "copied_from": "/tmp/bitnet-goal-attention-batch-splits/reference-batch.json",
+      "source_sha256": "19cdd708838121b973987bb711485bff8ebf54de1621a7b13b4d54c673b101d6",
+      "policy": "bench/policies/qwen38-cuda-batch4_2048.json",
+      "policy_sha256": "3985b0f512609098a5d5622bb5c83190751f7fa572527754fbfba85884b98c79",
+      "requests": 4,
+      "prompt_tokens_each": 2048,
+      "output_tokens_each": 64,
+      "prefill_chunk_tokens": 2048,
+      "metrics": {
+        "scope": "Four Qwen27B requests,2048 input tokens each,64 outputs,8192 capacity,graphs disabled,batch-aware FA2 partitions",
+        "samples_each": 3,
+        "raw_logits_exact": 256,
+        "native_prefill_ms": 9010.810297,
+        "reference_prefill_ms": 20622.06603505183,
+        "prefill_throughput_ratio": 2.2885917420675925,
+        "native_decode_batch_ms": 39.84180692063492,
+        "reference_decode_batch_ms": 39.155113082083446,
+        "decode_latency_ratio": 1.0175377820289246,
+        "prefill_within_5_percent": true,
+        "decode_within_5_percent": true,
+        "full_goal_complete": false,
+        "parity_achieved_for_this_case": true
+      },
+      "policy_scope": "Explicit capture-specific normalization and recurrence contracts derived from original execution; no default-path change."
+    },
+    "batch16_129": {
+      "reference": "test/bf16_cuda_batch16_traced_reference.json",
+      "reference_sha256": "8c0015f8e948df6813d9204fa2275c186020f070d472fb84f6830a989a433371",
+      "copied_from": "/tmp/bitnet-goal-packed-b16-cache8/reference-batch.json",
+      "source_sha256": "8c0015f8e948df6813d9204fa2275c186020f070d472fb84f6830a989a433371",
+      "policy": "bench/policies/qwen38-cuda-batch16_129.json",
+      "policy_sha256": "7fdd36cd2df85c2026b586cf01415d8dcf490c294a81572eaaf83220e446d9b5",
+      "requests": 16,
+      "prompt_tokens_each": 129,
+      "output_tokens_each": 64,
+      "prefill_chunk_tokens": 129,
+      "metrics": {
+        "requests": 16,
+        "prompt_tokens": 129,
+        "samples_each": 3,
+        "raw_logits_exact": 1024,
+        "native_prefill_ms": 2312.652444,
+        "reference_prefill_ms": 5241.893357946537,
+        "prefill_throughput_ratio": 2.2666152761285985,
+        "native_decode_ms": 95.48412463492063,
+        "reference_decode_ms": 100.60444023711459,
+        "decode_latency_ratio": 0.9491044769979746,
+        "prefill_within_5_percent": true,
+        "decode_within_5_percent": true,
+        "full_goal_complete": false
+      },
+      "policy_scope": "Explicit capture-specific normalization and recurrence contracts derived from original execution; no default-path change."
+    },
+    "chunk4097": {
+      "reference": "test/bf16_cuda_chunk4097_traced_reference.json",
+      "reference_sha256": "3c1afe4fe824beaf739b45cb161e020aa458ded220ebcfd802bbc05f9f21a04b",
+      "copied_from": "/tmp/bitnet-goal-packed-chunk4097-rr/reference-batch.json",
+      "source_sha256": "3c1afe4fe824beaf739b45cb161e020aa458ded220ebcfd802bbc05f9f21a04b",
+      "policy": "bench/policies/qwen38-cuda-chunk4097.json",
+      "policy_sha256": "51310cef2ed27b90732be0a86fd5b0d2899d10d6fe35518b82bd7c25ee59f453",
+      "requests": 4,
+      "prompt_tokens_each": 4097,
+      "output_tokens_each": 64,
+      "prefill_chunk_tokens": 2048,
+      "metrics": {
+        "requests": 4,
+        "prompt_tokens": 4097,
+        "prefill_chunk": 2048,
+        "prefill_batches": 3,
+        "samples_each": 3,
+        "raw_logits_exact": 256,
+        "native_prefill_ms": 18224.501586,
+        "reference_prefill_ms": 41732.39108803682,
+        "prefill_throughput_ratio": 2.28990575633056,
+        "native_decode_ms": 40.46972088888889,
+        "reference_decode_ms": 39.70850425742803,
+        "decode_latency_ratio": 1.0191701159662405,
+        "prefill_within_5_percent": true,
+        "decode_within_5_percent": true,
+        "full_goal_complete": false
+      },
+      "policy_scope": "Explicit capture-specific normalization and recurrence contracts derived from original execution; no default-path change."
+    },
+    "serving20_16": {
+      "reference": "test/bf16_cuda_serving20_reference.json",
+      "reference_sha256": "4b1137aeec1ec650a6ade5badae78f56f3094b68a654e54ca069a338ffd10b35",
+      "copied_from": "/tmp/bitnet-goal-serving-20x16/delivery-after-cohort/reference-batch.json",
+      "source_sha256": "4b1137aeec1ec650a6ade5badae78f56f3094b68a654e54ca069a338ffd10b35",
+      "policy": "bench/policies/qwen38-cuda-serving20-noncp.json",
+      "policy_sha256": "7fdd36cd2df85c2026b586cf01415d8dcf490c294a81572eaaf83220e446d9b5",
+      "requests": 20,
+      "max_live": 16,
+      "prompt_tokens_each": 129,
+      "output_tokens_each": 64,
+      "prefill_chunk_tokens": 129,
+      "admission_waves": [
+        16,
+        4
+      ],
+      "metrics": {
+        "scope": "20 uniform129-token burst requests,16 live,64outputs; sequential waves16then4; capacity8192; reference8GiBcache; no CUDA graphs",
+        "samples_each": 3,
+        "raw_logits_exact": 1280,
+        "native_prefill_ms": 2910.325556,
+        "reference_prefill_ms": 6612.084886990488,
+        "prefill_throughput_ratio": 2.271939946154425,
+        "native_decode_engine_step_ms": 67.23144046031746,
+        "reference_decode_engine_step_ms": 69.58284209083233,
+        "decode_latency_ratio": 0.9662071631474123,
+        "prefill_within_5_percent": true,
+        "decode_within_5_percent": true,
+        "native_elapsed_ms": 11515.442837,
+        "reference_elapsed_ms": 15387.413864023983,
+        "native_output_tokens_per_second": 111.155083,
+        "reference_output_tokens_per_second": 83.18486857578193,
+        "full_goal_complete": false,
+        "native_tails_median_of_runs": {
+          "ttft": {
+            "p50_ms": 2405.33718,
+            "p95_ms": 9058.633452,
+            "p99_ms": 9058.633472
+          },
+          "inter_token_latency": {
+            "p50_ms": 93.63430900000003,
+            "p95_ms": 93.86437100000012,
+            "p99_ms": 93.93233499999997
+          }
+        },
+        "reference_tails_median_of_runs": {
+          "ttft": {
+            "p50_ms": 5238.049556035548,
+            "p95_ms": 12946.962952963077,
+            "p99_ms": 12946.962952963077
+          },
+          "inter_token_latency": {
+            "p50_ms": 100.51632800605148,
+            "p95_ms": 100.87976302020252,
+            "p99_ms": 101.02089901920408
+          }
+        }
+      },
+      "sampled_diagnostic_resources": {
+        "scope": "Sampled whole diagnostic process, including warmup; not allocator accounting or timing evidence",
+        "sampled_gpu_peak_mib": 48296,
+        "observed_cpu_VmHWM_kb": 17585616
+      },
+      "policy_scope": "Explicit original compiled normalization and NONCP recurrence contracts, plus cohort-aware attention; unchanged independent raw matrices."
+    },
+    "serving20_16_kv_pool": {
+      "reference": "test/bf16_cuda_serving20_reference.json",
+      "reference_sha256": "4b1137aeec1ec650a6ade5badae78f56f3094b68a654e54ca069a338ffd10b35",
+      "policy": "bench/policies/qwen38-cuda-serving20-noncp.json",
+      "policy_sha256": "7fdd36cd2df85c2026b586cf01415d8dcf490c294a81572eaaf83220e446d9b5",
+      "requests": 20,
+      "max_live": 16,
+      "prompt_tokens_each": 129,
+      "output_tokens_each": 64,
+      "prefill_chunk_tokens": 129,
+      "kv_payload_budget_bytes": 8589934592,
+      "retained_idle_slots_charged": true,
+      "created_slots": 16,
+      "reused_slots": 4,
+      "raw_logits_exact": 1280,
+      "metrics": {
+        "native_prefill_ms": 2934.878258,
+        "reference_prefill_ms": 6612.084886990488,
+        "native_decode_engine_step_ms": 66.24199870634921,
+        "reference_decode_engine_step_ms": 69.58284209083233,
+        "native_elapsed_ms": 11390.014992,
+        "reference_elapsed_ms": 15387.413864023983,
+        "native_output_tokens_per_second": 112.379132,
+        "reference_output_tokens_per_second": 83.18486857578193,
+        "prefill_throughput_ratio": 2.252933275500277,
+        "decode_latency_ratio": 0.9519875405473948,
+        "prefill_within_5_percent": true,
+        "decode_within_5_percent": true,
+        "native_ttft": {
+          "p50_ms": 2423.972554,
+          "p95_ms": 8944.572254,
+          "p99_ms": 8944.572284
+        },
+        "reference_ttft": {
+          "p50_ms": 5238.049556035548,
+          "p95_ms": 12946.962952963077,
+          "p99_ms": 12946.962952963077
+        },
+        "native_inter_token_latency": {
+          "p50_ms": 93.62745399999949,
+          "p95_ms": 93.7112619999998,
+          "p99_ms": 93.93884900000012
+        },
+        "reference_inter_token_latency": {
+          "p50_ms": 100.51632800605148,
+          "p95_ms": 100.87976302020252,
+          "p99_ms": 101.02089901920408
+        }
+      },
+      "full_goal_complete": false,
+      "detail": "docs/qwen38-cuda-session-pool.json",
+      "scope": "Qualified dense Qwen3.8 27B,20 uniform129-token burst requests,16 live,64 outputs each,contexts8192,KV payload budget8GiB; retained slots reused across waves16then4"
+    },
+    "staggered12_pooled_library": {
+      "scope": "Controlled engine-step arrivals, not fixed-wall-clock offered load",
+      "requests": 12,
+      "max_live": 8,
+      "arrival_steps": [
+        0,
+        8,
+        68
+      ],
+      "prompt_tokens_per_group": [
+        129,
+        5,
+        129
+      ],
+      "outputs_each": 64,
+      "context_capacity": 8192,
+      "token_budget": 256,
+      "prefill_chunk": 64,
+      "max_parallel_prefills": 4,
+      "kv_budget_bytes": 4294967296,
+      "created_sessions": 8,
+      "reused_sessions": 4,
+      "correctness_heads": 784,
+      "performance_qualified": true,
+      "performance_evidence": "qwen38-cuda-arrivals-performance.json",
+      "correctness_evidence": "qwen38-cuda-arrivals-runtime.json"
+    }
+  }
+}

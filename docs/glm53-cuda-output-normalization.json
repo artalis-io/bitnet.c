@@ -1,0 +1,360 @@
+{
+  "cases": [
+    {
+      "rows": 1,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 7978545386372730149,
+      "rounded_weight_mismatches": 0
+    },
+    {
+      "rows": 1,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 11368705136382099364,
+      "rounded_weight_mismatches": 0
+    },
+    {
+      "rows": 3,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 542895006230615293,
+      "rounded_weight_mismatches": 0
+    },
+    {
+      "rows": 3,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 18134082816136040650,
+      "rounded_weight_mismatches": 2
+    },
+    {
+      "rows": 15,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 4372900968846411557,
+      "rounded_weight_mismatches": 1
+    },
+    {
+      "rows": 15,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 16524663964202753768,
+      "rounded_weight_mismatches": 5
+    },
+    {
+      "rows": 16,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 14128338697043913932,
+      "rounded_weight_mismatches": 1
+    },
+    {
+      "rows": 16,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 1436133143064859240,
+      "rounded_weight_mismatches": 5
+    },
+    {
+      "rows": 17,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 11683086023137056716,
+      "rounded_weight_mismatches": 1
+    },
+    {
+      "rows": 17,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 12943914147705438442,
+      "rounded_weight_mismatches": 5
+    },
+    {
+      "rows": 64,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 17312286987199121081,
+      "rounded_weight_mismatches": 9
+    },
+    {
+      "rows": 64,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 17416253696144730718,
+      "rounded_weight_mismatches": 14
+    },
+    {
+      "rows": 130,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 16708916162094004205,
+      "rounded_weight_mismatches": 20
+    },
+    {
+      "rows": 130,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 14640746819196036146,
+      "rounded_weight_mismatches": 22
+    },
+    {
+      "rows": 377,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 17582014196453058826,
+      "rounded_weight_mismatches": 53
+    },
+    {
+      "rows": 377,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 4199067809594993263,
+      "rounded_weight_mismatches": 52
+    },
+    {
+      "rows": 1088,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 9983631465164431140,
+      "rounded_weight_mismatches": 149
+    },
+    {
+      "rows": 1088,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 13571346253475974275,
+      "rounded_weight_mismatches": 141
+    },
+    {
+      "rows": 6144,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 3908281308488924262,
+      "rounded_weight_mismatches": 1049
+    },
+    {
+      "rows": 6144,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 12586874157450253359,
+      "rounded_weight_mismatches": 831
+    },
+    {
+      "rows": 65537,
+      "seed": 0,
+      "eps": 1e-06,
+      "hash": 14955387917689832445,
+      "rounded_weight_mismatches": 10953
+    },
+    {
+      "rows": 65537,
+      "seed": 1,
+      "eps": 1e-05,
+      "hash": 17951066251325230308,
+      "rounded_weight_mismatches": 9062
+    }
+  ],
+  "torch": "2.14.0+cu130",
+  "source_sha256": {
+    "include/gpu_backend.h": "eda097a6f09d41842fc407b3ec3714f79cb90bda8aa4f439bf651fab84773d46",
+    "src/gpu_cuda.cu": "b1bdf0e598b014ea805e90684d18eb736c9268e7edeaa38f21953b668e0ab85f",
+    "src/gpu_cuda_gdn.cuh": "01bb0709eb78c86b523297c028674d836933b98fe844c93fcf97113f66cdda8d",
+    "test/test_cuda_backend.c": "412e1cf47142bda1364f7952feaa4c46b122221fcaad2c596a787050489fadd3",
+    "test/cuda_glm_output_norm_reference.h": "7515b355440de0a0aac86a6f42f114fb75770ba78c68c47655b3b0a1399fdd9e",
+    "test/reference_cuda_glm_output_norm.py": "aa57c28dcdfd829a197d7d2ddca347ec0532880b789275bfb730cc4a51a71cf1",
+    "Makefile": "e285230b66154a957d1c3c535e7bd34e1b0c27b30392440026c98fde062ee476"
+  },
+  "native_api": "gated_rmsnorm_f32_weight_bf16_resident",
+  "profile": "BN_GPU_GATED_NORM_GLM_R2",
+  "device": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "native_launches": 622,
+  "output_words": 37576704,
+  "rounded_gamma_output_mismatches": 22375,
+  "source_freeze": true,
+  "composition": {
+    "schedules": 8,
+    "exact_words": 39207168,
+    "log": [
+      "Native conv/KDA/RMS-sigmoid composition T17 H64 chunk17 PASSED: 1 submissions, 1818624 exact conv/core/output/history/state words",
+      "Native conv/KDA/RMS-sigmoid composition T17 H64 chunk9 PASSED: 2 submissions, 2940928 exact conv/core/output/history/state words",
+      "Native conv/KDA/RMS-sigmoid composition T17 H64 chunk1 PASSED: 17 submissions, 19775488 exact conv/core/output/history/state words",
+      "Native conv/KDA/RMS-sigmoid composition T17 H64 chunk-9 PASSED: 9 submissions, 10797056 exact conv/core/output/history/state words",
+      "Native conv/KDA/RMS-sigmoid composition T65 H2 chunk65 PASSED: 1 submissions, 118272 exact conv/core/output/history/state words",
+      "Native conv/KDA/RMS-sigmoid composition T65 H2 chunk33 PASSED: 2 submissions, 153344 exact conv/core/output/history/state words",
+      "Native conv/KDA/RMS-sigmoid composition T65 H2 chunk1 PASSED: 65 submissions, 2362880 exact conv/core/output/history/state words",
+      "Native conv/KDA/RMS-sigmoid composition T65 H2 chunk-33 PASSED: 33 submissions, 1240576 exact conv/core/output/history/state words"
+    ],
+    "captures": {
+      "/tmp/bitnet-goal-glm-chain/case1.npz": "a67fa1c96d5ad4f89ef8954b06a50abcf4992dca06d956ba5d5087031af7dd72",
+      "/tmp/bitnet-goal-glm-chain/case2.npz": "8dfb4e34c48af52094092245b444db973e27d4cc96200279bd18b69ac1a9ca73"
+    },
+    "harness_sha256": "36e3991b57097d6ba647ab9a521ba0f43a78fb3005aeb67fbf887dcc94b4c329"
+  },
+  "verification": {
+    "baseline_standard": true,
+    "protected_clean": true,
+    "zero_build_warnings": true,
+    "standard": true,
+    "full_cuda": true,
+    "cuda_diagnostics": true,
+    "normalizer_memcheck_errors": 0,
+    "mixed_chain_memcheck_errors": 0,
+    "original_capture_repeat_exact": true,
+    "source_freeze": true,
+    "protected_user_binary_sha256": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "cuda_trace": {
+    "resident-trace": {
+      "kernels": [
+        {
+          "start": 43635980,
+          "end": 43642092,
+          "streamId": 14,
+          "name": "void causal_conv_silu_bf16_batch_kernel<(bool)0, (bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *, const float *)"
+        },
+        {
+          "start": 43684108,
+          "end": 43721804,
+          "streamId": 14,
+          "name": "bn_cuda_gdn::kda_recurrent_kernel(__nv_bfloat16 *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const float *, const float *, int, int, float, float, int)"
+        },
+        {
+          "start": 43726444,
+          "end": 43728332,
+          "streamId": 14,
+          "name": "void bn_cuda_gdn::gated_norm_kernel<(int)2, (bool)0, (bool)1>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int, const float *)"
+        }
+      ],
+      "api": [
+        {
+          "name": "cuKernelGetName",
+          "calls": 3,
+          "duration_ns": 1152
+        },
+        {
+          "name": "cuLibraryGetKernel",
+          "calls": 3,
+          "duration_ns": 6020
+        },
+        {
+          "name": "cuLibraryLoadData",
+          "calls": 1,
+          "duration_ns": 13757460
+        },
+        {
+          "name": "cudaLaunchKernel_v7000",
+          "calls": 3,
+          "duration_ns": 3988724
+        },
+        {
+          "name": "cudaStreamSynchronize_v3020",
+          "calls": 1,
+          "duration_ns": 29725
+        }
+      ],
+      "synchronizations": [
+        {
+          "start": 43703339,
+          "end": 43731472,
+          "kind": "Stream sync",
+          "correlationId": 1389,
+          "runtime_api": "cudaStreamSynchronize_v3020"
+        },
+        {
+          "start": 43742539,
+          "end": 43745965,
+          "kind": "Context sync",
+          "correlationId": 1390,
+          "runtime_api": null
+        }
+      ],
+      "memcpy_calls": 0,
+      "memcpy_bytes": 0
+    },
+    "resident-trace-warm": {
+      "kernels": [
+        {
+          "start": 26581970,
+          "end": 26587506,
+          "streamId": 14,
+          "name": "void causal_conv_silu_bf16_batch_kernel<(bool)0, (bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *, const float *)"
+        },
+        {
+          "start": 26608626,
+          "end": 26646515,
+          "streamId": 14,
+          "name": "bn_cuda_gdn::kda_recurrent_kernel(__nv_bfloat16 *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const float *, const float *, int, int, float, float, int)"
+        },
+        {
+          "start": 26646803,
+          "end": 26648627,
+          "streamId": 14,
+          "name": "void bn_cuda_gdn::gated_norm_kernel<(int)2, (bool)0, (bool)1>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int, const float *)"
+        }
+      ],
+      "api": [
+        {
+          "name": "cuKernelGetName",
+          "calls": 3,
+          "duration_ns": 3656
+        },
+        {
+          "name": "cudaLaunchKernel_v7000",
+          "calls": 3,
+          "duration_ns": 77618
+        },
+        {
+          "name": "cudaStreamSynchronize_v3020",
+          "calls": 1,
+          "duration_ns": 33421
+        }
+      ],
+      "synchronizations": [
+        {
+          "start": 26620349,
+          "end": 26651917,
+          "kind": "Stream sync",
+          "correlationId": 1406,
+          "runtime_api": "cudaStreamSynchronize_v3020"
+        },
+        {
+          "start": 26657115,
+          "end": 26662504,
+          "kind": "Context sync",
+          "correlationId": 1407,
+          "runtime_api": null
+        }
+      ],
+      "memcpy_calls": 0,
+      "memcpy_bytes": 0
+    }
+  },
+  "trace_limits": [
+    "One diagnostic cold and one warm T17/H64 pipeline capture, not a statistical benchmark or vLLM comparison.",
+    "Both traces include one explicit final harness stream synchronization and an unattributed context-sync activity after final kernel completion.",
+    "Cold trace contains lazy CUDA library loading; warm trace first warms all three operations with unchanged immutable inputs."
+  ],
+  "limitations": [
+    "Projected recurrent KDA chain only: input/output GEMMs, model registration, indexed MLA, mHC and whole-model inference remain open.",
+    "Original reference fused recurrent execution is not the optimized matrix-based chunk-prefill profile.",
+    "Qualified on designated SM120 device only; CPU rounding differences and end-to-end vLLM parity remain open."
+  ],
+  "evidence_sha256": {
+    "/tmp/bitnet-goal-glm-cuda-output/baseline.log": "62e051eb813f5103eac7212fa57c33ff6f03e004ca2d3df46db7ebaab33a7647",
+    "/tmp/bitnet-goal-glm-cuda-output/build.log": "2d84ab294f981eb728cd075fc5c5be32b0c7e900dc9230371be85c4e00b81d2e",
+    "/tmp/bitnet-goal-glm-cuda-output/standard.log": "26a0b84f65e7734a40303ea3863a6872f64a1c4f317064bf36ebcecb285d5181",
+    "/tmp/bitnet-goal-glm-cuda-output/cuda.log": "1e06f51483bb370b2a562c2bab32e84fe537b14de31cd8e0a516f3b455a6aac1",
+    "/tmp/bitnet-goal-glm-cuda-output/memcheck.log": "21427fd904e778429b687edac8fce2cc192d6d92c52d67a3d3c76880bc753cff",
+    "/tmp/bitnet-goal-glm-cuda-output/chain-memcheck.log": "8962e78d3a67cafd8c65b459633168cc57dc5c1a8f0a3c68b541f505b6a43adb",
+    "/tmp/bitnet-goal-glm-cuda-output/chain.log": "3c743998f19034bfda546dc070f567444de7af66467b47432191d71d53ba10f0",
+    "/tmp/bitnet-goal-glm-cuda-output/resident-trace-summary.json": "ace14ee8ca6ff5a67dd71ff7761b750b10a04c6fdbf26fd6d34cd4f9eb87f219",
+    "/tmp/bitnet-goal-glm-cuda-output/resident-trace.nsys-rep": "31472ed2edeb88fef60dc19c28b4e82654a9aff6282669889726f5d7f33ee642",
+    "/tmp/bitnet-goal-glm-cuda-output/resident-trace-warm.nsys-rep": "6777ea2965235c5d2f5501ce7476df8ab2891343ef5933f1373d0b7daf749c0a"
+  }
+}

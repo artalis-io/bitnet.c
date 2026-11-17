@@ -1,0 +1,894 @@
+{
+  "version": 1,
+  "goal_status": "active",
+  "entry": "bitnet --native-text MODEL_DIR --profile exl3-int4-f16 --prompt-file prompt.txt -n 5 --prediction-first --ram-admit-misses --ram-cache-mb N",
+  "api": [
+    "BnGPUMoETrellisPolicy",
+    "bn_gpu_moe_trellis_store_init_policy",
+    "bn_gpu_moe_trellis_prepare_model_policy"
+  ],
+  "behavior": {
+    "default": "All existing entry points and CLI defaults retain previous admission behavior",
+    "opt_in": "Populate/promote RAM cache on GPU bypass misses. GPU hits require no host fetch. GPU admit=1 retains its previous RAM behavior.",
+    "lifetime": "Policy copied at creation before model publication; no live switch",
+    "gpu": "Reservation, GPU admission/eviction, temporaries, lease release and routing unchanged",
+    "budgets": "Same bounded RAM slab, GPU caches, temporary and staging quotas; metadata/allocator/driver/model/OS file cache excluded",
+    "failure": "BUSY before source IO; failed reads do not publish partial RAM entries; successful RAM fill may survive a later GPU upload failure"
+  },
+  "correctness": {
+    "synthetic": "RAM reuse with GPU admission off, bounded eviction, GPU hot-set protection, no IO on BUSY, config copy, failed device retry, failed source reads, pinned staging overlap, model owner/move/cleanup",
+    "normal_and_asan_cli_cases_each": 37,
+    "prior_cases_preserved": 35,
+    "source": "Full encoded/forward input IDs and every last F32 logit, generated IDs/chunks/bytes match unchanged independent reference; normal large-RAM and instrumented smaller-RAM controls, both skip policies",
+    "prompt_tokens": 1026,
+    "prefill": [
+      512,
+      512,
+      2
+    ],
+    "prediction_forwards": 7,
+    "position": 1030,
+    "generated_ids": [
+      25744,
+      14,
+      223,
+      21,
+      16
+    ],
+    "output_hex": "3738392c20332e",
+    "qwen_parity": "192/192",
+    "sanitizer_logs_scanned": 40
+  },
+  "performance": {
+    "plan": {
+      "scope": "Prepared-model request API, same source-validated prompt/shape and fixed payload quotas; only RAM admission differs",
+      "order": [
+        "ram-off",
+        "ram-on"
+      ],
+      "requests_per_configuration": 4,
+      "ram_entries": 15360,
+      "ram_payload_bytes": 204527370240,
+      "decode_entries": 48,
+      "temporary_entries": 48,
+      "gpu_admit": false,
+      "prediction_first": true,
+      "prefill": [
+        512,
+        512,
+        2
+      ],
+      "context": 1280,
+      "window": 32,
+      "memory_admission": "Require MemAvailable >= RAM payload +64GiB before each isolated process. Payload cap is not RSS. MaxRSS covers whole child including setup/verification.",
+      "analysis": "First request reported separately; medians of later1..3 identical replays. Source-read bytes/calls and GPU-upload bytes separate. No disk-cold, general cache-hit-rate or vLLM claim.",
+      "limitations": [
+        "Fixed order and small sample; filesystem warmth/clocks/NUMA placement uncontrolled",
+        "Managed expert stores initially empty, other model/codec/session setup outside request timer",
+        "Source read time is host reader time (including file cache/page faults), not physical disk latency",
+        "RAM entries reserve payload, not metadata/allocator/model/OS file cache overhead"
+      ]
+    },
+    "configurations": {
+      "ram-off": {
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-cli/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--text-timing",
+          "--decode-cache-experts",
+          "48",
+          "--ram-cache-experts",
+          "15360"
+        ],
+        "exit": 0,
+        "mem_available_before": 490008662016,
+        "process_max_rss_bytes": 1219657728,
+        "rows": [
+          {
+            "kind": "native_text_timing",
+            "run": 0,
+            "prediction_first": 1,
+            "skip_special": 0,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 14355.876568,
+            "prefill_ms": 13420.89813,
+            "first_token_ms": 13421.372805,
+            "first_byte_ms": 13421.372805,
+            "post_prefill_first_token_ms": 0.474675,
+            "post_prefill_first_byte_ms": 0.474675,
+            "generation_tail_ms": 934.978438,
+            "admit_decode": 0,
+            "initial_expert_uploads": 0,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 6232.94422,
+            "ram_hits": 0,
+            "ram_misses": 15508,
+            "ram_miss_bytes": 206498076672,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 0,
+            "source_read_calls": 46524,
+            "source_read_bytes": 206498076672,
+            "source_read_ms": 7066.748285,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              13421.372805,
+              13660.854721,
+              13891.896955,
+              14125.609438,
+              14355.875557,
+              14355.875837
+            ],
+            "output_hex": "3738392c20332e"
+          },
+          {
+            "kind": "native_text_timing",
+            "run": 1,
+            "prediction_first": 1,
+            "skip_special": 1,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 14194.008757,
+            "prefill_ms": 13271.937704,
+            "first_token_ms": 13272.413561,
+            "first_byte_ms": 13272.413561,
+            "post_prefill_first_token_ms": 0.475857,
+            "post_prefill_first_byte_ms": 0.475857,
+            "generation_tail_ms": 922.071053,
+            "admit_decode": 0,
+            "initial_expert_uploads": 46524,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 6223.723403,
+            "ram_hits": 0,
+            "ram_misses": 15508,
+            "ram_miss_bytes": 206498076672,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 0,
+            "source_read_calls": 46524,
+            "source_read_bytes": 206498076672,
+            "source_read_ms": 7099.532703,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              13272.413561,
+              13501.501741,
+              13731.926962,
+              13960.509199,
+              14194.007745,
+              14194.008046
+            ],
+            "output_hex": "3738392c20332e"
+          },
+          {
+            "kind": "native_text_timing",
+            "run": 2,
+            "prediction_first": 1,
+            "skip_special": 0,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 14109.056142,
+            "prefill_ms": 13179.640942,
+            "first_token_ms": 13180.116578,
+            "first_byte_ms": 13180.116578,
+            "post_prefill_first_token_ms": 0.475636,
+            "post_prefill_first_byte_ms": 0.475636,
+            "generation_tail_ms": 929.4152,
+            "admit_decode": 0,
+            "initial_expert_uploads": 93048,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 6198.629386,
+            "ram_hits": 0,
+            "ram_misses": 15508,
+            "ram_miss_bytes": 206498076672,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 0,
+            "source_read_calls": 46524,
+            "source_read_bytes": 206498076672,
+            "source_read_ms": 7040.511216,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              13180.116578,
+              13411.452581,
+              13644.012293,
+              13877.260888,
+              14109.055211,
+              14109.055501
+            ],
+            "output_hex": "3738392c20332e"
+          },
+          {
+            "kind": "native_text_timing",
+            "run": 3,
+            "prediction_first": 1,
+            "skip_special": 1,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 14198.997457,
+            "prefill_ms": 13268.826181,
+            "first_token_ms": 13269.299574,
+            "first_byte_ms": 13269.299574,
+            "post_prefill_first_token_ms": 0.473393,
+            "post_prefill_first_byte_ms": 0.473393,
+            "generation_tail_ms": 930.171276,
+            "admit_decode": 0,
+            "initial_expert_uploads": 139572,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 6214.319404,
+            "ram_hits": 0,
+            "ram_misses": 15508,
+            "ram_miss_bytes": 206498076672,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 0,
+            "source_read_calls": 46524,
+            "source_read_bytes": 206498076672,
+            "source_read_ms": 7113.235992,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              13269.299574,
+              13504.969457,
+              13737.062026,
+              13969.176488,
+              14198.996305,
+              14198.996605
+            ],
+            "output_hex": "3738392c20332e"
+          }
+        ],
+        "initial_request": {
+          "kind": "native_text_timing",
+          "run": 0,
+          "prediction_first": 1,
+          "skip_special": 0,
+          "prompt_tokens": 1026,
+          "prefill_tokens": 512,
+          "context_capacity": 1280,
+          "generated": 5,
+          "forwards": 7,
+          "input_id_checks": 1030,
+          "position": 1030,
+          "request_ms": 14355.876568,
+          "prefill_ms": 13420.89813,
+          "first_token_ms": 13421.372805,
+          "first_byte_ms": 13421.372805,
+          "post_prefill_first_token_ms": 0.474675,
+          "post_prefill_first_byte_ms": 0.474675,
+          "generation_tail_ms": 934.978438,
+          "admit_decode": 0,
+          "initial_expert_uploads": 0,
+          "initial_decode_charged": 0,
+          "expert_upload_bytes": 206498076672,
+          "expert_upload_ms": 6232.94422,
+          "ram_hits": 0,
+          "ram_misses": 15508,
+          "ram_miss_bytes": 206498076672,
+          "decode_hits": 0,
+          "decode_misses": 15508,
+          "ram_admit_misses": 0,
+          "source_read_calls": 46524,
+          "source_read_bytes": 206498076672,
+          "source_read_ms": 7066.748285,
+          "output_bytes": 7,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "token_callback_ms": [
+            13421.372805,
+            13660.854721,
+            13891.896955,
+            14125.609438,
+            14355.875557,
+            14355.875837
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        "later_pass_medians": {
+          "request_ms": 14194.008757,
+          "prefill_ms": 13268.826181,
+          "first_byte_ms": 13269.299574,
+          "generation_tail_ms": 929.4152,
+          "expert_upload_bytes": 206498076672,
+          "expert_upload_ms": 6214.319404,
+          "ram_hits": 0,
+          "ram_misses": 15508,
+          "source_read_calls": 46524,
+          "source_read_bytes": 206498076672,
+          "source_read_ms": 7099.532703
+        }
+      },
+      "ram-on": {
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-cli/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--text-timing",
+          "--decode-cache-experts",
+          "48",
+          "--ram-cache-experts",
+          "15360",
+          "--ram-admit-misses"
+        ],
+        "exit": 0,
+        "mem_available_before": 490041864192,
+        "process_max_rss_bytes": 116303699968,
+        "rows": [
+          {
+            "kind": "native_text_timing",
+            "run": 0,
+            "prediction_first": 1,
+            "skip_special": 0,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 30250.066892,
+            "prefill_ms": 29612.381766,
+            "first_token_ms": 29612.854548,
+            "first_byte_ms": 29612.854548,
+            "post_prefill_first_token_ms": 0.472782,
+            "post_prefill_first_byte_ms": 0.472782,
+            "generation_tail_ms": 637.685126,
+            "admit_decode": 0,
+            "initial_expert_uploads": 0,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 8152.522207,
+            "ram_hits": 6863,
+            "ram_misses": 8645,
+            "ram_miss_bytes": 115113223680,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 1,
+            "source_read_calls": 25935,
+            "source_read_bytes": 115113223680,
+            "source_read_ms": 20998.898842,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              29612.854548,
+              29777.631733,
+              29934.081528,
+              30089.341185,
+              30250.06595,
+              30250.066261
+            ],
+            "output_hex": "3738392c20332e"
+          },
+          {
+            "kind": "native_text_timing",
+            "run": 1,
+            "prediction_first": 1,
+            "skip_special": 1,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 9402.120005,
+            "prefill_ms": 8781.673751,
+            "first_token_ms": 8782.149728,
+            "first_byte_ms": 8782.149728,
+            "post_prefill_first_token_ms": 0.475977,
+            "post_prefill_first_byte_ms": 0.475977,
+            "generation_tail_ms": 620.446254,
+            "admit_decode": 0,
+            "initial_expert_uploads": 46524,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 8526.709284,
+            "ram_hits": 15508,
+            "ram_misses": 0,
+            "ram_miss_bytes": 0,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 1,
+            "source_read_calls": 0,
+            "source_read_bytes": 0,
+            "source_read_ms": 0.0,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              8782.149728,
+              8937.256251,
+              9093.187064,
+              9247.766752,
+              9402.119144,
+              9402.119444
+            ],
+            "output_hex": "3738392c20332e"
+          },
+          {
+            "kind": "native_text_timing",
+            "run": 2,
+            "prediction_first": 1,
+            "skip_special": 0,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 9356.946252,
+            "prefill_ms": 8731.10689,
+            "first_token_ms": 8731.579622,
+            "first_byte_ms": 8731.579622,
+            "post_prefill_first_token_ms": 0.472732,
+            "post_prefill_first_byte_ms": 0.472732,
+            "generation_tail_ms": 625.839362,
+            "admit_decode": 0,
+            "initial_expert_uploads": 93048,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 8482.904681,
+            "ram_hits": 15508,
+            "ram_misses": 0,
+            "ram_miss_bytes": 0,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 1,
+            "source_read_calls": 0,
+            "source_read_bytes": 0,
+            "source_read_ms": 0.0,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              8731.579622,
+              8888.096099,
+              9043.160328,
+              9201.327596,
+              9356.9453,
+              9356.945631
+            ],
+            "output_hex": "3738392c20332e"
+          },
+          {
+            "kind": "native_text_timing",
+            "run": 3,
+            "prediction_first": 1,
+            "skip_special": 1,
+            "prompt_tokens": 1026,
+            "prefill_tokens": 512,
+            "context_capacity": 1280,
+            "generated": 5,
+            "forwards": 7,
+            "input_id_checks": 1030,
+            "position": 1030,
+            "request_ms": 9372.419617,
+            "prefill_ms": 8757.224034,
+            "first_token_ms": 8757.585446,
+            "first_byte_ms": 8757.585446,
+            "post_prefill_first_token_ms": 0.361412,
+            "post_prefill_first_byte_ms": 0.361412,
+            "generation_tail_ms": 615.195583,
+            "admit_decode": 0,
+            "initial_expert_uploads": 139572,
+            "initial_decode_charged": 0,
+            "expert_upload_bytes": 206498076672,
+            "expert_upload_ms": 8500.567346,
+            "ram_hits": 15508,
+            "ram_misses": 0,
+            "ram_miss_bytes": 0,
+            "decode_hits": 0,
+            "decode_misses": 15508,
+            "ram_admit_misses": 1,
+            "source_read_calls": 0,
+            "source_read_bytes": 0,
+            "source_read_ms": 0.0,
+            "output_bytes": 7,
+            "generated_ids": [
+              25744,
+              14,
+              223,
+              21,
+              16
+            ],
+            "token_callback_ms": [
+              8757.585446,
+              8912.051731,
+              9065.034881,
+              9218.153548,
+              9372.418726,
+              9372.419147
+            ],
+            "output_hex": "3738392c20332e"
+          }
+        ],
+        "initial_request": {
+          "kind": "native_text_timing",
+          "run": 0,
+          "prediction_first": 1,
+          "skip_special": 0,
+          "prompt_tokens": 1026,
+          "prefill_tokens": 512,
+          "context_capacity": 1280,
+          "generated": 5,
+          "forwards": 7,
+          "input_id_checks": 1030,
+          "position": 1030,
+          "request_ms": 30250.066892,
+          "prefill_ms": 29612.381766,
+          "first_token_ms": 29612.854548,
+          "first_byte_ms": 29612.854548,
+          "post_prefill_first_token_ms": 0.472782,
+          "post_prefill_first_byte_ms": 0.472782,
+          "generation_tail_ms": 637.685126,
+          "admit_decode": 0,
+          "initial_expert_uploads": 0,
+          "initial_decode_charged": 0,
+          "expert_upload_bytes": 206498076672,
+          "expert_upload_ms": 8152.522207,
+          "ram_hits": 6863,
+          "ram_misses": 8645,
+          "ram_miss_bytes": 115113223680,
+          "decode_hits": 0,
+          "decode_misses": 15508,
+          "ram_admit_misses": 1,
+          "source_read_calls": 25935,
+          "source_read_bytes": 115113223680,
+          "source_read_ms": 20998.898842,
+          "output_bytes": 7,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "token_callback_ms": [
+            29612.854548,
+            29777.631733,
+            29934.081528,
+            30089.341185,
+            30250.06595,
+            30250.066261
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        "later_pass_medians": {
+          "request_ms": 9372.419617,
+          "prefill_ms": 8757.224034,
+          "first_byte_ms": 8757.585446,
+          "generation_tail_ms": 620.446254,
+          "expert_upload_bytes": 206498076672,
+          "expert_upload_ms": 8500.567346,
+          "ram_hits": 15508,
+          "ram_misses": 0,
+          "source_read_calls": 0,
+          "source_read_bytes": 0,
+          "source_read_ms": 0.0
+        }
+      }
+    },
+    "later_prefill_delta_ms": -4511.602147,
+    "later_request_delta_ms": -4821.58914,
+    "source_reads": "Zero later-pass host expert source reads with sufficient RAM quota; GPU upload volume unchanged",
+    "raw": "/tmp/bitnet-goal-native-ram-policy/performance.json"
+  },
+  "qualification": {
+    "checks": {
+      "moe": 0,
+      "asan-moe": 0,
+      "unit": 0,
+      "asan-unit": 0,
+      "cli": 0,
+      "asan-cli": 0,
+      "default-source": 0,
+      "ram-source": 0,
+      "asan-ram-source": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "native-control": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 883,
+    "reference_files": 38718,
+    "goal_status": "active",
+    "scope": "Independent bounded RAM admission without GPU admission; default/owner/lease/IO failure semantics preserved; 37 standard+37 ASAN CLI cases, large-RAM full source controls and instrumented bridge/host cache; no universal speedup claim"
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "hardware": {
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05, 595.104.02",
+    "cpu": {
+      "lscpu": [
+        {
+          "field": "Architecture:",
+          "data": "x86_64"
+        },
+        {
+          "field": "CPU op-mode(s):",
+          "data": "32-bit, 64-bit"
+        },
+        {
+          "field": "Address sizes:",
+          "data": "52 bits physical, 57 bits virtual"
+        },
+        {
+          "field": "Byte Order:",
+          "data": "Little Endian"
+        },
+        {
+          "field": "CPU(s):",
+          "data": "128"
+        },
+        {
+          "field": "On-line CPU(s) list:",
+          "data": "0-127"
+        },
+        {
+          "field": "Vendor ID:",
+          "data": "AuthenticAMD"
+        },
+        {
+          "field": "Model name:",
+          "data": "AMD Ryzen Threadripper 9980X 64-Cores"
+        },
+        {
+          "field": "CPU family:",
+          "data": "26"
+        },
+        {
+          "field": "Model:",
+          "data": "8"
+        },
+        {
+          "field": "Thread(s) per core:",
+          "data": "2"
+        },
+        {
+          "field": "Core(s) per socket:",
+          "data": "64"
+        },
+        {
+          "field": "Socket(s):",
+          "data": "1"
+        },
+        {
+          "field": "Stepping:",
+          "data": "1"
+        },
+        {
+          "field": "Frequency boost:",
+          "data": "enabled"
+        },
+        {
+          "field": "CPU(s) scaling MHz:",
+          "data": "25%"
+        },
+        {
+          "field": "CPU max MHz:",
+          "data": "5476.2891"
+        },
+        {
+          "field": "CPU min MHz:",
+          "data": "1220.6190"
+        },
+        {
+          "field": "BogoMIPS:",
+          "data": "6390.20"
+        },
+        {
+          "field": "Flags:",
+          "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d debug_swap amd_lbr_pmc_freeze"
+        },
+        {
+          "field": "Virtualization:",
+          "data": "AMD-V"
+        },
+        {
+          "field": "L1d cache:",
+          "data": "3 MiB (64 instances)"
+        },
+        {
+          "field": "L1i cache:",
+          "data": "2 MiB (64 instances)"
+        },
+        {
+          "field": "L2 cache:",
+          "data": "64 MiB (64 instances)"
+        },
+        {
+          "field": "L3 cache:",
+          "data": "256 MiB (8 instances)"
+        },
+        {
+          "field": "NUMA node(s):",
+          "data": "1"
+        },
+        {
+          "field": "NUMA node0 CPU(s):",
+          "data": "0-127"
+        },
+        {
+          "field": "Vulnerability Gather data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Ghostwrite:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Indirect target selection:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Itlb multihit:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability L1tf:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Meltdown:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mmio stale data:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Old microcode:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Reg file data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Retbleed:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Spec rstack overflow:",
+          "data": "Mitigation; Reduced Speculation"
+        },
+        {
+          "field": "Vulnerability Spec store bypass:",
+          "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+        },
+        {
+          "field": "Vulnerability Spectre v1:",
+          "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+        },
+        {
+          "field": "Vulnerability Spectre v2:",
+          "data": "Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected"
+        },
+        {
+          "field": "Vulnerability Srbds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsa:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsx async abort:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Vmscape:",
+          "data": "Mitigation; IBPB before exit to userspace"
+        }
+      ]
+    }
+  },
+  "artifacts": "/tmp/bitnet-goal-native-ram-policy",
+  "limits": [
+    "Large RAM payload is an explicit benchmark choice, not a new CLI default; insufficient quotas can churn the RAM LRU",
+    "One fixed prompt replay, fixed configuration order, three later-pass samples; no general hit-rate, physical disk-cold or matched vLLM claim",
+    "CPU source-read timer includes reader/file cache/page faults, not isolated disk latency; upload timer is existing host boundary time, not exposed GPU stalls",
+    "Process MaxRSS includes model/setup/verification and is not the RAM payload charge",
+    "ASAN instruments changed bridge, host LRU, frontend and tests; exact AVX512 synthetic test uses GCC13/O3 with ASAN/UBSAN, other probes Clang18; unchanged CPU activation kernels and GPU objects are normal product objects. Initial mixed-compiler exact-reduction assertion failed; preserved in artifacts, unchanged assertion passed with matching compiler",
+    "Explicit EXL3/INT4 BF16 row lookup to Exllama F16 Engram adapter, not original Diffbot full-runtime equivalence",
+    "No model arithmetic, routing, automatic BOS/EOS/chat, backend or serving qualification expansion; full goal incomplete"
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "full_goal_complete": false,
+  "scope": "Union of max(0, preceding producer GPU activity end - max(prior consumer-stream activity end, first consumer API return)). Single process/device/context. Excludes host submission gaps; event readiness is bounded by preceding producer work. This is not full source stall time, transfer duration, isolated latency savings or a counterfactual critical path. Profiling overhead remains.",
+  "device": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "flash": {
+    "database_sha256": "9a057fe444dd5d2e150350512503cd5463b8405b8aa67d613a8b695acf7d19a9",
+    "waits": 18789,
+    "single_consumer_per_wait": true,
+    "intervals_nonoverlapping": true,
+    "runs": [
+      {
+        "run": 0,
+        "decode_waits": 6048,
+        "positive_waits": 2378,
+        "dependency_ms": 236.129151,
+        "mean_per_decode_ms": 3.748081761904762
+      },
+      {
+        "run": 1,
+        "decode_waits": 6048,
+        "positive_waits": 1271,
+        "dependency_ms": 84.134391,
+        "mean_per_decode_ms": 1.3354665238095238
+      },
+      {
+        "run": 2,
+        "decode_waits": 6048,
+        "positive_waits": 1287,
+        "dependency_ms": 85.303458,
+        "mean_per_decode_ms": 1.3540231428571428
+      }
+    ]
+  },
+  "calibration": {
+    "all_six_cases_pass": true,
+    "cases": [
+      {
+        "case": "exposed-kernel",
+        "exposed_lower_bound_ms": 7.015695,
+        "cuda_event_gap_ms": 7.016448
+      },
+      {
+        "case": "hidden-kernel",
+        "exposed_lower_bound_ms": 0.0,
+        "cuda_event_gap_ms": 0.001056
+      },
+      {
+        "case": "late-kernel",
+        "exposed_lower_bound_ms": 0.0,
+        "cuda_event_gap_ms": 24.083103
+      },
+      {
+        "case": "exposed-copy",
+        "exposed_lower_bound_ms": 8.296658,
+        "cuda_event_gap_ms": 8.2952
+      },
+      {
+        "case": "hidden-copy",
+        "exposed_lower_bound_ms": 0.0,
+        "cuda_event_gap_ms": 0.001312
+      },
+      {
+        "case": "late-copy",
+        "exposed_lower_bound_ms": 0.0,
+        "cuda_event_gap_ms": 24.067104
+      }
+    ]
+  },
+  "prefill": [
+    {
+      "run": 0,
+      "bank_wait_events": 215,
+      "bank_dependency_lower_bound_ms": 83.5359
+    },
+    {
+      "run": 1,
+      "bank_wait_events": 215,
+      "bank_dependency_lower_bound_ms": 32.008523
+    },
+    {
+      "run": 2,
+      "bank_wait_events": 215,
+      "bank_dependency_lower_bound_ms": 32.146419
+    }
+  ],
+  "preexisting_192_phase_metrics_unchanged": true,
+  "runtime_policy_changed": false,
+  "evidence_directory": "/tmp/bitnet-goal-offload-dependency",
+  "source_sha256": {
+    "bench/cuda_dependencies.py": "68a1fce78db5dfe2a2be284f2d0f76a64cb21fb1512a449cff188cbda5538e2f",
+    "bench/analyze_flash_trace.py": "9a0a771ad18d6aeb142077422910e66a8bb63778e82f820ffb98547023c2318b",
+    "bench/qualify_cuda_dependencies.cu": "b2c29dc94452fe1da09e046f7eeac3b9d7d901965b9bbe71378cf8e290c12841"
+  },
+  "validation": {
+    "protected_clean_build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "calibration_memcheck_errors": 0,
+    "positive_intervals_within_phase": true,
+    "runtime_sources_unchanged": true,
+    "report_metrics_unchanged": true
+  }
+}

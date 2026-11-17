@@ -1,0 +1,219 @@
+{
+  "scope": "Qualified dense Qwen3.8 27B,20 uniform129-token burst requests,16 live,64 outputs each,contexts8192,KV payload budget8GiB; retained slots reused across waves16then4",
+  "full_goal_complete": false,
+  "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+  "reference": "test/bf16_cuda_serving20_reference.json",
+  "policy": "bench/policies/qwen38-cuda-serving20-noncp.json",
+  "reference_image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "graphs_enabled": false,
+  "quantization": "same GGUF checkpoint; BF16 activations and F32 SSM state",
+  "samples_each": 3,
+  "full_serving_logit_vectors_exact": 1280,
+  "full_serving_bf16_words_exact": 317849600,
+  "mixed_sampled_heads_exact": 256,
+  "caller_owned_handle": true,
+  "kv_accounting": {
+    "kind": "kv_pool",
+    "scope": "kv_payload_only",
+    "budget_bytes": 8589934592,
+    "kv_bytes_per_slot": 536870912,
+    "reserved_kv_bytes": 8589934592,
+    "peak_kv_bytes": 8589934592,
+    "allocated_slots": 16,
+    "leased_slots": 0,
+    "created": 16,
+    "reused": 4,
+    "discarded": 0
+  },
+  "metrics": {
+    "native_prefill_ms": 2934.878258,
+    "reference_prefill_ms": 6612.084886990488,
+    "native_decode_engine_step_ms": 66.24199870634921,
+    "reference_decode_engine_step_ms": 69.58284209083233,
+    "native_elapsed_ms": 11390.014992,
+    "reference_elapsed_ms": 15387.413864023983,
+    "native_output_tokens_per_second": 112.379132,
+    "reference_output_tokens_per_second": 83.18486857578193,
+    "prefill_throughput_ratio": 2.252933275500277,
+    "decode_latency_ratio": 0.9519875405473948,
+    "prefill_within_5_percent": true,
+    "decode_within_5_percent": true,
+    "native_ttft": {
+      "p50_ms": 2423.972554,
+      "p95_ms": 8944.572254,
+      "p99_ms": 8944.572284
+    },
+    "reference_ttft": {
+      "p50_ms": 5238.049556035548,
+      "p95_ms": 12946.962952963077,
+      "p99_ms": 12946.962952963077
+    },
+    "native_inter_token_latency": {
+      "p50_ms": 93.62745399999949,
+      "p95_ms": 93.7112619999998,
+      "p99_ms": 93.93884900000012
+    },
+    "reference_inter_token_latency": {
+      "p50_ms": 100.51632800605148,
+      "p95_ms": 100.87976302020252,
+      "p99_ms": 101.02089901920408
+    }
+  },
+  "native_runs": [
+    {
+      "reference_tokens_matched": 1280,
+      "requests": 20,
+      "peak_live_proven": 16,
+      "admission_waves": 2,
+      "prefill_batches": 2,
+      "decode_batches": 126,
+      "diagnostic_logits_dump": false,
+      "performance_reported": true,
+      "elapsed_ms": 11364.175381,
+      "output_tokens_per_second": 112.634657,
+      "prefill_phase_ms": 2915.101962,
+      "decode_batch_ms": 66.19464813492063,
+      "ttft": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 2407.743918,
+        "p95_ms": 8930.549789,
+        "p99_ms": 8930.549819
+      },
+      "inter_token_latency": {
+        "samples": 1260,
+        "method": "nearest_rank",
+        "p50_ms": 93.55489300000045,
+        "p95_ms": 94.38072399999965,
+        "p99_ms": 94.7578910000002
+      },
+      "admission_wait": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 65.998429,
+        "p95_ms": 8315.479151,
+        "p99_ms": 8315.729924
+      },
+      "admitted_ttft": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 2334.960583,
+        "p95_ms": 2395.3396749999997,
+        "p99_ms": 2401.680203
+      }
+    },
+    {
+      "reference_tokens_matched": 1280,
+      "requests": 20,
+      "peak_live_proven": 16,
+      "admission_waves": 2,
+      "prefill_batches": 2,
+      "decode_batches": 126,
+      "diagnostic_logits_dump": false,
+      "performance_reported": true,
+      "elapsed_ms": 11390.014992,
+      "output_tokens_per_second": 112.379132,
+      "prefill_phase_ms": 2934.878258,
+      "decode_batch_ms": 66.24199870634921,
+      "ttft": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 2423.972554,
+        "p95_ms": 8944.572254,
+        "p99_ms": 8944.572284
+      },
+      "inter_token_latency": {
+        "samples": 1260,
+        "method": "nearest_rank",
+        "p50_ms": 93.62745399999949,
+        "p95_ms": 93.7112619999998,
+        "p99_ms": 93.90912500000013
+      },
+      "admission_wait": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 66.138614,
+        "p95_ms": 8325.78659,
+        "p99_ms": 8326.017603
+      },
+      "admitted_ttft": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 2350.9920469999997,
+        "p95_ms": 2411.56796,
+        "p99_ms": 2417.94256
+      }
+    },
+    {
+      "reference_tokens_matched": 1280,
+      "requests": 20,
+      "peak_live_proven": 16,
+      "admission_waves": 2,
+      "prefill_batches": 2,
+      "decode_batches": 126,
+      "diagnostic_logits_dump": false,
+      "performance_reported": true,
+      "elapsed_ms": 11406.586351,
+      "output_tokens_per_second": 112.215869,
+      "prefill_phase_ms": 2941.905534,
+      "decode_batch_ms": 66.31394321428571,
+      "ttft": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 2430.033755,
+        "p95_ms": 8952.856582,
+        "p99_ms": 8952.856602
+      },
+      "inter_token_latency": {
+        "samples": 1260,
+        "method": "nearest_rank",
+        "p50_ms": 93.64298700000018,
+        "p95_ms": 93.70845800000006,
+        "p99_ms": 93.93884900000012
+      },
+      "admission_wait": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 66.348865,
+        "p95_ms": 8332.630006,
+        "p99_ms": 8332.857303
+      },
+      "admitted_ttft": {
+        "samples": 20,
+        "method": "nearest_rank",
+        "p50_ms": 2356.8711590000003,
+        "p95_ms": 2417.492042,
+        "p99_ms": 2423.95046
+      }
+    }
+  ],
+  "qualification": {
+    "clean_build_zero_warnings": true,
+    "standard_suite": true,
+    "address_undefined_sanitizers": true,
+    "full_model_runtime": true,
+    "focused_pool_gpu_memcheck": true,
+    "serving_word_exact": true,
+    "mixed_word_exact": true
+  },
+  "evidence_root": "/tmp/bitnet-goal-dense-kv-pool-init",
+  "source_sha256": {
+    "src/transformer/bf16_pool.c": "9e33a16c2f74d2e7f3a77b5ed43f83888c5ab18a7d2dd36c22b9b9f63271ad0d",
+    "src/transformer/bf16_internal.h": "e78496fd9139714bec5942c4992de8e62fb770e0814d534aec97abd1c421b381",
+    "test/test_bf16_pool.c": "4b877d9192016d193e39d2ab9a318a45d55c87edbc99a3c629ca69a110be00c9",
+    "test/test_bf16_runtime.c": "480daeacea04e4a46bbd89ddebf654674701127d6b27324eeff9b247800b663d",
+    "bench/bench_bf16_batch.c": "b73c8284c4c254d0478e5f1108cbfaa80a61cd8d655d4b324249a76b8c5c75b0",
+    "bench/verify_bf16_kv_pool.py": "8c54a3105bb1d1e2e9cd5336b08f56fe18e694c170bb4986cfc7352ab83309d8",
+    "bench/verify_bf16_mixed_batch.py": "ff0fd701253fcedd170aecf3ce975ca45c3af9448a6650ffd2b606630e124cd9",
+    "bench/verify_bf16_packed_batch.py": "6214465ee746f05d3eff05b32c6aa0c13f1cc54709728c625bfe305494f6d59b",
+    "bench/verify_bf16_serving_batch.py": "528f241db89dbb43024060deb353ffa94456e87c20e9da8b474e8dbd4034d854",
+    "test/test_bf16_mixed_reference.py": "6f6ed625f5c566072280c22a880ad868d4f06bc628b172a2faddbf37f8dbc99e",
+    "Makefile": "7d3c1d55cc6d06522802885bcaca0e1fa343ec1105215fb5368c18f4c6e40dce"
+  },
+  "exclusions": [
+    "KV budget excludes SSM,convolution history,activations,workspace,model weights,allocator and driver memory",
+    "Return/restart/admission remain timed; persistent idle pool destruction occurs after workload timing",
+    "No staggered arrivals,variable-capacity/paged KV allocator,total VRAM budget or full production scheduler qualification"
+  ]
+}

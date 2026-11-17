@@ -118,6 +118,7 @@ int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
                           const BnSession *session,
                           const int *tokens, int n_tokens) {
     if (!cache || !model || !session || !tokens || n_tokens <= 0) return -2;
+    if (session->backend_only) return -1;
     const BnConfig *cfg = &model->config;
 
     // Reject hybrid models (SSM state can't be cheaply snapshotted)
@@ -234,6 +235,7 @@ int bn_prompt_cache_restore(BnPromptCache *cache, const BnModel *model,
                             BnSession *session,
                             const int *tokens, int n_tokens) {
     if (!cache || !model || !session || !tokens || n_tokens <= 0) return 0;
+    if (session->backend_only) return 0;
     const BnConfig *cfg = &model->config;
 
     // Reject hybrid models

@@ -1,8 +1,12 @@
 #include "moe.h"
 #include "backend_model.h"
 #include "gpu_backend.h"
+#include "gpu_moe_cache.h"
+#include "gpu_moe_bridge.h"
 #include "model.h"
 #include "model_internal.h"
+#include "session_internal.h"
+#include "backend_session.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "../src/moe_internal.h"
@@ -123,6 +127,24 @@ static void test_moe_projection_buffer_layout(void) {
     assert(layout.max_bytes == 160);
     assert(bn_moe_projection_buffer_layout(NULL, &w).max_bytes == 0);
     assert(bn_moe_projection_buffer_layout(&c, NULL).max_bytes == 0);
+    BnModel model = {.config = c, .weights = w};
+    BnMoEProjectionBufferLayout legacy = bn_moe_model_projection_buffer_layout(&model);
+    assert(!memcmp(&layout, &legacy, sizeof(layout)));
+    assert(!bn_moe_model_projection_buffer_layout(NULL).max_bytes);
+    BnModelTopology *topology = calloc(1, sizeof(*topology)); assert(topology);
+    topology->anatomy.n_layers = 3;
+    for (int i = 0; i < 3; ++i) topology->experts[i] = layers[i].moe.expert_map;
+    BnModelRuntime runtime = {.topology = topology};
+    model.runtime = &runtime; model.weights.layers = NULL;
+    BnMoEProjectionBufferLayout planned = bn_moe_model_projection_buffer_layout(&model);
+    assert(!memcmp(&layout, &planned, sizeof(layout)));
+    BnModelIO io = {.file = {.fd = -1}, .moe_io = {.fd = -1, .mmap_base = (const uint8_t *)1}};
+    model.io = &io;
+    assert(bn_moe_prefault_mmap(&model) == -1);
+    assert(bn_moe_prepare_mmap_experts(&model) == -1);
+    topology->anatomy.n_layers = BN_MODEL_ANATOMY_MAX_LAYERS + 1;
+    assert(!bn_moe_model_projection_buffer_layout(&model).max_bytes);
+    free(topology);
     printf("PASSED\n");
 }
 
@@ -1468,6 +1490,110 @@ static void test_moe_prefill_prepared_cache_tokens(int tokens) {
 #endif
 }
 
+typedef struct {
+    int calls;
+    int reject;
+} MoECachedPrefillCheck;
+
+static void *moe_test_unexpected_upload(void *ctx, const void *data,
+                                       size_t bytes, int type, int rows,
+                                       int cols) {
+    (void)ctx; (void)data; (void)bytes; (void)type; (void)rows; (void)cols;
+    assert(!"cached expert must not upload weights");
+    return NULL;
+}
+
+static void moe_test_borrowed_destroy(void *ctx, void *buffer) {
+    (void)ctx; (void)buffer;
+}
+
+static int moe_test_cached_ffn(void *ctx, float *out, void *gate, void *up,
+                                void *down, const float *x, int tokens,
+                                int dim, int hidden, int gate_type,
+                                int up_type, int down_type, int activation) {
+    (void)gate_type; (void)up_type; (void)down_type; (void)activation;
+    MoECachedPrefillCheck *check = ctx;
+    assert(gate && up && down && dim == 32 && hidden == 32 && tokens == 3);
+    check->calls++;
+    for (int i = 0; i < tokens * dim; i++)
+        out[i] = check->reject ? 9999.f : 2.f * x[i];
+    return check->reject ? -1 : 0;
+}
+
+static void test_moe_prefill_gpu_cache_without_host_weights(void) {
+    printf("test_moe_prefill_gpu_cache_without_host_weights... ");
+    enum { dim = 32, tokens = 3, matrix = dim * dim };
+    float weights[3 * matrix], router[dim] = {0};
+    float input[tokens * dim], actual[tokens * dim], scratch[tokens * dim];
+    float reference[tokens * dim];
+    for (int i = 0; i < 3 * matrix; i++) weights[i] = (i % 7 - 3) * .001f;
+    for (int i = 0; i < tokens * dim; i++) input[i] = (i % 13 - 6) * .125f;
+    size_t bytes = matrix * sizeof(float);
+    BnLayerWeights layer = {0};
+    layer.moe.router_weight = router;
+    layer.moe.expert_map = (BnMoEExpertMap) {
+        .up_offset = bytes, .down_offset = 2 * bytes,
+        .expert_gate_bytes = bytes, .expert_up_bytes = bytes,
+        .expert_down_bytes = bytes,
+        .gate_stride = bytes, .up_stride = bytes, .down_stride = bytes,
+        .gate_type = BN_GGUF_TENSOR_F32, .up_type = BN_GGUF_TENSOR_F32,
+        .down_type = BN_GGUF_TENSOR_F32,
+        .gate_rows = dim, .gate_cols = dim, .up_rows = dim, .up_cols = dim,
+        .down_rows = dim, .down_cols = dim
+    };
+    BnModelIO io = {0};
+    io.moe_io.fd = -1;
+    MoECachedPrefillCheck check = {0};
+    BnGPUBackend gpu = {
+        .kind = BN_GPU_BACKEND_CUDA, .ctx = &check,
+        .buffer_create = moe_test_unexpected_upload,
+        .buffer_destroy = moe_test_borrowed_destroy,
+        .dense_ffn_batch = moe_test_cached_ffn
+    };
+    BnModelBackendState backend = {.backend = bn_backend_model_create()};
+    assert(backend.backend);
+    bn_backend_model_bind_gpu(backend.backend, &gpu);
+    BnGPUMoECache *cache = bn_gpu_moe_cache_create(3 * bytes, 3 * bytes, 1, &gpu);
+    assert(cache && bn_gpu_moe_cache_insert(cache, 0, 0,
+        weights, weights + matrix, weights + 2 * matrix) == 0);
+    io.moe_io.gpu_moe_cache = cache;
+    BnModel model = {0};
+    model.io = &io;
+    model.backend_state = &backend;
+    model.config.dim = model.config.moe_intermediate_size = dim;
+    model.config.n_experts = model.config.n_experts_active = 1;
+    BnMoEState state = {0};
+    BnSession session = {0};
+    session.moe_state = &state;
+    memcpy(actual, input, sizeof(input));
+    assert(bn_moe_forward_batch_observed(&model, &session, &layer, 0,
+        actual, scratch, tokens, BN_MOE_BATCH_INPUT_PRENORMALIZED,
+        NULL, NULL) == 0);
+    assert(check.calls == 1 && state.stats.io_count == 0);
+    for (int i = 0; i < tokens * dim; i++) assert(actual[i] == 3.f * input[i]);
+
+    /* A rejected GPU operation must reload CPU weights and overwrite its
+     * partial output, preserving the ordinary CPU result. */
+    io.moe_io.mmap_base = (const uint8_t *)weights;
+    bn_backend_model_set_gpu_disabled(backend.backend, 1);
+    memcpy(reference, input, sizeof(input));
+    assert(bn_moe_forward_batch_observed(&model, &session, &layer, 0,
+        reference, scratch, tokens, BN_MOE_BATCH_INPUT_PRENORMALIZED,
+        NULL, NULL) == 0);
+    bn_backend_model_set_gpu_disabled(backend.backend, 0);
+    check.reject = 1;
+    bn_moe_reset_stats(&state);
+    memcpy(actual, input, sizeof(input));
+    assert(bn_moe_forward_batch_observed(&model, &session, &layer, 0,
+        actual, scratch, tokens, BN_MOE_BATCH_INPUT_PRENORMALIZED,
+        NULL, NULL) == 0);
+    assert(check.calls == 2 && state.stats.io_count == 3);
+    assert(memcmp(actual, reference, sizeof(actual)) == 0);
+    bn_gpu_moe_cache_free(cache);
+    bn_backend_model_free(backend.backend);
+    printf("PASSED\n");
+}
+
 static void test_moe_prefill_prepared_cache(void) {
     test_moe_prefill_prepared_cache_tokens(9);
     test_moe_prefill_prepared_cache_tokens(127);
@@ -1810,8 +1936,722 @@ static void test_moe_prefill_dense_residual(void) {
     printf("PASSED\n");
 }
 
+#if !defined(__EMSCRIPTEN__)
+static void assert_host_expert(const BnMoEHostExpert *view,
+    const uint8_t *data, const BnMoEExpertMap *map, int expert) {
+    for (int p = 0; p < 3; p++) {
+        size_t offset, bytes;
+        assert(bn_moe_proj_info(map, expert, p, &offset, &bytes) == 0);
+        unsigned shard = p == 0 ? map->gate_shard_idx :
+                         p == 1 ? map->up_shard_idx : map->down_shard_idx;
+        assert(memcmp(view->projection[p], data + shard * 64 + offset, bytes) == 0);
+    }
+}
+
+#endif
+
+typedef struct { int calls, fail_projection; } ReaderFixture;
+static int reader_fixture_read(void *ctx,int layer,int expert,int projection,void *dst,size_t bytes) {
+    ReaderFixture *f=ctx;f->calls++;
+    unsigned char *data=dst;
+    for(size_t i=0;i<bytes;i++)data[i]=(unsigned char)(layer*31+expert*53+projection*7+(int)i);
+    return f->fail_projection==projection?-1:0;
+}
+static void reader_fixture_check(const BnMoEHostExpert *lease,const BnMoEExpertReader *reader,int layer,int expert) {
+    for(int p=0;p<3;p++)for(size_t i=0;i<reader->bytes[p];i++)
+        assert(((const unsigned char*)lease->projection[p])[i]==(unsigned char)(layer*31+expert*53+p*7+(int)i));
+}
+static void test_host_expert_reader_cache(void) {
+#ifndef __EMSCRIPTEN__
+    for(int pages=0;pages<2;pages++) {
+        ReaderFixture f={0,-1};BnMoEExpertReader reader={&f,&f,2,4,{5,7,3},reader_fixture_read};
+        void *cache=bn_moe_cache_create_reader_policy(30,&reader,(BnMoECachePagePolicy)pages);assert(cache);
+        unsigned char buffers[3][8];void *staging[]={buffers[0],buffers[1],buffers[2]};size_t caps[]={8,8,8};
+        BnMoEStats stats={0};BnMoEHostExpert a,b,c,d;
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,0,1,NULL,NULL,&a));
+        assert(a.cache==cache&&f.calls==3);reader_fixture_check(&a,&reader,0,0);
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,0,1,NULL,NULL,&d));
+        assert(f.calls==3&&stats.gpu_host_cache_hits==1);bn_moe_host_expert_release(&d);
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,1,1,NULL,NULL,&b));
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,2,1,staging,caps,&c));
+        assert(!c.cache&&f.calls==9);reader_fixture_check(&a,&reader,0,0);reader_fixture_check(&b,&reader,0,1);reader_fixture_check(&c,&reader,0,2);
+        bn_moe_host_expert_release(&c);bn_moe_host_expert_release(&b);
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,2,1,NULL,NULL,&c));assert(c.cache==cache);reader_fixture_check(&a,&reader,0,0);
+        for(int repeat=0;repeat<2;repeat++){int calls=f.calls;assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,1,0,staging,caps,&d));assert(!d.cache&&f.calls==calls+3);bn_moe_host_expert_release(&d);}
+        bn_moe_host_expert_release(&a);bn_moe_host_expert_release(&c);
+        f.fail_projection=1;assert(bn_moe_host_expert_acquire_reader(&reader,cache,&stats,1,3,1,NULL,NULL,&a)==-1&&!a.cache&&!a.projection[0]);int slot=-1;assert(!bn_moe_cache_pin_internal(cache,1,3,0,&slot));
+        f.fail_projection=-1;assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,1,3,1,NULL,NULL,&a));reader_fixture_check(&a,&reader,1,3);bn_moe_host_expert_release(&a);
+        int calls=f.calls;BnMoEExpertReader bad=reader;bad.identity=&calls;
+        assert(bn_moe_host_expert_acquire_reader(&bad,cache,&stats,0,0,1,staging,caps,&a)==-1&&f.calls==calls);
+        bad=reader;bad.context=&calls;assert(bn_moe_host_expert_acquire_reader(&bad,cache,&stats,0,0,1,staging,caps,&a)==-1);
+        bad=reader;bad.bytes[0]++;assert(bn_moe_host_expert_acquire_reader(&bad,cache,&stats,0,0,1,staging,caps,&a)==-1);
+        assert(bn_moe_host_expert_acquire_reader(&reader,cache,&stats,2,0,1,staging,caps,&a)==-1);
+        assert(bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,4,1,staging,caps,&a)==-1);
+        assert(bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,0,2,staging,caps,&a)==-1);
+        BnMoEIO io={.fd=0,.cache=cache};BnMoEState ms={0};BnMoEExpertMap map={.expert_gate_bytes=5,.expert_up_bytes=7,.expert_down_bytes=3};
+        assert(bn_moe_host_expert_acquire(&io,&ms,&map,0,0,1,&a)==-1);
+        assert(!bn_moe_cache_lookup_internal(cache,1,3)&&!bn_moe_cache_insert_internal(cache,1,3));
+        bn_moe_cache_free(cache);
+        cache=bn_moe_cache_create(30,5,7,3);assert(cache);assert(bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,0,1,staging,caps,&a)==-1);bn_moe_cache_free(cache);
+        cache=bn_moe_cache_create_reader_policy(30,&reader,(BnMoECachePagePolicy)pages);assert(cache);
+        for(int e=0;e<2;e++){assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,e,1,NULL,NULL,&a));bn_moe_host_expert_release(&a);}
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,0,0,NULL,NULL,&a));bn_moe_host_expert_release(&a);
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,2,1,NULL,NULL,&a));bn_moe_host_expert_release(&a);
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,0,0,staging,caps,&a));assert(!a.cache);bn_moe_host_expert_release(&a);
+        assert(!bn_moe_host_expert_acquire_reader(&reader,cache,&stats,0,1,0,NULL,NULL,&a));assert(a.cache);bn_moe_host_expert_release(&a);
+        assert(bn_moe_host_expert_acquire_reader(&reader,NULL,&stats,0,0,0,NULL,NULL,&a)==-1);
+        assert(!bn_moe_host_expert_acquire_reader(&reader,NULL,&stats,0,0,0,staging,caps,&a));reader_fixture_check(&a,&reader,0,0);bn_moe_host_expert_release(&a);
+        bn_moe_cache_free(cache);assert(!bn_moe_cache_create_reader_policy(14,&reader,(BnMoECachePagePolicy)pages));bad=reader;bad.bytes[0]=SIZE_MAX;assert(!bn_moe_cache_create_reader_policy(64,&bad,(BnMoECachePagePolicy)pages));
+    }
+    ReaderFixture invalid_fixture={0,-1};
+    BnMoEExpertReader valid={&invalid_fixture,&invalid_fixture,1,1,{5,7,3},reader_fixture_read};
+    const int invalid_pages[]={-1,2,INT_MAX};
+    for(size_t i=0;i<sizeof(invalid_pages)/sizeof(invalid_pages[0]);i++) {
+        BnMoECachePagePolicy pages=(BnMoECachePagePolicy)invalid_pages[i];
+        assert(!bn_moe_cache_create_policy(30,5,7,3,pages));
+        assert(!bn_moe_cache_create_reader_policy(30,&valid,pages));
+        assert(!invalid_fixture.calls);
+    }
+    puts("Container-independent pinned MoE reader cache: both page policies and invalid rejection PASSED");
+#endif
+}
+
+static void test_gpu_host_expert_cache(void) {
+#if !defined(__EMSCRIPTEN__)
+    printf("test_gpu_host_expert_cache... ");
+    FILE *files[3]; int fds[3]; uint8_t data[3][64];
+    for (int p = 0; p < 3; p++) {
+        files[p] = tmpfile(); assert(files[p]); fds[p] = fileno(files[p]);
+        for (int i = 0; i < 64; i++) data[p][i] = (uint8_t)(p * 67 + i);
+        assert(fwrite(data[p], 1, 64, files[p]) == 64);
+        assert(fflush(files[p]) == 0);
+    }
+    BnMoEExpertMap map = {
+        .gate_offset=2,.up_offset=3,.down_offset=4,
+        .gate_stride=9,.up_stride=13,.down_stride=7,
+        .expert_gate_bytes=5,.expert_up_bytes=7,.expert_down_bytes=3,
+        .gate_shard_idx=2,.up_shard_idx=0,.down_shard_idx=1
+    };
+    BnMoEIO io = {.fd=-1,.shard_fds=fds,.n_shard_fds=3};
+    io.cache = bn_moe_cache_create(30,5,7,3); assert(io.cache);
+    uint8_t buffers[2][3][16]; BnMoEState state[2]; memset(state,0,sizeof(state));
+    for (int i=0;i<2;i++) {
+        state[i].buf=buffers[i][0];state[i].buf_size=16;
+        state[i].buf2=buffers[i][1];state[i].buf2_size=16;
+        state[i].buf5=buffers[i][2];state[i].buf5_size=16;
+    }
+    BnMoEHostExpert a,b,c;
+    size_t projection_bytes[3]={5,7,3};int reserved_slot=-1;
+    uint8_t *reservation=bn_moe_cache_reserve_internal(io.cache,9,9,
+        projection_bytes,&reserved_slot);
+    assert(reservation && bn_moe_cache_lookup_internal(io.cache,9,9)==NULL);
+    assert(bn_moe_cache_available_internal(io.cache)==1);
+    bn_moe_cache_unpin_internal(io.cache,reserved_slot);
+    assert(bn_moe_cache_available_internal(io.cache)==2);
+    /* Prefill scans neither populate the cache nor perturb its LRU. */
+    for (int i=0;i<2;i++) {
+        assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,0,0,&a)==0);
+        assert(a.cache==NULL); assert_host_expert(&a,&data[0][0],&map,0);
+        bn_moe_host_expert_release(&a);
+    }
+    assert(state[0].stats.io_count==6);
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,0,1,&a)==0);
+    assert(a.cache==io.cache);assert_host_expert(&a,&data[0][0],&map,0);
+    assert(bn_moe_cache_available_internal(io.cache)==1);
+    assert(bn_moe_host_expert_acquire(&io,&state[1],&map,0,0,1,&c)==0);
+    assert(c.slot==a.slot && bn_moe_cache_available_internal(io.cache)==1);
+    bn_moe_cache_invalidate_internal(io.cache,0,0);
+    assert_host_expert(&a,&data[0][0],&map,0);
+    bn_moe_host_expert_release(&c);
+    assert(bn_moe_cache_available_internal(io.cache)==1);
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,1,1,&b)==0);
+    assert(b.cache==io.cache);assert(bn_moe_cache_available_internal(io.cache)==0);
+    assert(bn_moe_cache_insert_internal(io.cache,0,3)==NULL);
+    /* A second request streams from its own buffers while all slots are pinned. */
+    assert(bn_moe_host_expert_acquire(&io,&state[1],&map,0,2,1,&c)==0);
+    assert(c.cache==NULL);assert_host_expert(&c,&data[0][0],&map,2);
+    assert_host_expert(&a,&data[0][0],&map,0);assert_host_expert(&b,&data[0][0],&map,1);
+    bn_moe_host_expert_release(&c);bn_moe_host_expert_release(&b);
+    assert(bn_moe_host_expert_acquire(&io,&state[1],&map,0,2,1,&c)==0);
+    assert(c.cache==io.cache);assert_host_expert(&a,&data[0][0],&map,0);
+    bn_moe_host_expert_release(&c);bn_moe_host_expert_release(&a);
+    bn_moe_host_expert_release(&a); /* idempotent */
+    assert(bn_moe_cache_available_internal(io.cache)==2);
+    bn_moe_cache_invalidate_internal(io.cache,0,0);
+    assert(bn_moe_cache_lookup_internal(io.cache,0,0)==NULL);
+    /* Rebuild the exact LRU order: 1 newest, 0 oldest. */
+    bn_moe_cache_free(io.cache);io.cache=bn_moe_cache_create(30,5,7,3);assert(io.cache);
+    bn_moe_reset_stats(&state[0]);
+    for(int e=0;e<2;e++) {
+        assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,e,1,&a)==0);
+        bn_moe_host_expert_release(&a);
+    }
+    int reads=state[0].stats.io_count;
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,0,0,&a)==0);
+    assert(state[0].stats.io_count==reads);bn_moe_host_expert_release(&a);
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,2,0,&a)==0);
+    bn_moe_host_expert_release(&a);
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,2,1,&a)==0);
+    bn_moe_host_expert_release(&a);
+    assert(bn_moe_cache_lookup_internal(io.cache,0,0)==NULL);
+    assert(bn_moe_cache_lookup_internal(io.cache,0,1)!=NULL);
+    assert(state[0].stats.gpu_host_cache_hits==1);
+    assert(state[0].stats.gpu_host_cache_hit_bytes==15);
+    /* Failed final-projection reads must not publish gate/up as a valid entry. */
+    assert(ftruncate(fds[1],0)==0);
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,3,1,&a)==-1);
+    assert(!a.cache && a.slot==-1);
+    assert(bn_moe_cache_lookup_internal(io.cache,0,3)==NULL);
+    assert(pwrite(fds[1],data[1],64,0)==64);
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,3,1,&a)==0);
+    assert_host_expert(&a,&data[0][0],&map,3);bn_moe_host_expert_release(&a);
+    assert(ftruncate(fds[1],0)==0);reads=state[0].stats.io_count;
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,3,0,&a)==0);
+    assert(state[0].stats.io_count==reads);assert_host_expert(&a,&data[0][0],&map,3);
+    bn_moe_host_expert_release(&a);
+    assert(pwrite(fds[1],data[1],64,0)==64);
+    bn_moe_cache_free(io.cache);io.cache=bn_moe_cache_create(26,4,6,3);assert(io.cache);
+    assert(bn_moe_host_expert_acquire(&io,&state[0],&map,0,0,1,&a)==0);
+    assert(!a.cache);assert_host_expert(&a,&data[0][0],&map,0);bn_moe_host_expert_release(&a);
+    assert(bn_moe_cache_create(64,SIZE_MAX,2,3)==NULL);
+    bn_moe_reset_stats(&state[0]);
+    assert(!state[0].stats.gpu_host_cache_hits && !state[0].stats.gpu_host_cache_misses);
+    assert(!state[0].stats.gpu_host_cache_hit_bytes && !state[0].stats.gpu_host_cache_miss_bytes);
+    bn_moe_cache_free(io.cache);
+    for(int p=0;p<3;p++)assert(fclose(files[p])==0);
+    printf("PASSED\n");
+#endif
+}
+
+#if !defined(__EMSCRIPTEN__)
+typedef struct { int calls, fail_at, active; } HostUploadCheck;
+static void *host_cache_upload(void *ctx,const void *data,size_t bytes,
+    int type,int rows,int cols) {
+    HostUploadCheck *c=ctx; (void)type;(void)rows;(void)cols;
+    if(++c->calls==c->fail_at)return NULL;
+    void *out=malloc(bytes);assert(out);memcpy(out,data,bytes);c->active++;return out;
+}
+static void host_cache_destroy(void *ctx,void *data) {
+    HostUploadCheck *c=ctx;free(data);c->active--;
+}
+#endif
+
+static void test_gpu_bridge_ram_cache(void) {
+#if !defined(__EMSCRIPTEN__)
+    printf("test_gpu_bridge_ram_cache... ");
+    enum { dim=32, count=dim*dim, bytes=count*4 };
+    float weights[3][2*count]; FILE *files[3];int fds[3];
+    for(int p=0;p<3;p++) {
+        for(int i=0;i<2*count;i++)weights[p][i]=(float)(p*8192+i)/128.f;
+        files[p]=tmpfile();assert(files[p]);fds[p]=fileno(files[p]);
+        assert(fwrite(weights[p],1,2*bytes,files[p])==2*bytes);
+        assert(fflush(files[p])==0);
+    }
+    BnLayerWeights layer={0};layer.moe.expert_map=(BnMoEExpertMap){
+        .expert_gate_bytes=bytes,.expert_up_bytes=bytes,.expert_down_bytes=bytes,
+        .gate_stride=bytes,.up_stride=bytes,.down_stride=bytes,
+        .gate_shard_idx=0,.up_shard_idx=1,.down_shard_idx=2,
+        .gate_type=BN_GGUF_TENSOR_F32,.up_type=BN_GGUF_TENSOR_F32,.down_type=BN_GGUF_TENSOR_F32,
+        .gate_rows=dim,.gate_cols=dim,.up_rows=dim,.up_cols=dim,.down_rows=dim,.down_cols=dim
+    };
+    BnModelIO io={0};io.moe_io.fd=-1;io.moe_io.shard_fds=fds;io.moe_io.n_shard_fds=3;
+    io.moe_io.cache=bn_moe_cache_create(3*bytes,bytes,bytes,bytes);assert(io.moe_io.cache);
+    HostUploadCheck check={0};BnGPUBackend gpu={.kind=BN_GPU_BACKEND_CUDA,.ctx=&check,
+        .buffer_create=host_cache_upload,.buffer_destroy=host_cache_destroy};
+    BnModelBackendState backend={.backend=bn_backend_model_create()};assert(backend.backend);
+    bn_backend_model_bind_gpu(backend.backend,&gpu);
+    BnModel model={0};model.io=&io;model.backend_state=&backend;
+    uint8_t staging[3][bytes];BnMoEState state={0};
+    state.buf=staging[0];state.buf_size=bytes;state.buf2=staging[1];state.buf2_size=bytes;
+    state.buf5=staging[2];state.buf5_size=bytes;BnSession session={0};session.moe_state=&state;
+    for(int step=0;step<4;step++) {
+        int expert=step==2?1:0, reads=state.stats.io_count;
+        BnGPUMoETemporaryBuffers temp={0};BnGPUMoEExpertBuffers out={0};check.calls=0;
+        int rc=step==1||step==2
+            ?bn_gpu_moe_bridge_get_prefill_expert(&model,&session,&layer,0,expert,&temp,&out)
+            :bn_gpu_moe_bridge_get_expert(&model,&session,&layer,0,expert,&temp,&out);
+        assert(rc==0 && check.calls==3 && check.active==3);
+        assert(memcmp(out.gate,weights[0]+expert*count,bytes)==0);
+        assert(memcmp(out.up,weights[1]+expert*count,bytes)==0);
+        assert(memcmp(out.down,weights[2]+expert*count,bytes)==0);
+        assert(state.stats.io_count-reads==((step==0||step==2)?3:0));
+        bn_gpu_moe_bridge_release_temporaries(&model,&temp);assert(check.active==0);
+        assert(bn_moe_cache_available_internal(io.moe_io.cache)==1);
+    }
+    assert(state.stats.gpu_host_cache_hits==2 && state.stats.gpu_host_cache_misses==2);
+    assert(state.stats.gpu_host_cache_hit_bytes==6*bytes);
+    assert(state.stats.gpu_host_cache_miss_bytes==6*bytes);
+    /* Upload failure must release the host lease and every partial GPU buffer. */
+    for(int failure=1;failure<=3;failure++) {
+        check.calls=0;check.fail_at=failure;
+        BnGPUMoETemporaryBuffers temp={0};BnGPUMoEExpertBuffers out={0};
+        assert(bn_gpu_moe_bridge_get_expert(&model,&session,&layer,0,1,&temp,&out)==-1);
+        assert(check.active==0 && bn_moe_cache_available_internal(io.moe_io.cache)==1);
+        check.calls=0;check.fail_at=0;
+        assert(bn_gpu_moe_bridge_get_expert(&model,&session,&layer,0,0,&temp,&out)==0);
+        assert(bn_moe_cache_lookup_internal(io.moe_io.cache,0,0)!=NULL);
+        bn_gpu_moe_bridge_release_temporaries(&model,&temp);assert(check.active==0);
+    }
+    bn_moe_cache_free(io.moe_io.cache);bn_backend_model_free(backend.backend);
+    for(int p=0;p<3;p++)assert(fclose(files[p])==0);
+    printf("PASSED\n");
+#endif
+}
+
+static void test_sharded_pread_prefetch(void) {
+#if !defined(__EMSCRIPTEN__)
+    printf("test_sharded_pread_prefetch... ");
+    FILE *files[3];
+    int fds[3];
+    uint8_t data[3][8];
+    for (int i = 0; i < 3; i++) {
+        files[i] = tmpfile();
+        assert(files[i]);
+        for (int j = 0; j < 8; j++) data[i][j] = (uint8_t)(i * 32 + j);
+        assert(fwrite(data[i], 1, 8, files[i]) == 8);
+        assert(fflush(files[i]) == 0);
+        fds[i] = fileno(files[i]);
+    }
+    BnMoEIO io = {0};
+    io.fd = -1;
+    io.shard_fds = fds;
+    io.n_shard_fds = 3;
+    BnMoEExpertMap map = {0};
+    map.gate_shard_idx = 1;
+    map.up_shard_idx = 0;
+    map.down_shard_idx = 2;
+    assert(bn_moe_io_has_pread(&io));
+    assert(bn_moe_projection_fd(&io, &map, 0) == fds[1]);
+    assert(bn_moe_projection_fd(&io, &map, 1) == fds[0]);
+    assert(bn_moe_projection_fd(&io, &map, 2) == fds[2]);
+    map.down_shard_idx = 3;
+    assert(bn_moe_projection_fd(&io, &map, 2) == -1);
+    map.down_shard_idx = 2;
+    assert(bn_moe_projection_fd(&io, &map, -1) == -1);
+    bn_moe_prefetch_create(&io);
+    assert(io.prefetch && io.prefetch_down);
+    uint8_t gate[4], up[4], down[3];
+    bn_moe_prefetch_start2_internal(io.prefetch,
+        fds[1], gate, sizeof(gate), 1, fds[0], up, sizeof(up), 2);
+    bn_moe_prefetch_start1_internal(io.prefetch_down,
+        fds[2], down, sizeof(down), 3);
+    assert(bn_moe_prefetch_wait_internal(io.prefetch));
+    assert(bn_moe_prefetch_wait_internal(io.prefetch_down));
+    assert(memcmp(gate, data[1] + 1, 4) == 0);
+    assert(memcmp(up, data[0] + 2, 4) == 0);
+    assert(memcmp(down, data[2] + 3, 3) == 0);
+    BnMoEStats stats = {0};
+    bn_moe_prefetch_collect_stats(io.prefetch, &stats);
+    bn_moe_prefetch_collect_stats(io.prefetch_down, &stats);
+    assert(stats.io_bytes == 11 && stats.io_count == 3);
+    /* A failed request must not leave a stale descriptor for the next one. */
+    bn_moe_prefetch_start1_internal(io.prefetch_down, -1, down, 3, 0);
+    assert(!bn_moe_prefetch_wait_internal(io.prefetch_down));
+    bn_moe_prefetch_start1_internal(io.prefetch_down, fds[0], down, 3, 0);
+    assert(bn_moe_prefetch_wait_internal(io.prefetch_down));
+    assert(memcmp(down, data[0], 3) == 0);
+    bn_moe_prefetch_destroy(&io);
+    assert(!io.prefetch && !io.prefetch_down);
+    fds[1] = -1;
+    assert(!bn_moe_io_has_pread(&io));
+    io.shard_fds = NULL;
+    io.n_shard_fds = 0;
+    io.fd = fileno(files[0]);
+    assert(bn_moe_io_has_pread(&io));
+    io.mmap_base = data[0];
+    assert(!bn_moe_io_has_pread(&io));
+    assert(!bn_moe_io_has_pread(NULL));
+    for (int i = 0; i < 3; i++) assert(fclose(files[i]) == 0);
+    printf("PASSED\n");
+#endif
+}
+
+static void test_gpu_prefill_preserves_decode_cache(void) {
+#if !defined(__EMSCRIPTEN__)
+    printf("test_gpu_prefill_preserves_decode_cache... ");
+    float weights[3][4]={{1,2,3,4},{5,6,7,8},{9,10,11,12}};
+    BnLayerWeights layer={0};
+    layer.moe.expert_map=(BnMoEExpertMap){
+        .expert_gate_bytes=4,.expert_up_bytes=4,.expert_down_bytes=4,
+        .gate_offset=0,.up_offset=16,.down_offset=32,
+        .gate_type=BN_GGUF_TENSOR_F32,.up_type=BN_GGUF_TENSOR_F32,
+        .down_type=BN_GGUF_TENSOR_F32,
+        .gate_rows=1,.gate_cols=1,.up_rows=1,.up_cols=1,
+        .down_rows=1,.down_cols=1};
+    BnModelIO io={0};io.moe_io.mmap_base=(const uint8_t *)weights;
+    HostUploadCheck check={0};
+    BnGPUBackend gpu={.kind=BN_GPU_BACKEND_CUDA,.ctx=&check,
+        .buffer_create=host_cache_upload,.buffer_destroy=host_cache_destroy};
+    BnModelBackendState backend={.backend=bn_backend_model_create()};assert(backend.backend);
+    bn_backend_model_bind_gpu(backend.backend,&gpu);
+    BnModel model={.io=&io,.backend_state=&backend};
+    BnMoEState state={0};BnSession session={.moe_state=&state};
+    BnGPUMoECache *cache=bn_gpu_moe_cache_create(24,12,4,&gpu);assert(cache);
+    io.moe_io.gpu_moe_cache=cache;
+    BnGPUMoEExpertBuffers out={0};BnGPUMoETemporaryBuffers temp={0};
+    for(int e=0;e<2;e++)assert(bn_gpu_moe_bridge_get_expert(
+        &model,&session,&layer,0,e,&temp,&out)==0);
+    assert(check.active==6&&temp.n_buffers==0);
+    BnGPUMoELease pin0={0},pin1={0};
+    assert(bn_gpu_moe_cache_acquire(cache,0,0,0,&pin0)==1);
+    assert(bn_gpu_moe_cache_acquire(cache,0,1,0,&pin1)==1);
+    assert(!bn_gpu_moe_bridge_get_expert(&model,&session,&layer,0,2,&temp,&out));
+    assert(check.active==9&&temp.n_buffers==3);
+    bn_gpu_moe_bridge_release_temporaries(&model,&temp);assert(check.active==6&&temp.n_buffers==0);
+    assert(bn_gpu_moe_bridge_get_expert(&model,&session,&layer,0,2,NULL,&out)==-1&&check.active==6&&!out.gate);
+    temp.n_buffers=BN_MAX_MOE_K*3-2;
+    assert(bn_gpu_moe_bridge_get_expert(&model,&session,&layer,0,2,&temp,&out)==-1&&check.active==6);
+    temp.n_buffers=0;assert(!bn_gpu_moe_cache_release(&pin0));assert(!bn_gpu_moe_cache_release(&pin1));
+    int head=cache->lru_head,tail=cache->lru_tail,calls=check.calls;
+    session.moe_cache_prefill=1;
+    io.moe_io.mmap_base=NULL; /* A cached prefill hit needs no host weights. */
+    assert(bn_gpu_moe_bridge_get_expert(
+        &model,&session,&layer,0,0,NULL,&out)==0);
+    assert(check.calls==calls&&*(float *)out.gate==1);
+    assert(cache->lru_head==head&&cache->lru_tail==tail);
+    io.moe_io.mmap_base=(const uint8_t *)weights;
+    for(int failure=1;failure<=3;failure++) {
+        check.calls=0;check.fail_at=failure;
+        assert(bn_gpu_moe_bridge_get_expert(
+            &model,&session,&layer,0,2,&temp,&out)==-1);
+        assert(check.active==6&&temp.n_buffers==0);
+        assert(cache->lru_head==head&&cache->lru_tail==tail);
+    }
+    check.calls=0;check.fail_at=0;
+    assert(bn_gpu_moe_bridge_get_expert(
+        &model,&session,&layer,0,2,NULL,&out)==-1);
+    assert(check.calls==0);
+    temp.n_buffers=BN_MAX_MOE_K*3-2;
+    assert(bn_gpu_moe_bridge_get_expert(
+        &model,&session,&layer,0,2,&temp,&out)==-1);
+    assert(check.calls==0);temp.n_buffers=0;
+    assert(bn_gpu_moe_bridge_get_expert(
+        &model,&session,&layer,0,2,&temp,&out)==0);
+    assert(check.active==9&&temp.n_buffers==3);
+    assert(*(float *)out.gate==3&&*(float *)out.up==7&&*(float *)out.down==11);
+    assert(cache->lru_head==head&&cache->lru_tail==tail);
+    void *g,*u,*d;
+    assert(!bn_gpu_moe_cache_lookup_prefill(cache,0,2,&g,&u,&d));
+    bn_gpu_moe_bridge_release_temporaries(&model,&temp);
+    assert(check.active==6&&temp.n_buffers==0);
+    assert(session.moe_cache_prefill==1);
+    session.moe_cache_prefill=0;
+    /* Prefill's hit on expert 0 must not protect it from decode eviction. */
+    assert(bn_gpu_moe_bridge_get_expert(
+        &model,&session,&layer,0,3,&temp,&out)==0);
+    assert(check.active==6);
+    assert(!bn_gpu_moe_cache_lookup_prefill(cache,0,0,&g,&u,&d));
+    assert(bn_gpu_moe_cache_lookup_prefill(cache,0,1,&g,&u,&d));
+    assert(bn_gpu_moe_cache_lookup_prefill(cache,0,3,&g,&u,&d));
+    bn_gpu_moe_cache_free(cache);io.moe_io.gpu_moe_cache=NULL;
+    assert(check.active==0);bn_backend_model_free(backend.backend);
+    printf("PASSED\n");
+#endif
+}
+
+typedef struct { int raw_gateup,stacked_gateup,active,fail_raw; } RawGateupCheck;
+static void *raw_gateup_copy(void *ctx,const void *data,size_t bytes,int type,int rows,int cols) {
+    RawGateupCheck *c=ctx;
+    if(type==BN_GGUF_TENSOR_Q4_K&&rows==64&&cols==256) {
+        c->raw_gateup++;if(c->fail_raw)return NULL;
+    }
+    void *p=malloc(bytes);assert(p);memcpy(p,data,bytes);c->active++;return p;
+}
+static void *raw_gateup_stacked(void *ctx,const void *a,size_t na,const void *b,size_t nb,int type,int rows,int cols) {
+    RawGateupCheck *c=ctx;(void)type;(void)rows;(void)cols;c->stacked_gateup++;
+    void *p=malloc(na+nb);assert(p);memcpy(p,a,na);memcpy((uint8_t *)p+na,b,nb);c->active++;return p;
+}
+static void raw_gateup_destroy(void *ctx,void *p) {
+    RawGateupCheck *c=ctx;free(p);c->active--;
+}
+static void test_gathered_prefill_raw_gateup(void) {
+    printf("test_gathered_prefill_raw_gateup... ");
+    enum { gate_bytes=32*144,down_bytes=256*34,total=2*gate_bytes+down_bytes };
+    uint8_t data[total];for(int i=0;i<total;i++)data[i]=(uint8_t)(i*37+19);
+    BnLayerWeights layer={0};
+    layer.moe.expert_map=(BnMoEExpertMap){
+        .expert_gate_bytes=gate_bytes,.expert_up_bytes=gate_bytes,.expert_down_bytes=down_bytes,
+        .gate_offset=0,.up_offset=gate_bytes,.down_offset=2*gate_bytes,
+        .gate_type=BN_GGUF_TENSOR_Q4_K,.up_type=BN_GGUF_TENSOR_Q4_K,.down_type=BN_GGUF_TENSOR_Q8_0,
+        .gate_rows=32,.gate_cols=256,.up_rows=32,.up_cols=256,.down_rows=256,.down_cols=32};
+    BnModelIO io={0};io.moe_io.mmap_base=data;
+    RawGateupCheck check={0};
+    BnGPUBackend gpu={.kind=BN_GPU_BACKEND_CUDA,.ctx=&check,
+        .caps=BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT,
+        .buffer_create=raw_gateup_copy,.buffer_create_quant_only=raw_gateup_copy,
+        .buffer_create_stacked2=raw_gateup_stacked,.buffer_destroy=raw_gateup_destroy};
+    BnModelBackendState backend={.backend=bn_backend_model_create()};assert(backend.backend);
+    bn_backend_model_bind_gpu(backend.backend,&gpu);
+    BnModel model={.io=&io,.backend_state=&backend};
+    BnMoEState state={0};BnSession session={.moe_state=&state};
+    BnGPUMoETemporaryBuffers temps={0};BnGPUMoEExpertBuffers out={0};
+    assert(bn_gpu_moe_bridge_get_prefill_expert(&model,&session,&layer,0,0,&temps,&out)==0);
+    assert(out.use_gateup_split&&out.up==NULL&&temps.n_buffers==2);
+    assert(check.raw_gateup==1&&check.stacked_gateup==0&&check.active==2);
+    assert(memcmp(out.gate,data,2*gate_bytes)==0&&memcmp(out.down,data+2*gate_bytes,down_bytes)==0);
+    bn_gpu_moe_bridge_release_temporaries(&model,&temps);assert(check.active==0);
+    /* Decode and tokenwise prompt forwards must retain packed construction. */
+    for(int scope=0;scope<2;scope++) {
+        session.moe_cache_prefill=scope;
+        assert(bn_gpu_moe_bridge_get_expert(&model,&session,&layer,0,0,&temps,&out)==0);
+        assert(check.raw_gateup==1&&check.stacked_gateup==scope+1);
+        bn_gpu_moe_bridge_release_temporaries(&model,&temps);assert(check.active==0);
+    }
+    check.fail_raw=1;
+    assert(bn_gpu_moe_bridge_get_prefill_expert(&model,&session,&layer,0,0,&temps,&out)==-1);
+    assert(check.active==0&&temps.n_buffers==0&&check.stacked_gateup==2);
+    check.fail_raw=0;gpu.buffer_create_quant_only=NULL;
+    assert(bn_gpu_moe_bridge_get_prefill_expert(&model,&session,&layer,0,0,&temps,&out)==0);
+    assert(check.stacked_gateup==3&&check.active==2);
+    bn_gpu_moe_bridge_release_temporaries(&model,&temps);assert(check.active==0);
+    bn_backend_model_free(backend.backend);printf("PASSED\n");
+}
+
+static size_t charge_test_extra(void *ctx, int type, int rows, int cols) {
+    (void)ctx; (void)type;
+    return rows < 0 ? SIZE_MAX : (size_t)rows * (size_t)cols * 4;
+}
+
+static void *charge_test_create(void *ctx, const void *data, size_t bytes,
+                                int type, int rows, int cols) {
+    (void)ctx; (void)data; (void)bytes; (void)type; (void)rows; (void)cols;
+    return NULL;
+}
+
+static int charge_test_borrowed(void *ctx, size_t bytes, int type,
+                                int rows, int cols) {
+    (void)ctx; (void)bytes; (void)type; (void)rows; (void)cols;
+    return 1;
+}
+
+static size_t charge_test_native(void *ctx, size_t bytes, int type,
+                                 int rows, int cols) {
+    (void)ctx; (void)type; (void)rows; (void)cols;
+    return bytes / 2;
+}
+
+static void test_gpu_expert_cache_accounting(void) {
+    printf("test_gpu_expert_cache_accounting... ");
+    BnLayerWeights layers[3] = {0};
+    float router = 0;
+    BnModel model = {0};
+    model.config.n_layers = 3;
+    model.weights.layers = layers;
+    BnGPUBackend gpu = {.buffer_f16_cache_extra_bytes=charge_test_extra};
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model, &gpu) == 0);
+    for (int l=0;l<2;l++) {
+        layers[l].moe.router_weight = &router;
+        layers[l].moe.expert_map = (BnMoEExpertMap){
+            .expert_gate_bytes=100,.expert_up_bytes=120,.expert_down_bytes=140,
+            .gate_type=BN_GGUF_TENSOR_F32,.up_type=BN_GGUF_TENSOR_F32,
+            .down_type=BN_GGUF_TENSOR_F32,
+            .gate_rows=4,.gate_cols=8,.up_rows=4,.up_cols=8,
+            .down_rows=8,.down_cols=4};
+    }
+    /* Raw pread bytes plus all potential backend layouts, not only down. */
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==360+3*128);
+    layers[1].moe.expert_map.down_rows=16;
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==360+4*128);
+    /* Dense layers never affect the charge. */
+    layers[2].moe.expert_map.expert_gate_bytes=SIZE_MAX;
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==360+4*128);
+    layers[1].moe.expert_map.expert_down_bytes=SIZE_MAX;
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==0);
+    layers[1].moe.expert_map.expert_down_bytes=140;
+    layers[1].moe.expert_map.down_rows=-1;
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==0);
+    layers[1].moe.expert_map.down_rows=16;
+    gpu.buffer_f16_cache_extra_bytes=NULL;
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==360);
+    BnModelIO io = {0};
+    model.io = &io;
+    gpu.buffer_create_native_matvec_borrowed = charge_test_create;
+    gpu.native_matvec_borrowed_supported = charge_test_borrowed;
+    gpu.buffer_cache_charge = charge_test_native;
+    /* Native layout discounts apply only to mmap-backed uploads. */
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==360);
+    io.moe_io.mmap_base = (const uint8_t *)&router;
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(&model,&gpu)==180);
+    assert(bn_gpu_moe_bridge_cache_entry_bytes(NULL,&gpu)==0);
+    printf("PASSED\n");
+}
+
+#ifndef __EMSCRIPTEN__
+static void trellis_catalog_fixture(const char *dir, int bad_marker, int missing) {
+    char header[32768], map[32768], path[256];
+    size_t hp=0,mp=0;
+    hp+=(size_t)snprintf(header+hp,sizeof(header)-hp,"{");
+    mp+=(size_t)snprintf(map+mp,sizeof(map)-mp,"{\"metadata\":{\"total_size\":156720},\"weight_map\":{");
+    const char *roles[]={"w1","w3","w2"};
+    const char *parts[]={"mul1","trellis","suh","svh"};
+    for(int l=0;l<2;l++)for(int e=0;e<2;e++)for(int p=0;p<3;p++) {
+        int source=(l*2+e)*3+p,k=p==2?256:128,n=p==2?128:256;
+        size_t start=(size_t)source*13060,offsets[]={start,start+4,start+12292,start+12292+(size_t)k*2,start+13060};
+        for(int c=0;c<4;c++) {
+            char name[128],shape[64];
+            snprintf(name,sizeof(name),"layers.%d.ffn.experts.%d.%s.%s",l,e,roles[p],missing&&source==11&&c==0?"other":parts[c]);
+            if(c==0)snprintf(shape,sizeof(shape),"[]");
+            else if(c==1)snprintf(shape,sizeof(shape),"[%d,%d,48]",k/16,n/16);
+            else snprintf(shape,sizeof(shape),"[%d]",c==2?k:n);
+            const char *comma=source||c?",":"";
+            int h=snprintf(header+hp,sizeof(header)-hp,"%s\"%s\":{\"dtype\":\"%s\",\"shape\":%s,\"data_offsets\":[%zu,%zu]}",comma,name,c==0?"I32":c==1?"I16":"F16",shape,offsets[c],offsets[c+1]);
+            int m=snprintf(map+mp,sizeof(map)-mp,"%s\"%s\":\"one.safetensors\"",comma,name);
+            assert(h>0&&(size_t)h<sizeof(header)-hp&&m>0&&(size_t)m<sizeof(map)-mp);hp+=(size_t)h;mp+=(size_t)m;
+        }
+    }
+    assert(hp+2<sizeof(header)&&mp+3<sizeof(map));header[hp++]='}';header[hp]=0;map[mp++]='}';map[mp++]='}';map[mp]=0;
+    snprintf(path,sizeof(path),"%s/one.safetensors",dir);FILE *f=fopen(path,"wb");assert(f);unsigned char length[8];for(int i=0;i<8;i++)length[i]=(unsigned char)((uint64_t)hp>>(8*i));assert(fwrite(length,1,8,f)==8&&fwrite(header,1,hp,f)==hp);
+    for(int s=0;s<12;s++) {
+        unsigned char data[13060];for(size_t i=0;i<sizeof(data);i++)data[i]=(unsigned char)((i+(size_t)s*17)*37+11);
+        uint32_t marker=bad_marker&&s==11?UINT32_C(0xcbac1fed):UINT32_C(0x83dcd12d);
+        for(int i=0;i<4;i++)data[i]=(unsigned char)(marker>>(i*8));
+        assert(fwrite(data,1,sizeof(data),f)==sizeof(data));
+    }
+    assert(!fclose(f));snprintf(path,sizeof(path),"%s/model.safetensors.index.json",dir);f=fopen(path,"w");assert(f);assert(fwrite(map,1,mp,f)==mp);assert(!fclose(f));
+}
+static void check_catalog_bytes(const BnMoEHostExpert *lease,int layer,int expert) {
+    for(int p=0;p<3;p++)for(size_t i=0;i<13056;i++)assert(((const unsigned char*)lease->projection[p])[i]==(unsigned char)((i+4+(size_t)((layer*2+expert)*3+p)*17)*37+11));
+}
+typedef struct { BnModel *model; int released; } CatalogTeardownCheck;
+static void catalog_backend_release(void *context) {
+    CatalogTeardownCheck *check=context;
+    assert(bn_trellis_source_layout(bn_model_trellis_expert_source(check->model,0,0,0)));
+    const BnJSON *document=bn_model_native_config(check->model);
+    if(document)assert(bn_model_native_expert_config(check->model)&&bn_json_type(bn_json_root(document))==BN_JSON_OBJECT);
+    check->released++;
+}
+static void test_model_trellis_catalog(void) {
+    char dir[]="/tmp/bn-model-trellis-XXXXXX",path[256];assert(mkdtemp(dir));trellis_catalog_fixture(dir,0,0);
+    snprintf(path,sizeof(path),"%s/model.safetensors.index.json",dir);BnSafetensorsIndex index={0};assert(!bn_safetensors_index_init(&index,path));BnModel model={0};
+    assert(bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",2,2,256,128)==-1&&!model.runtime);
+    assert(bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",2,3,128,256)==-1&&!model.runtime);
+    assert(bn_model_bind_trellis_experts(&model,&index,"llama",2,2,128,256)==-1&&!model.runtime);
+    assert(bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",0,2,128,256)==-1&&!model.runtime);
+    assert(bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",INT32_MAX,INT32_MAX,128,256)==-1&&!model.runtime);
+    assert(bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",2,2,127,256)==-1&&!model.runtime);
+    assert(!bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",2,2,128,256));
+    const BnMoEExpertReader *reader=bn_model_trellis_expert_reader(&model);assert(reader&&reader->n_layers==2&&reader->n_experts==2);
+    BnModelRuntime *runtime=model.runtime;assert(bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",2,2,128,256)==-1&&model.runtime==runtime&&reader==bn_model_trellis_expert_reader(&model));
+    for(int l=0;l<2;l++)for(int e=0;e<2;e++)for(int p=0;p<3;p++) {
+        const BnTrellisLayout *layout=bn_trellis_source_layout(bn_model_trellis_expert_source(&model,l,e,p));assert(layout&&layout->k==(p==2?256:128)&&layout->n==(p==2?128:256)&&reader->bytes[p]==13056);
+    }
+    assert(!bn_model_trellis_expert_source(&model,-1,0,0)&&!bn_model_trellis_expert_source(&model,2,0,0)&&!bn_model_trellis_expert_source(&model,0,2,0)&&!bn_model_trellis_expert_source(&model,0,0,3));
+    unsigned char data[3][13056];memset(data,0xa5,sizeof(data));assert(reader->read(reader->context,0,0,3,data[0],13056)==-1);assert(reader->read(reader->context,0,0,0,data[0],13055)==-1);for(size_t i=0;i<sizeof(data);i++)assert(((unsigned char*)data)[i]==0xa5);
+    void *cache=bn_moe_cache_create_reader(39168,reader);assert(cache);BnMoEStats stats={0};BnMoEHostExpert lease,warm;
+    assert(!bn_moe_host_expert_acquire_reader(reader,cache,&stats,0,0,1,NULL,NULL,&lease));check_catalog_bytes(&lease,0,0);
+    assert(!bn_moe_host_expert_acquire_reader(reader,cache,&stats,0,0,0,NULL,NULL,&warm));check_catalog_bytes(&warm,0,0);bn_moe_host_expert_release(&warm);assert(stats.io_count==3&&stats.io_bytes==39168);
+    assert(bn_moe_host_expert_acquire_reader(reader,cache,&stats,1,1,1,NULL,NULL,&warm)==-1);
+    void *staging[]={data[0],data[1],data[2]};size_t capacities[]={13056,13056,13056};assert(!bn_moe_host_expert_acquire_reader(reader,cache,&stats,1,1,0,staging,capacities,&warm));check_catalog_bytes(&warm,1,1);bn_moe_host_expert_release(&warm);check_catalog_bytes(&lease,0,0);bn_moe_host_expert_release(&lease);
+    assert(!bn_moe_host_expert_acquire_reader(reader,cache,&stats,1,1,1,NULL,NULL,&lease));check_catalog_bytes(&lease,1,1);bn_moe_host_expert_release(&lease);bn_moe_cache_free(cache);
+    CatalogTeardownCheck teardown={&model,0};assert(!bn_model_ensure_backend(&model));assert(!bn_backend_model_attach_gpu_resources(bn_model_backend(&model),&teardown,&teardown,catalog_backend_release));
+    bn_model_free(&model);assert(teardown.released==1&&!model.runtime&&!bn_model_trellis_expert_reader(&model));bn_safetensors_index_free(&index);
+    for(int variant=0;variant<2;variant++) {
+        trellis_catalog_fixture(dir,variant==0,variant==1);assert(!bn_safetensors_index_init(&index,path));
+        for(int repeat=0;repeat<20;repeat++)assert(bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",2,2,128,256)==-1&&!model.runtime);
+        bn_safetensors_index_free(&index);
+    }
+    trellis_catalog_fixture(dir,0,0);assert(!bn_safetensors_index_init(&index,path));model.runtime=calloc(1,sizeof(*model.runtime));assert(model.runtime);runtime=model.runtime;assert(!bn_model_bind_trellis_experts(&model,&index,"deepseek_v41",2,2,128,256)&&runtime==model.runtime);reader=bn_model_trellis_expert_reader(&model);BnMoEExpertReader copied=*reader;bn_safetensors_index_free(&index);assert(!bn_model_trellis_expert_reader(&model)&&!bn_model_trellis_expert_source(&model,0,0,0)&&copied.read(copied.context,0,0,0,data[0],13056)==-1);bn_model_free(&model);bn_model_free(&model);
+    assert(!remove(path));snprintf(path,sizeof(path),"%s/one.safetensors",dir);assert(!remove(path));assert(!remove(dir));puts("Model-owned native trellis catalog/cache tests PASSED");
+}
+#else
+static void test_model_trellis_catalog(void) {}
+#endif
+
+#ifndef __EMSCRIPTEN__
+static const char native_expert_config_fixture[]=
+    "{\"architectures\":[\"DeepseekV41ForCausalLM\"],\"model_type\":\"deepseek_v41\","
+    "\"quantization_config\":{\"quant_method\":\"exl3\",\"bits\":3,\"codebook\":\"mul1\",\"layer_bits\":{\"0\":3,\"1\":3}},"
+    "\"text_config\":{\"model_type\":\"deepseek_v41_text\",\"num_hidden_layers\":2,\"n_routed_experts\":2,\"num_experts_per_tok\":1,\"hidden_size\":128,\"moe_intermediate_size\":256,\"num_nextn_predict_layers\":0,\"rms_norm_eps\":1e-20},"
+    "\"future\":[null,{\"unicode\":\"\\u0061\"}]}";
+static void test_model_native_config(void) {
+    char dir[]="/tmp/bn-native-config-XXXXXX",path[256],input[2048];assert(mkdtemp(dir));trellis_catalog_fixture(dir,0,0);
+    snprintf(path,sizeof(path),"%s/model.safetensors.index.json",dir);BnSafetensorsIndex index={0};assert(!bn_safetensors_index_init(&index,path));BnModel model={0};
+    memcpy(input,native_expert_config_fixture,sizeof(native_expert_config_fixture));assert(!bn_model_load_trellis_config(&model,&index,input,strlen(input)));memset(input,'?',sizeof(input));
+    const BnModelNativeExpertConfig *profile=bn_model_native_expert_config(&model);assert(profile&&profile->dim==128&&profile->hidden==256&&profile->layers==2&&profile->experts==2&&profile->active_experts==1&&profile->nextn_layers==0&&profile->format==BN_QUANT_FORMAT_EXL3_MUL1_3&&!strcmp(profile->architecture,"deepseek_v41"));
+    const BnJSON *owned=bn_model_native_config(&model);assert(owned);const BnJSONValue *root=bn_json_root(owned);assert(!strcmp(bn_json_text(bn_json_get(bn_json_get(root,"text_config"),"rms_norm_eps")),"1e-20"));assert(!strcmp(bn_json_text(bn_json_get(bn_json_at(bn_json_get(root,"future"),1),"unicode")),"a"));assert(!model.config.dim&&!model.config.n_layers);
+    assert(bn_model_load_trellis_config(&model,&index,native_expert_config_fixture,strlen(native_expert_config_fixture))==-1&&profile==bn_model_native_expert_config(&model)&&root==bn_json_root(bn_model_native_config(&model)));
+    CatalogTeardownCheck teardown={&model,0};assert(!bn_model_ensure_backend(&model));assert(!bn_backend_model_attach_gpu_resources(bn_model_backend(&model),&teardown,&teardown,catalog_backend_release));bn_model_free(&model);assert(teardown.released==1&&!bn_model_native_config(&model)&&!bn_model_native_expert_config(&model));
+    const char *changes[][2]={
+        {"\"hidden_size\":128","\"hidden_size\":129"},{"\"hidden_size\":128","\"hidden_size\":\"128\""},
+        {"\"num_hidden_layers\":2","\"num_hidden_layers\":3"},{"\"1\":3","\"1\":4"},
+        {"\"bits\":3","\"bits\":4"},{"\"bits\":3","\"bits\":3.0"},{"\"codebook\":\"mul1\"","\"codebook\":\"mcg\""},
+        {"\"n_routed_experts\":2","\"n_routed_experts\":0"},{"\"num_experts_per_tok\":1","\"num_experts_per_tok\":3"},
+        {"DeepseekV41ForCausalLM","OtherForCausalLM"},{"deepseek_v41_text","other_text"},
+        {"\"num_nextn_predict_layers\":0","\"num_nextn_predict_layers\":-1"},
+        {"\"num_nextn_predict_layers\":0,",""}
+    };
+    for(size_t i=0;i<sizeof(changes)/sizeof(changes[0]);i++) {
+        const char *match=strstr(native_expert_config_fixture,changes[i][0]);assert(match);
+        int n=snprintf(input,sizeof(input),"%.*s%s%s",(int)(match-native_expert_config_fixture),native_expert_config_fixture,changes[i][1],match+strlen(changes[i][0]));assert(n>0&&(size_t)n<sizeof(input));
+        BnJSON document={0};assert(!bn_json_init(&document,input,(size_t)n));BnModelNativeExpertConfig result,saved;memset(&result,0xa5,sizeof(result));saved=result;assert(bn_model_arch_native_expert_config(&document,&result)==-1&&!memcmp(&result,&saved,sizeof(result)));bn_json_free(&document);
+        assert(bn_model_load_trellis_config(&model,&index,input,(size_t)n)==-1&&!model.runtime);
+    }
+    /* Valid profile, wrong checkpoint shape: publication must still roll back. */
+    const char *match=strstr(native_expert_config_fixture,"\"moe_intermediate_size\":256");assert(match);int n=snprintf(input,sizeof(input),"%.*s\"moe_intermediate_size\":384%s",(int)(match-native_expert_config_fixture),native_expert_config_fixture,match+strlen("\"moe_intermediate_size\":256"));assert(n>0&&(size_t)n<sizeof(input));assert(bn_model_load_trellis_config(&model,&index,input,(size_t)n)==-1&&!model.runtime);
+    assert(bn_model_load_trellis_config(&model,NULL,native_expert_config_fixture,strlen(native_expert_config_fixture))==-1&&!model.runtime);assert(bn_model_load_trellis_config(&model,&index,"{\"x\":1,\"x\":2}",13)==-1&&!model.runtime);
+    bn_safetensors_index_free(&index);trellis_catalog_fixture(dir,1,0);assert(!bn_safetensors_index_init(&index,path));for(int i=0;i<20;i++)assert(bn_model_load_trellis_config(&model,&index,native_expert_config_fixture,strlen(native_expert_config_fixture))==-1&&!model.runtime);bn_safetensors_index_free(&index);
+    assert(!remove(path));snprintf(path,sizeof(path),"%s/one.safetensors",dir);assert(!remove(path));assert(!remove(dir));puts("Config-driven native expert loading and atomic rollback PASSED");
+}
+#else
+static void test_model_native_config(void) {}
+#endif
+
+#include "native_anatomy_checks.h"
+#include "native_numerics_checks.h"
+#include "native_f16_layout_checks.h"
+#include "native_core_checks.h"
+#include "native_parameter_checks.h"
+#include "native_router_checks.h"
+
+#include "native_moe_plan_checks.h"
+#include "native_trellis_store_checks.h"
+#include "native_trellis_owner_checks.h"
+#include "native_session_checks.h"
+#include "native_executor_checks.h"
+#include "native_index_session_checks.h"
+#include "native_attention_session_checks.h"
+#include "native_producer_checks.h"
+#include "native_rows_checks.h"
+#include "native_engram_layout_checks.h"
+#include "native_ngram_rows_checks.h"
+#include "native_engram_stage_checks.h"
 int main(void) {
+    test_native_engram_math_spec();
+    if(getenv("BN_TEST_NATIVE_ENGRAM_STAGE_ONLY"))return 0;
+    test_native_session_history();
+    if(getenv("BN_TEST_NATIVE_HISTORY_ONLY"))return 0;
+    test_native_ngram_rows();
+    if(getenv("BN_TEST_NATIVE_NGRAM_ROWS_ONLY"))return 0;
+    test_native_engram_layout();
+    if(getenv("BN_TEST_NATIVE_ENGRAM_LAYOUT_ONLY"))return 0;
+    test_native_rows();
+    if(getenv("BN_TEST_NATIVE_ROWS_ONLY"))return 0;
+    test_native_producer();
+    if(getenv("BN_TEST_NATIVE_PRODUCER_ONLY"))return 0;
+    test_native_attention_session();
+    if(getenv("BN_TEST_NATIVE_ATTENTION_SESSION_ONLY"))return 0;
+    test_native_index_session();
+    test_native_executor_setup();
+    test_native_session_storage();
+    test_native_trellis_model_owner();
+    test_native_trellis_store();
+    test_native_moe_plan();
+    test_native_f16_layout();
+    test_native_core();
+    test_native_parameters();
+    test_native_routers();
+    test_native_anatomy();
+    test_native_numerics();
+    test_model_native_config();
+    test_model_trellis_catalog();
+    test_gathered_prefill_raw_gateup();
+    test_gpu_prefill_preserves_decode_cache();
+    test_gpu_expert_cache_accounting();
     printf("=== MoE Unit Tests ===\n");
+    test_sharded_pread_prefetch();
+    test_gpu_host_expert_cache();
+    test_host_expert_reader_cache();
+    test_gpu_bridge_ram_cache();
     test_moe_prefill_dense_residual();
     test_moe_route();
     test_moe_reference_router_accumulation();
@@ -1838,6 +2678,7 @@ int main(void) {
     test_moe_cache();
     test_backend_cpu_prepared_cache_pinning();
     test_moe_prefill_prepared_cache();
+    test_moe_prefill_gpu_cache_without_host_weights();
     printf("All MoE tests passed!\n");
     return 0;
 }

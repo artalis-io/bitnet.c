@@ -1,0 +1,159 @@
+--- a/vllm_gguf_plugin/csrc/gguf/ggml-common.h
++++ b/vllm_gguf_plugin/csrc/gguf/ggml-common.h
+@@ -1069,7 +1069,7 @@
+ typedef void (*allocate_tiles_cuda_t)(int ** x_ql, half2 ** x_dm, int ** x_qh, int ** x_sc);
+ typedef void (*load_tiles_cuda_t)(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row);
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int &);
+ typedef float (*vec_dot_q_mul_mat_cuda_t)(
+     const int * __restrict__ x_ql, const half2 * __restrict__ x_dm, const int * __restrict__ x_qh, const int * __restrict__ x_sc,
+     const int * __restrict__ y_qs, const half2 * __restrict__ y_ms, const int & i, const int & j, const int & k);
+--- a/vllm_gguf_plugin/csrc/gguf/vecdotq.cuh
++++ b/vllm_gguf_plugin/csrc/gguf/vecdotq.cuh
+@@ -517,7 +517,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q4_0(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI4_0;
+     const int kqsx = k % QI4_0;
+ 
+@@ -597,7 +597,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q4_1(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI4_1;
+     const int kqsx = k % QI4_1;
+ 
+@@ -675,7 +675,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q5_0(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI5_0;
+     const int kqsx = k % QI5_0;
+ 
+@@ -778,7 +778,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q5_1(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & valid_blocks) {
+     const int kbx  = k / QI5_1;
+     const int kqsx = k % QI5_1;
+ 
+@@ -792,10 +792,13 @@
+             i = min(i, i_max);
+         }
+ 
+-        const block_q5_1 * bxi = bx0 + i*blocks_per_row + kbx;
+-
+-        const int ql = get_int_from_uint8_aligned(bxi->qs, kqsx);
+-        const int qh = get_int_from_uint8_aligned(bxi->qh, 0) >> (4 * (k % QI5_1));
++        int ql = 0;
++        int qh = 0;
++        if (kbx < valid_blocks) {
++            const block_q5_1 * bxi = bx0 + i*blocks_per_row + kbx;
++            ql = get_int_from_uint8_aligned(bxi->qs, kqsx);
++            qh = get_int_from_uint8_aligned(bxi->qh, 0) >> (4 * (k % QI5_1));
++        }
+ 
+         int qs0 = (ql >>  0) & 0x0F0F0F0F;
+         qs0    |= (qh <<  4) & 0x00000010; // 0 ->  4
+@@ -825,9 +828,12 @@
+             i = min(i, i_max);
+         }
+ 
+-        const block_q5_1 * bxi = bx0 + i*blocks_per_row + kbxd;
+-
+-        x_dm[i * (WARP_SIZE_GGUF/QI5_1) + i / QI5_1 + kbxd] = bxi->dm;
++        half2 dm = __float2half2_rn(0.0f);
++        if (kbxd < valid_blocks) {
++            const block_q5_1 * bxi = bx0 + i*blocks_per_row + kbxd;
++            dm = bxi->dm;
++        }
++        x_dm[i * (WARP_SIZE_GGUF/QI5_1) + i / QI5_1 + kbxd] = dm;
+     }
+ }
+ 
+@@ -876,7 +882,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q8_0(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI8_0;
+     const int kqsx = k % QI8_0;
+     float * x_dmf = (float *) x_dm;
+@@ -955,7 +961,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q2_K(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI2_K;
+     const int kqsx = k % QI2_K;
+ 
+@@ -1062,7 +1068,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q3_K(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI3_K;
+     const int kqsx = k % QI3_K;
+ 
+@@ -1213,7 +1219,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q4_K(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI4_K; // == 0 if QK_K == 256
+     const int kqsx = k % QI4_K; // == k if QK_K == 256
+ 
+@@ -1334,7 +1340,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q5_K(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI5_K; // == 0 if QK_K == 256
+     const int kqsx = k % QI5_K; // == k if QK_K == 256
+ 
+@@ -1452,7 +1458,7 @@
+ 
+ template <int mmq_y, int nwarps, bool need_check> static __device__ __forceinline__ void load_tiles_q6_K(
+     const void * __restrict__ vx, int * __restrict__ x_ql, half2 * __restrict__ x_dm, int * __restrict__ x_qh,
+-    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row) {
++    int * __restrict__ x_sc, const int & i_offset, const int & i_max, const int & k, const int & blocks_per_row, const int & /*valid_blocks*/) {
+     const int kbx  = k / QI6_K; // == 0 if QK_K == 256
+     const int kqsx = k % QI6_K; // == k if QK_K == 256
+ 
+--- a/vllm_gguf_plugin/csrc/gguf/mmq.cuh
++++ b/vllm_gguf_plugin/csrc/gguf/mmq.cuh
+@@ -35,7 +35,7 @@
+     for (int ib0 = 0; ib0 < blocks_per_row_x; ib0 += blocks_per_warp) {
+ 
+         load_tiles(x + row_x_0*blocks_per_row_x + ib0, tile_x_ql, tile_x_dm, tile_x_qh, tile_x_sc,
+-                   threadIdx.y, nrows_x-row_x_0-1, threadIdx.x, blocks_per_row_x);
++                   threadIdx.y, nrows_x-row_x_0-1, threadIdx.x, blocks_per_row_x, min(blocks_per_row_x - ib0, blocks_per_warp));
+ 
+ #pragma unroll
+         for (int ir = 0; ir < qr && ib0 + ir * blocks_per_warp/qr < blocks_per_row_x; ++ir) {
+--- a/vllm_gguf_plugin/csrc/gguf/moe.cuh
++++ b/vllm_gguf_plugin/csrc/gguf/moe.cuh
+@@ -51,7 +51,7 @@
+   for (int ib0 = 0; ib0 < blocks_per_row_x; ib0 += blocks_per_warp) {
+     load_tiles(x + row_x_0 * blocks_per_row_x + ib0, tile_x_ql, tile_x_dm,
+                tile_x_qh, tile_x_sc, threadIdx.y, nrows_x - row_x_0 - 1,
+-               threadIdx.x, blocks_per_row_x);
++               threadIdx.x, blocks_per_row_x, min(blocks_per_row_x - ib0, blocks_per_warp));
+ 
+     const int n_per_r = ((qk * blocks_per_warp) / qr);
+ #pragma unroll

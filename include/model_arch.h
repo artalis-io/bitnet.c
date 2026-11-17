@@ -2,9 +2,14 @@
 #define BN_MODEL_ARCH_H
 
 #include "model_config.h"
+#include "model_tokenizer_policy.h"
+#include "model_anatomy.h"
 #include "gguf.h"
+#include "json.h"
+#include "safetensors.h"
 #include <stddef.h>
 
+#define BN_MODEL_ARCH_POLICY_GGUF_ZERO_CENTERED_NORM_SHIFTED             (1u << 1)
 #define BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE               (1u << 0)
 #define BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK     (1u << 3)
 #define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU                 (1u << 4)
@@ -37,6 +42,8 @@
 #define BN_MODEL_ARCH_POLICY_MOE_PREFILL_MATVEC_ROUTER           (1u << 30)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_ATTENTION_LAST_THIRD      (1u << 31)
 
+struct BnModelAnatomy;
+
 typedef struct {
     const char *name;
     uint32_t policy_flags;
@@ -48,6 +55,11 @@ typedef struct {
     int (*is_ssm_layer)(const BnConfig *c, int layer);
     int (*tensor_name)(char *out, size_t out_size, int layer, int role);
     void (*apply_shapes)(BnConfig *c, int max_head_size, int max_kv_dim);
+    BnSSMQKNormMode ssm_qk_norm;
+    BnModelBF16LayoutKind bf16_layout;
+    /* Non-NULL for topologies requiring a dedicated binder/executor rather
+     * than the legacy GQA/GDN loader. Plans borrow tensor indices only. */
+    int (*plan_anatomy)(BnGGUFFile *file, struct BnModelAnatomy *out);
 } BnModelArchOps;
 
 typedef enum {
@@ -55,67 +67,51 @@ typedef enum {
     BN_MODEL_ARCH_RMSNORM_REFERENCE_ORDER,
 } BnModelArchRMSNormMode;
 
-typedef enum {
-    BN_MODEL_TENSOR_ATTN_NORM = 0,
-    BN_MODEL_TENSOR_ATTN_Q,
-    BN_MODEL_TENSOR_ATTN_K,
-    BN_MODEL_TENSOR_ATTN_V,
-    BN_MODEL_TENSOR_ATTN_OUTPUT,
-    BN_MODEL_TENSOR_ATTN_Q_BIAS,
-    BN_MODEL_TENSOR_ATTN_K_BIAS,
-    BN_MODEL_TENSOR_ATTN_V_BIAS,
-    BN_MODEL_TENSOR_ATTN_Q_NORM,
-    BN_MODEL_TENSOR_ATTN_K_NORM,
-    BN_MODEL_TENSOR_ATTN_SUB_NORM,
-    BN_MODEL_TENSOR_ATTN_POST_NORM,
-    BN_MODEL_TENSOR_SSM_QKV,
-    BN_MODEL_TENSOR_SSM_GATE,
-    BN_MODEL_TENSOR_SSM_A,
-    BN_MODEL_TENSOR_SSM_ALPHA,
-    BN_MODEL_TENSOR_SSM_BETA,
-    BN_MODEL_TENSOR_SSM_CONV1D,
-    BN_MODEL_TENSOR_SSM_DT_BIAS,
-    BN_MODEL_TENSOR_SSM_NORM,
-    BN_MODEL_TENSOR_SSM_OUT,
-    BN_MODEL_TENSOR_FFN_NORM,
-    BN_MODEL_TENSOR_FFN_POST_ATTN_NORM,
-    BN_MODEL_TENSOR_FFN_SUB_NORM,
-    BN_MODEL_TENSOR_FFN_POST_NORM,
-    BN_MODEL_TENSOR_FFN_GATE,
-    BN_MODEL_TENSOR_FFN_UP,
-    BN_MODEL_TENSOR_FFN_DOWN,
-    BN_MODEL_TENSOR_MOE_ROUTER,
-    BN_MODEL_TENSOR_MOE_GATE_EXPS,
-    BN_MODEL_TENSOR_MOE_UP_EXPS,
-    BN_MODEL_TENSOR_MOE_GATE_UP_EXPS,
-    BN_MODEL_TENSOR_MOE_DOWN_EXPS,
-    BN_MODEL_TENSOR_SHARED_FFN_GATE,
-    BN_MODEL_TENSOR_SHARED_FFN_UP,
-    BN_MODEL_TENSOR_SHARED_FFN_DOWN,
-    BN_MODEL_TENSOR_SHARED_FFN_ROUTER,
-    BN_MODEL_TENSOR_LAYER_OUTPUT_SCALE,
-    BN_MODEL_TENSOR_HC_ATTN_NORM,
-    BN_MODEL_TENSOR_HC_ATTN_DOWN,
-    BN_MODEL_TENSOR_HC_ATTN_UP,
-    BN_MODEL_TENSOR_HC_ATTN_INJECT,
-    BN_MODEL_TENSOR_HC_FFN_NORM,
-    BN_MODEL_TENSOR_HC_FFN_DOWN,
-    BN_MODEL_TENSOR_HC_FFN_UP,
-    BN_MODEL_TENSOR_HC_FFN_INJECT,
-    BN_MODEL_TENSOR_INDEXER_Q,
-    BN_MODEL_TENSOR_INDEXER_K,
-    BN_MODEL_TENSOR_INDEXER_Q_NORM,
-    BN_MODEL_TENSOR_INDEXER_K_NORM,
-    BN_MODEL_TENSOR_HC_OUTPUT_NORM,
-    BN_MODEL_TENSOR_HC_OUTPUT_DOWN,
-    BN_MODEL_TENSOR_HC_OUTPUT_UP,
-    BN_MODEL_TENSOR_PLE_KEY,
-    BN_MODEL_TENSOR_PLE_VALUE,
-    BN_MODEL_TENSOR_PLE_NORM_KEY,
-    BN_MODEL_TENSOR_PLE_NORM_QUERY,
-    BN_MODEL_TENSOR_PLE_NORM_CONV,
-    BN_MODEL_TENSOR_PLE_CONV1D,
-} BnModelTensorRole;
+/* Architecture-owned metadata/tensor-shape planning only. Does not read tensor
+ * payloads or claim executor support. Rejects malformed/missing/ambiguous roles
+ * atomically: out remains unchanged on failure. Auxiliary MTP blocks excluded. */
+int bn_model_arch_plan_anatomy(BnGGUFFile *file, BnModelAnatomy *out);
+/* Validate native main-expert dimensions/quant profile only, not forward
+ * topology. Failure preserves out; auxiliary MTP experts are excluded. */
+int bn_model_arch_native_expert_config(const BnJSON *document,
+    BnModelNativeExpertConfig *out);
+/* Exact supported V4.1 numerical policy: rejects missing/unsupported settings
+ * atomically. Decimal constants compare exactly, independent of locale and
+ * floating-point rounding mode. No tensor reads or executor admission. */
+int bn_model_arch_native_numerics(const BnJSON *document,
+    BnModelNativeNumerics *out);
+/* Pure Engram hash layout query: source config order, prime buckets and seeded
+ * NumPy-compatible PCG64 multipliers. Checks all table row sums; preserves out
+ * on failure. Bucket primes must fit INT_MAX; array limits are explicit in
+ * BnModelNativeEngramLayout. No token map,
+ * payload reads or executor admission. */
+int bn_model_arch_native_engram_layout(const BnJSON *document,int layer,
+    BnModelNativeEngramLayout *out);
+/* Source key-normalization profile and immutable map dimensions. */
+int bn_model_arch_native_head(const BnModelNativeAnatomy *anatomy,
+    const BnModelNativeNumerics *numerics,BnModelNativeHead *out);
+int bn_model_arch_native_engram_math(const BnModelNativeAnatomy *anatomy,
+    const BnModelNativeNumerics *numerics,int layer,BnModelNativeEngramMath *out);
+int bn_model_arch_native_engram_map_spec(const BnModelNativeAnatomy *anatomy,
+    const BnModelNativeNumerics *numerics,BnTokenizerMapSpec *out);
+/* Stateless, allocation-free source n-gram hash over batch-major compressed
+ * token history. Emit last out_len positions, token-major then ngram/head.
+ * Layout must be an immutable resolver result. mapped_pad is the COMPRESSED
+ * pad ID, not the raw layout pad_token. Structural/input/alias failure leaves
+ * output unchanged. Empty out_len is a no-op with out_count=0; no data needed. */
+int bn_model_arch_native_engram_hash_rows(const BnModelNativeEngramLayout *layout,uint32_t mapped_pad,
+    const uint32_t *mapped_history,size_t batch,size_t history_len,size_t out_len,
+    uint64_t *out,size_t out_count);
+/* Resolve source scalar metadata under FE_TONEAREST; never changes the caller
+ * rounding mode. Rejection leaves out unchanged. */
+int bn_model_arch_native_rope_frequency(int rotary_dim,const BnModelNativeNumerics *numerics,
+    int compressed,BnModelNativeRopeFrequency *out);
+/* Main text storage shapes and cross-layer pool/selection ownership only.
+ * Numeric execution settings remain in JSON and are not admitted here.
+ * Metadata-only; rejects missing, malformed or unrecognized layer core tensors.
+ * Failure leaves out unchanged; auxiliary MTP/vision namespaces excluded. */
+int bn_model_arch_native_anatomy(const BnJSON *document,
+    const BnSafetensorsIndex *index, BnModelNativeAnatomy *out);
 
 const char *bn_model_arch_prefix(const char *arch);
 int bn_model_arch_activation(const char *arch);
@@ -132,12 +128,32 @@ int bn_model_arch_tensor_name_for(const BnModelArchOps *ops,
                                   size_t out_size,
                                   int layer,
                                   BnModelTensorRole role);
+typedef enum {
+    BN_MODEL_EXPERT_COMPONENT_PACKED = 0,
+    BN_MODEL_EXPERT_COMPONENT_PRE,
+    BN_MODEL_EXPERT_COMPONENT_POST,
+    BN_MODEL_EXPERT_COMPONENT_MARKER,
+} BnModelExpertComponent;
+/* Native routed-expert checkpoint names, currently deepseek_v41 EXL3 only.
+ * Roles are MOE_GATE_EXPS, MOE_UP_EXPS and MOE_DOWN_EXPS. Main layers only;
+ * no MTP prefix. Caller validates nonnegative layer/expert against config.
+ * No executor admission or payload validation. Output unchanged on failure. */
+int bn_model_arch_expert_component_name(const char *architecture,
+    char *out, size_t out_size, int layer, int expert,
+    BnModelTensorRole role, BnModelExpertComponent component);
 int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
                                         char *out,
                                         size_t out_size,
                                         int layer,
                                         BnModelTensorRole role);
+/* Offset stored by GGUF conversion for zero-centered Gemma norms only.
+ * Ordinary RMSNorm scales, including SSM norms, are not gamma weights. */
+float bn_model_arch_zero_centered_norm_storage_offset(const BnConfig *c);
 void bn_model_arch_apply_config(BnConfig *c, const BnModelArchOps *ops);
+/* Architecture-planned shared admission/source dimensions only. Does not
+ * fabricate legacy attention shapes. Failure leaves config unchanged. */
+int bn_model_arch_apply_anatomy_config(BnConfig *config,
+    const BnModelAnatomy *anatomy, int max_seq_len);
 int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c);
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);

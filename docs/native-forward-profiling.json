@@ -1,0 +1,536 @@
+{
+  "status": "Qualified benchmark and bounded phase-policy measurements; full goal ACTIVE and incomplete",
+  "implementation": "bench/bench_native_forward.c",
+  "implementation_sha256": "3f2e27e92fc645544a3fa28d1ca1ea569f51e41ab5d63ecf5d3d66bcef77b7dc",
+  "parent": "docs/deepseek-v41-1017-native-forward-resume.json",
+  "runtime_changes": false,
+  "build_changes": "Added CUDA-only bench_native_forward target, clean entry and ignored executable; prior dirty Makefile otherwise preserved exactly",
+  "hardware": {
+    "gpu": "name, uuid, memory.total [MiB], driver_version\nNVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05, 97887 MiB, 595.104.02",
+    "cpu": {
+      "lscpu": [
+        {
+          "field": "Architecture:",
+          "data": "x86_64"
+        },
+        {
+          "field": "CPU op-mode(s):",
+          "data": "32-bit, 64-bit"
+        },
+        {
+          "field": "Address sizes:",
+          "data": "52 bits physical, 57 bits virtual"
+        },
+        {
+          "field": "Byte Order:",
+          "data": "Little Endian"
+        },
+        {
+          "field": "CPU(s):",
+          "data": "128"
+        },
+        {
+          "field": "On-line CPU(s) list:",
+          "data": "0-127"
+        },
+        {
+          "field": "Vendor ID:",
+          "data": "AuthenticAMD"
+        },
+        {
+          "field": "Model name:",
+          "data": "AMD Ryzen Threadripper 9980X 64-Cores"
+        },
+        {
+          "field": "CPU family:",
+          "data": "26"
+        },
+        {
+          "field": "Model:",
+          "data": "8"
+        },
+        {
+          "field": "Thread(s) per core:",
+          "data": "2"
+        },
+        {
+          "field": "Core(s) per socket:",
+          "data": "64"
+        },
+        {
+          "field": "Socket(s):",
+          "data": "1"
+        },
+        {
+          "field": "Stepping:",
+          "data": "1"
+        },
+        {
+          "field": "Frequency boost:",
+          "data": "enabled"
+        },
+        {
+          "field": "CPU(s) scaling MHz:",
+          "data": "25%"
+        },
+        {
+          "field": "CPU max MHz:",
+          "data": "5476.2891"
+        },
+        {
+          "field": "CPU min MHz:",
+          "data": "1220.6190"
+        },
+        {
+          "field": "BogoMIPS:",
+          "data": "6390.20"
+        },
+        {
+          "field": "Flags:",
+          "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d debug_swap amd_lbr_pmc_freeze"
+        },
+        {
+          "field": "Virtualization:",
+          "data": "AMD-V"
+        },
+        {
+          "field": "L1d cache:",
+          "data": "3 MiB (64 instances)"
+        },
+        {
+          "field": "L1i cache:",
+          "data": "2 MiB (64 instances)"
+        },
+        {
+          "field": "L2 cache:",
+          "data": "64 MiB (64 instances)"
+        },
+        {
+          "field": "L3 cache:",
+          "data": "256 MiB (8 instances)"
+        },
+        {
+          "field": "NUMA node(s):",
+          "data": "1"
+        },
+        {
+          "field": "NUMA node0 CPU(s):",
+          "data": "0-127"
+        },
+        {
+          "field": "Vulnerability Gather data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Ghostwrite:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Indirect target selection:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Itlb multihit:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability L1tf:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Meltdown:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mmio stale data:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Old microcode:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Reg file data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Retbleed:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Spec rstack overflow:",
+          "data": "Mitigation; Reduced Speculation"
+        },
+        {
+          "field": "Vulnerability Spec store bypass:",
+          "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+        },
+        {
+          "field": "Vulnerability Spectre v1:",
+          "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+        },
+        {
+          "field": "Vulnerability Spectre v2:",
+          "data": "Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected"
+        },
+        {
+          "field": "Vulnerability Srbds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsa:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsx async abort:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Vmscape:",
+          "data": "Mitigation; IBPB before exit to userspace"
+        }
+      ]
+    },
+    "nsight": "NVIDIA Nsight Systems version 2026.5.2.323-265239015215v0"
+  },
+  "workload": {
+    "model": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "profile": "Explicit Diffbot INT4 BF16 row lookup -> Exllama F16 Engram execution adapter; not original Diffbot full-runtime equivalence",
+    "reference_producer": "test/reference_native_forward_resume.py",
+    "reference_manifest_sha256": "8da5053960bad39f5ba0b645c572df05d6777e13cc775bfc39c617e2cac6e29f",
+    "frames": "513-token fresh prefill, 513-token resumed prefill, five source-self-fed greedy tokens, context1031",
+    "maxseq": 1280,
+    "prompt": "Original valid 513-token ID sequence repeated twice, followed by source-generated IDs",
+    "head": "Last-token-only F16 source head for timing; separate all-logits window32 correctness gate",
+    "f16acc": 0,
+    "runs_per_plain_configuration": 3,
+    "measurement": "Monotonic host clock; input history staging through completed CPU-logit publication. Model load, token-map construction, request preparation and exact CPU/GPU verification excluded. No observation callbacks installed in plain timing runs.",
+    "warmth": "First-pass RAM/VRAM expert caches empty; repeated passes retain expert caches across session reset. OS page-cache and disk warmth uncontrolled. Repeated identical sequence; not an arrival/concurrency benchmark."
+  },
+  "placement": {
+    "bypass": {
+      "prefill_admit": 0,
+      "decode_admit": 0,
+      "ram_budget_bytes": 639148032,
+      "decode_budget_bytes": 639148032,
+      "temporary_budget_bytes": 639148032
+    },
+    "phase": {
+      "prefill_admit": 0,
+      "decode_admit": 1,
+      "ram_budget_bytes": 13635158016,
+      "decode_budget_bytes": 13635158016,
+      "temporary_budget_bytes": 639148032,
+      "staging_budget_bytes": 13315584,
+      "warm_published_experts": 702,
+      "warm_decode_charged_bytes": 9347539968,
+      "warm_decode_hits_per_token": 240,
+      "warm_decode_misses_per_token": 0,
+      "warm_expert_upload_bytes_per_token": 0
+    },
+    "scope": "Payload quotas, not total process RAM/VRAM. Core weights, request buffers, row cache, mapped source/OS page cache, CUDA/library/context overhead are separate. Store enforces quotas; after each forward leases and temporary charge are zero. No live-session resizing."
+  },
+  "timings": {
+    "plain-window1": {
+      "prefill_pair_ms": [
+        22625.657476,
+        22679.015803000002,
+        22438.536413
+      ],
+      "prefill_pair_median_ms": 22625.657476,
+      "prefill_tokens_per_second": 45.346748534857916,
+      "later_decode_samples_ms": [
+        309.511619,
+        303.531831,
+        295.153168,
+        293.946364,
+        296.817892,
+        295.36443,
+        297.121164,
+        293.568096,
+        295.25319,
+        294.731664
+      ],
+      "later_decode_median_ms": 295.30881,
+      "first_pass_decode_ms": [
+        302.75876,
+        296.43063,
+        293.037956,
+        294.485698,
+        292.876549
+      ]
+    },
+    "plain-window32": {
+      "prefill_pair_ms": [
+        17790.156169,
+        17603.061067000002,
+        17684.534848
+      ],
+      "prefill_pair_median_ms": 17684.534848,
+      "prefill_tokens_per_second": 58.01679313697265,
+      "later_decode_samples_ms": [
+        297.045879,
+        297.067072,
+        297.029765,
+        295.064312,
+        295.43682,
+        298.425067,
+        295.643697,
+        297.751058,
+        296.728725,
+        294.799557
+      ],
+      "later_decode_median_ms": 296.87924499999997,
+      "first_pass_decode_ms": [
+        303.057547,
+        297.051299,
+        294.781009,
+        297.272786,
+        295.760636
+      ]
+    },
+    "plain-phase32": {
+      "prefill_pair_ms": [
+        17786.096727,
+        16408.139101,
+        16417.816389
+      ],
+      "prefill_pair_median_ms": 16417.816389,
+      "prefill_tokens_per_second": 62.493085297714984,
+      "later_decode_samples_ms": [
+        21.811981,
+        21.589231,
+        21.590342,
+        21.597063,
+        21.530821,
+        21.807154,
+        21.633599,
+        21.583282,
+        21.651967,
+        21.541458
+      ],
+      "later_decode_median_ms": 21.5937025,
+      "first_pass_decode_ms": [
+        769.534146,
+        549.803923,
+        345.694431,
+        354.380204,
+        247.313473
+      ]
+    }
+  },
+  "comparison": {
+    "prefill_throughput_gain_window32_fraction": 0.27940359588020547,
+    "warm_decode_speedup_phase_over_bypass": 13.748417854696292,
+    "source_exact": true,
+    "vllm_parity_proven": false
+  },
+  "observed_prefill": {
+    "observed-window1": {
+      "prefill513": {
+        "fused_calls": 7578,
+        "fused_experts": 7578,
+        "folded_calls": 56,
+        "sync_calls": 7723,
+        "sync_ms": 3017.644533,
+        "read_calls": 41,
+        "read_bytes": 320160,
+        "read_ms": 14.800645,
+        "expert_uploads": 23001,
+        "expert_upload_bytes": 102090582528,
+        "expert_upload_ms": 4394.046347,
+        "expert_read_calls": 23001,
+        "expert_read_bytes": 102090582528,
+        "expert_read_ms": 3406.661277
+      },
+      "resume513": {
+        "fused_calls": 6861,
+        "fused_experts": 6861,
+        "folded_calls": 54,
+        "sync_calls": 7007,
+        "sync_ms": 2796.287266,
+        "read_calls": 41,
+        "read_bytes": 320160,
+        "read_ms": 14.860316,
+        "expert_uploads": 20847,
+        "expert_upload_bytes": 92529993216,
+        "expert_upload_ms": 3974.095653,
+        "expert_read_calls": 20847,
+        "expert_read_bytes": 92529993216,
+        "expert_read_ms": 3086.755806
+      }
+    },
+    "observed-window32": {
+      "prefill513": {
+        "fused_calls": 297,
+        "fused_experts": 7578,
+        "folded_calls": 56,
+        "sync_calls": 442,
+        "sync_ms": 347.838836,
+        "read_calls": 41,
+        "read_bytes": 320160,
+        "read_ms": 14.78964,
+        "expert_uploads": 23001,
+        "expert_upload_bytes": 102090582528,
+        "expert_upload_ms": 4497.602144,
+        "expert_read_calls": 23001,
+        "expert_read_bytes": 102090582528,
+        "expert_read_ms": 3409.152678
+      },
+      "resume513": {
+        "fused_calls": 279,
+        "fused_experts": 6861,
+        "folded_calls": 54,
+        "sync_calls": 425,
+        "sync_ms": 340.413666,
+        "read_calls": 41,
+        "read_bytes": 320160,
+        "read_ms": 14.801895,
+        "expert_uploads": 20847,
+        "expert_upload_bytes": 92529993216,
+        "expert_upload_ms": 4130.720775,
+        "expert_read_calls": 20847,
+        "expert_read_bytes": 92529993216,
+        "expert_read_ms": 3145.187824
+      }
+    }
+  },
+  "observed_warm_decode": {
+    "sync_calls_per_token": 92,
+    "read_calls_per_token": 81,
+    "read_bytes_per_token": 260000,
+    "upload_submit_calls_per_token": 5,
+    "upload_submit_bytes_per_token": 6916,
+    "median_sync_call_time_ms": 13.347679,
+    "median_read_call_time_ms": 2.245257,
+    "request_activation_alloc_callbacks": 0,
+    "warning": "Zero request allocation callbacks does not imply zero backend-internal allocations. Upload and read/synchronization timings include blocking boundaries and queued GPU work; not pure DMA or exclusive kernel times."
+  },
+  "trace": {
+    "scope": "Supplementary Nsight trace only; separate from uninstrumented performance samples",
+    "phase_interval": "Embedding CUDA dispatch through the start of the external half-logit verification transfer; includes original final-logit publication and synchronization, excludes setup/reset, initial embedding upload, external verification",
+    "tracked_device_peak_bytes": 28110765417,
+    "tracked_device_final_bytes": 0,
+    "all_forward_cuda_malloc_calls_equal_expert_projection_upload_count": true,
+    "first_prefill_cuda_malloc_calls": 23001,
+    "first_prefill_cuda_free_calls": 23001,
+    "warm_decode_cuda_malloc_and_free_calls": 0,
+    "warm_decode_stream_synchronize_calls": 173,
+    "warm_decode_h2d_bytes_in_interval": 6912,
+    "warm_decode_d2h_bytes_in_interval": 260692,
+    "notes": "Separate Nsight run, includes profiling overhead. Per-forward intervals derived from 14 embedding dispatches and 28 matched publication/verification half-logit copies; original final publication included, external verification excluded. Whole-process kernel/API totals additionally include setup. Tracked allocation peak excludes untracked driver/context overhead.",
+    "artifacts": {
+      "native-phase-trace.nsys-rep": {
+        "path": "/tmp/bitnet-goal-native-forward-profile/native-phase-trace.nsys-rep",
+        "sha256": "32411e08c9e1e0747f3cbc24a1ab751755071c77f6953249df8419938fcbda1d"
+      },
+      "native-phase-trace.sqlite": {
+        "path": "/tmp/bitnet-goal-native-forward-profile/native-phase-trace.sqlite",
+        "sha256": "e13bb3ce6f158e94fc95593f7a0c4cf13e6bb9a5dfc410e9672de80ae5a1ccdb"
+      },
+      "trace-analysis.json": {
+        "path": "/tmp/bitnet-goal-native-forward-profile/trace-analysis.json",
+        "sha256": "908f18289a72a390ede7e9e97d5f27d02dcc1593e33c5194fdfb1b23eb41294d"
+      },
+      "analyze-trace.py": {
+        "path": "/tmp/bitnet-goal-native-forward-profile/analyze-trace.py",
+        "sha256": "d6fe3612f83dc4a5b13d08b8c1db3467abd25194e060104929e86947119a7e74"
+      },
+      "trace-forward-records.json": {
+        "path": "/tmp/bitnet-goal-native-forward-profile/trace-forward-records.json",
+        "sha256": "40817f3b98d9128add569cd689645b4df05f0d62ec079569d18b3bdd047a5a95"
+      }
+    }
+  },
+  "validation": {
+    "qualification": {
+      "checks": {
+        "plain-window1": 0,
+        "plain-window32": 0,
+        "plain-phase32": 0,
+        "observed-window1": 0,
+        "observed-window32": 0,
+        "observed-phase32": 0,
+        "all-logits-window32": 0,
+        "asan-phase32": 0,
+        "memcheck-phase32": 0,
+        "initcheck-phase32": 0,
+        "qwen27-compat": 0
+      },
+      "frozen_sources": 854,
+      "reference_files": 24923,
+      "goal_status": "active",
+      "scope": "Native whole-model window1/window32, bypass versus bounded phase-specific expert admission; per-frame source-exact CPU/GPU outputs. Measurements not vLLM parity."
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "source_exact_main_forwards": 140,
+    "source_exact_main_cpu_gpu_checks": 280,
+    "source_exact_trace_forwards": 14,
+    "asan_ubsan": "Passed",
+    "cuda_memcheck": "0 errors; 0 bytes leaked in 0 allocations",
+    "cuda_initcheck": "0 errors",
+    "qwen27": {
+      "generated_token_matches": 192,
+      "total_generated_tokens": 192,
+      "token_count_mismatches": 0,
+      "prompts": 8,
+      "word_prefix_matches": 147,
+      "total_words": 147
+    },
+    "preflight_corrections": "Corrected benchmark identifier replacement and expanded Engram head budget; corrected rebuilt-object path aliases in audit. Final frozen runs all passed."
+  },
+  "artifacts": {
+    "qualification.json": {
+      "path": "/tmp/bitnet-goal-native-forward-profile/qualification.json",
+      "sha256": "9fb9c0c36ccaadcce4d699d68ea39b49bb6f9f3f31e0d08de920c394d30f01f6"
+    },
+    "records.json": {
+      "path": "/tmp/bitnet-goal-native-forward-profile/records.json",
+      "sha256": "e8128f7d6563a8d1e54e4baf2faea442e92107d2975f4360c4b028c861eada3d"
+    },
+    "frozen-source.json": {
+      "path": "/tmp/bitnet-goal-native-forward-profile/frozen-source.json",
+      "sha256": "f4940dedf1b0e6e605572d529b54de84f250309f8f5fdabf5be4b8d7f4a871c0"
+    },
+    "reference-audit.json": {
+      "path": "/tmp/bitnet-goal-native-forward-profile/reference-audit.json",
+      "sha256": "d5b24b0edb5b5ba52fdbd4fec67b92320b3eb70f2a3dc632c3c5c6e0dee3842c"
+    },
+    "build-edit-proof.json": {
+      "path": "/tmp/bitnet-goal-native-forward-profile/build-edit-proof.json",
+      "sha256": "af7cb86bfee2c3ead0fc3fe7de5c792f6e1e4b24b0fff47f0163171a84c8d2ab"
+    },
+    "intentional-source-changes.json": {
+      "path": "/tmp/bitnet-goal-native-forward-profile/intentional-source-changes.json",
+      "sha256": "aa7080fd8fe8c05629ec1f8ea8803de801d59080d5dbf9012e9de2ecdb1daf49"
+    },
+    "rebuilt-artifacts.json": {
+      "path": "/tmp/bitnet-goal-native-forward-profile/rebuilt-artifacts.json",
+      "sha256": "806098b4376f05970d66465a2c5720b1b7dc6f177593471724c486842eab07ab"
+    }
+  },
+  "remaining": [
+    "Reuse bounded temporary expert device buffers to avoid per-projection allocation/free while preserving upload-publication and lease-consumer completion contracts",
+    "Measure effects of transfer staging and synchronization changes separately; CPU boundary times include GPU execution and cannot be treated as removable overhead",
+    "Establish matched fully resident vLLM comparisons; no such comparison was run for this EXL3 adapter profile",
+    "Whole-model large-context two-level candidates, production tokenizer/CLI admission and compute rewind/reset-replay remain unqualified",
+    "Phase policies here are explicit benchmark choices using existing placement API, not a newly admitted production serving policy",
+    "Continuous batching, KV scheduling, concurrent throughput and tail latency, all named models/backends and full objective remain incomplete"
+  ],
+  "goal_complete": false
+}

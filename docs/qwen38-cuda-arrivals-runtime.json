@@ -1,0 +1,575 @@
+{
+  "scope": "Controlled engine-step arrivals through serialized greedy library runtime and actual CUDA pool",
+  "full_goal_complete": false,
+  "source_sha256": {
+    "include/generate_batch.h": "31d6e17657db6c629777e6dff8e5f30094acf04e3f5ce10e9c30f95d1c2394ae",
+    "src/generate_batch.c": "56a67516d9f72a3a870b5ee8d9695ca8fdc49a8fa487117b8d3f6c42315ed6f6",
+    "include/generate_batch_plan.h": "a042f22b00f468ede198ea01fa4bac12579dc3120bec15ba2ed47ef559debfc5",
+    "src/generate_batch_plan.c": "6da106873c8968b71a8c8f0cb89ccd0f1a5db8f20ccf7718dd0c103b42a6fd39",
+    "bench/bench_bf16_arrivals.c": "dfb8f580b9c23d307d059375672110d9b6953b4545c44104991b837c81db6193",
+    "test/test_generate_batch.c": "cca2fd8f91357acde98eb33c21002781374ba732647daec7e996e8d2e90912c2"
+  },
+  "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+  "correctness": {
+    "matrices": 134,
+    "full_heads": 784,
+    "bf16_words": 194682880,
+    "sampled_outputs": 768
+  },
+  "kv": {
+    "scope": "KV payload only; excludes weights, SSM, activations, workspace, driver and allocator overhead",
+    "max_live": 8,
+    "created": 8,
+    "reused": 4,
+    "discarded": 0,
+    "leased_slots_at_end": 0,
+    "retained_bytes": 4294967296,
+    "bytes_per_slot": 536870912
+  },
+  "checks": {
+    "clean": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "diagnostic": {
+      "exit": 0
+    },
+    "geometry": {
+      "exit": 0
+    },
+    "full-heads": {
+      "exit": 0
+    }
+  },
+  "host_sanitizers": "ASan and UBSan passed; test_sanitized with address,undefined",
+  "verifier_negative_tests": {
+    "query": "rejected",
+    "pool": "rejected",
+    "token": "rejected",
+    "timestamp": "rejected",
+    "identity": "rejected"
+  },
+  "whole_workload_memcheck": {
+    "status": "passed",
+    "error_summary": "0 errors",
+    "scope": "All 134 actual pooled CUDA engine steps before the Q8 kernel optimization; runtime/adapter ownership code is unchanged"
+  },
+  "timing": {
+    "status": "qualified for controlled engine-step arrival case",
+    "evidence": "qwen38-cuda-arrivals-performance.json",
+    "analysis": {
+      "scope": "Controlled engine-step arrivals only; native eight-slot pooled library runtime; not fixed-wall-clock offered load or full-goal completion",
+      "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+      "requests": 12,
+      "max_live": 8,
+      "outputs_each": 64,
+      "arrival_steps": [
+        0,
+        8,
+        68
+      ],
+      "context_capacity": 8192,
+      "token_budget": 256,
+      "prefill_chunk": 64,
+      "native_runs": [
+        {
+          "elapsed_ms": 7531.935008,
+          "output_tokens_per_second": 101.96582938969512,
+          "pure_prefill_steps_ms": 732.701237,
+          "mixed_steps_ms": 829.128834,
+          "prefill_containing_steps_ms": 1561.8300709999999,
+          "decode_mean_step_ms": 47.00858284251969,
+          "decode_p95_step_ms": 58.630736,
+          "decode_p99_step_ms": 59.252285,
+          "ttft_p50_ms": 703.488096,
+          "ttft_p95_ms": 732.700306,
+          "ttft_p99_ms": 732.700306,
+          "itl_p50_ms": 58.47808299999997,
+          "itl_p95_ms": 59.002914999999575,
+          "itl_p99_ms": 296.21916000000056
+        },
+        {
+          "elapsed_ms": 7539.008179,
+          "output_tokens_per_second": 101.87016405410905,
+          "pure_prefill_steps_ms": 718.803704,
+          "mixed_steps_ms": 832.6616280000001,
+          "prefill_containing_steps_ms": 1551.4653320000002,
+          "decode_mean_step_ms": 47.14593826771654,
+          "decode_p95_step_ms": 58.712391,
+          "decode_p99_step_ms": 58.760203,
+          "ttft_p50_ms": 706.8967110000003,
+          "ttft_p95_ms": 718.802764,
+          "ttft_p99_ms": 718.802764,
+          "itl_p50_ms": 58.63972999999987,
+          "itl_p95_ms": 58.72519999999986,
+          "itl_p99_ms": 298.03038600000036
+        },
+        {
+          "elapsed_ms": 7554.159597,
+          "output_tokens_per_second": 101.66584252535485,
+          "pure_prefill_steps_ms": 721.256351,
+          "mixed_steps_ms": 834.522251,
+          "prefill_containing_steps_ms": 1555.7786019999999,
+          "decode_mean_step_ms": 47.23128703937008,
+          "decode_p95_step_ms": 58.704578,
+          "decode_p99_step_ms": 58.82335,
+          "ttft_p50_ms": 708.8920480000006,
+          "ttft_p95_ms": 721.255429,
+          "ttft_p99_ms": 721.255429,
+          "itl_p50_ms": 58.65754700000002,
+          "itl_p95_ms": 58.71531499999992,
+          "itl_p99_ms": 299.2040479999996
+        }
+      ],
+      "reference_runs": [
+        {
+          "elapsed_ms": 9140.78783907462,
+          "output_tokens_per_second": 84.01901603240248,
+          "pure_prefill_steps_ms": 1372.3976979963481,
+          "mixed_steps_ms": 1566.3619249826297,
+          "prefill_containing_steps_ms": 2938.759622978978,
+          "decode_mean_step_ms": 48.792596439845624,
+          "decode_p95_step_ms": 64.3564990023151,
+          "decode_p99_step_ms": 65.69637695793062,
+          "ttft_p50_ms": 1372.560716001317,
+          "ttft_p95_ms": 1455.1741610048339,
+          "ttft_p99_ms": 1455.1741610048339,
+          "itl_p50_ms": 62.38713103812188,
+          "itl_p95_ms": 64.7801369195804,
+          "itl_p99_ms": 676.0423911036924
+        },
+        {
+          "elapsed_ms": 9240.114229964092,
+          "output_tokens_per_second": 83.11585559294373,
+          "pure_prefill_steps_ms": 1388.993883971125,
+          "mixed_steps_ms": 1583.4855058928952,
+          "prefill_containing_steps_ms": 2972.47938986402,
+          "decode_mean_step_ms": 49.30739027015337,
+          "decode_p95_step_ms": 64.75459900684655,
+          "decode_p99_step_ms": 65.92322303913534,
+          "ttft_p50_ms": 1389.2148230224848,
+          "ttft_p95_ms": 1471.0623460123315,
+          "ttft_p99_ms": 1471.0623460123315,
+          "itl_p50_ms": 63.04662802722305,
+          "itl_p95_ms": 64.95622592046857,
+          "itl_p99_ms": 683.9179539820179
+        },
+        {
+          "elapsed_ms": 9308.0509029096,
+          "output_tokens_per_second": 82.50921788147197,
+          "pure_prefill_steps_ms": 1409.3278429936618,
+          "mixed_steps_ms": 1592.2831000061706,
+          "prefill_containing_steps_ms": 3001.6109429998323,
+          "decode_mean_step_ms": 49.61684436672991,
+          "decode_p95_step_ms": 65.24438597261906,
+          "decode_p99_step_ms": 65.79477794002742,
+          "ttft_p50_ms": 1409.4828590750694,
+          "ttft_p95_ms": 1479.0700520388782,
+          "ttft_p99_ms": 1479.0700520388782,
+          "itl_p50_ms": 63.523107091896236,
+          "itl_p95_ms": 65.60822192113847,
+          "itl_p99_ms": 687.8381120041013
+        }
+      ],
+      "native_medians": {
+        "elapsed_ms": 7539.008179,
+        "output_tokens_per_second": 101.87016405410905,
+        "pure_prefill_steps_ms": 721.256351,
+        "mixed_steps_ms": 832.6616280000001,
+        "prefill_containing_steps_ms": 1555.7786019999999,
+        "decode_mean_step_ms": 47.14593826771654,
+        "decode_p95_step_ms": 58.704578,
+        "decode_p99_step_ms": 58.82335,
+        "ttft_p50_ms": 706.8967110000003,
+        "ttft_p95_ms": 721.255429,
+        "ttft_p99_ms": 721.255429,
+        "itl_p50_ms": 58.63972999999987,
+        "itl_p95_ms": 58.72519999999986,
+        "itl_p99_ms": 298.03038600000036
+      },
+      "reference_medians": {
+        "elapsed_ms": 9240.114229964092,
+        "output_tokens_per_second": 83.11585559294373,
+        "pure_prefill_steps_ms": 1388.993883971125,
+        "mixed_steps_ms": 1583.4855058928952,
+        "prefill_containing_steps_ms": 2972.47938986402,
+        "decode_mean_step_ms": 49.30739027015337,
+        "decode_p95_step_ms": 64.75459900684655,
+        "decode_p99_step_ms": 65.79477794002742,
+        "ttft_p50_ms": 1389.2148230224848,
+        "ttft_p95_ms": 1471.0623460123315,
+        "ttft_p99_ms": 1471.0623460123315,
+        "itl_p50_ms": 63.04662802722305,
+        "itl_p95_ms": 64.95622592046857,
+        "itl_p99_ms": 683.9179539820179
+      },
+      "comparison": {
+        "pure_prefill_throughput_ratio": 1.9257977861066,
+        "prefill_containing_step_ratio": 1.9106056517571388,
+        "decode_mean_step_ratio": 0.9561637314286091,
+        "end_to_end_throughput_ratio": 1.2256405631317053
+      },
+      "timing_scope": {
+        "native": "Enqueue/admission, execution, greedy sampling, cohort publication and pool returns included; final pool/model teardown excluded; metadata buffered in timed work",
+        "reference": "Original engine loop includes admissions and callback extraction; per-engine-step phase times exclude add_request; CPU geometry observer included, no GPU tensor observations",
+        "tails": "12 TTFT and 756 ITL observations per run; nearest-rank percentiles, then medians across three runs",
+        "pure_prefill": "First three pure prefill engine steps for the initial four requests; not aggregate prefill throughput for all arrivals",
+        "mixed": "Four mixed steps contain both prompt and generation work; no pure-prefill interpretation"
+      },
+      "kv_pool": {
+        "scope": "KV payload only; excludes model, SSM state, activations, workspace and allocator overhead",
+        "created": 8,
+        "reused": 4,
+        "retained_bytes": 4294967296
+      },
+      "correctness": {
+        "matrices": 134,
+        "full_heads": 784,
+        "bf16_words": 194682880
+      },
+      "source_sha256": {
+        "src/quant/q8_bf16_mma_cuda.cuh": "4927570385d4cc0f5220b09277f28b08dcde1a9ed07310f950a2c8f48f2bd307",
+        "src/gpu_cuda.cu": "222d5735febebf28a848f967fabdc748a9eb427fdfb6621a86c210b38eace552",
+        "test/test_cuda_q8_mma.cu": "eb34dfeef39c9028bee6641e478a5329a1898ea30649d3372424a37a86a0aefe",
+        "src/generate_batch.c": "56a67516d9f72a3a870b5ee8d9695ca8fdc49a8fa487117b8d3f6c42315ed6f6",
+        "bench/bench_bf16_arrivals.c": "dfb8f580b9c23d307d059375672110d9b6953b4545c44104991b837c81db6193"
+      },
+      "artifacts": {
+        "bench/policies/qwen38-cuda-staggered12-noncp.json": "431e83302319732a4fdf0f258ff7e52b034bb72cbc3b18e73edb4da10ca2dd32",
+        "test/bf16_cuda_staggered12_reference.json": "4b385e7981749b90781c2eaa0ed57b06023000d75d5fa1126d08b575843c6ec2",
+        "/tmp/bitnet-goal-batch-runtime/workload.bin": "849f3c3370444307c8357afd186b6a9ccea87dfc901d77e613b8b8e369554a31"
+      },
+      "full_goal_complete": false,
+      "decode_by_cohort_size": {
+        "4": {
+          "steps_per_run": 69,
+          "native_runs_ms": [
+            37.28629346376812,
+            37.459081463768115,
+            37.609686985507246
+          ],
+          "reference_runs_ms": [
+            36.72493356145055,
+            37.12458438341223,
+            37.1676510979381
+          ],
+          "native_median_ms": 37.459081463768115,
+          "reference_median_ms": 37.12458438341223,
+          "latency_ratio": 1.0090101232353552
+        },
+        "8": {
+          "steps_per_run": 58,
+          "native_runs_ms": [
+            58.57475468965517,
+            58.669957568965515,
+            58.67767331034483
+          ],
+          "reference_runs_ms": [
+            63.148954002074255,
+            63.80072830782818,
+            64.42709153132706
+          ],
+          "native_median_ms": 58.669957568965515,
+          "reference_median_ms": 63.80072830782818,
+          "latency_ratio": 0.9195813139607509
+        }
+      },
+      "performance_qualified": true,
+      "gates": {
+        "initial_pure_prefill_throughput_ratio_at_least_095": true,
+        "mean_decode_latency_ratio_at_most_105": true,
+        "each_decode_cohort_size_at_most_105": true
+      }
+    }
+  },
+  "evidence_root": "/tmp/bitnet-goal-batch-runtime",
+  "baseline_timing": {
+    "status": "measured; decode parity fails",
+    "analysis": {
+      "scope": "Controlled engine-step arrivals only; native eight-slot pooled library runtime; not fixed-wall-clock offered load or full-goal completion",
+      "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+      "requests": 12,
+      "max_live": 8,
+      "outputs_each": 64,
+      "arrival_steps": [
+        0,
+        8,
+        68
+      ],
+      "context_capacity": 8192,
+      "token_budget": 256,
+      "prefill_chunk": 64,
+      "native_runs": [
+        {
+          "elapsed_ms": 8838.410827,
+          "output_tokens_per_second": 86.89344895055986,
+          "pure_prefill_steps_ms": 762.859613,
+          "mixed_steps_ms": 850.896798,
+          "prefill_containing_steps_ms": 1613.7564109999998,
+          "decode_mean_step_ms": 56.88695865354331,
+          "decode_p95_step_ms": 78.676236,
+          "decode_p99_step_ms": 78.693093,
+          "ttft_p50_ms": 724.0970729999999,
+          "ttft_p95_ms": 762.85865,
+          "ttft_p99_ms": 762.85865,
+          "itl_p50_ms": 78.62364600000001,
+          "itl_p95_ms": 78.69256099999984,
+          "itl_p99_ms": 305.94290100000035
+        },
+        {
+          "elapsed_ms": 8812.643818,
+          "output_tokens_per_second": 87.14751394256338,
+          "pure_prefill_steps_ms": 743.952131,
+          "mixed_steps_ms": 849.446601,
+          "prefill_containing_steps_ms": 1593.398732,
+          "decode_mean_step_ms": 56.84437712598425,
+          "decode_p95_step_ms": 78.625399,
+          "decode_p99_step_ms": 78.639881,
+          "ttft_p50_ms": 723.0241740000001,
+          "ttft_p95_ms": 743.951239,
+          "ttft_p99_ms": 743.951239,
+          "itl_p50_ms": 78.55821600000013,
+          "itl_p95_ms": 78.63965000000007,
+          "itl_p99_ms": 305.25161599999956
+        },
+        {
+          "elapsed_ms": 8809.394434,
+          "output_tokens_per_second": 87.17965868753608,
+          "pure_prefill_steps_ms": 740.715758,
+          "mixed_steps_ms": 847.862543,
+          "prefill_containing_steps_ms": 1588.578301,
+          "decode_mean_step_ms": 56.856693937007876,
+          "decode_p95_step_ms": 78.982043,
+          "decode_p99_step_ms": 79.05868,
+          "ttft_p50_ms": 721.3952559999998,
+          "ttft_p95_ms": 740.7147659999999,
+          "ttft_p99_ms": 740.7147659999999,
+          "itl_p50_ms": 78.5111339999994,
+          "itl_p95_ms": 79.015805,
+          "itl_p99_ms": 304.42832799999996
+        }
+      ],
+      "reference_runs": [
+        {
+          "elapsed_ms": 9140.78783907462,
+          "output_tokens_per_second": 84.01901603240248,
+          "pure_prefill_steps_ms": 1372.3976979963481,
+          "mixed_steps_ms": 1566.3619249826297,
+          "prefill_containing_steps_ms": 2938.759622978978,
+          "decode_mean_step_ms": 48.792596439845624,
+          "decode_p95_step_ms": 64.3564990023151,
+          "decode_p99_step_ms": 65.69637695793062,
+          "ttft_p50_ms": 1372.560716001317,
+          "ttft_p95_ms": 1455.1741610048339,
+          "ttft_p99_ms": 1455.1741610048339,
+          "itl_p50_ms": 62.38713103812188,
+          "itl_p95_ms": 64.7801369195804,
+          "itl_p99_ms": 676.0423911036924
+        },
+        {
+          "elapsed_ms": 9240.114229964092,
+          "output_tokens_per_second": 83.11585559294373,
+          "pure_prefill_steps_ms": 1388.993883971125,
+          "mixed_steps_ms": 1583.4855058928952,
+          "prefill_containing_steps_ms": 2972.47938986402,
+          "decode_mean_step_ms": 49.30739027015337,
+          "decode_p95_step_ms": 64.75459900684655,
+          "decode_p99_step_ms": 65.92322303913534,
+          "ttft_p50_ms": 1389.2148230224848,
+          "ttft_p95_ms": 1471.0623460123315,
+          "ttft_p99_ms": 1471.0623460123315,
+          "itl_p50_ms": 63.04662802722305,
+          "itl_p95_ms": 64.95622592046857,
+          "itl_p99_ms": 683.9179539820179
+        },
+        {
+          "elapsed_ms": 9308.0509029096,
+          "output_tokens_per_second": 82.50921788147197,
+          "pure_prefill_steps_ms": 1409.3278429936618,
+          "mixed_steps_ms": 1592.2831000061706,
+          "prefill_containing_steps_ms": 3001.6109429998323,
+          "decode_mean_step_ms": 49.61684436672991,
+          "decode_p95_step_ms": 65.24438597261906,
+          "decode_p99_step_ms": 65.79477794002742,
+          "ttft_p50_ms": 1409.4828590750694,
+          "ttft_p95_ms": 1479.0700520388782,
+          "ttft_p99_ms": 1479.0700520388782,
+          "itl_p50_ms": 63.523107091896236,
+          "itl_p95_ms": 65.60822192113847,
+          "itl_p99_ms": 687.8381120041013
+        }
+      ],
+      "native_medians": {
+        "elapsed_ms": 8812.643818,
+        "output_tokens_per_second": 87.14751394256338,
+        "pure_prefill_steps_ms": 743.952131,
+        "mixed_steps_ms": 849.446601,
+        "prefill_containing_steps_ms": 1593.398732,
+        "decode_mean_step_ms": 56.856693937007876,
+        "decode_p95_step_ms": 78.676236,
+        "decode_p99_step_ms": 78.693093,
+        "ttft_p50_ms": 723.0241740000001,
+        "ttft_p95_ms": 743.951239,
+        "ttft_p99_ms": 743.951239,
+        "itl_p50_ms": 78.55821600000013,
+        "itl_p95_ms": 78.69256099999984,
+        "itl_p99_ms": 305.25161599999956
+      },
+      "reference_medians": {
+        "elapsed_ms": 9240.114229964092,
+        "output_tokens_per_second": 83.11585559294373,
+        "pure_prefill_steps_ms": 1388.993883971125,
+        "mixed_steps_ms": 1583.4855058928952,
+        "prefill_containing_steps_ms": 2972.47938986402,
+        "decode_mean_step_ms": 49.30739027015337,
+        "decode_p95_step_ms": 64.75459900684655,
+        "decode_p99_step_ms": 65.79477794002742,
+        "ttft_p50_ms": 1389.2148230224848,
+        "ttft_p95_ms": 1471.0623460123315,
+        "ttft_p99_ms": 1471.0623460123315,
+        "itl_p50_ms": 63.04662802722305,
+        "itl_p95_ms": 64.95622592046857,
+        "itl_p99_ms": 683.9179539820179
+      },
+      "comparison": {
+        "pure_prefill_throughput_ratio": 1.867047389331458,
+        "prefill_containing_step_ratio": 1.865496269181178,
+        "decode_mean_step_ratio": 1.1531069404706302,
+        "end_to_end_throughput_ratio": 1.0485064891753568
+      },
+      "timing_scope": {
+        "native": "Enqueue/admission, execution, greedy sampling, cohort publication and pool returns included; final pool/model teardown excluded; metadata buffered in timed work",
+        "reference": "Original engine loop includes admissions and callback extraction; per-engine-step phase times exclude add_request; CPU geometry observer included, no GPU tensor observations",
+        "tails": "12 TTFT and 756 ITL observations per run; nearest-rank percentiles, then medians across three runs",
+        "pure_prefill": "First three pure prefill engine steps for the initial four requests; not aggregate prefill throughput for all arrivals",
+        "mixed": "Four mixed steps contain both prompt and generation work; no pure-prefill interpretation"
+      },
+      "kv_pool": {
+        "scope": "KV payload only; excludes model, SSM state, activations, workspace and allocator overhead",
+        "created": 8,
+        "reused": 4,
+        "retained_bytes": 4294967296
+      },
+      "correctness": {
+        "matrices": 134,
+        "full_heads": 784,
+        "bf16_words": 194682880
+      },
+      "source_sha256": {
+        "include/generate_batch.h": "31d6e17657db6c629777e6dff8e5f30094acf04e3f5ce10e9c30f95d1c2394ae",
+        "src/generate_batch.c": "56a67516d9f72a3a870b5ee8d9695ca8fdc49a8fa487117b8d3f6c42315ed6f6",
+        "include/generate_batch_plan.h": "a042f22b00f468ede198ea01fa4bac12579dc3120bec15ba2ed47ef559debfc5",
+        "src/generate_batch_plan.c": "6da106873c8968b71a8c8f0cb89ccd0f1a5db8f20ccf7718dd0c103b42a6fd39",
+        "bench/bench_bf16_arrivals.c": "dfb8f580b9c23d307d059375672110d9b6953b4545c44104991b837c81db6193",
+        "test/test_generate_batch.c": "cca2fd8f91357acde98eb33c21002781374ba732647daec7e996e8d2e90912c2"
+      },
+      "artifacts": {
+        "bench/policies/qwen38-cuda-staggered12-noncp.json": "431e83302319732a4fdf0f258ff7e52b034bb72cbc3b18e73edb4da10ca2dd32",
+        "test/bf16_cuda_staggered12_reference.json": "4b385e7981749b90781c2eaa0ed57b06023000d75d5fa1126d08b575843c6ec2",
+        "/tmp/bitnet-goal-batch-runtime/workload.bin": "849f3c3370444307c8357afd186b6a9ccea87dfc901d77e613b8b8e369554a31"
+      },
+      "full_goal_complete": false
+    }
+  },
+  "q8_optimization": {
+    "scope": "SM120 existing A8 MMQ dispatch for at most eight input tokens; same format/precision contract",
+    "method": "Stage eight consecutive Q8 blocks per barrier pair, with 64-token cooperative tile and zeroed inactive rows; retain ascending per-block integer dot and F32 FMA",
+    "source_sha256": {
+      "src/quant/q8_bf16_mma_cuda.cuh": "4927570385d4cc0f5220b09277f28b08dcde1a9ed07310f950a2c8f48f2bd307",
+      "src/gpu_cuda.cu": "222d5735febebf28a848f967fabdc748a9eb427fdfb6621a86c210b38eace552",
+      "test/test_cuda_q8_mma.cu": "eb34dfeef39c9028bee6641e478a5329a1898ea30649d3372424a37a86a0aefe",
+      "src/generate_batch.c": "56a67516d9f72a3a870b5ee8d9695ca8fdc49a8fa487117b8d3f6c42315ed6f6",
+      "bench/bench_bf16_arrivals.c": "dfb8f580b9c23d307d059375672110d9b6953b4545c44104991b837c81db6193"
+    },
+    "before_source_sha256": {
+      "src/quant/q8_bf16_mma_cuda.cuh": "99b96635fe3da547510945e0d2d36bfc8fab92ea312b3504d1a4185c6c1e52a3",
+      "src/gpu_cuda.cu": "025574074d49204e0bee27fec92aca1ff55fa251f2cec2ff5d7d27f971139c2b",
+      "test/test_cuda_q8_mma.cu": "3ed5ffbef6bc33318e844ba9456b83fc9c7247596feb88e772fee44ccf607dc6"
+    },
+    "checks": {
+      "clean": {
+        "exit": 0
+      },
+      "build": {
+        "exit": 0
+      },
+      "standard": {
+        "exit": 0
+      },
+      "benches": {
+        "exit": 0
+      },
+      "cuda-suite": {
+        "exit": 0
+      },
+      "q8-memcheck": {
+        "exit": 0
+      },
+      "q8-synccheck": {
+        "exit": 0
+      },
+      "q8-backend-memcheck": {
+        "exit": 0
+      },
+      "q8-small-timings": {
+        "exit": 0
+      },
+      "runtime": {
+        "exit": 0
+      },
+      "diagnostic": {
+        "exit": 0
+      },
+      "geometry": {
+        "exit": 0
+      },
+      "full-heads": {
+        "exit": 0
+      },
+      "timing-0": {
+        "exit": 0
+      },
+      "timing-0-verified": {
+        "exit": 0
+      },
+      "timing-1": {
+        "exit": 0
+      },
+      "timing-1-verified": {
+        "exit": 0
+      },
+      "timing-2": {
+        "exit": 0
+      },
+      "timing-2-verified": {
+        "exit": 0
+      },
+      "legacy-b4": {
+        "exit": 0
+      },
+      "legacy-b4-verified": {
+        "exit": 0
+      },
+      "legacy-b16": {
+        "exit": 0
+      },
+      "legacy-b16-verified": {
+        "exit": 0
+      }
+    },
+    "profile": "qwen38-q8-small-batch-profile.json",
+    "legacy_full_heads": {
+      "batch4": 256,
+      "batch16": 1024
+    },
+    "evidence_root": "/tmp/bitnet-goal-q8-eight/promotion"
+  }
+}

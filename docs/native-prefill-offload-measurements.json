@@ -1,0 +1,728 @@
+{
+  "schema": 1,
+  "status": "offloaded_measurement_complete_no_demonstrated_shared_prefill_speedup",
+  "evidence_root": "/tmp/bitnet-goal-native-prefill-performance",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "implementation_changes": false,
+  "conclusion": "The shared native fused path is correctness-qualified, but these three matched offloaded burst pairs demonstrate no material end-to-end gain over the saved private-projection binary. Larger application RAM caches reduce repeated reads, while cold fill, paging and configuration variability need further work.",
+  "workload": {
+    "scope": "Native offloaded prefill-only static four-request burst,2live. No trace, profiler or memory sampler during timing. Timing window is first flushed admission to last flushed completion; includes second/replacement admission and four greedy sampling/output events. Model startup and final teardown excluded; total process time separately recorded.",
+    "binary_order": [
+      "old",
+      "new",
+      "new",
+      "old",
+      "old",
+      "new"
+    ],
+    "outputs_per_request": 1,
+    "prompt_tokens": [
+      2050,
+      1026,
+      1026,
+      2050
+    ],
+    "prompt_tokens_total": 6152,
+    "prefill_chunk": 2048,
+    "maxseq": 2304,
+    "ram_cache_mb": 13004,
+    "gpu_cache_mb": 26008,
+    "cache_state": "Fresh process/application expert caches each run. OS page cache is neither cleared nor declared cold; first run may affect subsequent filesystem residency.",
+    "comparison": "Pre-change production binary vs current qualified production binary, same GPU/CLI/inputs/caps; not original-runtime/vLLM parity or a fully resident benchmark.",
+    "acceptance": "Every sampled ID, output text and position against immutable independent native reference prefixes; exact full heads qualified separately. Preserve all runs, report paired ratios and variability; no threshold fitting.",
+    "full_goal_complete": false
+  },
+  "binaries": {
+    "old": {
+      "path": "/tmp/bitnet-goal-native-joint-projection/prior-bitnet",
+      "sha256": "983a88de70187ce5de1dd2d8e39e954448c88454fea97737dce00d81fa96bc20"
+    },
+    "new": {
+      "path": "/home/mark/artalis.io/src/bitnet.c/bitnet",
+      "sha256": "9dd6e487f0fb59673ae1d4a64b3ab4a49758d5ee501bb7f866756a670cdeeca7"
+    }
+  },
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "hardware": {
+    "gpu": "NVIDIA RTX PRO6000 Blackwell Max-Q",
+    "driver": "595.104.02",
+    "cpu": "AMD Ryzen Threadripper9980X64-Core",
+    "numa_nodes": 1
+  },
+  "paired_results": {
+    "summary": {
+      "old": {
+        "elapsed_ms": [
+          43017.866245,
+          42869.188795,
+          43079.468773
+        ],
+        "median_elapsed_ms": 43017.866245,
+        "range_elapsed_ms": [
+          42869.188795,
+          43079.468773
+        ],
+        "median_prompt_tokens_per_second": 143.01034749056276
+      },
+      "new": {
+        "elapsed_ms": [
+          43115.060515,
+          42903.512428,
+          42824.808773
+        ],
+        "median_elapsed_ms": 42903.512428,
+        "range_elapsed_ms": [
+          42824.808773,
+          43115.060515
+        ],
+        "median_prompt_tokens_per_second": 143.39152325405033
+      }
+    },
+    "pairs": [
+      {
+        "old_run": 0,
+        "new_run": 1,
+        "new_over_old_throughput": 0.9977457002532517,
+        "new_over_old_elapsed": 1.0022593930960324
+      },
+      {
+        "old_run": 3,
+        "new_run": 2,
+        "new_over_old_throughput": 0.9991999808160789,
+        "new_over_old_elapsed": 1.0008006597270627
+      },
+      {
+        "old_run": 4,
+        "new_run": 5,
+        "new_over_old_throughput": 1.0059465531148049,
+        "new_over_old_elapsed": 0.9940885993431838
+      }
+    ],
+    "geometric_mean_new_over_old_throughput": 1.0009577110706762,
+    "interpretation": "About0.10% geometric mean gain; individual pairs straddle1.0. Three pairs do not establish a statistically stable gain or a non-regression guarantee.",
+    "measurements": [
+      {
+        "index": 0,
+        "binary": "old",
+        "window_ms": 43017.866245,
+        "prompt_tokens_per_second": 143.01034749056276,
+        "total_process_ms": 60793.512104,
+        "client_ttft_ms": [
+          29228.854377,
+          16684.464641,
+          12533.88272,
+          13784.818766
+        ],
+        "batch": {
+          "completed": 4,
+          "steps": 4,
+          "group_calls": 2,
+          "single_forwards": 2,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 40,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13709032795,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765924411,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765924411,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 371877629952,
+          "upload_ms": 13998.909439,
+          "ram_miss_bytes": 363888279552,
+          "source_read_bytes": 363888279552,
+          "source_read_ms": 25287.403306
+        },
+        "tokens_and_text_exact": true
+      },
+      {
+        "index": 1,
+        "binary": "new",
+        "window_ms": 43115.060515,
+        "prompt_tokens_per_second": 142.6879593004324,
+        "total_process_ms": 59584.001281,
+        "client_ttft_ms": [
+          29254.822065,
+          16655.299295,
+          12590.37398,
+          13855.720031
+        ],
+        "batch": {
+          "completed": 4,
+          "steps": 4,
+          "group_calls": 2,
+          "single_forwards": 2,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 40,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13709032819,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765924483,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765924483,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 371877629952,
+          "upload_ms": 14017.587085,
+          "ram_miss_bytes": 363888279552,
+          "source_read_bytes": 363888279552,
+          "source_read_ms": 25266.913955
+        },
+        "tokens_and_text_exact": true,
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        }
+      },
+      {
+        "index": 2,
+        "binary": "new",
+        "window_ms": 42903.512428,
+        "prompt_tokens_per_second": 143.39152325405033,
+        "total_process_ms": 59103.003661,
+        "client_ttft_ms": [
+          29037.756812,
+          16401.227296,
+          12627.420237,
+          13861.622927
+        ],
+        "batch": {
+          "completed": 4,
+          "steps": 4,
+          "group_calls": 2,
+          "single_forwards": 2,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 40,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13709032819,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765924483,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765924483,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 371877629952,
+          "upload_ms": 14043.282233,
+          "ram_miss_bytes": 363888279552,
+          "source_read_bytes": 363888279552,
+          "source_read_ms": 25063.868667
+        },
+        "tokens_and_text_exact": true,
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        }
+      },
+      {
+        "index": 3,
+        "binary": "old",
+        "window_ms": 42869.188795,
+        "prompt_tokens_per_second": 143.506331071922,
+        "total_process_ms": 60155.50973,
+        "client_ttft_ms": [
+          29060.852738,
+          16431.494386,
+          12620.004979,
+          13804.282819
+        ],
+        "batch": {
+          "completed": 4,
+          "steps": 4,
+          "group_calls": 2,
+          "single_forwards": 2,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 40,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13709032795,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765924411,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765924411,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 371877629952,
+          "upload_ms": 14038.762471,
+          "ram_miss_bytes": 363888279552,
+          "source_read_bytes": 363888279552,
+          "source_read_ms": 25107.158588
+        },
+        "tokens_and_text_exact": true
+      },
+      {
+        "index": 4,
+        "binary": "old",
+        "window_ms": 43079.468773,
+        "prompt_tokens_per_second": 142.80584638628966,
+        "total_process_ms": 60946.38415,
+        "client_ttft_ms": [
+          29278.774922,
+          16758.064403,
+          12510.289744,
+          13796.649446
+        ],
+        "batch": {
+          "completed": 4,
+          "steps": 4,
+          "group_calls": 2,
+          "single_forwards": 2,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 40,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13709032795,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765924411,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765924411,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 371877629952,
+          "upload_ms": 14008.430932,
+          "ram_miss_bytes": 363888279552,
+          "source_read_bytes": 363888279552,
+          "source_read_ms": 25311.772157
+        },
+        "tokens_and_text_exact": true
+      },
+      {
+        "index": 5,
+        "binary": "new",
+        "window_ms": 42824.808773,
+        "prompt_tokens_per_second": 143.65504893693037,
+        "total_process_ms": 59540.953507,
+        "client_ttft_ms": [
+          29007.02486,
+          16370.947095,
+          12626.991562,
+          13813.6746
+        ],
+        "batch": {
+          "completed": 4,
+          "steps": 4,
+          "group_calls": 2,
+          "single_forwards": 2,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 40,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13709032819,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765924483,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765924483,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 371877629952,
+          "upload_ms": 13999.908751,
+          "ram_miss_bytes": 363888279552,
+          "source_read_bytes": 363888279552,
+          "source_read_ms": 25025.919295
+        },
+        "tokens_and_text_exact": true,
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        }
+      }
+    ]
+  },
+  "counters": {
+    "identical_logical_expert_upload_bytes_each_burst": 371877629952,
+    "identical_ram_miss_bytes_each_burst": 363888279552,
+    "identical_source_read_bytes_each_burst": 363888279552,
+    "new_joint_fused_launches_each_burst": 801,
+    "new_separate_launches_avoided_each_burst": 801,
+    "source_read_ms": "Time inside synchronous expert reader callbacks, including copying/packing/page faults; not physical disk time.",
+    "upload_ms": "Blocking allocation/upload API boundary on the caller, as declared by BnGPUMoETrellisStats; not pure GPU kernel time.",
+    "exposed_gpu_stalls": "Not isolated by these aggregate counters. A GPU/host critical-path attribution remains open."
+  },
+  "ram_cache_diagnostics": {
+    "configurations": {
+      "ram-small-repeat": {
+        "tokens_text_positions_exact": true,
+        "cohorts": [
+          {
+            "ids": [
+              0,
+              1
+            ],
+            "window_ms": 15337.574666
+          },
+          {
+            "ids": [
+              2,
+              3
+            ],
+            "window_ms": 13296.911936
+          }
+        ],
+        "warm_to_initial_throughput_ratio": 1.1534689211917784,
+        "full_expert_storage_bytes": 204527370240,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13707942345,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13752071257,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 13752071257,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8936.739465,
+          "ram_miss_bytes": 229826979840,
+          "source_read_bytes": 229826979840,
+          "source_read_ms": 16822.441474
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "physical": {
+          "process_max_rss_bytes": 14869356544,
+          "max_sampled_process_device_bytes": 22550675456,
+          "samples": 162,
+          "max_sample_spacing_ms": 323.905178,
+          "gpu_peak_is_sampled_lower_bound": true,
+          "max_sampled_proc_VmHWM_bytes": 14875111424,
+          "source_of_rusage_maxrss": "Target-specific wait4 for traced control; children rusage for each isolated untraced runner, with product RSS much larger than nvidia-smi helpers."
+        },
+        "derived_expert_bundle_counts": {
+          "entry_bytes": 13315584,
+          "logical_uploads": 17538,
+          "ram_misses": 17260,
+          "source_reads": 17260,
+          "method": "Uniform three-projection EXL3_MUL1_3 layout; divide logical bytes by entry_bytes. Not hardware PCIe/media counters."
+        }
+      },
+      "ram-resident-repeat": {
+        "tokens_text_positions_exact": true,
+        "cohorts": [
+          {
+            "ids": [
+              0,
+              1
+            ],
+            "window_ms": 48066.676647
+          },
+          {
+            "ids": [
+              2,
+              3
+            ],
+            "window_ms": 8972.003179
+          }
+        ],
+        "warm_to_initial_throughput_ratio": 5.357407447146871,
+        "full_expert_storage_bytes": 204527370240,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 12169.821639,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 41957.35569
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "physical": {
+          "process_max_rss_bytes": 115556974592,
+          "max_sampled_process_device_bytes": 22550675456,
+          "samples": 246,
+          "max_sample_spacing_ms": 898.52822,
+          "gpu_peak_is_sampled_lower_bound": true,
+          "max_sampled_proc_VmHWM_bytes": 115569729536,
+          "source_of_rusage_maxrss": "Target-specific wait4 for traced control; children rusage for each isolated untraced runner, with product RSS much larger than nvidia-smi helpers."
+        },
+        "derived_expert_bundle_counts": {
+          "entry_bytes": 13315584,
+          "logical_uploads": 17538,
+          "ram_misses": 8630,
+          "source_reads": 8630,
+          "method": "Uniform three-projection EXL3_MUL1_3 layout; divide logical bytes by entry_bytes. Not hardware PCIe/media counters."
+        }
+      },
+      "ram-resident-traced": {
+        "tokens_text_positions_exact": true,
+        "cohorts": [
+          {
+            "ids": [
+              0,
+              1
+            ],
+            "window_ms": 28189.474176
+          },
+          {
+            "ids": [
+              2,
+              3
+            ],
+            "window_ms": 6115.178869
+          }
+        ],
+        "warm_to_initial_throughput_ratio": 4.609754641667538,
+        "full_expert_storage_bytes": 204527370240,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9224.911579,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 22184.801579
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "physical": {
+          "process_max_rss_bytes": 116142645248,
+          "max_sampled_process_device_bytes": 22550675456,
+          "samples": 185,
+          "max_sample_spacing_ms": 369.300016,
+          "gpu_peak_is_sampled_lower_bound": true,
+          "target_rusage": {
+            "user_cpu_seconds": 26.107507,
+            "system_cpu_seconds": 26.421441,
+            "minor_page_faults": 28292449,
+            "major_page_faults": 0,
+            "filesystem_input_blocks": 0,
+            "filesystem_output_blocks": 4152
+          },
+          "max_sampled_proc_VmHWM_bytes": 116153741312,
+          "source_of_rusage_maxrss": "Target-specific wait4 for traced control; children rusage for each isolated untraced runner, with product RSS much larger than nvidia-smi helpers."
+        },
+        "independent_exact_full_heads": 4,
+        "kernel_thp_policy": "always [madvise] never",
+        "derived_expert_bundle_counts": {
+          "entry_bytes": 13315584,
+          "logical_uploads": 17538,
+          "ram_misses": 8630,
+          "source_reads": 8630,
+          "method": "Uniform three-projection EXL3_MUL1_3 layout; divide logical bytes by entry_bytes. Not hardware PCIe/media counters."
+        }
+      }
+    },
+    "untraced_repeat_cohort_comparison": {
+      "small_cache_ms": 13296.911936,
+      "large_cache_ms": 8972.003179,
+      "ratio_small_over_large": 1.4820449425522881,
+      "scope": "One monitored observation per cache size; different host budgets, same GPU budget and identical repeated1026-token cohorts. Not a shared-kernel speedup."
+    },
+    "observations": [
+      "Large RAM cache cut logical source-read bytes from229826979840 to114913489920 for the repeated workload. GPU upload bytes remained233528712192 in both configurations.",
+      "Large-cache initial/repeat cohorts were48.067/8.972seconds; small-cache cohorts15.338/13.297seconds. The large cache was slower over this entire cold-start four-request burst.",
+      "The traced large-cache correctness repeat took28.189/6.115seconds. Its timing is excluded from untraced performance acceptance and exposes substantial configuration/measurement variability.",
+      "All four complete vocabulary heads in the traced large-cache control match the immutable independent source. Only token/text/position prefixes are checked in untraced timed runs.",
+      "The traced target reported28292449 minor faults, zero major faults and zero filesystem input blocks. This supports investigating demand paging/copy costs; it does not prove their precise contribution to elapsed time.",
+      "The expert slab currently uses32-byte aligned allocation without huge-page advice; this host uses transparent-huge-page madvise policy. A bounded, optional platform hint is a candidate experiment, not an established fix."
+    ],
+    "memory_scope": "Managed host reservations204.652GB versus OS-reported maximum RSS about115.6\u2013116.2GB in large-cache diagnostics. Sampled process device maximum22.551GB is a lower bound on physical peak; actual sample spacing is published, including one898.5ms gap. These are not exact physical memory caps."
+  },
+  "correctness": {
+    "untraced_burst_requests_with_exact_token_text_position": 24,
+    "monitored_cache_requests_with_exact_token_text_position": 12,
+    "new_independent_full_vocabulary_heads": 4,
+    "inherited_native_qualification": "docs/native-joint-fused-prefill.json",
+    "numerical_golds_changed": false,
+    "new_large_ram_asan_run": false,
+    "implementation_and_binary_unchanged_from_prior_cuda_standard_asan_qualification": true
+  },
+  "reproduction": {
+    "producer": "/tmp/bitnet-goal-native-prefill-performance/run-pairs.py",
+    "ram_producers": [
+      "/tmp/bitnet-goal-native-prefill-performance/ram-control.py",
+      "/tmp/bitnet-goal-native-prefill-performance/ram-small-control.py",
+      "/tmp/bitnet-goal-native-prefill-performance/ram-trace-control.py"
+    ],
+    "commands": "Each run directory contains exact command.json, stdout/stderr, client receipt timestamps, counters and immutable binary hashes. Paired order was fixed before measurements.",
+    "runtime_env": {
+      "CUDA_VISIBLE_DEVICES": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+      "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+      "BN_CUDA_DEVICE": "0",
+      "LD_PRELOAD": "unset",
+      "LD_LIBRARY_PATH": "unset"
+    }
+  },
+  "limitations": [
+    "Offloaded prefill-only static bursts; no autoregressive decode latency, continuous-load SLO or vLLM parity claim.",
+    "The OS page cache was not cleared or claimed cold. All application caches start empty per process; repeated cohorts retain their entries.",
+    "The RAM diagnostics use a different prompt mix and host budget from the six paired timing runs; their numbers must not be combined into a shared-kernel speedup.",
+    "CPU affinity/clocks were not fixed; sample counts are small and the observed configuration variation requires replication.",
+    "Exposed transfer stalls, exact device/setup physical peaks, broader cold/warm working sets and four-family performance remain open.",
+    "Native folded/small/mixed-decode batching, modern whole-model CPU and Metal qualification remain open."
+  ],
+  "historical_exception": {
+    "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+    "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+    "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+    "changed": true
+  }
+}

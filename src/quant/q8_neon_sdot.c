@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_neon_helpers.h"
 #include <arm_neon.h>
 
 static inline float q8_fp16_to_f32(uint16_t h) {
@@ -21,12 +22,12 @@ static float q8_neon_row_dot(const BnQWeight *W, int row,
         const int8_t *xb0 = x_q + (size_t)b * 32;
         const int8_t *xb1 = xb0 + 32;
         int32x4_t dot0 = vaddq_s32(
-            vdotq_s32(zero, vld1q_s8(blk0->qs), vld1q_s8(xb0)),
-            vdotq_s32(zero, vld1q_s8(blk0->qs + 16),
+            bn_neon_dot4_i8(zero, vld1q_s8(blk0->qs), vld1q_s8(xb0)),
+            bn_neon_dot4_i8(zero, vld1q_s8(blk0->qs + 16),
                       vld1q_s8(xb0 + 16)));
         int32x4_t dot1 = vaddq_s32(
-            vdotq_s32(zero, vld1q_s8(blk1->qs), vld1q_s8(xb1)),
-            vdotq_s32(zero, vld1q_s8(blk1->qs + 16),
+            bn_neon_dot4_i8(zero, vld1q_s8(blk1->qs), vld1q_s8(xb1)),
+            bn_neon_dot4_i8(zero, vld1q_s8(blk1->qs + 16),
                       vld1q_s8(xb1 + 16)));
         sum0 = vmlaq_n_f32(sum0, vcvtq_f32_s32(dot0),
                             q8_fp16_to_f32(blk0->d) * x_scales[b]);
@@ -86,11 +87,11 @@ void bn_quant_q8_neon_sdot_4row_range(void *ctx, int group_start,
                     &blocks[(size_t)(row0 + r) * n_blocks_per_row + b];
                 const BnBlockQ8_0 *blk1 = blk0 + 1;
                 int32x4_t dot0 = vaddq_s32(
-                    vdotq_s32(zero, vld1q_s8(blk0->qs), x00),
-                    vdotq_s32(zero, vld1q_s8(blk0->qs + 16), x01));
+                    bn_neon_dot4_i8(zero, vld1q_s8(blk0->qs), x00),
+                    bn_neon_dot4_i8(zero, vld1q_s8(blk0->qs + 16), x01));
                 int32x4_t dot1 = vaddq_s32(
-                    vdotq_s32(zero, vld1q_s8(blk1->qs), x10),
-                    vdotq_s32(zero, vld1q_s8(blk1->qs + 16), x11));
+                    bn_neon_dot4_i8(zero, vld1q_s8(blk1->qs), x10),
+                    bn_neon_dot4_i8(zero, vld1q_s8(blk1->qs + 16), x11));
                 sum0[r] = vmlaq_n_f32(
                     sum0[r], vcvtq_f32_s32(dot0),
                     q8_fp16_to_f32(blk0->d) * c->x_scales[b]);
@@ -140,14 +141,14 @@ void bn_quant_q8_repacked_neon_sdot_range(void *ctx,
             int8x16_t a0 = vld1q_s8(xb);
             int8x16_t a1 = vld1q_s8(xb + 16);
             int32x4_t dot = vdupq_n_s32(0);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase), a0, 0);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase + 16), a0, 1);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase + 32), a0, 2);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase + 48), a0, 3);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase + 64), a1, 0);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase + 80), a1, 1);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase + 96), a1, 2);
-            dot = vdotq_laneq_s32(dot, vld1q_s8(qbase + 112), a1, 3);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase), a0, 0);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase + 16), a0, 1);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase + 32), a0, 2);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase + 48), a0, 3);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase + 64), a1, 0);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase + 80), a1, 1);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase + 96), a1, 2);
+            dot = bn_neon_dot4_laneq_i8(dot, vld1q_s8(qbase + 112), a1, 3);
             float32x4_t wd = vcvt_f32_f16(vld1_f16(
                 (const float16_t *)(prepared->scales + gb * 4)));
             float32x4_t scale = vmulq_n_f32(wd, c->x_scales[b]);

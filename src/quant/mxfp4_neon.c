@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_neon_helpers.h"
 #include <arm_neon.h>
 #include <string.h>
 
@@ -28,8 +29,8 @@ void bn_quant_mxfp4_neon_sdot_range(void *ctx, int row_start, int row_end) {
             int8x16_t lo = vqtbl1q_s8(values, vandq_u8(packed, mask));
             int8x16_t hi = vqtbl1q_s8(values, vshrq_n_u8(packed, 4));
             const int8_t *xb = c->x_q + b * 32;
-            int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
-            acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+            int32x4_t acc = bn_neon_dot4_i8(zero, lo, vld1q_s8(xb));
+            acc = bn_neon_dot4_i8(acc, hi, vld1q_s8(xb + 16));
             row_sum += mxfp4_scale_half_neon(blk->e) * c->x_scales[b] *
                        (float)vaddvq_s32(acc);
         }

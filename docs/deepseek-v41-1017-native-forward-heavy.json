@@ -1,0 +1,197 @@
+{
+  "status": "Qualified component extension; full goal ACTIVE and incomplete",
+  "component": "DeepSeek V4.1 Flash1017 whole-model CUDA heavy expert reconstruction followed by greedy decode",
+  "parent": "docs/deepseek-v41-1017-native-forward-window.json",
+  "runtime_changes": false,
+  "implementation": "test/reference_native_forward_heavy.py",
+  "reference": {
+    "method": "Pinned prior whole-model source graph and preserved original grouped-layer initialization; original learned router, fused experts and reconstructed heavy experts with unchanged projection AST/full B-M grouping/f16acc0, fixed-K gather and shared FFN; actual checkpoint selected expert components and all preceding activations; original source head with full-R or last-only M1 geometry. No candidate code or candidate expected values.",
+    "profile": "Explicit Diffbot INT4 BF16 row lookup -> Exllama F16 Engram execution adapter, not original Diffbot whole-model equivalence",
+    "blocks": 240,
+    "grouped_blocks": 40,
+    "frames": [
+      {
+        "name": "prefill385",
+        "tokens": 385,
+        "position": 0,
+        "reset": true,
+        "generated": false,
+        "argmax_all": 223,
+        "argmax_last": 223
+      },
+      {
+        "name": "greedy-0",
+        "tokens": 1,
+        "position": 385,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 29429,
+        "argmax_last": 29429
+      },
+      {
+        "name": "greedy-1",
+        "tokens": 1,
+        "position": 386,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 201,
+        "argmax_last": 201
+      },
+      {
+        "name": "greedy-2",
+        "tokens": 1,
+        "position": 387,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 539,
+        "argmax_last": 539
+      },
+      {
+        "name": "greedy-3",
+        "tokens": 1,
+        "position": 388,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 223,
+        "argmax_last": 223
+      },
+      {
+        "name": "greedy-4",
+        "tokens": 1,
+        "position": 389,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 29429,
+        "argmax_last": 29429
+      }
+    ],
+    "context_max": 390,
+    "expert_tiles": [
+      16,
+      32,
+      64
+    ],
+    "max_rows_per_expert": 384,
+    "hc": "Original F32 HC fn path for prefill385 and F16 HC fn for greedy R1; same carried-pre ordering",
+    "heavy_reconstruction": true,
+    "libraries": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13": "25cde432108543626df85d887c730bf2cab96803ca16f9654e4abc8d2b45833e",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublasLt.so.13": "1489aeb75d55ee55782798343ac66f57771d561cc1fe1e0491568deefa0e6515",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20": "34e7a85fe998f33cff4e66968eb32b86ae973e10a66fc62e9ddb58d37763a1ff",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20": "b43f57b2185afdc10537b8422177edc7c1436f98cced0d2dc216b5acf9eeb00c"
+    },
+    "boundaries": {
+      "sliding_window": 128,
+      "page_source_tokens": 256,
+      "physical_swa_ring_rows": 768,
+      "source_pool_tokens": 1024,
+      "physical_swa_wrap": false,
+      "indexed_selection": false
+    },
+    "heavy": {
+      "scope": "Actual 40-layer prefill385 with original heavy expert reconstruction and five self-fed greedy steps; context390; f16acc0; no long indexed selection or physical SWA ring wrap",
+      "grouped_parent_sha256": "bf51ba777bfccec8d6864656a4e802da1d5bfb120cb37ab17435be0f68a8aef5",
+      "producer_sha256": "b2ec65e2c1fa78fb45cfe80019f0eff5d2e2bc20971ebdd08bf7dd3ab4eb2254",
+      "context": 390,
+      "source_projection": "Unmodified projection AST from pinned original layer capture",
+      "f16acc_enabled": 0,
+      "batch_cap": 5,
+      "heavy_layers": 27,
+      "heavy_groups": 36,
+      "max_batch": 3,
+      "max_rows": 384,
+      "source_swa_window": 128,
+      "source_ring_rows": 768,
+      "source_pool_tokens": 1024,
+      "source_index_selection": false
+    }
+  },
+  "qualification": {
+    "artifact": "/tmp/bitnet-goal-native-forward-heavy/qualification.json",
+    "checks": {
+      "normal": 0,
+      "busy": 0,
+      "asan": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "qwen27-compat": 0
+    },
+    "records": {
+      "normal": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 108595200
+      },
+      "busy": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 108595200
+      },
+      "asan": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 108595200
+      },
+      "memcheck": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 108595200
+      },
+      "initcheck": {
+        "untapped_forwards": 12,
+        "self_fed_greedy_tokens": 10,
+        "checks": 24,
+        "exact_bytes": 108595200
+      }
+    },
+    "normal_method": "Protected product objects, normal backend callbacks; no execution spies or added intermediate readbacks. Source comparisons only after whole forward returns.",
+    "busy_method": "Placement-only fault in layer18 second heavy group (B2/M269), at expert15 after expert67 was leased and prior B3/M378 group completed. Assert live_leases1 at fault and0 after BUSY. Two forced failures across head policies; CPU logits, output ticket and position unchanged, history remains uncommitted; retries complete source-exact. No extra GPU execution callbacks/readbacks.",
+    "sanitizers": "Clang18 runtime C ASAN/UBSAN with leak detection (existing CPU expert-kernel and CUDA objects retained); CUDA memcheck full leak check and initcheck; all zero errors/leaks",
+    "source_replay": "Immutable byte-for-byte source replay, including every saved layer boundary and final logits, then independent IEEE half->float host replay",
+    "frozen_sources": 850,
+    "reference_files": 20097,
+    "zero_warnings": true,
+    "user_binaries_preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    },
+    "rebuilt_products": [
+      {
+        "file": "/home/mark/artalis.io/src/bitnet.c/bitnet",
+        "previous": "3693af76384f43dffc2c3098753577d0962499b5dc27cb6afab0d959d9a84b74",
+        "current": "8f2c9e8b764621d703858a2266c83981d7cd86df51603217c1653692dc046515"
+      },
+      {
+        "file": "/home/mark/artalis.io/src/bitnet.c/test_cuda_backend",
+        "previous": "54f48537e40fb60d285e7bf97dbc7b118ba8879c9b555aa663fe4047fe0a82c4",
+        "current": "898cdec44a5d176e4825c4c0af90d4083a808bccf12ee8307fefd243b98b50ab"
+      }
+    ]
+  },
+  "ownership": "Existing immutable BnModel/backend weights and bounded expert store; two independent BnSession requests, explicit planned component budgets and transactional final publication. Existing CPU history and forward result lifetime rules apply.",
+  "performance": {
+    "claim": "No performance-parity or cold/warm benchmark claim",
+    "fixture": "fused_window1, f16acc0, temporary expert admission0; grouped batched math, existing per-projection upload/allocation/fence overhead remains",
+    "source_pages": "OS page-cache warmth uncontrolled"
+  },
+  "remaining": [
+    "Original long indexed-attention graph before admitting context>512; larger heavy cohorts and f16acc1 policy qualification",
+    "Long contexts with compressed pools>512, nontrivial index/candidate selection, physical SWA ring wrap, wider page/cache boundaries and long resumed prefill/decode",
+    "Native CPU/CUDA model coherence, native text encoder/stream decoder/chat/CLI admission, and compute-state rewind or reset/replay",
+    "Phase-specific bounded RAM/VRAM placement and measured cold/warm/miss-byte/transfer-stall accounting",
+    "Remove measured per-projection allocation/upload/synchronization overhead; qualify resident batched execution and within5% matched vLLM prefill/decode",
+    "Continuous batching, chunked serving and KV scheduling, concurrent throughput/tails, remaining named models and CPU SIMD/secondary Metal scope"
+  ],
+  "source_sha256": {
+    "test/reference_native_forward_heavy.py": "b2ec65e2c1fa78fb45cfe80019f0eff5d2e2bc20971ebdd08bf7dd3ab4eb2254"
+  },
+  "processes": "All qualification jobs terminal before document publication; no commits or subagents"
+}

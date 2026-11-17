@@ -210,6 +210,21 @@ static void test_sampler_edge_cases(void) {
     assert(tok == 1);  // argmax should pick index 1
     bn_sampler_free(&s);
 
+    /* Quantized logits frequently tie. SIMD lane order must not change the
+     * greedy token; cover ties across lanes, vector blocks, and the tail. */
+    assert(bn_sampler_init(&s, 65, 0.0f, 0.9f, 42) == 0);
+    float tied[65];
+    for (int first = 0; first < 65; ++first) {
+        for (int second = first; second < 65; ++second) {
+            for (int i = 0; i < 65; ++i) tied[i] = -2.0f;
+            tied[first] = tied[second] = 1.0f;
+            assert(bn_sampler_sample(&s, tied) == first);
+        }
+    }
+    for (int i = 0; i < 65; ++i) tied[i] = -INFINITY;
+    assert(bn_sampler_sample(&s, tied) == 0);
+    bn_sampler_free(&s);
+
     // Test with vocab_size=1
     bn_sampler_init(&s, 1, 0.5f, 0.9f, 42);
     float logits1[] = {5.0f};

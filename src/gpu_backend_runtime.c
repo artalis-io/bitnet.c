@@ -1,5 +1,22 @@
 #include "gpu_backend.h"
 #include "platform.h"
+#include "backend_session.h"
+
+void *bn_gpu_backend_resident_request(const BnGPUBackend *gpu,
+                                      BnBackendSession *session) {
+    if (!bn_gpu_backend_can_resident_request(gpu) || !gpu->ctx || !session)
+        return NULL;
+    void *request = bn_backend_session_gpu_resources(session, gpu->ctx);
+    if (request) return request;
+    request = gpu->resident_request_create(gpu->ctx);
+    if (!request) return NULL;
+    if (bn_backend_session_attach_gpu_resources(session, gpu->ctx, request,
+                                               gpu->resident_request_destroy)) {
+        gpu->resident_request_destroy(request);
+        return NULL;
+    }
+    return request;
+}
 
 int bn_gpu_backend_runtime_policy_init(BnBackendRuntimePolicy *policy) {
     return bn_backend_runtime_policy_init(policy, bn_platform_environment());

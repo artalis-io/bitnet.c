@@ -968,6 +968,8 @@ int bn_transformer_gpu_tokenwise_reference_attention_from_layer(
 int bn_transformer_gpu_reference_recurrent_exact_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_ple_host_reference_enabled(
+    const BnGPUBackend *gpu, const BnConfig *c);
 int bn_transformer_gpu_reference_hyper_mix_cpu_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
@@ -1258,6 +1260,7 @@ int bn_transformer_gpu_prefill_ssm_layer_backend_run(
     int act_type,
     int sigmoid_gate,
     float norm_eps,
+    int qk_norm_mode,
     int *did_ffn);
 int bn_transformer_gpu_prefill_ssm_dense_chain_available(
     const BnGPUBackend *gpu,
@@ -1912,6 +1915,12 @@ bn_transformer_gpu_resolve_hyper_connection_resources(
     int layer,
     int norm_role,
     int require_inject);
+int bn_transformer_gpu_hyper_connection_prefill_batch(
+    const BnGPUBackend *gpu, const BnModel *model,
+    const BnHyperConnectionWeights *weights, int layer, int attention_branch,
+    float *out, float *inject, const float *residual,
+    int n_tokens, int streams, int dim, int rank, float eps);
+
 int bn_transformer_gpu_hyper_connection_grouped_rmsnorm_batch(
     const BnGPUBackend *gpu, const BnModel *model,
     const BnHyperConnectionWeights *weights, int layer,
@@ -2532,7 +2541,7 @@ int bn_transformer_gpu_fallback_hyper_mix(
 int bn_transformer_gpu_fallback_positional_layer_embedding_projected(
     const BnGPUBackend *gpu, BnModel *model, BnSession *session,
     BnLayerWeights *layer, int pos, const float *projected_key,
-    const float *projected_value);
+    const float *projected_value, int batch_tokens);
 int bn_transformer_gpu_debug_compare_hyper_mix(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

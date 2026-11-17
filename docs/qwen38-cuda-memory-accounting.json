@@ -1,0 +1,91 @@
+{
+  "scope": "Fixed independently qualified2362-cohort Qwen3.8 27B memory diagnostic; unchanged qualified binary/source/policy, not a performance sample or total physical VRAM budget.",
+  "model_raw_metadata": {
+    "raw_tensor_bytes": 17548181504,
+    "bytes_by_type": {
+      "14": 2862182400,
+      "0": 10686464,
+      "12": 3059712000,
+      "13": 7926251520,
+      "23": 3125084160,
+      "11": 114892800,
+      "8": 130908160,
+      "20": 280166400,
+      "21": 38297600
+    },
+    "mtp_excluded_bytes": 351008768,
+    "raw_tensors_matching_large_allocation_classes": []
+  },
+  "captured_device_heap_peak_bytes": 38514243300,
+  "captured_device_heap_peak_gib": 35.86918422952294,
+  "components": {
+    "model_and_context_retained_bytes": 30233158144,
+    "coordinator_retained_increment_bytes": 235193540,
+    "slots": 8,
+    "bytes_per_slot": 1005736452,
+    "kv_bytes_per_slot": 536870912,
+    "ssm_ping_pong_bytes_per_slot": 301989888,
+    "convolution_history_ping_pong_bytes_per_slot": 5898240,
+    "remaining_activation_workspace_library_bytes_per_slot": 160977412
+  },
+  "component_proof": {
+    "method": "Trace allocation order cross-checked with source setup order. Unique256-token A8 coordinator signature starts at heapallocation959; exactly38allocations235193540bytes andzero frees precede firstrequest. Eight consecutive identical261-allocation request signatures follow. All four later request signatures occur after firstembedding. No CPU call stacks captured; owner labels are source/order attribution.",
+    "ordered_request_signatures_identical": true,
+    "all_device_heap_and_pinned_allocations_freed": true,
+    "device_heap_allocations": 3085,
+    "device_heap_frees": 3085,
+    "pinned_allocations": 4,
+    "pinned_frees": 4,
+    "pinned_peak_bytes": 192512,
+    "device_static_end_bytes": 19165,
+    "static_scope": "CUDA static memory reported separately; lifetime ends with context teardown, not counted as dynamic heap leakage."
+  },
+  "large_matrix_sized_classes": [
+    {
+      "allocation_bytes": 178257920,
+      "count": 36,
+      "total_bytes": 6417285120,
+      "shape_matches": "17408x5120x2bytes"
+    },
+    {
+      "allocation_bytes": 356515840,
+      "count": 16,
+      "total_bytes": 5704253440,
+      "shape_matches": "34816x5120x2bytes"
+    }
+  ],
+  "large_class_scope": "These two retained classes total12121538560bytes; no raw GGUF tensors have either size. Sizes and preparation order indicate derived matrix layouts, but this is not a per-handle ownership API.",
+  "cross_check": {
+    "exit": 0,
+    "independent_archived_flash_heap_peak": 86808536040,
+    "native_dense_heap_peak": 38514243300,
+    "all_heap_and_pinned_allocations_balanced": true,
+    "source_sha256": "db080d70710d39d43a767b5ddbf8b6ef5644b96cde60bbf33ac9417686d996d5"
+  },
+  "correctness": {
+    "exit": 0,
+    "cohorts": 2362,
+    "correct": true,
+    "scope": "Exact qualified controlled inputs/geometry and generated tokens; diagnostic timing only"
+  },
+  "trace_exit": {
+    "exit": 0
+  },
+  "application_exit": {
+    "exit": 0,
+    "scope": "Fixed qualified2362-cohort allocation diagnostic, not a performance sample"
+  },
+  "source_freeze": "/tmp/bitnet-goal-dense-memory/source-freeze.json",
+  "allocation_analysis": "/tmp/bitnet-goal-dense-memory/allocation-analysis.json",
+  "request_signature_proof": "/tmp/bitnet-goal-dense-memory/request-signature-proof.json",
+  "extractor_source": "/tmp/bitnet-goal-dense-memory/extract_allocations.py",
+  "trace_database": "/tmp/bitnet-goal-dense-memory/memory-trace.sqlite",
+  "limitations": [
+    "Captured explicit CUDA heap/pinned payload only; unobserved driver/context/module/allocator overhead is excluded.",
+    "NVML process samples37.7GiBnative/22.7GiBoriginal numerical engine are separate in-flight points, not peaks or memory-parity qualification.",
+    "Model/context and coordinator boundaries inferred from source/order signatures; no backtraces recorded.",
+    "KV quota excludes447MiB of other per-slot captured heap at this capacity, plus model/context/coordinator."
+  ],
+  "next": "Expose retained layout and non-KV request/workspace accounting before extending admission budgets. Keep allocator/context headroom distinct; continue bounded Flash RAM/VRAM offload and exact modern-model coverage.",
+  "whole_goal_complete": false
+}

@@ -2,6 +2,7 @@
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer/gpu_internal.h"
+#include "transformer/bf16_internal.h"
 #include "model_internal.h"
 #include "turboquant.h"
 #include "moe.h"
@@ -196,6 +197,9 @@ static float *forward_logits(BnModel *m, BnSession *sess) {
 }
 
 float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
+    if (s && s->backend_only && !bn_transformer_bf16_model_active(m)) return NULL;
+    if (bn_transformer_bf16_model_active(m))
+        return bn_transformer_bf16_forward_session(m, s, &token, 1, pos, 0);
     if (prepare_forward_token_state(m, s, token, pos) != 0)
         return NULL;
 
@@ -225,12 +229,14 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
     float *logits = rc == 0 ? forward_logits(m, s) : NULL;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 0);
+    if (rc == 0) bn_transformer_gpu_mark_host_ssm_current(s);
     return logits;
 }
 
 int bn_transformer_forward_argmax(BnModel *m, BnSession *s,
     int token, int pos, const int *penalty_tokens, int n_penalty_tokens,
     float repeat_penalty, int *out_token) {
+    if ((s && s->backend_only) || bn_transformer_bf16_model_active(m)) return -1;
     if (!out_token || prepare_forward_token_state(m, s, token, pos) != 0)
         return -1;
     return bn_transformer_gpu_forward_argmax(m, s, token, pos,
@@ -239,6 +245,9 @@ int bn_transformer_forward_argmax(BnModel *m, BnSession *s,
 
 int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,
                                      int token, int pos) {
+    if (s && s->backend_only && !bn_transformer_bf16_model_active(m)) return -1;
+    if (bn_transformer_bf16_model_active(m))
+        return bn_transformer_bf16_no_logits_session(m, s, &token, 1, pos, 0);
     if (prepare_forward_token_state(m, s, token, pos) != 0)
         return -1;
 
@@ -260,5 +269,6 @@ int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,
     int rc = forward_layers(m, s, pos);
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 0);
+    if (rc == 0) bn_transformer_gpu_mark_host_ssm_current(s);
     return rc == 0 ? 0 : -1;
 }

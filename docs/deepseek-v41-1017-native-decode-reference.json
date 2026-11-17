@@ -1,0 +1,119 @@
+{
+  "status": "Independent original small-batch decode reference qualified; native integration remains open; whole goal active",
+  "scope": {
+    "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "layer": 39,
+    "router": "learned",
+    "dim": 5120,
+    "hidden": 2304,
+    "experts": 384,
+    "topk": 6,
+    "rows": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "patterns": [
+      "prefix",
+      "repeated row",
+      "large finite row",
+      "zero"
+    ],
+    "activation_limits": [
+      10,
+      0
+    ],
+    "original_expert_union": 34
+  },
+  "arithmetic": {
+    "routed": "Original EXL3 small-batch gate/up and down kernels, no substitution with prefill or dense reconstruction",
+    "activation": "F32 clipping/SiLU and rotated down-input conversion retain source rounding boundaries",
+    "reduction": "Original per-warp weighted partials followed by fixed warp-order F32 summation",
+    "shared": "Independent source FP16 shared FFN, F32 down output, then F32 addition",
+    "launch": "Ordinary A/B launches; extra rotation and run-table kernel for rows > 1",
+    "geometry": "On selected 188-SM Blackwell GPU: wide gate/up for every row count; down narrow for 1..5 and wide for 6..8; both split counts 1; scratch slots_max stays 8*topk",
+    "counter_lifetime": "A clears B counters at entry; B clears A counters at entry. B counters need not be zero after completion. Two consecutive calls reuse the same buffers without host clearing."
+  },
+  "qualification": {
+    "cases_per_library": 64,
+    "executions_per_case": 2,
+    "original_expert_union": 34,
+    "cross_library_compared_bytes": 118547328,
+    "cross_library_compared_roles": {
+      "x": 64,
+      "ids64": 64,
+      "weights": 64,
+      "logits": 64,
+      "gate": 64,
+      "up": 64,
+      "act": 64,
+      "down": 64,
+      "routed": 64,
+      "shared_gate": 64,
+      "shared_up": 64,
+      "shared_act": 64,
+      "shared": 64,
+      "final": 64,
+      "had_gate": 56,
+      "had_up": 56
+    },
+    "cross_library_differences": {
+      "shared_gate": 42,
+      "shared": 48,
+      "final": 48,
+      "shared_up": 32,
+      "shared_act": 36
+    },
+    "production_source_unchanged": 738,
+    "manifest_sha256": {
+      "original-reference": "07a626acc0dc5537de1ea5789513728c26bf16bc4cb6116ba04e041c2bd4b5bc",
+      "paired-reference": "634906904f4b87d907ec1a1ffba333248264f58c35e6842cd249b0b4f6b3ed3b"
+    },
+    "source_sha256": "fbcafa75be19a75fb5339043ce918f70e7139032a0b4a6604ee69c5b041dd8da",
+    "capture_sha256": "3960bb78dd5a21230a976ed99db51c56479ab8ea78b102aaa036e4436b8fe52e",
+    "limitations": [
+      "Independent source oracle only; no native small-batch decode implementation qualified",
+      "Learned router layer39 only; full forward remains unqualified. V4.1 defaults to zero hash-routing layers.",
+      "Actual K=6 geometry only; alternate top-k and synthetic narrow gate geometry not covered",
+      "No throughput or vLLM parity claim"
+    ],
+    "sanitizers": {
+      "memcheck": {
+        "cases": 64,
+        "executions": 128,
+        "errors": 0,
+        "manifest_sha256": "07a626acc0dc5537de1ea5789513728c26bf16bc4cb6116ba04e041c2bd4b5bc",
+        "log_sha256": "cbeee2ee6e71f1ad043b9a157e3912a34aa90eb3bf8c00d72a5069c2ab369a49"
+      },
+      "initcheck": {
+        "cases": 64,
+        "executions": 128,
+        "errors": 0,
+        "manifest_sha256": "07a626acc0dc5537de1ea5789513728c26bf16bc4cb6116ba04e041c2bd4b5bc",
+        "log_sha256": "cbeee2ee6e71f1ad043b9a157e3912a34aa90eb3bf8c00d72a5069c2ab369a49"
+      }
+    },
+    "total_source_executions": 512,
+    "build_warnings": "Six original-source nvcc diagnostic 20012 warnings for explicitly defaulted device constructors; upstream normally suppresses 20012. No production build performed or modified."
+  },
+  "artifacts": {
+    "root": "/tmp/bitnet-goal-native-decode",
+    "reference_source": "/tmp/bitnet-goal-native-decode/reference.cu",
+    "original_manifest": "/tmp/bitnet-goal-native-decode/original-reference/reference.json",
+    "paired_manifest": "/tmp/bitnet-goal-native-decode/paired-reference/reference.json",
+    "report": "/tmp/bitnet-goal-native-decode/qualification.json"
+  },
+  "next": "Port source-shaped small-batch arithmetic to the native CUDA backend with request-owned scratch and bounded expert leases, then compare every intermediate against these preserved references. Keep full-model admission gated.",
+  "limitations": [
+    "Independent source oracle only; no native small-batch decode implementation qualified",
+    "Learned router layer39 only; full forward remains unqualified. V4.1 defaults to zero hash-routing layers.",
+    "Actual K=6 geometry only; alternate top-k and synthetic narrow gate geometry not covered",
+    "No throughput or vLLM parity claim"
+  ]
+}

@@ -1487,7 +1487,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     float *v_raw = qkv + 2 * ssm_shape.key_dim;
 
     BnSSML2NormCtx norm_ctx = {
-        q_raw, k_raw, norm_eps, ssm_shape.head_k_dim
+        q_raw, k_raw, norm_eps, ssm_shape.head_k_dim, m->config.ssm_qk_norm
     };
     BnTPTask norm_task = {
         bn_transformer_cpu_ssm_l2norm_op(cpu_ops),

@@ -1,0 +1,769 @@
+{
+  "status": "Qualified GPU-resident candidate-use gather, scoring, masking, top-k and logical-ID remapping. Full native attention, model admission and vLLM parity remain open.",
+  "architecture": "DeepseekV41ForCausalLM",
+  "apis": [
+    "bn_gpu_index_slab_rows",
+    "bn_gpu_index_candidate_use_workspace",
+    "BnGPUIndexCandidateUseWorkspace",
+    "BnGPUIndexCandidateUseResidentPlan",
+    "index_candidate_use_f16_resident"
+  ],
+  "implementation": {
+    "slabs": "One slab1..272 rows. Helper emits256 when remaining>272, otherwise absorbs final tail;273 rows use256+17. Caller partitions the full chunk and uses actual per-slab query positions.",
+    "union": "Union retained canonical I8 drop-mask blocks across slab rows; exclusive local256-block scans, one1024-thread global scan, ordered logical entry IDs and contiguous/paged F16 gathers. Empty extra block and partial final block handled exactly. Eight warps gather eight logical blocks per CTA.",
+    "memory": "Source mask has <=2048 retained8-entry blocks per row. Capacity=min(logical keys,rows*16384). Decode at1048576 logical keys reserves16384 gathered rows (4MiB), plus IDs/count/score/scan/top-k workspace. Caller supplies all exact disjoint request-owned buffers. Immutable model and backend weight ownership unchanged.",
+    "device_count": "Private GPU-produced bounded I32 count feeds scoring and selection; no host count read or intermediate completion fence. Scorer skips inactive tiles and preserves inactive output tails. Dynamic top-k clamps k to min(512,active_count) in both selection and merge. Public static scoring and top-k plans remain unchanged; separate template variants retain static execution.",
+    "positions": "Queries already have actual-position RoPE. Score causality is disabled using capacity*rate, then per-row drop and actual-position logical-entry bounds mask the compact score prefix. Final index list maps compact indices back to logical pool IDs, retaining -1 padding.",
+    "contract": "Finite F16 queries/head weights/keys; canonical binary drop mask with at most2048 retained blocks per row. Static logical key count16385..1048576, rate1..256, paged entries128/256 or contiguous. Device count is produced internally. Bounds guards prevent out-of-capacity gathers; masks violating the source cardinality contract are not admitted inputs.",
+    "preflight": "All scalar dimensions, exact view counts/types, alignment, request identity, canonical empty unused scratch and pairwise overlap checked before any stage writes. CUDA execution failure marks request failed. No allocation, host transfer, synchronization, source cursors or model position commit inside callback."
+  },
+  "reference": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "source_sha256": "ed8573473ff2284fc97c0dba6f6eebf627612219719ac72ee594c90c451759ff",
+    "source_ast_sha256": "eb61db607802978753e6876e42ebfdae1531ece13c4ec8c40f6be83f0b26a519",
+    "method": "Unchanged source candidate-use AST with original Triton scoring and pinned original source CUDA top-k C ABI. Parent layer20 candidate masks shared with later index layers. Source slab256/finaltail16 policy honored. Empty-union fixture is a separate host-defined safety extension.",
+    "unchanged_source_cases": 58,
+    "empty_union_safety_extension_cases": 1,
+    "checkpoint_derived_slabs": 48,
+    "checkpoint_chunks": 40,
+    "index_layers": [
+      24,
+      28,
+      32,
+      36
+    ],
+    "parent_manifest_sha256": "ed69d412d62d4a4d4a385f19ebb2c2ad7342436313b8028707268e9e600c9139",
+    "rms_norm_epsilon": 1e-20,
+    "independent_host_oracle": {
+      "cases": 59,
+      "records": [
+        {
+          "label": "synthetic-00",
+          "rows": 1,
+          "active": 16384,
+          "capacity": 16384
+        },
+        {
+          "label": "synthetic-01",
+          "rows": 1,
+          "active": 16376,
+          "capacity": 16384
+        },
+        {
+          "label": "synthetic-02",
+          "rows": 4,
+          "active": 96,
+          "capacity": 32769
+        },
+        {
+          "label": "synthetic-03",
+          "rows": 5,
+          "active": 20569,
+          "capacity": 65537
+        },
+        {
+          "label": "synthetic-04",
+          "rows": 16,
+          "active": 1,
+          "capacity": 262137
+        },
+        {
+          "label": "synthetic-05",
+          "rows": 17,
+          "active": 0,
+          "capacity": 16392
+        },
+        {
+          "label": "synthetic-06",
+          "rows": 32,
+          "active": 8192,
+          "capacity": 65537
+        },
+        {
+          "label": "synthetic-07",
+          "rows": 33,
+          "active": 8,
+          "capacity": 16385
+        },
+        {
+          "label": "synthetic-08",
+          "rows": 129,
+          "active": 3000,
+          "capacity": 16400
+        },
+        {
+          "label": "synthetic-09",
+          "rows": 256,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "synthetic-10",
+          "rows": 272,
+          "active": 1,
+          "capacity": 16641
+        },
+        {
+          "label": "l24.r1.paged0.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l24.r1.paged1.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l24.r4.paged0.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l24.r4.paged1.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l24.r32.paged0.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l24.r32.paged1.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l24.r33.paged0.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l24.r33.paged1.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l24.r273.paged0.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l24.r273.paged0.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "l24.r273.paged1.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l24.r273.paged1.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "l28.r1.paged0.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l28.r1.paged1.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l28.r4.paged0.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l28.r4.paged1.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l28.r32.paged0.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l28.r32.paged1.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l28.r33.paged0.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l28.r33.paged1.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l28.r273.paged0.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l28.r273.paged0.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "l28.r273.paged1.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l28.r273.paged1.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "l32.r1.paged0.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l32.r1.paged1.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l32.r4.paged0.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l32.r4.paged1.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l32.r32.paged0.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l32.r32.paged1.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l32.r33.paged0.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l32.r33.paged1.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l32.r273.paged0.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l32.r273.paged0.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "l32.r273.paged1.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l32.r273.paged1.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "l36.r1.paged0.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l36.r1.paged1.s0",
+          "rows": 1,
+          "active": 16377,
+          "capacity": 16384
+        },
+        {
+          "label": "l36.r4.paged0.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l36.r4.paged1.s0",
+          "rows": 4,
+          "active": 29584,
+          "capacity": 32768
+        },
+        {
+          "label": "l36.r32.paged0.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l36.r32.paged1.s0",
+          "rows": 32,
+          "active": 64465,
+          "capacity": 65537
+        },
+        {
+          "label": "l36.r33.paged0.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l36.r33.paged1.s0",
+          "rows": 33,
+          "active": 16385,
+          "capacity": 16385
+        },
+        {
+          "label": "l36.r273.paged0.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l36.r273.paged0.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        },
+        {
+          "label": "l36.r273.paged1.s0",
+          "rows": 256,
+          "active": 16376,
+          "capacity": 16392
+        },
+        {
+          "label": "l36.r273.paged1.s256",
+          "rows": 17,
+          "active": 16392,
+          "capacity": 16392
+        }
+      ],
+      "reference_sha256": "0ba7431bc581f57b5f41e3314e5196082eeaf8309000d020f3ca90d82e86e118",
+      "script_sha256": "83c829becd09ab0947e637f07a1bad742f208234c24b6c64fa7087d2cc8bdec6",
+      "method": "Independent NumPy union/ordered logical IDs, physical page mapping, byte-exact gathered rows, causal/drop masks, ordered-bit threshold/index selection and global ID remapping. Numerical dot products retain independent pinned Triton reference."
+    },
+    "history_scope": "Checkpoint-derived raw projections and canonical compressed keys, with consistent source query rotations/positions inherited from prior capture. Long key histories repeat canonical rows and do not prove full-model long-prefix generation."
+  },
+  "correctness_fix": "Initial CUDA test found exact scores but different output ordering for an eight-entry union. A fixed k512 underfill emits entries differently from source min(k,entry_count). Device-side k clamping, including split merge and empty count handling, fixed the mismatch. Numerical reference files stayed unchanged.",
+  "verification": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "real": 0,
+        "asan": 0,
+        "memcheck": 0,
+        "initcheck": 0,
+        "racecheck": 0,
+        "legacy-index-build": 0,
+        "legacy-index-paired": 0,
+        "legacy-index-original": 0,
+        "legacy-topk-build": 0,
+        "legacy-topk": 0,
+        "legacy-candidate-build": 0,
+        "legacy-candidate": 0,
+        "nsys-prefill": 0,
+        "export-prefill": 0,
+        "nsys-decode": 0,
+        "export-decode": 0
+      },
+      "records": {
+        "real": {
+          "calls": 236,
+          "compared_bytes": 5703905124,
+          "hot_allocations": 0
+        },
+        "asan": {
+          "calls": 236,
+          "compared_bytes": 5703905124,
+          "hot_allocations": 0
+        },
+        "memcheck": {
+          "calls": 236,
+          "compared_bytes": 5703905124,
+          "hot_allocations": 0
+        },
+        "initcheck": {
+          "calls": 236,
+          "compared_bytes": 5703905124,
+          "hot_allocations": 0
+        },
+        "nsys-prefill": {
+          "calls": 236,
+          "compared_bytes": 5703905124,
+          "hot_allocations": 0
+        },
+        "nsys-decode": {
+          "calls": 236,
+          "compared_bytes": 5703905124,
+          "hot_allocations": 0
+        },
+        "legacy-index-paired": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 0
+        },
+        "legacy-index-original": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 1
+        },
+        "legacy-topk": {
+          "calls": 1696,
+          "compared_bytes": 5219002624,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "legacy-candidate": {
+          "calls": 264,
+          "compared_bytes": 5746730096,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        }
+      },
+      "frozen_files": 789,
+      "reference_sha256": "0ba7431bc581f57b5f41e3314e5196082eeaf8309000d020f3ca90d82e86e118",
+      "cases_tsv_sha256": "57201cf50406a2fe15ce545fc56bf06d539a1a9942d5760ea27f18d98ebb25d3",
+      "probe_sha256": "7237fc21aa7ee3f187408d87f0e81c1138c8912de27c712e113eac0859daefd4",
+      "host_oracle_sha256": "1d9b8e595512d05bb3d48726a5e0a89f76098de05bf2312ddf394052eb5b3aca"
+    },
+    "synthetic_unit_calls": 44,
+    "pipeline_calls_per_run": 236,
+    "pipeline_compared_bytes_per_run": 5703905124,
+    "requests": 2,
+    "preallocation_scope": "Buffers allocated per fixture before its repeated warm calls; two requests and two repetitions. Zero hot logical resident allocations.",
+    "sanitizers": "Normal, ASan/UBSan probe/inline planner, CUDA memcheck with full leak check, initcheck and racecheck passed. ASan build does not instrument CUDA host validation translation unit.",
+    "legacy": "Rebuilt old probes with final objects: paired query/scoring768 calls, original-source score768 calls, static top-k1696 calls and candidate-source mask264 calls all exact with zero hot allocations. Legacy reference files retained.",
+    "empty_split_safety": {
+      "checks": {
+        "empty-build": 0,
+        "empty-asan-build": 0,
+        "empty-real": 0,
+        "empty-asan": 0,
+        "empty-memcheck": 0,
+        "empty-initcheck": 0,
+        "empty-racecheck": 0
+      },
+      "records": {
+        "empty-real": {
+          "calls": 4,
+          "compared_bytes": 578418208,
+          "hot_allocations": 0
+        },
+        "empty-asan": {
+          "calls": 4,
+          "compared_bytes": 578418208,
+          "hot_allocations": 0
+        },
+        "empty-memcheck": {
+          "calls": 4,
+          "compared_bytes": 578418208,
+          "hot_allocations": 0
+        },
+        "empty-initcheck": {
+          "calls": 4,
+          "compared_bytes": 578418208,
+          "hot_allocations": 0
+        },
+        "empty-racecheck": {
+          "calls": 4,
+          "compared_bytes": 578418208,
+          "hot_allocations": 0
+        }
+      },
+      "source_sha256": "15aff5edd0c9c7d274a8737885dab96ed34ea7c5ba80672518dc6d654586169e",
+      "scope": "Host-defined empty-union safety extension, R16/capacity262137/static32-way split, two requests with two repeated calls; no independent-source claim for empty union."
+    },
+    "graph_replay": {
+      "method": "One captured private native pipeline per shape; replay with original mask, empty union, restored original mask. Device count and dynamic top-k limit update without recapture or host count read.",
+      "records": [
+        {
+          "label": "synthetic-01",
+          "rows": 1,
+          "keys": 1048576,
+          "active": 16376,
+          "capacity": 16384,
+          "source_exact": true
+        },
+        {
+          "label": "synthetic-01",
+          "rows": 1,
+          "keys": 1048576,
+          "active": 0,
+          "capacity": 16384,
+          "source_exact": false
+        },
+        {
+          "label": "synthetic-01",
+          "rows": 1,
+          "keys": 1048576,
+          "active": 16376,
+          "capacity": 16384,
+          "source_exact": true
+        },
+        {
+          "label": "synthetic-04",
+          "rows": 16,
+          "keys": 262137,
+          "active": 1,
+          "capacity": 262137,
+          "source_exact": true
+        },
+        {
+          "label": "synthetic-04",
+          "rows": 16,
+          "keys": 262137,
+          "active": 0,
+          "capacity": 262137,
+          "source_exact": false
+        },
+        {
+          "label": "synthetic-04",
+          "rows": 16,
+          "keys": 262137,
+          "active": 1,
+          "capacity": 262137,
+          "source_exact": true
+        }
+      ]
+    },
+    "profiles": {
+      "prefill": {
+        "kernels": [
+          {
+            "name": "local_union",
+            "duration_ns": 1600
+          },
+          {
+            "name": "global_union",
+            "duration_ns": 896
+          },
+          {
+            "name": "gather",
+            "duration_ns": 6944
+          },
+          {
+            "name": "score",
+            "duration_ns": 116320
+          },
+          {
+            "name": "mask",
+            "duration_ns": 9888
+          },
+          {
+            "name": "dsa_topk_kernel",
+            "duration_ns": 27168
+          },
+          {
+            "name": "remap",
+            "duration_ns": 1152
+          }
+        ],
+        "sum_kernel_ns": 163968,
+        "runtime": {
+          "cuKernelGetName": 7,
+          "cudaLaunchKernel_v7000": 7,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "transfers": {}
+      },
+      "decode": {
+        "kernels": [
+          {
+            "name": "local_union",
+            "duration_ns": 1408
+          },
+          {
+            "name": "global_union",
+            "duration_ns": 992
+          },
+          {
+            "name": "gather",
+            "duration_ns": 16448
+          },
+          {
+            "name": "score",
+            "duration_ns": 11968
+          },
+          {
+            "name": "mask",
+            "duration_ns": 1088
+          },
+          {
+            "name": "dsa_topk_kernel",
+            "duration_ns": 7328
+          },
+          {
+            "name": "remap",
+            "duration_ns": 992
+          }
+        ],
+        "sum_kernel_ns": 40224,
+        "runtime": {
+          "cuKernelGetName": 7,
+          "cudaLaunchKernel_v7000": 7,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "transfers": {}
+      }
+    }
+  },
+  "performance": {
+    "scope": "Warm traced component only; no full-model/vLLM comparison.",
+    "prefill": "Layer24 R32/T65537,64465 active entries, capacity65537, aligned inputs. Seven kernels, one caller completion, zero observed transfers/allocations/frees.",
+    "decode": "Synthetic R1/T1048576,16376 active entries, capacity16384, paged keys and four-byte-aligned scalar fallback. Seven kernels, one caller completion, zero observed transfers/allocations/frees.",
+    "static_topk": {
+      "method": "Median7 CUDA-event samples,400 top-k calls per sample through captured graphs; device kernels only versus pinned source, not vLLM or a full model.",
+      "cases": [
+        {
+          "label": "synthetic-08-0",
+          "rows": 1,
+          "keys": 32768,
+          "groups": 8,
+          "source_us": 18.023680448532104,
+          "native_us": 18.024959564208984,
+          "ratio": 1.0000709686171219
+        },
+        {
+          "label": "synthetic-16-0",
+          "rows": 1,
+          "keys": 1048576,
+          "groups": 0,
+          "source_us": 424.3840026855469,
+          "native_us": 424.3716049194336,
+          "ratio": 0.9999707864433277
+        },
+        {
+          "label": "synthetic-09-0",
+          "rows": 16,
+          "keys": 32769,
+          "groups": 8,
+          "source_us": 17.03711986541748,
+          "native_us": 17.04640030860901,
+          "ratio": 1.000544719017348
+        },
+        {
+          "label": "checkpoint-024",
+          "rows": 32,
+          "keys": 4097,
+          "groups": 0,
+          "source_us": 3.293119966983795,
+          "native_us": 3.290480077266693,
+          "ratio": 0.999198362117515
+        }
+      ]
+    },
+    "static_index_score": {
+      "method": "Median7 CUDA-event samples,400 kernel calls each via captured graphs; kernels only, not end-to-end model/vLLM.",
+      "cases": [
+        {
+          "rows": 1,
+          "keys": 513,
+          "source_us": 2.4592000246047974,
+          "native_us": 3.690960109233856,
+          "ratio": 1.5008783638195544
+        },
+        {
+          "rows": 32,
+          "keys": 4097,
+          "source_us": 42.53647804260254,
+          "native_us": 50.36712169647217,
+          "ratio": 1.1840924311135215
+        },
+        {
+          "rows": 33,
+          "keys": 16385,
+          "source_us": 43.601441383361816,
+          "native_us": 70.05887985229492,
+          "ratio": 1.6068019228150836
+        },
+        {
+          "rows": 256,
+          "keys": 513,
+          "source_us": 48.33216190338135,
+          "native_us": 49.140238761901855,
+          "ratio": 1.0167192367710738
+        }
+      ]
+    },
+    "remaining_gap": "Static top-k remains within measurement noise of source. Static scorer still approximately1.02..1.61x source time in tested cases. Full-model performance remains unmeasured."
+  },
+  "limitations": [
+    "Full attention over pre-update sliding ring/current KV/compressed pool, F32 de-rotation before half, grouped output projection, Engram and model admission remain open.",
+    "Full request/session index-controller preparation, quota integration, source-layer sharing and automatic slab orchestration remain open.",
+    "Graph test covers private GPU execution with changing masks/counts; it does not qualify full-model graph execution or serving scheduling.",
+    "Empty union is an explicit safety extension, not a claim that the original source handles an empty candidate union.",
+    "No short/long/chunked/resumed whole-model generation, continuous batching/tail-latency or vLLM parity claim.",
+    "CUDA qualified on selected sm120a GPU only; CPU and Metal paths unchanged."
+  ],
+  "artifacts": "/tmp/bitnet-goal-native-candidate-use",
+  "frozen_source_sha256": "9762c469119e9b92983a16f99268f8871ef31cf2f7015eab8537ab3224bb6636"
+}

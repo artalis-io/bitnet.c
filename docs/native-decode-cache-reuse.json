@@ -1,0 +1,208 @@
+{
+  "status": "Qualified cache replacement optimization; full goal ACTIVE and incomplete",
+  "parent": "docs/native-temporary-expert-reuse.json",
+  "runtime_changes": true,
+  "source_changes": {
+    "test/test_gpu_moe_cache.c": {
+      "before": "b8a6987201ee0201d22efbbbb49976a9e8f573bfc4294303bb86fa5d72a506c1",
+      "after": "522a057c262f75df3b45cafe5b53104e03940aaaf8191331cfbb97ae27f5d9b7"
+    },
+    "test/native_trellis_store_checks.h": {
+      "before": "7c7f19346e3703d1900490c0765986f7464a879623dfb3183925f774800d2420",
+      "after": "731bfef2d3dc073d090caa858667394b18eb7bc01dd8583b60d1440ef56950cc"
+    },
+    "src/gpu_moe_bridge.c": {
+      "before": "33cfce21379835f2c2a45a6d2c22cdb81ce6345e977a5c59142923f07c0401d9",
+      "after": "db72f632f8528e25edb969edbb79a17e94cc3b6210200c2b41b41ccc4723ae38"
+    },
+    "src/gpu_moe_cache.c": {
+      "before": "6cdc9b223fdf88bfaedf9853cb7ce88d57db47e9c3bfbb15840bea6f627d9c88",
+      "after": "a9374001bdea7db974a00be71862dc9e2146eaae8ea0ccccf7054046638f87f7"
+    },
+    "include/gpu_moe_cache.h": {
+      "before": "51a1bc47960cadbe6cc86283e3c14a4f0e99869ec3a54734484d814615eb4caa",
+      "after": "3a67d9baeeedf85f4e9e215900cf7ae809446982d5f1d5b610ee160f6a33c02d"
+    }
+  },
+  "behavior": {
+    "generic_api": [
+      "bn_gpu_moe_cache_reserve_reuse",
+      "bn_gpu_moe_cache_reserved_buffers",
+      "bn_gpu_moe_cache_discard_reserved_buffers"
+    ],
+    "reservation": "Evict only an unpinned victim, remove old key from publication, retain opaque buffers as CACHE-OWNED storage under the existing pending-slot charge. Pending entries cannot be acquired; duplicate reservation is BUSY.",
+    "commit": "Refill must finish or be ordered for every consumer before commit. Retained reservation can commit only its exact borrowed tuple. Ownership never transfers to the borrower.",
+    "abort": "Abort destroys retained buffers, including poisoned partial refills, then clears the reservation. Layout changes must discard old storage BEFORE allocating replacements. Stale tickets are rejected.",
+    "compatibility": "Regular reserve retains its original destroy-on-eviction behavior. Native stores select the new path only when the backend supports synchronous refill; other backends keep existing behavior.",
+    "native_bridge": "Per-slot CPU layout metadata tracks context-compatible format/k/n/marker/offset/bytes. Layout mismatch discards old storage before creation. Failed refill aborts without publishing and without double-free. Model anatomy and CPU weights remain immutable; generic cache owns LRU/hash/lease transitions.",
+    "synchronization": "Existing request completion before lease release and synchronous upload publication to nonblocking consumer streams are unchanged. No new GPU kernels, changed arithmetic, routing, grouping or head geometry."
+  },
+  "workload": {
+    "model": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "profile": "Explicit Diffbot INT4 BF16 lookup -> Exllama F16 Engram execution adapter; not original Diffbot full-runtime equivalence",
+    "fixture": "Fresh513 + resumed513 + five self-fed source greedy tokens; context1031/maxseq1280/f16acc0",
+    "budgets": {
+      "ram": 13635158016,
+      "decode_vram": 639148032,
+      "temporary_vram": 639148032,
+      "staging": 13315584
+    },
+    "measurement": "Monotonic host time for input history staging through completed CPU-logit publication; preparation and exact verification excluded; no observer callbacks in plain timing runs.",
+    "limitations": "OS page-cache/disk warmth and clocks uncontrolled. Fixed sequence replay, not general serving arrivals, disk-cold behavior, whole-checkpoint VRAM residency or vLLM parity."
+  },
+  "result": {
+    "before_decode_median_ms": 217.734741,
+    "after_decode_median_ms": 153.9692795,
+    "before_samples": 5,
+    "after_samples": 10,
+    "latency_reduction_fraction": 0.2928584625822299,
+    "throughput_ratio": 1.4141440533272094,
+    "warm_decode_ms": [
+      154.512475,
+      153.682827,
+      153.418053,
+      154.557894,
+      153.660131,
+      154.255732,
+      155.538342,
+      153.496503,
+      153.485886,
+      154.655053
+    ],
+    "first_decode_buffer_creates": 144,
+    "first_decode_buffer_refills": 576,
+    "warm_projection_creates_before": 720,
+    "warm_projection_creates_after": 0,
+    "warm_projection_refills": 720,
+    "warm_ram_hits": 240,
+    "warm_vram_hits": 0,
+    "warm_source_reader_bytes": 0,
+    "warm_expert_h2d_bytes": 3195740160,
+    "matched_first_two_passes_cache_io_and_upload_counts": true
+  },
+  "memory": {
+    "decode_capacity_payload": 639148032,
+    "maximum_observed_decode_charge": 639148032,
+    "reusable_temporary_peak": 426098688,
+    "maximum_pending_charge": "Published plus pending entries never exceed existing cache capacity; retained storage overlaps the pending entry charge, not a new pool/budget.",
+    "tracked_device_peak_bytes": 19402373481,
+    "tracked_device_final_bytes": 0,
+    "notes": "Trace is the small-VRAM case. Allocation peak excludes untracked driver/context/rounding overhead and is not compared with the prior large-VRAM trace."
+  },
+  "validation": {
+    "qualification": {
+      "checks": {
+        "plain-window1": 0,
+        "plain-window32": 0,
+        "plain-phase32": 0,
+        "observed-window1": 0,
+        "observed-window32": 0,
+        "observed-phase32": 0,
+        "all-logits-window32": 0,
+        "busy": 0,
+        "asan-busy": 0,
+        "asan-phase32": 0,
+        "memcheck-phase32": 0,
+        "initcheck-phase32": 0,
+        "small-vram": 0,
+        "all-logits-small-vram": 0,
+        "asan-small-vram": 0,
+        "memcheck-small-vram": 0,
+        "initcheck-small-vram": 0,
+        "qwen27-compat": 0
+      },
+      "frozen_sources": 854,
+      "reference_files": 24988,
+      "goal_status": "active",
+      "scope": "Cache-owned recycled decode-LRU reservations and native refill: bounded pinned/retained/commit/abort ownership; whole-source CUDA outputs including repeated RAM-warm/48-slot VRAM-miss workload. No vLLM parity or serving admission claim."
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "main_source_exact": {
+      "forwards": 245,
+      "checks": 490,
+      "bytes": 1513868800,
+      "self_fed_tokens": 175
+    },
+    "trace_source_exact_forwards": 14,
+    "trace_source_exact_checks": 28,
+    "cache_units": "Existing lease/LRU/bounds tests plus 1000 recycled replacements with a pinned anchor, unpublished pending entries, wrong tuple rejection, stale tickets, explicit discard, poison abort and physical payload bounds",
+    "native_units": "Pinned refusal, exact replacement bytes, poisoned second projection abort, no publication/leak, successful retry and teardown",
+    "asan_ubsan": "Passed including small VRAM",
+    "cuda_memcheck": "0 errors; 0 bytes leaked in 0 allocations, including small VRAM",
+    "cuda_initcheck": "0 errors including small VRAM",
+    "qwen27": {
+      "generated_token_matches": 192,
+      "total_tokens": 192,
+      "count_mismatches": 0,
+      "prompts": 8,
+      "word_prefix_matches": 147,
+      "total_words": 147
+    }
+  },
+  "trace": {
+    "scope": "Supplementary Nsight trace only; separate from uninstrumented performance samples",
+    "roi": "Embedding CUDA dispatch through the start of the external half-logit verification transfer; includes original final-logit publication and synchronization, excludes setup/reset, initial embedding upload, external verification",
+    "all_forward_cuda_malloc_calls_equal_buffer_create_count": true,
+    "all_forward_cuda_free_calls": 0,
+    "first_decode_cuda_malloc_calls": 144,
+    "warm_decode_cuda_malloc_and_free_calls": 0,
+    "warm_decode_stream_synchronizations": 893,
+    "notes": "Separate Nsight run, excluded from latency results. Per-projection upload completion remains: 720 weight copies/publication waits plus existing request/read synchronization. Whole-process totals additionally include model/session setup."
+  },
+  "artifacts": {
+    "qualification.json": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/qualification.json",
+      "sha256": "b6ead0225eb227b82ab69e392884e25713e1d2bd021a50de0fad8c73177fc7e4"
+    },
+    "records.json": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/records.json",
+      "sha256": "dc8df76dcbfa042361d73a135c888d0ee07b3e8b20723363ddbb739d592c027b"
+    },
+    "frozen-source.json": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/frozen-source.json",
+      "sha256": "c76260832b4f20b2ae880cb86a77a4677498a9fd9a5e23948c1613e1375e6d62"
+    },
+    "reference-audit.json": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/reference-audit.json",
+      "sha256": "e9c1d41176b3bcafcf2de7f6e8605538ad13574ed2744f6e171295b0820359fe"
+    },
+    "intentional-source-changes.json": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/intentional-source-changes.json",
+      "sha256": "bcba6c6a59f385da66be006dde54bdafbaf879fb580dd0b57cc5f075fd3e7991"
+    },
+    "rebuilt-artifacts.json": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/rebuilt-artifacts.json",
+      "sha256": "68a056589afea450f4b23feef4aacb84f4fa3eb9982c39088f64a1f9b0af9bb3"
+    },
+    "native-phase-trace.nsys-rep": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/native-phase-trace.nsys-rep",
+      "sha256": "765368c3d1a24499a6e3747fe8644d8fefc82dfe0b60a5a152f2f022d130e84e"
+    },
+    "native-phase-trace.sqlite": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/native-phase-trace.sqlite",
+      "sha256": "0354a2b4d31fb47554b89ec9f4313866fe62d8af1b60194ef84397f6b7cd983e"
+    },
+    "trace-analysis.json": {
+      "path": "/tmp/bitnet-goal-native-cache-reuse/trace-analysis.json",
+      "sha256": "a8039f3620586a77f013ff2e568d1b0a70678f9a4fb26362ff3f4115ce452c23"
+    }
+  },
+  "remaining": [
+    "Pinned/batched upload staging and overlap remain unimplemented; 3.2 GB/token H2D traffic remains in this miss-heavy case",
+    "Production tokenizer/model/CLI admission, controlled disk-cold behavior and serving policies remain open",
+    "Matched within-5% resident vLLM prefill/decode, continuous batching/KV scheduling and concurrent tail latency are not established",
+    "Large candidate contexts and all named models/backends, including native CPU/ARM qualification, still require full-goal evidence"
+  ],
+  "goal_complete": false
+}

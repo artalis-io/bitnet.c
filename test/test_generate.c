@@ -3,6 +3,7 @@
 #include "tokenizer.h"
 #include "model.h"
 #include "session.h"
+#include "transformer.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -416,6 +417,37 @@ static void test_generate_null_logits(void) {
 // ===================================================================
 // Test bn_prefill
 // ===================================================================
+static void test_prefill_cache_scope(void) {
+    printf("test_prefill_cache_scope... ");
+    BnModel model={0}; BnSession session={0};
+    int token=-1;float all_logits=0;
+    for(int saved=0;saved<=1;saved++) {
+        session.moe_cache_prefill=saved;
+        for(int no_prefill=0;no_prefill<=1;no_prefill++) {
+            /* Empty no-logits ingestion succeeds; invalid input fails. */
+            assert(bn_prefill_no_logits(&model,&session,&token,0,0,no_prefill)==0);
+            assert(session.moe_cache_prefill==saved);
+            assert(bn_prefill_no_logits(&model,&session,&token,1,0,no_prefill)==-1);
+            assert(session.moe_cache_prefill==saved);
+            assert(bn_prefill(&model,&session,&token,1,0,no_prefill)==NULL);
+            assert(session.moe_cache_prefill==saved);
+        }
+        assert(bn_transformer_prefill(&model,&session,&token,0,0)==NULL);
+        assert(session.moe_cache_prefill==saved);
+        (void)bn_transformer_prefill_no_logits(&model,&session,&token,0,0);
+        assert(session.moe_cache_prefill==saved);
+        assert(bn_transformer_prefill_all(&model,&session,&token,0,0,&all_logits)==-1);
+        assert(session.moe_cache_prefill==saved);
+        assert(bn_transformer_prefill(&model,&session,&token,1,0)==NULL);
+        assert(session.moe_cache_prefill==saved);
+        assert(bn_transformer_prefill_no_logits(&model,&session,&token,1,0)==-1);
+        assert(session.moe_cache_prefill==saved);
+        assert(bn_transformer_prefill_all(&model,&session,&token,1,0,&all_logits)==-1);
+        assert(session.moe_cache_prefill==saved);
+    }
+    printf("PASSED\n");
+}
+
 static void test_prefill_null_model(void) {
     printf("test_prefill_null_model... ");
 
@@ -1056,7 +1088,34 @@ static void test_sse_done(void) {
 // Main
 // ===================================================================
 
+static void test_backend_only_rejects_cpu_execution(void) {
+    BnModel model = {0};
+    model.config.vocab_size = 6;
+    model.config.seq_len = 32;
+    BnSession *s = bn_session_create_backend(&model, NULL);
+    assert(s && s->backend_only);
+    int token = 0, selected = 123, pos = 0;
+    float all_logits[6];
+    assert(!bn_transformer_forward(&model, s, token, pos));
+    assert(bn_transformer_forward_no_logits(&model, s, token, pos) == -1);
+    assert(bn_transformer_forward_argmax(&model, s, token, pos,
+        NULL, 0, 1, &selected) == -1 && selected == 123);
+    assert(!bn_transformer_prefill(&model, s, &token, 1, pos));
+    assert(bn_transformer_prefill_no_logits(&model, s, &token, 1, pos) == -1);
+    assert(bn_transformer_prefill_all(&model, s, &token, 1, pos, all_logits) == -1);
+    assert(!bn_prefill(&model, s, &token, 1, pos, 0));
+    assert(bn_prefill_no_logits(&model, s, &token, 1, pos, 0) == -1);
+    assert(bn_generate(&model, s, NULL, NULL, 1, &pos, NULL, NULL, NULL, NULL) == -2);
+    assert(bn_generate_speculative(&model, s, &model, s, 1,
+        NULL, NULL, 1, &pos, NULL, NULL, NULL) == -2);
+    assert(pos == 0 && s->state.logits[0] == 0);
+    bn_session_free(s, NULL);
+    puts("Backend-only CPU rejection PASSED");
+}
+
 int main(void) {
+    test_backend_only_rejects_cpu_execution();
+    test_prefill_cache_scope();
     printf("\n=== Generate API Tests ===\n");
     test_count_tokens();
     test_chat_format_chatml();

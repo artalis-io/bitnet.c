@@ -72,6 +72,14 @@ void bn_transformer_ssm_conv_silu_neon_range(void *ctx, int start, int end) {
 // L2 normalize Q and K per head, range over heads [start, end)
 void bn_transformer_ssm_l2norm_neon_range(void *ctx, int start, int end) {
     BnSSML2NormCtx *c = (BnSSML2NormCtx *)ctx;
+    if (c->mode == BN_SSM_QK_NORM_L2_SUM_EPS) {
+        bn_transformer_ssm_qk_sum_eps_range(ctx, start, end);
+        return;
+    }
+    if (c->mode == BN_SSM_QK_NORM_RMS_SCALED) {
+        bn_transformer_ssm_qk_rmsnorm_range(ctx, start, end);
+        return;
+    }
     int hd = c->head_dim;
     float eps = c->eps;
 

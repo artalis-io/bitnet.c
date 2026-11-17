@@ -1,0 +1,281 @@
+{
+  "status": "PROGRESS; complete model execution, generation and vLLM parity remain unqualified; whole goal ACTIVE",
+  "component": "Connected native DeepSeek V4.1 Flash 1017 ordinary-text HC4/Engram stage controller",
+  "source_order": "docs/deepseek-v41-1017-native-forward-order.json",
+  "upstream_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+  "runtime": {
+    "implementation": "src/transformer/trellis_hc.h included by the existing transformer Trellis executor",
+    "ownership": "Optional session-owned metadata and buffers on the SAME canonical TrellisRequest; immutable model/backend-owned embedding, HC and norm handles are borrowed",
+    "setup": "Additional quota query, transactional unpublished setup, no live upgrades. Can combine with existing producer/attention/index/SWA/KV/rows/Engram resources",
+    "begin": "CURRENT staged raw IDs -> existing pinned row-stage slot -> I32 device IDs -> immutable BF16 embedding -> four F32 streams. Nonblocking BUSY retry leaves carry/phase unchanged; carry resets once per forward",
+    "mix": "Enforce all 2*layers sites in order. At attention sites run optional Engram first; previous-site pre collapses F32 streams (stream zero initially), own pre/post/comb are published; normalize ORIGINAL F32 collapsed input directly to existing F16 FFN input buffer",
+    "apply": "Only matching current site ticket accepted; exact same-request external F16/F32 branch. In-place source residual apply consumes saved post/comb, then advances one site. Two disjoint ping-pong pre buffers preserve carry",
+    "finish": "After every site: original vendor FP32 carried-pre head collapse with final FFN pre, then final F32-input normalization to F16. Returns head input; no vocabulary projection or logits publication",
+    "failure": "Backend/lease rejection or failure conservatively destroys/drains the entire canonical request. Pending host history/position remain unchanged. Caller must reset/replay backend state; host abort is not GPU rollback",
+    "commit": "Controller never commits history or position. Whole-model caller must finish every branch and vocabulary projection, fence successfully, then publish/commit",
+    "tickets": "Bind session/request generation, history epoch, controller epoch/site, tokens and all returned views. Expire after matching apply, history finalization, reuse/reset/free/failure. Current is not a completion proof",
+    "engram_adapter": "Explicit original Diffbot INT4 BF16 row lookup -> Exllama F16 math adapter. Not equivalence to original Diffbot full-forward arithmetic",
+    "temporary_overhead": "Each Engram still computes its existing scratch output; a second exact F32 add writes persistent HC streams into the alternate owned buffer. Two extra add kernels per forward; remove only with independent numerical and profile qualification",
+    "new_gpu_kernels": false
+  },
+  "host_boundary": {
+    "history_view": "Added const raw IDs pointer to the existing staged-history view; host ticket validation includes pointer identity. Data is the owned staged copy, not caller input; no additional history allocation",
+    "metadata_upload": "bn_backend_session_row_stage_upload_i32 reuses the first exclusive row-stage pinned slot; exact disjoint external I32 destination. No allocation/fence/source I/O or row-epoch advance. Busy/upload byte statistics include metadata; failed lease/submit poisons staging"
+  },
+  "qualified_fixture": {
+    "source": "Independent unchanged original HC and RMSNorm kernels, original Engram hash/row/math reference and actual checkpoint weights. Source oracle captured before candidate numerical execution",
+    "native": "Actual checkpoint core330 and parameter594 handles prepared by native loaders, native tokenizer compressed map and staged history, actual row cache/DMA/decoder, two independent sessions; no reference weight upload into runtime",
+    "rows": [
+      1,
+      7,
+      33
+    ],
+    "groups": [
+      "reset R1",
+      "reset R7",
+      "resume R7 at position7",
+      "decode R1 at position14",
+      "reset R33"
+    ],
+    "sites_per_group": 80,
+    "engram_layers": [
+      1,
+      14
+    ],
+    "branches": "Explicit deterministic SYNTHETIC F16 attention/F32 FFN branches. These test ordering/lifetimes, not model attention/FFN correctness",
+    "checks": {
+      "normal": {
+        "begins": 10,
+        "sites": 800,
+        "finishes": 10,
+        "busy": 5,
+        "checks": 5650,
+        "exact_bytes": 929857280,
+        "linked_hot_heap_calls": 0,
+        "hc_device_bytes": 6813432,
+        "hc_host_bytes": 2968
+      },
+      "asan": {
+        "begins": 10,
+        "sites": 800,
+        "finishes": 10,
+        "busy": 5,
+        "checks": 5650,
+        "exact_bytes": 929857280,
+        "linked_hot_heap_calls": 0,
+        "hc_device_bytes": 6813432,
+        "hc_host_bytes": 2968
+      },
+      "memcheck": {
+        "begins": 10,
+        "sites": 800,
+        "finishes": 10,
+        "busy": 5,
+        "checks": 5650,
+        "exact_bytes": 929857280,
+        "linked_hot_heap_calls": 0,
+        "hc_device_bytes": 6813432,
+        "hc_host_bytes": 2968
+      },
+      "initcheck": {
+        "begins": 10,
+        "sites": 800,
+        "finishes": 10,
+        "busy": 5,
+        "checks": 5650,
+        "exact_bytes": 929857280,
+        "linked_hot_heap_calls": 0,
+        "hc_device_bytes": 6813432,
+        "hc_host_bytes": 2968
+      }
+    },
+    "boundaries": "Initial embedding, both Engram outputs, every HC partial/post/comb/collapse/pre/normalized input and residual stream, final head collapse and normalized input",
+    "faults": "Host/GPU late setup failure, quotas one byte short, begin/mix BUSY unchanged retry, stale/cross-session/forged tickets, invalid branch extents, early finish, backend carry/apply rejection after queued work; reset/setup and queued profile recovery",
+    "commit_scope": "Probe commits history after successful HC component completion only. This is not qualification of whole-model commit or KV/SSM rewind"
+  },
+  "qualification": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "asan-metadata": 0,
+      "asan-history": 0,
+      "normal": 0,
+      "asan": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "engram-regression": 0,
+      "replay-original": 0,
+      "replay-paired": 0,
+      "resident-profile": 0,
+      "resident-export": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 842,
+    "sanitizers": "ASan/UBSan covers new C metadata/session/controller/probe. GPU memcheck full leaks and initcheck: zero errors; zero leaked bytes. No new GPU kernel, no unbounded whole-core racecheck",
+    "existing_engram_regression": "48 calls, 115008 rows, 1933437824 exact bytes using the rebuilt engine",
+    "qwen27_strict": "192/192 sampled IDs, first words8/8, counts0/8 mismatch, word prefixes147/147",
+    "references": "Original packaged cuBLAS13.1 and paired13.10 captures both preserved and replayed byte-for-byte. Native arithmetic compared against matched13.10; version differences propagate through the chain"
+  },
+  "memory": {
+    "max_tokens": 33,
+    "hc_additional_device_bytes_per_request": 6813432,
+    "hc_additional_host_bytes_per_request": 2968,
+    "device_includes": "Two persistent F32 stream buffers, partials maximum over EVERY R<=max_tokens, post/comb, two pre buffers, F32 site/head collapse, I32 IDs, 4-byte embedding error flag",
+    "normalization": "Reuses existing F16 FFN input buffer; shares existing request cuBLAS reserve",
+    "partial_bound": "R32 requires more partials than R33; planner takes the maximum over 1..max_tokens",
+    "separate": "Existing FFN/BLAS, Engram/row-bank/pinned quotas, full host history/session storage, shared caches, immutable model weights, allocator/context/library/driver overhead and OS page cache; not a total RSS/VRAM claim"
+  },
+  "profile": {
+    "batches": 2,
+    "tokens_per_batch": 7,
+    "sites_per_batch": 80,
+    "streams": 2,
+    "kernel_launches": 690,
+    "kernels": [
+      {
+        "name": "bn_cuda_gdn::add_f32_kernel(float *, const float *, const float *, unsigned long)",
+        "calls": 8,
+        "nanoseconds": 9312
+      },
+      {
+        "name": "bn_cuda_native_io::embedding_kernel(float *, const int *, const unsigned short *, int *, int, int)",
+        "calls": 2,
+        "nanoseconds": 3872
+      },
+      {
+        "name": "bn_cuda_native_ple::cast_lookup(const __nv_bfloat16 *, __half *, unsigned long)",
+        "calls": 4,
+        "nanoseconds": 4000
+      },
+      {
+        "name": "bn_cuda_native_ple::gate_value(const float *, const __half *, float *, unsigned long, int, int, float)",
+        "calls": 4,
+        "nanoseconds": 5920
+      },
+      {
+        "name": "bn_cuda_rows::int4_fp16s32_kernel(__nv_bfloat16 *, const unsigned char *, const __half *, unsigned long, int)",
+        "calls": 4,
+        "nanoseconds": 4736
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_256x8x64_2_64x8x64_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 4,
+        "nanoseconds": 167841
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_64x8x128_5_16x8x128_tmaAB_alignCD4_bz_NNNN",
+        "calls": 4,
+        "nanoseconds": 658531
+      },
+      {
+        "name": "std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)",
+        "calls": 4,
+        "nanoseconds": 13120
+      },
+      {
+        "name": "void <unnamed>::hc_apply_kernel<(int)4, __half, (bool)1, (bool)0>(float *, const T2 *, const float *, const float *, const __half *, float *, int, int)",
+        "calls": 80,
+        "nanoseconds": 130976
+      },
+      {
+        "name": "void <unnamed>::hc_apply_kernel<(int)4, float, (bool)1, (bool)0>(float *, const T2 *, const float *, const float *, const __half *, float *, int, int)",
+        "calls": 80,
+        "nanoseconds": 122528
+      },
+      {
+        "name": "void <unnamed>::hc_mix_finalize_kernel<(int)4, (int)24, (bool)0, (bool)0>(const float *, const float *, const float *, const float *, float *, float *, void *, int, int, int, float, float, int, const float *, float *, int)",
+        "calls": 160,
+        "nanoseconds": 635555
+      },
+      {
+        "name": "void <unnamed>::hc_mix_partials_kernel<(int)4, (int)24, (bool)1>(const float *, const float *, float *, int, int)",
+        "calls": 160,
+        "nanoseconds": 1240037
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 4,
+        "nanoseconds": 14112
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<float, __half, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 162,
+        "nanoseconds": 504130
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<float, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 4,
+        "nanoseconds": 15968
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "calls": 4,
+        "nanoseconds": 5376
+      },
+      {
+        "name": "void gemv2N_kernel<int, int, float, float, float, float, (int)128, (int)1, (int)2, (int)4, (int)1, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)",
+        "calls": 2,
+        "nanoseconds": 3168
+      }
+    ],
+    "h2d_transfers": 10,
+    "h2d_bytes": 96824,
+    "id_h2d_bytes": 56,
+    "row_h2d_bytes": 96768,
+    "extra_engram_final_add_kernels": 4,
+    "activation_readbacks": 0,
+    "device_copies": 0,
+    "captured_cuda_allocations": 0,
+    "captured_memsets": 0,
+    "explicit_caller_device_fences": 1,
+    "controller_internal_host_fences": 0,
+    "linked_controller_hot_heap_calls": 0,
+    "warm_source_cache_misses": 0,
+    "warm_source_io_bytes": 0,
+    "summed_kernel_nanoseconds": 3539182,
+    "summed_copy_nanoseconds": 11840,
+    "runtime_apis": {
+      "cuKernelGetName": 678,
+      "cuKernelSetAttribute": 8,
+      "cuLaunchKernelEx": 8,
+      "cuStreamGetGreenCtx": 28,
+      "cudaDeviceSynchronize_v3020": 1,
+      "cudaEventQuery_v3020": 10,
+      "cudaEventRecord_v3020": 10,
+      "cudaLaunchKernelExC_v11060": 4,
+      "cudaLaunchKernel_v7000": 678,
+      "cudaMemcpyAsync_v3020": 10
+    },
+    "scope": "Warmed connected embedding/Engram/HC/norm/residual/head-collapse with synthetic resident branch values. All 80 sites queued on each private request stream. One explicit caller completion fence; event NOT_READY is nonblocking backpressure. Not full-model wall latency or vLLM parity."
+  },
+  "remaining": [
+    "Qualify combined producer+HC setup and actual attention/FFN branch composition against original connected source activations",
+    "Vocabulary projection, whole-model logits/token generation, short/long/chunked/resumed CPU/CUDA correctness and safe default native admission",
+    "Native text encoder/streaming decoder and real backend compute-state rewind/reset-replay semantics",
+    "Full-model bounded phase-specific expert offload, cold/warm/miss/stall measurements, matched vLLM prefill/decode parity and serving/concurrency/tail-latency acceptance"
+  ],
+  "source_sha256": {
+    "include/session_internal.h": "a45a0a2ffcf7e9675ae6e2c62f3cfe727b0fe29bf89c48a3b64086fe28001d3b",
+    "src/session.c": "d7020e18aaea5c0eef8781b6b879e14be8383d77d6eb8802a07fb6fae307d739",
+    "include/backend_session.h": "4a70bb4dd3313c1113a270da09ac8ec0fc0f4383accd5798eb78c90a742ca968",
+    "src/backend_session_rows.c": "5d5c153691571da9502643fa534b91e129446a8cf9347a9da1f24c89f32b4d5c",
+    "include/transformer_internal.h": "a8331ba769602482995436cde3e14c759d9567d0575afea1284ce2d5925345ca",
+    "src/transformer/trellis.c": "fc39b04f9355b37e994ac75b9206fb2c8a6e95a81fe9556aed0482dc57daba99",
+    "src/transformer/trellis_hc.h": "45207a022170853c102f9e96222ecd37593d9e2836d8790810d5ad6ad15c30c2",
+    "test/native_session_checks.h": "aa90f31ade0471fd2144c2097ae5a9802ffeb6b7b74c4273c8cafd33215a077e",
+    "test/test_backend_session_rows.c": "c6247e4928ba43ef9a0026b35dffd1010cd55b045db9f44230f738cfd5cb4593",
+    "test/reference_native_hc_stage.py": "abae8805f8f8f5ef4913cbabacc6a57e4a8510f698a2cbbdde724ed5366f7a4a",
+    "Makefile": "337cb2b67cd95a88280639c7fd765bd6625a5330e250fb303ac7e11e948f8458"
+  },
+  "reference_producer": "test/reference_native_hc_stage.py"
+}

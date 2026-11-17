@@ -63,6 +63,7 @@ while [[ $# -gt 0 ]]; do
         --no-prefill) BITNET_ARGS+=(--no-prefill); LLAMA_ARGS+=(-b 1 -ub 1); shift ;;
         --pread) BITNET_ARGS+=(--pread); shift ;;
         --cache-mb) BITNET_ARGS+=(--cache-mb "$2"); shift 2 ;;
+        --gpu-cache-mb) BITNET_ARGS+=(--gpu-cache-mb "$2"); shift 2 ;;
         --madvise) BITNET_ARGS+=(--madvise); shift ;;
         --flash) BITNET_ARGS+=(--flash); LLAMA_FLASH=(-fa on); shift ;;
         --llama-flash-off) LLAMA_FLASH=(-fa off); shift ;;

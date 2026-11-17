@@ -12,11 +12,35 @@
 #include <stdlib.h>
 #include <string.h>
 
+int bn_transformer_prefill_gpu_batch_available(
+    const BnGPUBackend *gpu, const BnConfig *config) {
+    return gpu && config &&
+        (bn_transformer_gpu_batch_prefill_enabled(gpu, config) ||
+         bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(gpu, config));
+}
+
 int bn_transformer_prefill_host_reference_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *config) {
     return bn_model_transformer_policy_requires_host_reference_prefill(config) &&
            !bn_gpu_backend_is_cuda(gpu);
+}
+
+int bn_transformer_prefill_prepared_attention_requested(
+    const BnGPUBackend *gpu, const BnConfig *config) {
+    return config && (config->flash_attn ||
+        (bn_gpu_backend_is_cuda(gpu) &&
+         bn_model_transformer_policy_requires_reference_attention(config)));
+}
+
+int bn_transformer_prefill_selects_last_ffn_row(
+    const BnGPUBackend *gpu, int all_logits, int layer, int n_layers,
+    int n_tokens) {
+    if (all_logits || n_layers <= 0 || layer < 0 ||
+        layer != n_layers - 1 || n_tokens <= 1)
+        return 0;
+    return bn_gpu_backend_is_cuda(gpu) ||
+        (!gpu && bn_transformer_cpu_backend_selects_last_prefill_ffn_row());
 }
 
 int bn_transformer_prefill_profile_enabled(const BnCPURuntimePolicy *runtime) {
@@ -356,6 +380,9 @@ bn_transformer_prefill_dense_layer_gpu_resource_policy(
             backend, layer, lw, ffn_types);
 
     policy.qk = attn.qk;
+    if (!policy.qk && !has_packed_qkv)
+        policy.qk = bn_backend_model_handle(backend, layer,
+                                           BN_BACKEND_HANDLE_PREFILL_QK_PAIR);
     policy.wv = attn.wv;
     policy.wo = attn.wo;
     policy.qk_rows = attn.qk_rows;
@@ -381,7 +408,7 @@ bn_transformer_prefill_dense_layer_gpu_resource_policy(
     policy.v_bias = qkv_res.v_bias;
 
     policy.valid =
-        attn.valid &&
+        policy.qk && policy.wo && (has_packed_qkv || policy.wv) &&
         ffn.valid &&
         policy.attn_norm &&
         policy.ffn_norm &&
@@ -755,7 +782,9 @@ int bn_transformer_prefill_prefix_request_allowed(
         !bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_REFERENCE_RECURRENT_PREFILL) ||
         !c->kv_f16 || c->kv_tq_bits || c->n_layers <= 0 ||
         c->full_attn_interval <= 0 || c->ssm_state_size <= 0 ||
-        c->n_experts <= 0 || c->n_experts_active <= 0 ||
+        ((c->n_experts <= 0 || c->n_experts_active <= 0) &&
+         !(c->n_experts == 0 && c->n_experts_active == 0 &&
+           bn_gpu_policy_prefill_dense_prefix_chain_enabled(gpu))) ||
         c->hyper_connection_count || c->per_layer_input_dim || c->ple_layer ||
         c->indexer_head_count || c->kv_unique_layer_count ||
         n_tokens <= 0 || n_tokens > 2048 || pos0 < 0 ||

@@ -1,0 +1,209 @@
+{
+  "status": "PROGRESS; explicit short-context native CUDA forward/generation qualified; full user goal ACTIVE and incomplete",
+  "component": "DeepSeek V4.1 Flash 1017 actual 40-layer native text forward, F16 vocabulary head and whole-model commit gate",
+  "implementation": "src/transformer/trellis_forward.h included in the existing transformer Trellis executor",
+  "api": [
+    "bn_transformer_trellis_forward_session_plan",
+    "bn_transformer_trellis_prepare_session_forward",
+    "bn_transformer_trellis_forward_run",
+    "bn_transformer_trellis_forward_current"
+  ],
+  "ownership": "Optional session-owned forward metadata, F16 logits and one host F16 last-row staging allocation on the SAME canonical request. Immutable model/backend-owned head weights borrowed. Existing resources retain independent quotas; no live upgrades",
+  "architecture": "Model architecture declares BN_NATIVE_HEAD_F16_LINEAR_F16 and shape through bn_model_arch_native_head/bn_model_native_head. Backend validates packed F16 head ownership/layout; transformer has no model-family names or raw quant capability predicates",
+  "precision": "Original ordinary-text LinearFP16 F16 input/weight/output; full head versus last_tokens_only=1 preserves exact source GEMM geometry. Original Diffbot INT4 BF16 lookup -> Exllama F16 Engram adapter remains explicit, not original Diffbot full-forward arithmetic equivalence",
+  "execution": [
+    "Consumes CURRENT staged raw/mapped history; embedding/index/carry begin once per batch",
+    "Runs every block in checkpoint order using actual attention, compressed owners/readers, learned routing, selected expert decode, shared FFN and HC residuals",
+    "BUSY retains the pending batch/block and exact admit policy, without repeating completed attention, earlier layers or host history",
+    "Final carried-pre HyperHead collapse -> F32 norm -> F16 head input -> model-owned F16 vocabulary projection",
+    "Last-row read establishes whole-request completion. Validate finite published F16 logits before history/position commit; then convert exact F16 values to preallocated session F32 logits and publish result"
+  ],
+  "failure": "Any partial execution/head/read/domain/commit/history-invalidation failure releases/drains the entire canonical request. Prior host logits remain unchanged; no false position advance or GPU rollback. Reset/replay required. Aborting staged host history while BUSY causes request invalidation on retry",
+  "lifetime": "Result binds session/request generation and forward epoch/position/token count/logit geometry. Expires on next accepted forward attempt, reset/free/failure. Host sampling may mutate session logits; current validates GPU borrow only",
+  "scope": "Explicit backend API only, no CLI/native CPU admission, text encoding/stream decoding, multimodal/TP/speculative/MTP qualification",
+  "reference": {
+    "producer": "test/reference_native_forward.py",
+    "host_gold": "test/reference_native_forward_host.py",
+    "method": "Independent pinned original HC/RMS/RoPE/compressor/attention/routing/expert-decode/shared-FFN primitives and original projection/LinearFP16 methods, actual checkpoint weights, real preceding activations. No candidate code or synthetic branches",
+    "frames": [
+      [
+        "single",
+        1,
+        0
+      ],
+      [
+        "prefill",
+        7,
+        0
+      ],
+      [
+        "decode",
+        1,
+        7
+      ],
+      [
+        "chunk",
+        7,
+        8
+      ],
+      [
+        "greedy-0",
+        1,
+        15
+      ],
+      [
+        "greedy-1",
+        1,
+        16
+      ],
+      [
+        "greedy-2",
+        1,
+        17
+      ],
+      [
+        "greedy-3",
+        1,
+        18
+      ],
+      [
+        "greedy-4",
+        1,
+        19
+      ]
+    ],
+    "blocks": 360,
+    "source_greedy_input_ids": [
+      223,
+      47515,
+      223,
+      47515,
+      223
+    ],
+    "source_modes": "Both original all-row F16 head and source last_tokens_only=1; host F32 gold independently decoded from immutable original F16 logits with Python IEEE struct conversion",
+    "immutability": "Initial 120-block three-frame corpus preserved; 360-block extended corpus shares every original numeric file byte-for-byte. Both corpora and host gold replayed unchanged. Matched cuBLAS13.10, earlier original13.1 corpora retained",
+    "provenance": "Actual expert components, all core reference matrix hashes, parameter/head references, source/kernel/library hashes and config/index provenance frozen"
+  },
+  "qualification": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "normal": 0,
+      "asan": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "block-regression": 0,
+      "hc-regression": 0,
+      "source-paired": 0,
+      "host-paired": 0,
+      "source-extended": 0,
+      "host-extended": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 847,
+    "records": {
+      "normal": {
+        "forwards": 19,
+        "forced_busy_retries": 36,
+        "checks": 78,
+        "exact_bytes": 19678720,
+        "block_checks": 6116,
+        "block_exact_bytes": 387545032,
+        "all_logits_device_bytes": 1809920,
+        "last_logits_device_bytes": 258560,
+        "forward_host_bytes": 258736
+      },
+      "asan": {
+        "forwards": 19,
+        "forced_busy_retries": 36,
+        "checks": 78,
+        "exact_bytes": 19678720,
+        "block_checks": 6116,
+        "block_exact_bytes": 387545032,
+        "all_logits_device_bytes": 1809920,
+        "last_logits_device_bytes": 258560,
+        "forward_host_bytes": 258736
+      },
+      "memcheck": {
+        "forwards": 19,
+        "forced_busy_retries": 36,
+        "checks": 78,
+        "exact_bytes": 19678720,
+        "block_checks": 6116,
+        "block_exact_bytes": 387545032,
+        "all_logits_device_bytes": 1809920,
+        "last_logits_device_bytes": 258560,
+        "forward_host_bytes": 258736
+      },
+      "initcheck": {
+        "forwards": 19,
+        "forced_busy_retries": 36,
+        "checks": 78,
+        "exact_bytes": 19678720,
+        "block_checks": 6116,
+        "block_exact_bytes": 387545032,
+        "all_logits_device_bytes": 1809920,
+        "last_logits_device_bytes": 258560,
+        "forward_host_bytes": 258736
+      }
+    },
+    "diagnostic_scope": "19 completed forwards including recovery, 760 numerically checked actual blocks, 36 forced BUSY retries, 406+ MB exact intermediate/final comparisons per run; two sessions, both head modes. These numerical probes add diagnostic readbacks",
+    "production_path": {
+      "normal_exit": 0,
+      "initcheck_exit": 0,
+      "records": {
+        "untapped_forwards": 18,
+        "self_fed_greedy_tokens": 10,
+        "checks": 36,
+        "exact_bytes": 17064960
+      },
+      "method": "Protected product object files, normal backend callbacks, no execution spies or added intermediate readbacks; verify only after full forward returns"
+    },
+    "state_proof": "Position/history advance only after every block/head succeeds. Published CPU logits remain byte-identical during BUSY, late head rejection, injected NaN and cancelled-history failure. Peer result/logits survive owner failure; reset/replay recovery matches source",
+    "samplers": "Each generated input is selected from the native previously published CPU logits and equals independent source greedy ID; five self-fed tokens per session",
+    "sanitizers": "ASan/UBSan on new C/model architecture/controller/probe. GPU memcheck full leaks and initcheck zero errors; zero leaked bytes/allocations. Additional initialization check of product-object execution without spies also zero errors. No new GPU kernels/unbounded whole-core racecheck",
+    "regression": "Prior real two-block and 800-site HC/Engram pipelines pass; strict Qwen192/192 sampled IDs, first8/8, count0/8 mismatches, words147/147"
+  },
+  "memory": {
+    "qualified_max_tokens": 7,
+    "qualified_backend_maxseq": 256,
+    "qualified_context_reached": 20,
+    "all_row_logits_device_bytes_per_session": 1809920,
+    "last_only_logits_device_bytes_per_session": 258560,
+    "forward_host_bytes_per_session": 258736,
+    "host_payload": "176-byte metadata plus 258560-byte last-row F16 staging; F32 session logits already allocated. No hot activation allocation in forward code; expert placement retains its separately bounded allocation behavior",
+    "separate": "All base FFN/BLAS, producer/attention/index/SWA/KV, HC/Engram/row-bank/pinned/history, immutable model/router weights, expert budgets, allocator/context/library/driver and OS page-cache overhead. Not a total RSS/VRAM claim"
+  },
+  "performance": "No new full-model/vLLM parity claim. Prior real-prefix profile records 719041536 expert bytes and 162 projection upload fences for R7/two blocks; this bottleneck remains. Final CPU-logit publication deliberately reads one F16 vocabulary row; future GPU sampling can avoid it",
+  "remaining": [
+    "Long contexts, ring/page/cache boundaries, nontrivial index/candidate selection and actual grouped prefill>=9 in the whole model",
+    "Native CPU execution/CPU-CUDA model parity, safe compute-state rewind/snapshots/reset-replay, native BPE encoder/stream decoder/chat/CLI admission and natural-text coherence",
+    "Separately bounded RAM/VRAM prefill/decode placement, batched upload publication/storage reuse, measured cold/warm/miss/stall behavior",
+    "Matched fully resident vLLM prefill/decode within5%, continuous/chunked serving/KV scheduling/concurrency/tail latency, remaining named models and secondary Metal"
+  ],
+  "source_sha256": {
+    "include/model_anatomy.h": "3b58c8143a7c97712b89353c1642dafb6a4c8e44b162d3971d8a04acd885b84f",
+    "include/model_arch.h": "d91e64fce15b4a7a7c200e2451faba7be56df7ee464bc51d491fe2c2b6cc1463",
+    "include/model.h": "be1087774fca04d381cefdde90609d5c11a4f3f357da6bf37a54cc57803299f3",
+    "src/model_arch.c": "1d23cbf5281074f72ec838793793820209ead51c5046c1de22de2e893ea20ba2",
+    "src/model.c": "1ed170daf8f0af271fc986ee67dbb0f7bc9363f3f9522b0749b9c25edd57064b",
+    "include/transformer_internal.h": "28a10f536f5fd96b33f4bacc970b1c1060f7e6c012a0a900f911c643d3952528",
+    "src/transformer/trellis.c": "99e7262c2af511302ab3933bf27d9ca0039ed81dbc35620ba1ef264786b15da1",
+    "src/transformer/trellis_forward.h": "32b884502a307d53526c9b6b09fb48a57181ff92830651c13820044c1955c329",
+    "test/native_engram_stage_checks.h": "31bd43c0bd90223e6bb9fb05ec0f464169226a6a9924a17445221ac0bbb98c94",
+    "test/native_producer_checks.h": "8f5182d1d5f5bb169862e3ab6fb16abbc7dcbcb7c07332a75ec699139b279950",
+    "test/reference_native_forward.py": "11bf37fe182b26453cec9698f762803348c2f1042235325e3f529242501a7f15",
+    "test/reference_native_forward_host.py": "dde144c4f8726aa99360f9b05bd6e7251cacea8f28b8ebd8e8331d94b6b458b9",
+    "Makefile": "4c58409081e9cb64e34df7e7f10ff0f249ba841c6d6c51127a8be855f43a998b"
+  }
+}

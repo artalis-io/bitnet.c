@@ -1,0 +1,175 @@
+{
+  "schema": 1,
+  "status": "observed_resident_timing_gates_pass_with_explicit_original_profile_and_cross_process_head_variation",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "evidence_root": "/tmp/bitnet-goal-vllm-graphs",
+  "prior_report": "docs/stdio-serving-performance.json",
+  "changes": "New policy, independent reference producer/fixture and report only. No C implementation or kernel changes.",
+  "workload": {
+    "checkpoint": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "checkpoint_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+    "checkpoint_bytes": 17559178144,
+    "concurrency": 4,
+    "prompt_tokens_each": 129,
+    "output_tokens_each": 64,
+    "context": 8192,
+    "dtype": "bfloat16",
+    "quantization": "GGUF UD-Q4_K_XL",
+    "prefix_cache": false,
+    "prefill_only_effective_tokens": 516,
+    "mixed_budget": 46,
+    "warmup_batches": 1,
+    "timed_batches": 3
+  },
+  "hardware": {
+    "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "total_memory": 101973491712,
+    "compute_capability": [
+      12,
+      0
+    ]
+  },
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "original": {
+    "image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+    "runtime": "vLLM v0.1.dev21830+g8244d1c44",
+    "resolved": {
+      "core_client": "SyncMPClient",
+      "cudagraph_mode": "FULL_AND_PIECEWISE",
+      "compilation_mode": "3",
+      "async_scheduling": true,
+      "full_config": "model='/config', speculative_config=None, tokenizer='/config', skip_tokenizer_init=True, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=8192, download_dir=None, load_format=gguf, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=gguf, quantization_config=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf, enable_prefix_caching=False, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::qwen4_exp_ple_short_conv', 'vllm::qwen4_exp_qsa_with_output', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [8192], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 8, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_b12x_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, enable_bf16x3_router_gemm=False, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)"
+    },
+    "removed_overrides": [
+      "compilation_config.cudagraph_mode=NONE",
+      "async_scheduling=False",
+      "VLLM_ENABLE_V1_MULTIPROCESSING=0"
+    ],
+    "worker_start_method": "spawn",
+    "batch_barrier": "Public pause_scheduler keep/no cache clear; queue all four; resume.",
+    "graph_diagnostic": [
+      {
+        "replay_calls": 63,
+        "restored": true
+      }
+    ],
+    "timing_observers": false,
+    "diagnostic_after_timings": true,
+    "compatibility": "Pinned offline GGUF plugin0.0.5+e454affe and plugin512 extension; existing class-name metadata mapping Qwen3_5ForConditionalGeneration to Qwen3_5ForCausalLM. No model/kernel/scheduler arithmetic patches.",
+    "shutdown": "Original manager force-killed remaining EngineCore after resource-teardown timeout. All jobs exit0; GPU idle verified."
+  },
+  "timing": {
+    "scope": "Fully resident fixed4x129prompt/64output,3repetitions after warmup; integrated stdio timings conservatively compared to default original public callback delivery times; not sustained-serving parity; original cross-process last-three-head variation is preserved separately",
+    "profile": "bench/policies/qwen38-cuda-default-resident.json",
+    "native_prefill_ms": 610.80085,
+    "original_prefill_ms": 1301.085828,
+    "prefill_throughput_ratio": 2.1301310042381245,
+    "native_decode_ms": 35.653507460317456,
+    "original_decode_ms": 35.63168021031746,
+    "decode_latency_ratio": 1.0006125798691266,
+    "native_prefill_tokens_per_second": 844.7925375349429,
+    "original_prefill_tokens_per_second": 396.5918226879649,
+    "gates": {
+      "prefill_095": true,
+      "decode_105": true
+    },
+    "timed_token_vectors_independently_equal": true,
+    "full_goal_complete": false,
+    "release_ready": false
+  },
+  "measurement": "Primary original timing is the first predeclared three-run default reference. Product timing uses the new selected-kernel policy. Prefill is last first-token receipt after submission/release; decode is mean over four per-request(first-to-last delivered)/63, then median across runs. Product includes raw tokenizer/stdio/admission; original is pretokenized public engine callbacks. Diagnostic readbacks and kernel observers are outside all timed intervals.",
+  "independent_correctness": {
+    "status": "passed_for_explicit_kernel_recorded_original_profile",
+    "runs": [
+      {
+        "mode": "normal",
+        "exact_heads": 256,
+        "finite": true,
+        "input_ids_and_positions": true,
+        "generated_tokens_equal": true,
+        "exit": 0
+      },
+      {
+        "mode": "asan",
+        "exact_heads": 256,
+        "finite": true,
+        "input_ids_and_positions": true,
+        "generated_tokens_equal": true,
+        "exit": 0
+      }
+    ],
+    "original_cross_process_head_variation": [
+      {
+        "request": 0,
+        "index": 61,
+        "differing_words": 213395,
+        "token_equal": true,
+        "geometry_equal": true
+      },
+      {
+        "request": 0,
+        "index": 62,
+        "differing_words": 215900,
+        "token_equal": true,
+        "geometry_equal": true
+      },
+      {
+        "request": 0,
+        "index": 63,
+        "differing_words": 218889,
+        "token_equal": true,
+        "geometry_equal": true
+      }
+    ],
+    "independent_original_tokens_repeatable": true,
+    "independent_original_heads_universally_repeatable": false,
+    "existing_references_unchanged": true,
+    "full_goal_complete": false,
+    "release_ready": false
+  },
+  "policy_provenance": {
+    "path": "bench/policies/qwen38-cuda-default-resident.json",
+    "method": "Selected original prefill normalization launch configurations and compiled PTX; no fitting to logits. Six input-layer reduction modes differ from eager46. All post-attention modes unchanged.",
+    "decode": "Graph replay bypasses Python kernel observer; product comparison against all recorded complete decode heads independently checks the selected policy.",
+    "source": "test/reference_qwen38_default_resident.py",
+    "fixture": "test/bf16_cuda_default_resident_reference.json"
+  },
+  "product_command": [
+    "/home/mark/artalis.io/src/bitnet.c/bitnet",
+    "--cuda-batch",
+    "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "--profile",
+    "dense-bf16",
+    "--serve-stdio",
+    "--batch-live",
+    "4",
+    "--prefill-tokens",
+    "129",
+    "--batch-token-budget",
+    "516",
+    "--mixed-token-budget",
+    "46",
+    "--maxseq",
+    "8192",
+    "--kv-budget-mb",
+    "8192",
+    "--policy",
+    "bench/policies/qwen38-cuda-default-resident.json",
+    "-n",
+    "64"
+  ],
+  "qualification_limits": [
+    "Observed gates apply only to this pinned checkpoint, GPU, context and four129-token prompts with64 outputs.",
+    "Original default versus eager outputs differ. Both profiles remain separate and all previous golds are preserved.",
+    "Two original default processes agree on tokens and253heads but differ on final three request0 heads under identical recorded logical geometry. Product matches256/256 of the kernel-recorded original capture in normal and ASAN builds, and253/256 of the first capture. This does not establish universally repeatable original logits; cause remains unresolved.",
+    "Timings are sequential warmed runs on unlocked clocks, without interleaved thermal-drift control.",
+    "This is not a matched sustained-serving comparison or offloaded-model benchmark. Prior local SLO evidence belongs to the earlier explicit eager profile.",
+    "All-family release, broader resident/offload workloads, transfer/stall/peak qualification, capability matrix and CPU/Metal coverage remain active goal work."
+  ],
+  "historical_integrity": {
+    "status": "passed_with_acknowledged_historical_log_loss",
+    "exception": "/tmp/bitnet-goal-dense-admission/parent-log-discrepancy.json",
+    "scope": "One historical nonnumerical baseline log was lost before this phase. Numerical golds remain preserved."
+  }
+}

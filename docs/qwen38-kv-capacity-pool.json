@@ -1,0 +1,58 @@
+{
+  "scope": "Request-sized dense BF16 KV pool capability; not automatic generic runtime admission or full device-memory budgeting",
+  "source_sha256": {
+    "src/transformer/bf16_pool.c": "203bfd22dd1e1176781f26e11ed2edd116fbf1f4ef7741fba3fa4f123690596c",
+    "src/transformer/bf16_internal.h": "84ea22183512ff2eaf549693768fd9365597509c1fd530cacabc17b0d22d2af7",
+    "test/test_bf16_pool.c": "34dcd2a9800c78747b785a12a14dbc66b92c6b573dbe2816cd25c4345da9e5b0",
+    "test/test_bf16_runtime.c": "27d989dee43e3efc8abceac97fc65fb1799338274a33171ea0c38108c86fa5f8"
+  },
+  "behavior": {
+    "capacity_rounding": "Power of two, floor max_tokens, clamp configured maximum",
+    "reuse": "Smallest adequate idle capacity; retain actual allocation charge",
+    "reclaim": "Largest idle slots only, after feasibility precheck",
+    "busy": "No cache eviction, allocation or GPU work",
+    "failures": "Idle reclaim may precede preparation failure; ledger remains accurate",
+    "legacy": "Fixed configured capacity acquisition retained"
+  },
+  "model": {
+    "model": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "requested_capacity": 33,
+    "actual_capacity": 64,
+    "configured_capacity": 512,
+    "kv_budget_bytes": 33554432,
+    "simultaneous_sized_leases": 2,
+    "actual_kv_allocation_bytes": 8388608,
+    "allocation_measurement": "Resident allocation wrapper counts BF16 KV vectors of64*1024 elements, two vectors in16 attention layers per session",
+    "full_vocabulary_prefix_comparisons": 13,
+    "reused_prefix_comparisons": 1,
+    "capacity_boundary_rejected_without_gpu_work": true,
+    "fixed_capacity_reference_logits_exact": true,
+    "reuse_logits_exact": true,
+    "cpu_fallbacks": 0
+  },
+  "checks": {
+    "baseline_standard": 0,
+    "clean_build_zero_warnings": true,
+    "standard": 0,
+    "final_unit": 0,
+    "asan_ubsan": 0,
+    "model_pool_only": 0,
+    "legacy134_geometry": 0,
+    "legacy134_full_heads": 0
+  },
+  "legacy": {
+    "matrices": 134,
+    "heads": 784,
+    "bf16_words": 194682880
+  },
+  "protected_binaries": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "automatic_batch_admission_integrated": false,
+  "total_vram_bound_qualified": false,
+  "full_goal_complete": false,
+  "evidence_directory": "/tmp/bitnet-goal-pool-sized"
+}

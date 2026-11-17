@@ -1,0 +1,423 @@
+{
+  "exit": 0,
+  "checks": {
+    "probe-build": 0,
+    "profile-build": 0,
+    "asan-build": 0,
+    "native-l0-e0-m1": 0,
+    "native-l0-e0-m7": 0,
+    "native-l0-e0-m64": 0,
+    "native-l0-e0-m256": 0,
+    "native-l39-e383-m1": 0,
+    "native-l39-e383-m7": 0,
+    "native-l39-e383-m64": 0,
+    "native-l39-e383-m256": 0,
+    "asan-native": 0,
+    "memcheck-synthetic": 0,
+    "memcheck-native": 0,
+    "racecheck-synthetic": 0,
+    "nsys-native": 0,
+    "nsys-export": 0
+  },
+  "runs": [
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 1,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 5120,
+        "intermediate_f16_words_per_repeat": 6912,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 5120,
+        "isolated_primary_golden_words": 5120,
+        "peer_zero_words": 5120,
+        "idle_pool_payload_added": 0
+      }
+    },
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 7,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 35840,
+        "intermediate_f16_words_per_repeat": 48384,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 35840,
+        "isolated_primary_golden_words": 35840,
+        "peer_zero_words": 35840,
+        "idle_pool_payload_added": 0
+      }
+    },
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 64,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 327680,
+        "intermediate_f16_words_per_repeat": 442368,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 327680,
+        "isolated_primary_golden_words": 327680,
+        "peer_zero_words": 327680,
+        "idle_pool_payload_added": 0
+      }
+    },
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 256,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 1310720,
+        "intermediate_f16_words_per_repeat": 1769472,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 1310720,
+        "isolated_primary_golden_words": 1310720,
+        "peer_zero_words": 1310720,
+        "idle_pool_payload_added": 0
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 1,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 5120,
+        "intermediate_f16_words_per_repeat": 6912,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 5120,
+        "isolated_primary_golden_words": 5120,
+        "peer_zero_words": 5120,
+        "idle_pool_payload_added": 0
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 7,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 35840,
+        "intermediate_f16_words_per_repeat": 48384,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 35840,
+        "isolated_primary_golden_words": 35840,
+        "peer_zero_words": 35840,
+        "idle_pool_payload_added": 0
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 64,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 327680,
+        "intermediate_f16_words_per_repeat": 442368,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 327680,
+        "isolated_primary_golden_words": 327680,
+        "peer_zero_words": 327680,
+        "idle_pool_payload_added": 0
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 256,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 1310720,
+        "intermediate_f16_words_per_repeat": 1769472,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      "sharing": {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 1310720,
+        "isolated_primary_golden_words": 1310720,
+        "peer_zero_words": 1310720,
+        "idle_pool_payload_added": 0
+      }
+    }
+  ],
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "f90278d9c8be0613e5dc520bd936bc61829fe8da9d637f6af0efc2ba98d7be25",
+    "src/gpu_cuda.cu": "5277bbf8324816292b7f2e6361e43e75f659b018114e144bc1b09d43b28746bf",
+    "src/gpu_cuda_exl3.cuh": "3832af7aa78acf38e8f247ea8511fac5d3ca3c64143c640b86b5d2601cd7f244",
+    "test/cuda_exl3_ffn_checks.h": "a57830f6165747d57a1d1c5b33e3f1b015cbb86112492ea0994f9e7f063c2f8b"
+  },
+  "profile": {
+    "warmed_primary_ffn": {
+      "api": [
+        {
+          "name": "cuKernelGetName",
+          "calls": 10
+        },
+        {
+          "name": "cuKernelSetAttribute",
+          "calls": 3
+        },
+        {
+          "name": "cuLaunchKernelEx",
+          "calls": 3
+        },
+        {
+          "name": "cuStreamGetGreenCtx",
+          "calls": 6
+        },
+        {
+          "name": "cudaLaunchKernelExC_v11060",
+          "calls": 2
+        },
+        {
+          "name": "cudaLaunchKernel_v7000",
+          "calls": 10
+        },
+        {
+          "name": "cudaStreamSynchronize_v3020",
+          "calls": 1
+        }
+      ],
+      "kernels": [
+        {
+          "name": "bn_cuda_exl3::decode(__half *, const unsigned int *, int)",
+          "calls": 3,
+          "gpu_ns": 82335
+        },
+        {
+          "name": "bn_cuda_exl3::had_post_f32(float *, const float *, const __half *, int)",
+          "calls": 1,
+          "gpu_ns": 7104
+        },
+        {
+          "name": "bn_cuda_exl3::silu_mul(__half *, const __half *, const __half *, unsigned long, float)",
+          "calls": 1,
+          "gpu_ns": 1472
+        },
+        {
+          "name": "nvjet_sm120_hsh_mma_128x128x64_3_64x32x64_tmaAB_alignCD4_splitK_NNNN",
+          "calls": 2,
+          "gpu_ns": 55937
+        },
+        {
+          "name": "nvjet_sm120_hss_mma_128x64x64_4_64x32x64_tmaAB_alignCD4_bz_NNNN",
+          "calls": 1,
+          "gpu_ns": 34752
+        },
+        {
+          "name": "void bn_cuda_exl3::had<(bool)0>(__half *, const __half *, const __half *, int)",
+          "calls": 2,
+          "gpu_ns": 6784
+        },
+        {
+          "name": "void bn_cuda_exl3::had<(bool)1>(__half *, const __half *, const __half *, int)",
+          "calls": 3,
+          "gpu_ns": 15776
+        },
+        {
+          "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+          "calls": 2,
+          "gpu_ns": 9088
+        }
+      ],
+      "kernel_time_sum_ns": 213248,
+      "memory_events_in_runtime_span": 0,
+      "host_copy_and_allocation_api_calls": 0,
+      "note": "One explicit harness stream synchronize before profiler stop; no explicit synchronization in the operator. Diagnostic kernel times only, not throughput or wall latency. This range excludes peer setup and teardown."
+    },
+    "full_lifetime": {
+      "weight_bundle_lifetimes": [
+        {
+          "address": "0x717bee000000",
+          "bytes": 4438528,
+          "alloc_ns": 675934756,
+          "free_ns": 827390993
+        },
+        {
+          "address": "0x717bee600000",
+          "bytes": 4438528,
+          "alloc_ns": 676238941,
+          "free_ns": 827436142
+        },
+        {
+          "address": "0x717beec00000",
+          "bytes": 4438528,
+          "alloc_ns": 676434510,
+          "free_ns": 827481552
+        }
+      ],
+      "compressed_weight_payload_bytes": 13315584,
+      "last_kernel_end_ns": 822859194,
+      "device_heap_allocations": 33,
+      "device_heap_frees": 33,
+      "context_static_events": 37,
+      "request_stream_kernel_counts": [
+        [
+          14,
+          60
+        ],
+        [
+          15,
+          30
+        ]
+      ],
+      "note": "Weight sizes correlate with the three explicit constructor calls and unique bundle sizes in the probe. All weight frees follow the final kernels on both request streams. Static context events are separate from device heap cleanup."
+    },
+    "app_results": [
+      {
+        "expert": "l39-e383",
+        "tokens": 256,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 1310720,
+        "intermediate_f16_words_per_repeat": 1769472,
+        "mismatches": 0
+      },
+      {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      },
+      {
+        "immutable_weight_handles": 3,
+        "peer_golden_words": 1310720,
+        "isolated_primary_golden_words": 1310720,
+        "peer_zero_words": 1310720,
+        "idle_pool_payload_added": 0
+      }
+    ],
+    "artifact_sha256": {
+      "shared-weights.sqlite": "5ba1e689cf6c3c99c7111bf722f90b7290224413f4439b15e75157d598d5fe92",
+      "full-lifetime.sqlite": "65a808fc4da7b3449bbfc66a1fb3b98424fe21f552114d11343f82cf5c88067f"
+    }
+  },
+  "artifact_directory": "/tmp/bitnet-goal-exl3-shared-weights",
+  "scope": "Explicit immutable backend-owned trellis projection handles shared by request-local FFN execution. Model-owned resource cleanup through BnBackendModel. No ordinary BnModel weights or request activations acquire GPU handles.",
+  "output_f32_words_exact": 16793600,
+  "intermediate_f16_words_exact": 13602816,
+  "peer_zero_input_f32_values_checked": 3358720,
+  "reference": "Independent original kernel/cuBLAS DQ FFN captures in /tmp/bitnet-goal-exl3-ffn; actual checkpoint native-index reads and RAM cache source verified in the prior admission stage. No native expected output regenerated.",
+  "checks_description": [
+    "Model-owned three handles reused by multiple live requests, including separately reserved cuBLAS workspaces and scratch.",
+    "Two request streams produce independent captured outputs; zeroing peer input produces numerical zero while primary output remains unchanged.",
+    "Ambiguous per-projection handle+resident weights reject; shape/marker/format/backend-owner mismatch rejects.",
+    "Handles freed after all consumers; idle weight pool payload/entry counts unchanged.",
+    "Full standard and CUDA/diagnostic suites; actual host ASAN/UBSAN; synthetic and actual memcheck zero errors/leaks; synthetic racecheck zero hazards."
+  ],
+  "limitations": [
+    "No native full-model config/anatomy loading, expert cache reservation/eviction scheduler, routing, or complete DeepSeek generation.",
+    "Handle creation is synchronous setup; asynchronous uploads and cache miss overlap are not implemented here.",
+    "Caller retains immutable handles until all asynchronous consumers finish. Cache eviction needs leases/reservations before this can serve a bounded VRAM cache.",
+    "No global model VRAM budget, throughput/vLLM parity, cross-device bitwise portability, new CPU SIMD or Metal/NEON/WASM qualification claim.",
+    "GPU allocation exhaustion was not forced; OOM cleanup behavior follows the ordinary CUDA loader.",
+    "Numerical qualification remains the explicit DQ FFN profile; original packed low-token and large-batch adaptive/fused policies remain unqualified."
+  ],
+  "probe_sha256": {
+    "checkpoint-probe.c": "1ca2f605ca3c3f0faac50c1c327bc0c5478c133bb4770aaf742fb6ea068e1083",
+    "qualify.py": "575cda6328428c482b62b75993b38b84fb5a72cd65766458ae5cb2e18637a4fa"
+  }
+}

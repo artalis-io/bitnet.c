@@ -1,0 +1,228 @@
+{
+  "status": "Qualified native backend-owned expert store lifecycle; whole goal remains active",
+  "implementation": {
+    "layout_api": "bn_backend_layout_attach_native_execution / bn_backend_layout_native_execution",
+    "store_api": "bn_gpu_moe_trellis_prepare_model / bn_gpu_moe_trellis_model_store",
+    "ownership": "One opaque execution extension within the existing native core container; the primary backend single-container API is unchanged. The backend owns the expert store and its bounded RAM cache, staging slab and GPU caches. Shared requests borrow it and retain leases until every queued consumer finishes.",
+    "publication": "Explicit setup after native core preparation and before requests/publication. Rejection preserves existing resources and frees staged allocations. No GPU weights are uploaded by expert-store setup.",
+    "identity": "The model getter validates original model and reader identity. Transferring the backend container never implicitly rebinds a cache to a different model or source. Borrowed source lifetime remains attached to the original context after any move.",
+    "cleanup": "Execution store cleanup precedes router/parameter/core-weight cleanup and CPU model source destruction. The caller must finish all consumers/release leases before model/backend teardown. Borrowers must not close/free the owned store.",
+    "boundaries": "No session or cache dependencies added to the lower layout module: it owns an opaque context and release callback. GPU handles remain backend-owned; CPU model weights and immutable source catalogs are unchanged.",
+    "budgets": "Expert RAM/VRAM/staging payload quotas remain explicit and separate from prepared core/parameter, request and driver/library overhead. This is not whole-backend physical-memory admission."
+  },
+  "validation": {
+    "synthetic": "Recording backend over synthetic native checkpoint verifies atomic setup, missing/invalid/disabled backend rejection, duplicate/foreign extension rejection, unchanged core resources on failure, shared pinned hits, temporary prefill lifetime, cache cleanup before core and CPU sources, one-time release, resource moves and cross-model identity rejection.",
+    "negative_control": "model-identity-negative.log preserves the failing test before the identity guard: a different model could retrieve a moved store. The guarded getter rejects it and the regression now passes.",
+    "real": "Prepare all330 actual native core weights, attach one store, transfer its container out/back before publication, then retain the same store across22 frames/550 source profiles and two request states. Model free owns all cache cleanup; GPU idle-pool accounting is unchanged after model teardown.",
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "decode-window1": 0,
+      "prefill-window1": 0,
+      "decode-window32": 0,
+      "prefill-window32": 0,
+      "asan-decode": 0,
+      "asan-prefill": 0,
+      "memcheck-decode": 0,
+      "memcheck-prefill": 0
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "sanitizer_harness_compile_warnings": {
+      "asan-unit-build": [
+        "moe_reduce_16_avx2",
+        "moe_reduce_8_avx2",
+        "moe_reference_exp_avx2"
+      ]
+    },
+    "records": {
+      "decode-window1": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 13315584,
+        "max_staging_payload": 13315584,
+        "hits": 0,
+        "misses": 1100,
+        "evictions": 1099,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 26631168,
+          "host_hits": 1098,
+          "host_misses": 2,
+          "uploaded_payload_bytes": 14647142400,
+          "reader_ms": 5.86238,
+          "blocking_upload_ms": 735.17093
+        }
+      },
+      "prefill-window1": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 550,
+        "misses": 551,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 7336886784,
+          "host_hits": 0,
+          "host_misses": 551,
+          "uploaded_payload_bytes": 7336886784,
+          "reader_ms": 345.759811,
+          "blocking_upload_ms": 369.216219
+        }
+      },
+      "decode-window32": {
+        "profiles": 550,
+        "launches": 2200,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 1098,
+        "misses": 2,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 26631168,
+          "host_hits": 0,
+          "host_misses": 2,
+          "uploaded_payload_bytes": 26631168,
+          "reader_ms": 6.098601,
+          "blocking_upload_ms": 1.53728
+        }
+      },
+      "prefill-window32": {
+        "profiles": 550,
+        "launches": 2200,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 550,
+        "misses": 551,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 7336886784,
+          "host_hits": 0,
+          "host_misses": 551,
+          "uploaded_payload_bytes": 7336886784,
+          "reader_ms": 360.273096,
+          "blocking_upload_ms": 386.194432
+        }
+      },
+      "asan-decode": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 13315584,
+        "max_staging_payload": 13315584,
+        "hits": 0,
+        "misses": 1100,
+        "evictions": 1099,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 26631168,
+          "host_hits": 1098,
+          "host_misses": 2,
+          "uploaded_payload_bytes": 14647142400,
+          "reader_ms": 6.71963,
+          "blocking_upload_ms": 820.509889
+        }
+      },
+      "asan-prefill": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 550,
+        "misses": 551,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 7336886784,
+          "host_hits": 0,
+          "host_misses": 551,
+          "uploaded_payload_bytes": 7336886784,
+          "reader_ms": 446.010744,
+          "blocking_upload_ms": 417.516242
+        }
+      },
+      "memcheck-decode": {
+        "profiles": 25,
+        "launches": 200,
+        "compared_bytes": 3072000,
+        "max_payload": 13315584,
+        "max_staging_payload": 13315584,
+        "hits": 0,
+        "misses": 50,
+        "evictions": 49,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 26631168,
+          "host_hits": 48,
+          "host_misses": 2,
+          "uploaded_payload_bytes": 665779200,
+          "reader_ms": 5.923513,
+          "blocking_upload_ms": 44.361835
+        }
+      },
+      "memcheck-prefill": {
+        "profiles": 25,
+        "launches": 200,
+        "compared_bytes": 3072000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 25,
+        "misses": 26,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 346205184,
+          "host_hits": 0,
+          "host_misses": 26,
+          "uploaded_payload_bytes": 346205184,
+          "reader_ms": 22.189755,
+          "blocking_upload_ms": 25.244021
+        }
+      }
+    },
+    "source_files_verified": 731,
+    "source_manifest_sha256": "bf1d5e519424c38d579365b9cd6a16a1b6932ea6dc66a7ef30d51f0a7e543c48",
+    "probe_sha256": "c7ab750d59288f9819944749741b41497a1bf2d7f19ca91452b49d067893704d"
+  },
+  "references": {
+    "artifact_directory": "/tmp/bitnet-goal-native-owner",
+    "original_source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "manifest_sha256": {
+      "reference.json": "f932c817f7ffa6ec65a182147e7f960bfc689ef1f09fced9cb250bad1e705288",
+      "extra-reference.json": "6d9bd4f6d12413570be46ae27bafd8932f2a3248483c9e5e95e9740af5a33a6b",
+      "probe-reference.json": "8ae836946298a44db717eb517b1193967dfb5a603f245a4fcd0ca7854d2bdb14"
+    },
+    "policy": "Existing independent fused expert slot/fixed-order reduction references reused without modification; all manifest/file hashes verified. Actual weight triples are layer0 expert0 and layer39 expert383. Compact test expert IDs map to those storage keys; this is not a full384-expert layer execution."
+  },
+  "limits": [
+    "The store is model/backend owned, but complete fused/heavy/shared MoE scheduling and full native forward/generation/CLI remain unadmitted.",
+    "The probe explicitly synchronizes between expert windows. Native async IO/transfer overlap and separate transfer-stall attribution remain incomplete.",
+    "Window32 has only two active real experts. Arithmetic coverage here is two real expert triples, not all384 experts.",
+    "ASAN covers the full550-profile decode and prefill corpora plus the full CPU MoE unit suite; CUDA memcheck/leak checks cover selected25-width real frames for both policies.",
+    "RAM cache holds two expert payloads, staging holds one; core and activation memory is additional. GPU payload peaks are not physical process peaks.",
+    "Reader bytes may come from OS cache. Blocking upload time includes allocation and synchronous completion; it is diagnostic, not a throughput or vLLM comparison.",
+    "No new numerical or GPU execution kernels were introduced by this ownership change.",
+    "Matched vLLM performance and continuous/chunked serving acceptance remain open."
+  ]
+}

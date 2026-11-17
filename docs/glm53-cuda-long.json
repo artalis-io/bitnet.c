@@ -1,0 +1,264 @@
+{
+  "scope": "Whole 45-layer GLM sparse long/chunked/resumed prefill followed by greedy decode",
+  "whole_goal_complete": false,
+  "ordinary_generation_admitted": false,
+  "performance_parity_claimed": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-long",
+  "source_sha256": {
+    "src/transformer/bf16.c": "967613b7f79dd7e7d7818bec2c22709b5d3b8dbe7210f6feae21d63f7c029076",
+    "src/transformer/bf16_internal.h": "56e2f32e6cba2bfe38da474722c0198c9c763f3761f75681fd899205c46f992e",
+    "test/test_cuda_glm_request.c": "5e1400f4f2c42b65baeae88b14e8aa093009c725693164273e96822b5fa3509c",
+    "test/reference_glm_model.py": "efe662f4e4c99c67c7e6dacb37c919047d9e07d457daf7904d5f8cc2c37510e2",
+    "Makefile": "acac721d796ac6ebe151db53648ad313c2cdcc233b46fbe1cc7cd1d7f6c5aec6"
+  },
+  "validation": {
+    "long-synccheck": {
+      "exit": 0
+    },
+    "clean": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "cross-native": {
+      "exit": 0
+    },
+    "long-reference": {
+      "exit": 0
+    },
+    "sanitize": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "original-first-native": {
+      "exit": 0
+    },
+    "long-native": {
+      "exit": 0
+    },
+    "sanitize-build": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "original-repeat-native": {
+      "exit": 0
+    },
+    "cross-reference": {
+      "exit": 0
+    },
+    "legacy-fast": {
+      "exit": 0
+    },
+    "original-reference": {
+      "exit": 0
+    },
+    "long-memcheck": {
+      "exit": 0
+    }
+  },
+  "exact_comparisons": {
+    "cross": {
+      "schedule": [
+        1025,
+        1024,
+        1,
+        3
+      ],
+      "profile": "chronological",
+      "reference_prefix": "first",
+      "frames": 5,
+      "counts": {
+        "tuple_elements": 1894815000,
+        "state_elements": 271230720,
+        "index_elements": 63703794,
+        "logit_elements": 774400,
+        "files": 1559
+      },
+      "greedy": [
+        154842,
+        8004,
+        129318,
+        198,
+        197
+      ],
+      "original_repeat_identical": true
+    },
+    "long": {
+      "schedule": [
+        4097,
+        1,
+        3
+      ],
+      "profile": "chronological",
+      "reference_prefix": "first",
+      "frames": 4,
+      "counts": {
+        "tuple_elements": 3784095000,
+        "state_elements": 279071744,
+        "index_elements": 161852658,
+        "logit_elements": 619520,
+        "files": 1256
+      },
+      "greedy": [
+        8004,
+        36482,
+        50,
+        197
+      ],
+      "original_repeat_identical": true
+    },
+    "original-first": {
+      "schedule": [
+        4097,
+        1,
+        3
+      ],
+      "profile": "original",
+      "reference_prefix": "first",
+      "frames": 4,
+      "counts": {
+        "tuple_elements": 3784095000,
+        "state_elements": 279071744,
+        "index_elements": 161852658,
+        "logit_elements": 619520,
+        "files": 1256
+      },
+      "greedy": [
+        8004,
+        36482,
+        50,
+        197
+      ],
+      "original_repeat_identical": false
+    },
+    "original-repeat": {
+      "schedule": [
+        4097,
+        1,
+        3
+      ],
+      "profile": "original",
+      "reference_prefix": "repeat",
+      "frames": 4,
+      "counts": {
+        "tuple_elements": 3784095000,
+        "state_elements": 279071744,
+        "index_elements": 161852658,
+        "logit_elements": 619520,
+        "files": 1256
+      },
+      "greedy": [
+        8004,
+        36482,
+        50,
+        197
+      ],
+      "original_repeat_identical": false
+    }
+  },
+  "device_sanitizer_scope": {
+    "schedule": [
+      4097,
+      1,
+      3
+    ],
+    "decode_frames": 1,
+    "scope": "All native GLM indexer kernels and native MLA cache-append/physical-index kernels across complete real-model long prefill/resume/decode, including restart/BUSY pass. Filtered instrumentation; other kernels still execute but are NOT instrumented. Vendor sparse attention kernels and dense/expert GEMMs excluded.",
+    "kernel_filters": [
+      "kns=bn_cuda_glm_indexer",
+      "kns=bn_cuda_mla"
+    ]
+  },
+  "protected_user_binaries": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "selection_audits": {
+    "cross": {
+      "operator_audits": 88,
+      "raw_selection_order_different": 44,
+      "cutoff_tied_rows": 0,
+      "raw_membership_different_rows": 0,
+      "attention_bf16_words_different": 211754
+    },
+    "long": {
+      "operator_audits": 88,
+      "raw_selection_order_different": 88,
+      "cutoff_tied_rows": 0,
+      "raw_membership_different_rows": 0,
+      "attention_bf16_words_different": 112774258
+    }
+  },
+  "raw_original_repeat_audit": {
+    "scope": "Unchanged original full-graph first/repeat hash differences; no numeric tolerance applied",
+    "different_layer_files_by_field": {
+      "out": 168,
+      "residual": 168,
+      "post": 168,
+      "comb": 168,
+      "selection": 44,
+      "history": 124,
+      "state": 124,
+      "scores": 40,
+      "pools": 40,
+      "latent": 40,
+      "index": 40,
+      "tail": 40
+    },
+    "frames": [
+      {
+        "frame": 0,
+        "nt": 4097,
+        "position": 0,
+        "greedy_first": 8004,
+        "greedy_repeat": 8004,
+        "logits_identical": false
+      },
+      {
+        "frame": 1,
+        "nt": 1,
+        "position": 4097,
+        "greedy_first": 36482,
+        "greedy_repeat": 36482,
+        "logits_identical": false
+      },
+      {
+        "frame": 2,
+        "nt": 3,
+        "position": 4098,
+        "greedy_first": 50,
+        "greedy_repeat": 50,
+        "logits_identical": false
+      },
+      {
+        "frame": 3,
+        "nt": 1,
+        "position": 4101,
+        "greedy_first": 197,
+        "greedy_repeat": 197,
+        "logits_identical": false
+      }
+    ]
+  },
+  "profiles": {
+    "automatic": "Native chronological logical-pool order with lower-ID ties, compared to independent original operators using the same explicit deterministic policy. Original raw selector and raw-attention audits preserved separately.",
+    "original_order_math": "Unmodified original first/repeat whole-graph trajectories. Native test-only replay verifies its own F32 scores and stable membership then replaces ONLY expanded I32 selection metadata. All activation, cache, state, routing and logits computations remain native. Both differing original trajectories match exactly. This is not automatic default-order generation parity."
+  },
+  "limitations": [
+    "Ordinary BnModel/BnSession/generate admission remains guarded.",
+    "Uses qualified fused-recurrent KDA profile; default chunk-KDA and full HF/vLLM generation parity not established.",
+    "Whole model expert weights exceed device memory; no fully resident performance claim.",
+    "Synthetic token fixtures do not establish natural-prompt coherence.",
+    "Sanitizer scopes are recorded separately; do not infer full-kernel instrumentation from a filtered run."
+  ]
+}

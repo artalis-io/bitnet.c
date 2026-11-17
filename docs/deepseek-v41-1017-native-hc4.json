@@ -1,0 +1,183 @@
+{
+  "status": "PROGRESS; whole production inference/vLLM parity objective remains ACTIVE and incomplete",
+  "component": "Native DeepSeek V4.1 Flash 1017 HC4 carried-pre mixing and residual application",
+  "upstream": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "compiler_flags": "-O3 --use_fast_math -std=c++17 -arch=sm_120a",
+    "source_sha256": {
+      "hc_mix.cu": "b59b487e694e92ee2b328b14b74aece7a61efd1359f57cd33a2759ac9f7e79f9",
+      "hc_lanes.cuh": "aab01b9e2d08f4c9ff3883445c3baf0565a8189bc2736f3da2471de68c6f0b28",
+      "hc_fuse.cuh": "0dfba70ef260002147f2fb2c4eb1a554df14721c844cd22c56cf5c505e424d40",
+      "../modules/hyperconnections.py": "4d1d2af0f666e91c7059048d874923df8afe3beed0bbab4790455a71c4f484d7",
+      "../util/cuda_flags.py": "5bf4487867a1f29c74921b22359025545aaaf7b22364e0fb05f88c9c95f5c012"
+    }
+  },
+  "api": {
+    "plans": [
+      "BnGPUHC4CarryResidentPlan",
+      "BnGPUHC4ApplyResidentPlan"
+    ],
+    "callbacks": [
+      "hc4_carry_resident",
+      "hc4_apply_resident"
+    ],
+    "workspace_query": "bn_gpu_hc4_partials_count",
+    "geometry": "R1..65535,D128..65536,D%4==0, CUDA SM80+; actually qualified R1/7/32/33/64/256,D5120, plus synthetic D128",
+    "weights": "Existing shared immutable model/backend-owned RAW F32 fn[24,4D],base[1,24],scale[1,3]. No extra weight copies or cache.",
+    "state": "Caller request-owned exact F32 streams[R,4,D], partials[R,chunks,25], post/pre_in/pre_out[R,4], comb[R,4,4], collapsed[R,D]. Empty all-zero pre_in means first site. All supplied views pairwise disjoint; carry reset at first site of each forward.",
+    "arithmetic": "Original fixed partial/re-reduction order, vector4 FMA, approximate sigmoid/exp/rsqrt, warp Sinkhorn row/column normalization. Original fast-math flags confined to new CUDA translation unit. R<=32 F32 fn rounded RN to F16 and converted back on read; R>32 unrounded F32. Collapse stays F32. Apply accepts F16/F32 Y, multiplies post*Y then four sequential comb[g,h]*stream[g] FMAs.",
+    "validation": "Shapes/counts/types/alignment, backend/raw-handle ownership, request/generation, finite positive epsilons, iterations1..256, pairwise overlap validated before any launch. Rejection queues no work; device launch failure poisons request.",
+    "budgets": "No hidden scratch allocation: caller budgets all views; mix launches2 kernels, apply1. No allocation/copy/synchronization within execution."
+  },
+  "qualification": {
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "asan-native": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "racecheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "records": {
+      "native": {
+        "cases": 480,
+        "repeated_words": 4362677280,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "cases": 480,
+        "repeated_words": 4362677280,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "cases": 480,
+        "repeated_words": 4362677280,
+        "mismatches": 0
+      },
+      "nsys": {
+        "cases": 1,
+        "repeated_words": 35446272,
+        "mismatches": 0
+      }
+    },
+    "reference_sha256": "99fa7740241a4c930d502fc1a2491e664b6f569a937a246f3a1da65a25e1827b",
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "source_sha256": {
+      "include/gpu_backend.h": "2e72f32e6dfad984d085fe4dab5e1a19e240d13dd852e817a5dd863e074e70eb",
+      "src/gpu_cuda.cu": "f8d154a5910b52e954434f6457a81a93ccd3081a33244f7e2deabbb7ca2d8951",
+      "src/gpu_cuda_hc4.cu": "44bd4cca29fccfe45064e0c2e989f64e750af8625adfe9fc62fa4a39b75b7066",
+      "src/gpu_cuda_hc4.h": "55ade429d707f6becbb14a0df81cd6175b0b89ef6c77f37e531cc0babf64496b",
+      "src/gpu_cuda_hc4_lanes.cuh": "96f29c747e27db4d5f384b08dd236c396aecc4e38c6d78b2e841bcb63219f30b",
+      "src/gpu_cuda_hc4_validate.cuh": "e2590644666fa44a5968b78df44c160f94e615a904cd86a507968645a889e548",
+      "test/cuda_native_hc4_checks.h": "5cdb39622e85ccd051b7d3d26a32180ab73cfa479e8a37d8bbc57c53d08b6e39",
+      "test/cuda_native_hc4_reference.h": "b134d909052aa2ea78dc0709f575a026484174dd90fb73786697f6615dce7e81",
+      "test/test_cuda_backend.c": "73a56428f1e841697d4fc76833522380df0039b787bc8d1530e756e4c8c3277e",
+      "Makefile": "0c3603f5a9c1b0c8e237fd0a665f778fcb2054fe8aa6449989c6391604b8f70f",
+      "third_party/exllamav3/LICENSE": "27a32b6263fcd96c79d3beeecf221c4366780bdf15ad51986f48650bd7369bff"
+    }
+  },
+  "reference": {
+    "artifacts": {
+      "reference.cu": "bb84b422a1d9770aa6bb1c06bd519492a38ab97ba343cf9e9ba793035bfd7716",
+      "reference.so": "c4faa5ee9dc82cb33ba435d1b7ba2e96ae4368b12d50d76fee62fdf45f62eeec",
+      "original-hc.cuh": "6d278d9049c35e1bf80308306622fe225dda2ce6d89568a82c4f4e44dc437583",
+      "hc_lanes.cuh": "aab01b9e2d08f4c9ff3883445c3baf0565a8189bc2736f3da2471de68c6f0b28",
+      "hc_fuse.cuh": "0dfba70ef260002147f2fb2c4eb1a554df14721c844cd22c56cf5c505e424d40",
+      "reference-source.json": "907540852a5fee98dac00aed11efc346f11cc62b9f4eeaa45134e1acb1fde38e",
+      "capture.py": "19423b531ddf7f22a75c5c19b630b8dd56a12334c55a1114e47b3a59d1ec34af",
+      "reference.json": "99fa7740241a4c930d502fc1a2491e664b6f569a937a246f3a1da65a25e1827b",
+      "fixtures.py": "dddf819c22c7abfcf6f49ac80116fe63dbb3cdcb17a35c2306b8b2b1b0b15068",
+      "fixtures.json": "08770d2d660ec799d395f1ca97d2bb4406c72628334cb7a1a1b4ceac0758b55f",
+      "cuda_native_hc4_reference.h": "b134d909052aa2ea78dc0709f575a026484174dd90fb73786697f6615dce7e81"
+    },
+    "cases": 480,
+    "sites": 80,
+    "rows": [
+      1,
+      7,
+      32,
+      33,
+      64,
+      256
+    ],
+    "words_per_pass": 1454225760,
+    "checked": "All partials, own pre, post, combination matrices, carried/reset F32 collapsed outputs, both F16/F32 residual-apply outputs; every output bit exact, three repeats; input unchanged and guards intact.",
+    "stress": "Actual 80-site fn/base/scale source values; activations >FP16 range, tiny/subnormal values and signed zeros; alternating empty/nonempty carry; independent upstream compiled source reference frozen before port.",
+    "synthetic": "20 independent original-kernel fixtures, D128/5120,R1/7/32/33/64, reset/carried; deliberately non-FP16-representable fn weights. Two concurrent requests sharing immutable weights, guarded buffers, invalid-plan rejection, plus three fully queued mix/apply sites with ping-pong carried-pre and no inter-site host fence.",
+    "fixture_extension": {
+      "reason": "Synthetic fn was extended with a non-FP16-representable 2^-29 offset, and a three-site asynchronously queued carry/apply chain was added. All final hashes come from the unchanged original GPU kernels; candidate output was never used to generate expected values.",
+      "initial_expected": "initial-unperturbed-reference.h",
+      "initial_build": "build-initial",
+      "final_expected": "cuda_native_hc4_reference.h",
+      "actual_model_reference": "reference.json unchanged,480 cases,80 sites"
+    }
+  },
+  "profile": {
+    "scope": "Warmed HC4 carry mix (2 kernels) and F32 residual apply (1), actual layer0 attention raw F32 weights, R256 D5120,64 pairs. Model preparation and request allocation outside capture.",
+    "calls": 128,
+    "kernels": [
+      {
+        "name": "void <unnamed>::hc_apply_kernel<(int)4, float, (bool)1, (bool)0>(float *, const T2 *, const float *, const float *, const __half *, float *, int, int)",
+        "count": 64,
+        "total_ns": 593763
+      },
+      {
+        "name": "void <unnamed>::hc_mix_finalize_kernel<(int)4, (int)24, (bool)0, (bool)0>(const float *, const float *, const float *, const float *, float *, float *, void *, int, int, int, float, float, int, const float *, float *, int)",
+        "count": 64,
+        "total_ns": 323201
+      },
+      {
+        "name": "void <unnamed>::hc_mix_partials_kernel<(int)4, (int)24, (bool)0>(const float *, const float *, float *, int, int)",
+        "count": 64,
+        "total_ns": 3873361
+      }
+    ],
+    "apis": {
+      "cuKernelGetName": 192,
+      "cudaGetLastError_v3020": 192,
+      "cudaLaunchKernel_v7000": 192,
+      "cudaSetDevice_v3020": 128
+    },
+    "allocation_copy_free_sync_calls": [],
+    "memcpy_records": 0,
+    "sqlite_sha256": "f43e007ba64067fe343d2acff2184345f41de57aea92628b80c20aef4c01f64c",
+    "limitations": "One warmed operator shape; no full-layer/model throughput or vLLM parity claim. Context/module/library/driver memory is separate."
+  },
+  "limitations": [
+    "Batch row count controls both fn precision and reduction geometry. Qualification uses matched original R; arbitrary row-splitting is not numerically invariant.",
+    "HC4 operators are not yet wired into a complete native model forward/generation graph. Embedding+ExpandStreams, final HyperHead carry collapse, router/FFN composition, compressed/indexed attention/KV and Engram execution remain.",
+    "At R<=32 source uses cached FP16 fn; this implementation reads F32 fn then rounds. Same arithmetic, twice fn weight bytes compared with source FP16 layout. No decode-performance parity claim; optimize only after measurement.",
+    "Final HyperHead uses vendor torch.matmul carry collapse and needs separate independent qualification; do not replace it with the HCmix FMA loop.",
+    "One warmed R256,D5120 HC site/profile only. No full-layer/model throughput, cold offload, generation correctness or vLLM parity claim. CPU/Metal/new architecture coverage still requires the broader goal work."
+  ],
+  "frozen_source_sha256": {
+    "include/gpu_backend.h": "2e72f32e6dfad984d085fe4dab5e1a19e240d13dd852e817a5dd863e074e70eb",
+    "src/gpu_cuda.cu": "f8d154a5910b52e954434f6457a81a93ccd3081a33244f7e2deabbb7ca2d8951",
+    "src/gpu_cuda_hc4.cu": "44bd4cca29fccfe45064e0c2e989f64e750af8625adfe9fc62fa4a39b75b7066",
+    "src/gpu_cuda_hc4.h": "55ade429d707f6becbb14a0df81cd6175b0b89ef6c77f37e531cc0babf64496b",
+    "src/gpu_cuda_hc4_lanes.cuh": "96f29c747e27db4d5f384b08dd236c396aecc4e38c6d78b2e841bcb63219f30b",
+    "src/gpu_cuda_hc4_validate.cuh": "e2590644666fa44a5968b78df44c160f94e615a904cd86a507968645a889e548",
+    "test/cuda_native_hc4_checks.h": "5cdb39622e85ccd051b7d3d26a32180ab73cfa479e8a37d8bbc57c53d08b6e39",
+    "test/cuda_native_hc4_reference.h": "b134d909052aa2ea78dc0709f575a026484174dd90fb73786697f6615dce7e81",
+    "test/test_cuda_backend.c": "73a56428f1e841697d4fc76833522380df0039b787bc8d1530e756e4c8c3277e",
+    "Makefile": "0c3603f5a9c1b0c8e237fd0a665f778fcb2054fe8aa6449989c6391604b8f70f",
+    "third_party/exllamav3/LICENSE": "27a32b6263fcd96c79d3beeecf221c4366780bdf15ad51986f48650bd7369bff",
+    "third_party/exllamav3/README.md": "f1c27a88834cdb5a9b72a0d4e2288f9f14600386dfae6adf3cf4a65207ce1028"
+  }
+}

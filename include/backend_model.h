@@ -2,6 +2,7 @@
 #define BN_BACKEND_MODEL_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifndef BN_GPU_BACKEND_DECLARED
 #define BN_GPU_BACKEND_DECLARED
@@ -11,6 +12,39 @@ typedef struct BnGPUBackend BnGPUBackend;
 typedef struct BnBackendModel BnBackendModel;
 typedef struct BnQWeight BnQWeight;
 typedef struct BnPreparedWeight BnPreparedWeight;
+typedef struct BnTrellisRowSource BnTrellisRowSource;
+typedef struct BnTrellisRowLayout BnTrellisRowLayout;
+
+/* Backend-owned mutable raw-row cache, separate from immutable CPU weights.
+ * Source/index must remain unchanged and outlive the cache. Caller serializes
+ * access to each handle, including statistics/free. No borrowed row leases:
+ * gather copies into caller-owned packed and scale planes. */
+typedef struct BnBackendRowCache { void *state; } BnBackendRowCache;
+typedef struct {
+    size_t budget_bytes, allocated_bytes, capacity, resident_rows, max_gather_rows;
+    uint64_t hits, misses, staging_hits, evictions, io_failures, source_bytes_requested;
+    double source_read_ms;
+} BnBackendRowCacheStats;
+/* Budget includes state, hash/LRU metadata, cached rows, maximum gather staging
+ * and one miss scratch row; excludes borrowed source/index, caller output,
+ * allocator overhead and OS page cache. Repeated IDs within a gather share
+ * staged data even when the persistent LRU cannot hold them all. One
+ * allocation at init, none in gather.
+ * Init rejection leaves a zeroed handle unchanged. Never copy a live handle. */
+int bn_backend_model_row_cache_init(BnBackendRowCache *cache,
+    const BnTrellisRowSource *source, size_t budget_bytes, size_t max_gather_rows);
+void bn_backend_model_row_cache_free(BnBackendRowCache *cache);
+int bn_backend_model_row_cache_stats(const BnBackendRowCache *cache,
+    BnBackendRowCacheStats *out);
+const BnTrellisRowLayout *bn_backend_model_row_cache_layout(const BnBackendRowCache *cache);
+/* Exact output byte counts, disjoint ID/output/cache buffers. Zero count is
+ * permitted. Preflights all IDs before cache/I/O changes. On I/O failure output
+ * is unchanged; earlier successful fills may remain cached. A failed miss
+ * never evicts a valid row. Stats count logical row requests, not disk sectors.
+ * Source bytes count requested raw bundles, including failed attempts. */
+int bn_backend_model_row_cache_gather(BnBackendRowCache *cache,
+    const uint64_t *ids, size_t count, void *weights, size_t weight_bytes,
+    void *scales, size_t scale_bytes);
 
 typedef enum {
     BN_BACKEND_HANDLE_OUTPUT_NORM = 1,
@@ -60,6 +94,7 @@ typedef enum {
     BN_BACKEND_HANDLE_PLE_NORM_QUERY = 45,
     BN_BACKEND_HANDLE_PLE_NORM_CONV = 46,
     BN_BACKEND_HANDLE_PLE_CONV1D = 47,
+    BN_BACKEND_HANDLE_PREFILL_QK_PAIR = 48,
 } BnBackendHandleRole;
 
 typedef struct {
@@ -82,12 +117,35 @@ typedef struct {
 } BnBackendModelMoEPrefillResidentResources;
 
 BnBackendModel *bn_backend_model_create(void);
+/* One owned CPU resource container, independent of GPU layouts/prepared-cache
+ * leases. Release sessions before replacing/freeing model resources. Cleanup
+ * carries its own context; no replacement of a live container. */
+int bn_backend_model_attach_cpu_resources(BnBackendModel *backend,const void *owner,
+    void *resources,void (*release)(void *));
+void *bn_backend_model_cpu_resources(const BnBackendModel *backend,const void *owner);
 void bn_backend_model_free(BnBackendModel *backend);
 BnGPUBackend *bn_backend_model_gpu(const BnBackendModel *backend);
 BnGPUBackend *bn_backend_model_gpu_for_cpu_operations(
     const BnBackendModel *backend);
 void bn_backend_model_bind_gpu(BnBackendModel *backend, BnGPUBackend *gpu);
 void bn_backend_model_release_gpu(BnBackendModel *backend);
+/* One owned backend layout container, including precision-specific weights.
+ * owner is a non-NULL identity token. Attach transfers ownership on success
+ * only and never replaces a live container. Cleanup runs before registered
+ * GPU handles are destroyed; borrowed handles must not be freed by cleanup.
+ * The callback must carry its cleanup context and finish outstanding work.
+ * Callers serialize access and release sessions before model resources.
+ */
+int bn_backend_model_attach_gpu_resources(BnBackendModel *backend,
+    const void *owner, void *resources, void (*release)(void *));
+void *bn_backend_model_gpu_resources(const BnBackendModel *backend,
+    const void *owner);
+/* Publish a staged layout and GPU binding atomically. Both owners must have
+ * no registered handles/qweights; destination must have no GPU state and
+ * source must own a layout. CPU prepared caches stay with their owners.
+ * Failure changes neither owner; success empties source GPU state. */
+int bn_backend_model_move_gpu_resources(BnBackendModel *destination,
+    BnBackendModel *source);
 void bn_backend_model_set_cpu_prepared_cache_budget(BnBackendModel *backend,
                                                      size_t budget_bytes);
 const BnPreparedWeight *bn_backend_model_acquire_cpu_prepared(

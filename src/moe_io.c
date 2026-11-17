@@ -8,14 +8,13 @@ struct BnMoEPrefetch {
     pthread_mutex_t mtx;
     pthread_cond_t req_cv;      // I/O thread waits for work
     pthread_cond_t done_cv;     // main thread waits for completion
-    int fd;
     int active;                 // request in progress
     int shutdown;
     int success;                // result of last I/O
     double io_time_ms;          // accumulated pread time
     size_t io_bytes;            // accumulated bytes read
     // Request: up to 3 preads per submission (gate, up, down)
-    struct { uint8_t *buf; size_t size; off_t offset; } reqs[3];
+    struct { int fd; uint8_t *buf; size_t size; off_t offset; } reqs[3];
     int n_reqs;
 };
 
@@ -29,8 +28,9 @@ static void *moe_prefetch_worker(void *arg) {
 
         // Copy request params under lock
         int n = pf->n_reqs;
-        uint8_t *bufs[3]; size_t sizes[3]; off_t offsets[3];
+        int fds[3]; uint8_t *bufs[3]; size_t sizes[3]; off_t offsets[3];
         for (int i = 0; i < n; i++) {
+            fds[i] = pf->reqs[i].fd;
             bufs[i] = pf->reqs[i].buf;
             sizes[i] = pf->reqs[i].size;
             offsets[i] = pf->reqs[i].offset;
@@ -42,7 +42,7 @@ static void *moe_prefetch_worker(void *arg) {
         int ok = 1;
         size_t bytes = 0;
         for (int i = 0; i < n; i++) {
-            ssize_t r = pread(pf->fd, bufs[i], sizes[i], offsets[i]);
+            ssize_t r = pread(fds[i], bufs[i], sizes[i], offsets[i]);
             if (r != (ssize_t)sizes[i]) { ok = 0; break; }
             bytes += sizes[i];
         }
@@ -59,10 +59,9 @@ static void *moe_prefetch_worker(void *arg) {
     return NULL;
 }
 
-BnMoEPrefetch *bn_moe_prefetch_init_internal(int fd) {
+BnMoEPrefetch *bn_moe_prefetch_init_internal(void) {
     BnMoEPrefetch *pf = (BnMoEPrefetch *)calloc(1, sizeof(BnMoEPrefetch));
     if (!pf) return NULL;
-    pf->fd = fd;
     pthread_mutex_init(&pf->mtx, NULL);
     pthread_cond_init(&pf->req_cv, NULL);
     pthread_cond_init(&pf->done_cv, NULL);
@@ -91,10 +90,12 @@ void bn_moe_prefetch_free_internal(BnMoEPrefetch *pf) {
 
 // Post a 2-read prefetch request (gate+up). Non-blocking.
 void bn_moe_prefetch_start2_internal(BnMoEPrefetch *pf,
-                                uint8_t *buf1, size_t size1, off_t off1,
-                                uint8_t *buf2, size_t size2, off_t off2) {
+                                int fd1, uint8_t *buf1, size_t size1, off_t off1,
+                                int fd2, uint8_t *buf2, size_t size2, off_t off2) {
     pthread_mutex_lock(&pf->mtx);
+    pf->reqs[0].fd = fd1;
     pf->reqs[0].buf = buf1; pf->reqs[0].size = size1; pf->reqs[0].offset = off1;
+    pf->reqs[1].fd = fd2;
     pf->reqs[1].buf = buf2; pf->reqs[1].size = size2; pf->reqs[1].offset = off2;
     pf->n_reqs = 2;
     pf->active = 1;
@@ -104,8 +105,9 @@ void bn_moe_prefetch_start2_internal(BnMoEPrefetch *pf,
 
 // Post a 1-read prefetch request (down). Non-blocking.
 void bn_moe_prefetch_start1_internal(BnMoEPrefetch *pf,
-                                uint8_t *buf1, size_t size1, off_t off1) {
+                                int fd1, uint8_t *buf1, size_t size1, off_t off1) {
     pthread_mutex_lock(&pf->mtx);
+    pf->reqs[0].fd = fd1;
     pf->reqs[0].buf = buf1; pf->reqs[0].size = size1; pf->reqs[0].offset = off1;
     pf->n_reqs = 1;
     pf->active = 1;
@@ -231,12 +233,7 @@ const void *bn_moe_load_expert_proj_into(const BnMoEIO *io, BnMoEStats *stats,
         return base + offset;
 
 #if !defined(__EMSCRIPTEN__)
-    int fd = io->fd;
-    if (io->shard_fds && io->n_shard_fds > 0) {
-        uint32_t shard_idx = moe_proj_shard_idx(map, proj);
-        if ((size_t)shard_idx >= io->n_shard_fds) return NULL;
-        fd = io->shard_fds[shard_idx];
-    }
+    int fd = bn_moe_projection_fd(io, map, proj);
     if (fd < 0 || proj_bytes > buf_size) return NULL;
     double t0 = bn_platform_time_ms();
     ssize_t n = pread(fd, buf, proj_bytes, (off_t)offset);
@@ -268,7 +265,7 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
 }
 
 // Public accessor for GPU path — wraps static bn_moe_load_expert_proj.
-const void *bn_moe_get_expert_proj(BnMoEIO *io, BnMoEState *ms,
+const void *bn_moe_get_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     const BnMoEExpertMap *em,
                                     int expert_idx, int proj) {
     uint8_t *buf = ms->buf;
@@ -284,12 +281,118 @@ const void *bn_moe_get_expert_proj(BnMoEIO *io, BnMoEState *ms,
                                         buf, buf_size);
 }
 
+int bn_moe_host_expert_acquire(const BnMoEIO *io, BnMoEState *ms,
+    const BnMoEExpertMap *map, int layer, int expert, int admit,
+    BnMoEHostExpert *out) {
+    if (!out) return -1;
+    memset(out, 0, sizeof(*out));
+    out->slot = -1;
+    if (!io || !ms || !map || layer < 0 || expert < 0) return -1;
+#if !defined(__EMSCRIPTEN__)
+    size_t bytes[3] = {map->expert_gate_bytes, map->expert_up_bytes,
+                       map->expert_down_bytes};
+    if (bytes[0] > SIZE_MAX - bytes[1] ||
+        bytes[0] + bytes[1] > SIZE_MAX - bytes[2]) return -1;
+    size_t total = bytes[0] + bytes[1] + bytes[2];
+    BnMoECache *cache = bn_moe_io_has_pread(io) ? io->cache : NULL;
+    if (bn_moe_cache_is_reader_internal(cache)) return -1;
+    int fits = bn_moe_cache_fits_internal(cache, bytes);
+    const uint8_t *entry = fits
+        ? bn_moe_cache_pin_internal(cache, layer, expert, admit, &out->slot)
+        : NULL;
+    uint8_t *reserved = NULL;
+    if (entry) {
+        ms->stats.gpu_host_cache_hits++;
+        ms->stats.gpu_host_cache_hit_bytes += total;
+    } else {
+        if (cache) {
+            ms->stats.gpu_host_cache_misses++;
+            ms->stats.gpu_host_cache_miss_bytes += total;
+        }
+        if (fits && admit)
+            reserved = bn_moe_cache_reserve_internal(cache, layer, expert,
+                                                    bytes, &out->slot);
+        if (reserved) out->cache = cache;
+#endif
+        for (int p = 0; p < 3; p++) {
+#if !defined(__EMSCRIPTEN__)
+            if (reserved) {
+                size_t offset = p == 0 ? 0 : bn_moe_cache_gate_bytes(cache);
+                if (p == 2) offset += bn_moe_cache_up_bytes(cache);
+                out->projection[p] = bn_moe_load_expert_proj_into(io, &ms->stats,
+                    map, expert, p, reserved + offset, bytes[p]);
+            } else
+#endif
+                out->projection[p] = bn_moe_get_expert_proj(io, ms, map, expert, p);
+            if (!out->projection[p]) {
+                bn_moe_host_expert_release(out);
+                return -1;
+            }
+        }
+#if !defined(__EMSCRIPTEN__)
+        /* The reservation is pinned but invisible during I/O. Publishing
+         * after all reads avoids both partial hits and a staging copy. */
+        if (reserved) {
+            if (bn_moe_cache_commit_internal(cache, out->slot) != 0) {
+                bn_moe_host_expert_release(out);
+                return -1;
+            }
+            entry = reserved;
+        }
+    }
+    if (entry) {
+        out->projection[0] = entry;
+        out->projection[1] = entry + bn_moe_cache_gate_bytes(cache);
+        out->projection[2] = entry + bn_moe_cache_gate_bytes(cache) +
+                                  bn_moe_cache_up_bytes(cache);
+        out->cache = cache;
+    }
+#else
+    (void)admit;
+#endif
+    return 0;
+}
+
+void bn_moe_host_expert_release(BnMoEHostExpert *expert) {
+    if (!expert) return;
+    bn_moe_cache_unpin_internal(expert->cache, expert->slot);
+    memset(expert, 0, sizeof(*expert));
+    expert->slot = -1;
+}
+
+int bn_moe_io_has_pread(const BnMoEIO *io) {
+#if !defined(__EMSCRIPTEN__)
+    if (!io || bn_moe_io_has_mmap(io)) return 0;
+    if (io->shard_fds && io->n_shard_fds > 0) {
+        for (size_t i = 0; i < io->n_shard_fds; i++)
+            if (io->shard_fds[i] < 0) return 0;
+        return 1;
+    }
+    return io->fd >= 0;
+#else
+    (void)io;
+    return 0;
+#endif
+}
+
+#if !defined(__EMSCRIPTEN__)
+int bn_moe_projection_fd(const BnMoEIO *io,
+                         const BnMoEExpertMap *map, int proj) {
+    if (!io || !map || proj < 0 || proj > 2) return -1;
+    if (io->shard_fds && io->n_shard_fds > 0) {
+        uint32_t shard = moe_proj_shard_idx(map, proj);
+        return (size_t)shard < io->n_shard_fds ? io->shard_fds[shard] : -1;
+    }
+    return io->fd;
+}
+#endif
+
 void bn_moe_prefetch_create(BnMoEIO *io) {
     if (!io || io->prefetch) return;
 #if !defined(__EMSCRIPTEN__)
-    if (io->fd >= 0 && !io->mmap_base) {
-        io->prefetch = bn_moe_prefetch_init_internal(io->fd);
-        io->prefetch_down = bn_moe_prefetch_init_internal(io->fd);
+    if (bn_moe_io_has_pread(io)) {
+        io->prefetch = bn_moe_prefetch_init_internal();
+        io->prefetch_down = bn_moe_prefetch_init_internal();
         if (io->prefetch && io->prefetch_down) {
             SH_LOG_INFO("MoE I/O prefetch threads", "status", "2 created (gate+up, down)");
         } else {

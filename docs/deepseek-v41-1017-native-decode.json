@@ -1,0 +1,213 @@
+{
+  "status": "Native CUDA small-batch routed EXL3 FFN component qualified; session executor integration and full-model admission remain open; whole goal active",
+  "api": {
+    "method": "BnGPUBackend.trellis_decode_resident",
+    "plan": "BnGPUDecodeEXL3ResidentPlan",
+    "workspace": "bn_gpu_decode_exl3_workspace",
+    "capability": "BnQuantTrellisOps.decode = BN_QUANT_TRELLIS_DECODE_EXL3_MUL1_3_F32",
+    "scope": "Explicit routed FFN component; no implicit shared-expert computation, residual addition or ordinary generation admission",
+    "views": "Thirteen exact disjoint request-owned views; metadata binding on GPU; caller zeroes counters once during setup and retains immutable expert leases through completion",
+    "bindings": "At most 48 borrowed expert triples, each from this backend and matching quant marker/dimensions/payload. Caller must bind all selected nonzero-weight experts for the complete routed output. Unlisted/out-of-range IDs are masked; this is not a cross-window accumulation API.",
+    "resources": "No explicit allocation, host copy or synchronization in the operation. Scratch and input/output buffers are budgeted by the caller. Larger widths use the device shared-memory ceiling so one request cannot lower another request width's kernel limit."
+  },
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "license": "third_party/exllamav3/LICENSE",
+    "unchanged_arithmetic_headers": [
+      "src/cuda_exl3_fused/quant/exl3_moe_coop_kernel.cuh",
+      "src/cuda_exl3_fused/quant/exl3_gemv_kernel.cuh"
+    ],
+    "adaptation": "Only attribution banners on those two headers. Private parameter header removes ATen dependency and unused host declarations. Native backend adds validation, borrowed-weight binding and default host launch policy; reuses existing sanitized codec/utility headers.",
+    "math": "F16 raw gate/up GEMV; F32 output transform, SiLU/clipping and down-input rotation; F16 down input; raw F32 down GEMV; F32 post-transform and original sixteen-warp weighted reduction. No prefill activation or fixed-top-k reduction substitution.",
+    "launch": "GPU metadata binding, optional rotation/run-table kernel for R>1, then ordinary A/B launches. Source slots_max remains 8*topk; default split policy and row grouping are preserved."
+  },
+  "workspace_actual_profile": {
+    "had_count": 245760,
+    "intermediate_count": 110592,
+    "down_count": 245760,
+    "counter_count": 1283,
+    "table_bytes": 27648,
+    "indices64_bytes_max": 384,
+    "scratch_bytes_max": 2662796
+  },
+  "correctness": {
+    "actual_checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "layer": 39,
+    "dim": 5120,
+    "hidden": 2304,
+    "experts": 384,
+    "topk": 6,
+    "rows": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "unique_real_cases": 64,
+    "patterns": [
+      "prefix",
+      "repeated row",
+      "large finite row",
+      "zero"
+    ],
+    "limits": [
+      10,
+      0
+    ],
+    "independent_expert_union": 34,
+    "comparison": "Every written routed intermediate/output and preserved input is byte-exact against independently captured source results. One request reused across forward and reverse case order, with two calls per case and no host counter clearing.",
+    "synthetic": "Sixteen original-source fixtures at D=H=128,E=8,K=6, rows1..8, clips0/10; two requests, two calls each =>64 executions, including malformed plan/ownership/aliasing checks and allocation guards.",
+    "preserved_original_and_paired": "Original cuBLAS and paired system-library reference sets remain intact. Custom routed outputs are identical across them. Shared/final BLAS-dependent results remain separately preserved; this component does not recompute shared outputs.",
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "real": 0,
+        "asan-real": 0,
+        "memcheck": 0,
+        "initcheck": 0,
+        "nsys": 0,
+        "nsys-export": 0
+      },
+      "records": {
+        "real": {
+          "executions": 256,
+          "compared_bytes": 410124288,
+          "hot_allocations": 0
+        },
+        "asan-real": {
+          "executions": 256,
+          "compared_bytes": 410124288,
+          "hot_allocations": 0
+        },
+        "memcheck": {
+          "executions": 256,
+          "compared_bytes": 410124288,
+          "hot_allocations": 0
+        },
+        "initcheck": {
+          "executions": 256,
+          "compared_bytes": 410124288,
+          "hot_allocations": 0
+        },
+        "nsys": {
+          "executions": 256,
+          "compared_bytes": 410124288,
+          "hot_allocations": 0
+        }
+      },
+      "frozen_files": 746,
+      "reference_sha256": "634906904f4b87d907ec1a1ffba333248264f58c35e6842cd249b0b4f6b3ed3b",
+      "probe_sha256": "6f538e5a4b531fe691459e81d8ac959b8dc188e771ef4ba1ec616e1c4d260d0e",
+      "racecheck": {
+        "unit_executions": 64,
+        "real_executions": 4,
+        "real_cases": [
+          {
+            "rows": 1,
+            "limit": 10,
+            "pattern": "prefix"
+          },
+          {
+            "rows": 8,
+            "limit": 10,
+            "pattern": "prefix"
+          }
+        ],
+        "errors": 0,
+        "warnings": 0,
+        "real_compared_bytes": 6223872,
+        "race_probe_sha256": "b3a4062c8dfaba92cfa493b728cb4fd848510adc32974fcd86c276e0c08dce3a"
+      }
+    }
+  },
+  "validation": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "trace": {
+    "scope": "One warmed R8 layer39 learned-router selected expert FFN, clip10; weights/input/request setup, router, shared FFN and comparisons outside capture",
+    "kernel_count": 4,
+    "kernel_duration_sum_ns": 476770,
+    "kernel_span_ns": 503842,
+    "kernel_groups": [
+      {
+        "name": "bn_cuda_decode_detail::bind(BnCudaDecodeEXL3Pointers, long *, long *, const int *, int, int)",
+        "count": 1,
+        "duration_sum_ns": 3648
+      },
+      {
+        "name": "bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_rot_kernel(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 3424
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_a_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 311585
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_b_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 158113
+      }
+    ],
+    "runtime_api_counts": {
+      "cuKernelGetName": 2,
+      "cudaGetDeviceProperties_v12000": 2,
+      "cudaLaunchKernel_v7000": 4,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "host_device_copies": 0,
+    "allocations_frees": 0,
+    "caller_completion_fences": 1,
+    "limitation": "Component trace only, no full-model latency or vLLM parity measurement"
+  },
+  "changed_previous_snapshot_files": [
+    "Makefile",
+    "include/gpu_backend.h",
+    "include/quant.h",
+    "src/gpu_cuda.cu",
+    "src/quant/registry.c",
+    "test/test_cuda_backend.c",
+    "test/test_quant.c"
+  ],
+  "new_source_and_test_files": [
+    "src/gpu_cuda_exl3_decode.cu",
+    "src/gpu_cuda_exl3_decode.h",
+    "src/gpu_cuda_exl3_decode_validate.cuh",
+    "src/cuda_exl3_fused/quant/exl3_moe_coop_kernel.cuh",
+    "src/cuda_exl3_fused/quant/exl3_moe_coop.cuh",
+    "src/cuda_exl3_fused/quant/exl3_gemv_kernel.cuh",
+    "test/cuda_decode_exl3_checks.h",
+    "test/cuda_decode_exl3_reference.h"
+  ],
+  "artifacts": {
+    "root": "/tmp/bitnet-goal-native-decode-port",
+    "qualification": "/tmp/bitnet-goal-native-decode-port/qualification.json",
+    "profile": "/tmp/bitnet-goal-native-decode-port/profile-analysis.json",
+    "independent_reference": "/tmp/bitnet-goal-native-decode/paired-reference/reference.json",
+    "original_reference": "/tmp/bitnet-goal-native-decode/original-reference/reference.json",
+    "synthetic_generator": "/tmp/bitnet-goal-native-decode-port/capture_synthetic.py",
+    "synthetic_manifest": "/tmp/bitnet-goal-native-decode-port/synthetic-reference.json"
+  },
+  "limitations": [
+    "The production transformer Trellis session executor still rejects <=8 tokens; wiring this operation into its request resources and offload lease lifecycle is next.",
+    "Layer39-only FFN qualification does not establish full-model execution. V4.1 defaults to zero hash-routing layers; all40 use learned routing.",
+    "Native full attention, Engram, complete model forward, generation and CLI admission remain open.",
+    "Device qualification is on the selected 188-SM sm_120a GPU only; generic API shape bounds are not a claim of all-shape/all-GPU reference qualification.",
+    "Warm trace excludes routing, shared FFN, expert loading and full-model execution; it establishes no vLLM performance parity."
+  ]
+}

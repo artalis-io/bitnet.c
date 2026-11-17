@@ -15,6 +15,8 @@ void bn_quant_q8_avx2_4row_range(void *ctx, int start, int end);
 void bn_quant_q8_avx2_matmul_range(void *ctx, int start, int end);
 void bn_quant_iq3xxs_avx2_q8k_range(void *ctx, int start, int end);
 void bn_quant_iq4xs_avx2_q8k_range(void *ctx, int start, int end);
+/* BnKQuantMatmulCtx; physical rows and reference block scaling. */
+void bn_quant_iq_panel_avx2_tiled_matmul_range(void *ctx, int start, int end);
 void bn_quant_iq_panel_avx2_matmul_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_4row_range(void *ctx, int start, int end);
@@ -23,6 +25,8 @@ void bn_quant_q6k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q6k_avx2_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_avx2_4row_range(void *ctx, int start, int end);
 void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int start, int end);
+/* BnKQuantMatmulCtx; integer superblock reduction and fused block scaling. */
+void bn_quant_q6k_avx2_tiled_matmul_range(void *ctx, int start, int end);
 void bn_quant_q6k_avx2_sdot_matmul_4row_range(void *ctx, int start, int end);
 void bn_quant_q6k_x8_gemm_range(void *ctx, int start, int end);
 void bn_quant_q8k_avx2_range(void *ctx, int start, int end);
@@ -42,6 +46,12 @@ void bn_quant_q5k_avx2_4row_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_sdot_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_matmul_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_sdot_matmul_range(void *ctx, int start, int end);
+/* BnKQuantMatmulCtx; reference block accumulation for AVX2 and AVX512. */
+void bn_quant_q5k_avx2_tiled_matmul_range(void *ctx, int start, int end);
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+/* BnKQuantMatmulCtx; tiled block arithmetic, distinct from GEMV order. */
+void bn_quant_q5k_avx512_tiled_matmul_range(void *ctx, int start, int end);
+#endif
 void bn_quant_q5k_avx2_x8_matvec_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_x8_matmul_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_x8_gemm_range(void *ctx, int start, int end);
@@ -71,6 +81,8 @@ void bn_quant_iq2s_avx2_range(void *ctx, int start, int end);
 void bn_quant_q2k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q3k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q3k_avx2_q8k_range(void *ctx, int start, int end);
+/* BnKQuantMatmulCtx; four-token reference-prefill reduction order. */
+void bn_quant_q3k_avx2_tiled_matmul_range(void *ctx, int start, int end);
 void bn_quant_q3k_avx2_matmul_range(void *ctx, int start, int end);
 
 #endif // BN_QUANT_KERNELS_AVX2_H

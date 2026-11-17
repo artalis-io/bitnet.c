@@ -1,0 +1,83 @@
+{
+  "scope": "Native multi-shard Safetensors index binding for the exact DeepSeek V4.1 Flash1017 EXL3 checkpoint. No numerical quant execution or native DeepSeek model admission yet.",
+  "whole_goal_complete": false,
+  "api": "BnSafetensorsIndex caller-owned opaque handle: transactional init/free, immutable global UTF-8 name lookup, tensor metadata/shard basename, checked byte reads. Reuses existing single-file storage reader; no global mutable state.",
+  "validation": {
+    "baseline_standard_exit": 0,
+    "protected_clean_build_zero_warnings": true,
+    "standard_suite_exit": 0,
+    "clang18_asan_ubsan_synthetic_and_actual_index": true,
+    "failure_rollback": "200 repeated partial-open failures leave descriptor count unchanged; missing/wrong/duplicate/unindexed tensors, malformed manifests, byte totals and invalid basename paths reject. Existing initialized handles are preserved.",
+    "real_checkpoint": {
+      "exit": 0,
+      "shards": 48,
+      "tensors": 190549,
+      "indexed_payload_bytes": 331766748264,
+      "all_global_names_shapes_dtypes_local_offsets_and_shard_bindings_equal": true,
+      "sample_reads": 526,
+      "sample_bytes": 15468,
+      "maximum_absolute_sample_offset": 55455924744,
+      "scope": "Metadata and raw-byte ingestion only; no numerical EXL3 decoding or DeepSeek execution qualification."
+    },
+    "native_index_probe": {
+      "shards": 48,
+      "tensors": 190549,
+      "bytes": 331766748264,
+      "rss_bytes": 111976448
+    },
+    "randomized_sharded_files": {
+      "exit": 0,
+      "checkpoints": 500,
+      "tensors": 6670,
+      "upstream_safetensors": "0.8.0",
+      "scope": "Random multi-shard indexes, physical/name ordering, Unicode filenames/names and packed/empty tensors; all bindings and full raw bytes match independent Python mapping and upstream Rust tensor decoding."
+    },
+    "single_file_upstream_recheck": {
+      "exit": 0,
+      "cases": 5000,
+      "upstream_safetensors_version": "0.8.0",
+      "scope": "Randomized dtype/shape/name/JSON-order/padding/packed/empty tensor files; all metadata and complete raw tensor bytes agree with upstream Rust deserialize. Explicit C API limits NULstrings/rank32/unknownfields are excluded."
+    },
+    "old_independent_reference_files_unchanged": 130,
+    "protected_probes": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "component_binding": {
+    "exit": 0,
+    "projection_bundles": 47232,
+    "marker_counts": {
+      "mul1": 46080,
+      "mcg": 1152
+    },
+    "trellis_bits_per_weight": [
+      3.0
+    ],
+    "all_marker_values_equal_pinned_upstream_constants": true,
+    "all_component_types_and_16x16_tile_shapes_consistent": true,
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "scope": "EXL3 component/marker binding through native index. No quant numerical execution or model admission."
+  },
+  "format_constraints": [
+    "Index JSON has metadata.total_size and weight_map; unknown root/metadata fields reject explicitly.",
+    "All tensors in referenced shards must match the map exactly; unrelated files in the directory are ignored.",
+    "Shard entries are .safetensors basenames; slash/backslash path components reject. Ordinary filesystem symlink semantics apply.",
+    "At most4096shards and1048576tensors; existing100MBheader/rank32/NUL-string limits remain.",
+    "Header and payload byte integrity are checked structurally; tensor bodies were sampled, not fully hashed or numerically decoded."
+  ],
+  "primary_references": [
+    "https://huggingface.co/docs/transformers/main/models",
+    "https://github.com/safetensors/safetensors",
+    "https://github.com/turboderp-org/exllamav3/tree/bd1f519172406a9560bd5c90e61000691bb69a07"
+  ],
+  "artifacts": "/tmp/bitnet-goal-safetensors-index",
+  "source_hashes": {
+    "include/safetensors.h": "eb63b9b1e0c3c6c044f193e0eba8077dcd736122d7cc71f3ff3d24491c8300e9",
+    "src/safetensors.c": "fe86495fd8524f4aab6786112ed81c210ea6f96d627d9bb16be1f3d7c8148d9f",
+    "test/test_safetensors.c": "ca00016e2902d280da32ea003ca1b30cf597578076cd15f03e20f0fec06c8860"
+  },
+  "next": "Implement EXL3 MUL1 numerical behavior in the quant registry against an independent pinned source reference, then bind exact architecture/Engram/routing and bounded expert placement. Preserve all other modern-model/backend/performance requirements."
+}

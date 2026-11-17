@@ -1,0 +1,65 @@
+{
+  "cases": [
+    {
+      "case": 0,
+      "heads": 1,
+      "dim": 1,
+      "tokens": 9,
+      "lower_bound": -5.0,
+      "sha256": "adccb936dc8df238ea69f6899ab9ebca500ea06899910742e56360ae75a49c66",
+      "double_decay_max_abs": 6.630354665304594e-08,
+      "double_beta_max_abs": 3.115243718543326e-08,
+      "coupled": false
+    },
+    {
+      "case": 1,
+      "heads": 2,
+      "dim": 3,
+      "tokens": 7,
+      "lower_bound": -5.0,
+      "sha256": "38e198581415c4f4a2fd26499d4970ce022d934f4f33e2cf27198180ad49a18b",
+      "double_decay_max_abs": 4.427095694481409e-07,
+      "double_beta_max_abs": 3.5951335575212795e-08,
+      "coupled": false
+    },
+    {
+      "case": 2,
+      "heads": 64,
+      "dim": 128,
+      "tokens": 17,
+      "lower_bound": -5.0,
+      "sha256": "dc3fd5c412a5b5d4f399572be43f35e28b41187dff400a018772ff0dec770c3d",
+      "double_decay_max_abs": 7.759125830730795e-07,
+      "double_beta_max_abs": 7.452501926685784e-08,
+      "coupled": true
+    },
+    {
+      "case": 3,
+      "heads": 3,
+      "dim": 17,
+      "tokens": 65,
+      "lower_bound": -1.0,
+      "sha256": "d0b63e260ad344d6b7038adb4ce1e67bef5282adfb299237f646c7d451482eda",
+      "double_decay_max_abs": 9.162431047204933e-08,
+      "double_beta_max_abs": 6.002925723169739e-08,
+      "coupled": false
+    },
+    {
+      "case": 4,
+      "heads": 2,
+      "dim": 256,
+      "tokens": 3,
+      "lower_bound": -12.0,
+      "sha256": "b965f75f46586c31ac980bc3eddc1763f76bf39fcf38522bd203fe50613f02e7",
+      "double_decay_max_abs": 1.6180574498037004e-06,
+      "double_beta_max_abs": 6.896151849566934e-08,
+      "coupled": false
+    }
+  ],
+  "source_sha256": {
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/kernels.py": "6f5865164682e2ea475995fbdeb1df6942baecfb06abeee3a4468c7c6344775e",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/fused_recurrent.py": "fa7f1eab41907d93b90d1d08aee2399df45c49a161620d1b790949a6f8a8c7a7"
+  },
+  "fixture_header_sha256": "2c416a78d3868307db47342868d87620c5924dff2b8ff5658d9e2ca79cd7a911",
+  "scope": "Original safe-gate and sigmoid plus original fused KDA recurrence, F32 boundaries; not full-model/BF16 bit parity."
+}

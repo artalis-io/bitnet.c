@@ -1,0 +1,1117 @@
+{
+  "status": "Preserved independent complete learned-router MoE layer references; native composed executor remains unqualified; whole goal active",
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "torch": "2.14.0+cu130",
+    "torch_git": "08187d9e0fba026dc8217405802ab5381dc88d90",
+    "layer": 39,
+    "dim": 5120,
+    "hidden": 2304,
+    "experts": 384,
+    "topk": 6,
+    "activation_limit": 10,
+    "checkpoint": "deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "input": "Previously preserved deterministic F16 router inputs, including zero/tiny/large rows; these are not full-model hidden activations",
+    "expert_union": 132
+  },
+  "composition": [
+    "Recompute original learned INT8 router and compare logits, indices and weights byte for byte to preserved router references",
+    "Original GPU assignment argsort, counts and inverse; unchanged upstream Python group planner",
+    "Original fused M64/M32/M16 kernels, full-tier group width retained",
+    "Original folded batched up/gate reconstruction and GEMM, original half activation, F32 down",
+    "One original fixed-top-k gather over already-weighted fused and unweighted heavy slots",
+    "Original shared F16 gate/up torch.matmul, half activation, F32 down, then F32 routed-plus-shared sum"
+  ],
+  "validation": {
+    "reference_cases": 20,
+    "repetitions_per_case": 2,
+    "repeat_results": "Every saved intermediate and final output was bit identical on repeat and finite",
+    "router": "All five row counts exactly match preserved original router logits, I64 indices and F16 weights in both library profiles",
+    "profiles": {
+      "original": {
+        "files": 120,
+        "bytes": 5681066280,
+        "manifest_sha256": "977bfa524fae4af4ac003a0da67a2d18ea7e8c0a95be0c1e26329b7e6cdf5c6c"
+      },
+      "paired": {
+        "files": 120,
+        "bytes": 5681066280,
+        "manifest_sha256": "a7a4b0ef42022891cb9b91850c049cadbd681656e7de2ca34bc4e7ec7693685f"
+      }
+    },
+    "library_profiles": {
+      "original": {
+        "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13": "25cde432108543626df85d887c730bf2cab96803ca16f9654e4abc8d2b45833e",
+        "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublasLt.so.13": "1489aeb75d55ee55782798343ac66f57771d561cc1fe1e0491568deefa0e6515"
+      },
+      "paired": {
+        "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13": "25cde432108543626df85d887c730bf2cab96803ca16f9654e4abc8d2b45833e",
+        "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublasLt.so.13": "1489aeb75d55ee55782798343ac66f57771d561cc1fe1e0491568deefa0e6515",
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20": "34e7a85fe998f33cff4e66968eb32b86ae973e10a66fc62e9ddb58d37763a1ff",
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20": "b43f57b2185afdc10537b8422177edc7c1436f98cced0d2dc216b5acf9eeb00c"
+      }
+    },
+    "library_note": "The paired process maps both Torch bundled cuBLAS and preloaded system libraries; ELF interposition supplies the paired symbols. Both original and paired references are retained.",
+    "planner": "Existing production bn_moe_exl3_plan_groups compiled directly from src/moe_policy.c matches all source starts/base/kind tables, group membership/order, exact padded rows and slot offsets at all five row counts. Normal and Clang18 ASAN/UBSAN probes pass without compiler warnings or sanitizer errors.",
+    "standard_tests": "make -j8 test passed, CUDA/MKL flags retained, no warnings; no production or test source edits",
+    "preserved_source_files": 731,
+    "preserved_user_reference_binaries": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "coverage": [
+    {
+      "rows": 64,
+      "active_experts": 95,
+      "fused_tiers": [
+        {
+          "tile_m": 32,
+          "tile_n": 128,
+          "lo": 17,
+          "hi": 32,
+          "active": 2,
+          "width": 32,
+          "groups": 2
+        },
+        {
+          "tile_m": 16,
+          "tile_n": 256,
+          "lo": 1,
+          "hi": 16,
+          "active": 93,
+          "width": 8,
+          "groups": 23
+        }
+      ],
+      "heavy_experts": 0,
+      "heavy_groups": [],
+      "slots": 384,
+      "source_batch_cap": 5
+    },
+    {
+      "rows": 256,
+      "active_experts": 113,
+      "fused_tiers": [
+        {
+          "tile_m": 64,
+          "tile_n": 128,
+          "lo": 33,
+          "hi": 256,
+          "active": 12,
+          "width": 15,
+          "groups": 12
+        },
+        {
+          "tile_m": 32,
+          "tile_n": 128,
+          "lo": 17,
+          "hi": 32,
+          "active": 23,
+          "width": 8,
+          "groups": 23
+        },
+        {
+          "tile_m": 16,
+          "tile_n": 256,
+          "lo": 1,
+          "hi": 16,
+          "active": 78,
+          "width": 8,
+          "groups": 23
+        }
+      ],
+      "heavy_experts": 0,
+      "heavy_groups": [],
+      "slots": 1536,
+      "source_batch_cap": 5
+    },
+    {
+      "rows": 1024,
+      "active_experts": 132,
+      "fused_tiers": [
+        {
+          "tile_m": 64,
+          "tile_n": 128,
+          "lo": 33,
+          "hi": 256,
+          "active": 53,
+          "width": 8,
+          "groups": 23
+        },
+        {
+          "tile_m": 32,
+          "tile_n": 128,
+          "lo": 17,
+          "hi": 32,
+          "active": 22,
+          "width": 8,
+          "groups": 22
+        },
+        {
+          "tile_m": 16,
+          "tile_n": 256,
+          "lo": 1,
+          "hi": 16,
+          "active": 56,
+          "width": 8,
+          "groups": 23
+        }
+      ],
+      "heavy_experts": 1,
+      "heavy_groups": [
+        {
+          "experts": [
+            248
+          ],
+          "rows": 327,
+          "slot": 5817
+        }
+      ],
+      "slots": 6144,
+      "source_batch_cap": 5
+    },
+    {
+      "rows": 4096,
+      "active_experts": 132,
+      "fused_tiers": [
+        {
+          "tile_m": 64,
+          "tile_n": 128,
+          "lo": 33,
+          "hi": 256,
+          "active": 62,
+          "width": 8,
+          "groups": 23
+        },
+        {
+          "tile_m": 32,
+          "tile_n": 128,
+          "lo": 17,
+          "hi": 32,
+          "active": 12,
+          "width": 15,
+          "groups": 12
+        },
+        {
+          "tile_m": 16,
+          "tile_n": 256,
+          "lo": 1,
+          "hi": 16,
+          "active": 23,
+          "width": 8,
+          "groups": 23
+        }
+      ],
+      "heavy_experts": 35,
+      "heavy_groups": [
+        {
+          "experts": [
+            248
+          ],
+          "rows": 1307,
+          "slot": 7000
+        },
+        {
+          "experts": [
+            161,
+            366
+          ],
+          "rows": 999,
+          "slot": 8307
+        },
+        {
+          "experts": [
+            273,
+            331,
+            307,
+            314,
+            138
+          ],
+          "rows": 768,
+          "slot": 10305
+        },
+        {
+          "experts": [
+            78,
+            110,
+            191,
+            81,
+            48
+          ],
+          "rows": 573,
+          "slot": 14145
+        },
+        {
+          "experts": [
+            51,
+            378,
+            99,
+            150,
+            190
+          ],
+          "rows": 497,
+          "slot": 17010
+        },
+        {
+          "experts": [
+            229,
+            222,
+            201,
+            70,
+            1
+          ],
+          "rows": 428,
+          "slot": 19495
+        },
+        {
+          "experts": [
+            382,
+            173,
+            293,
+            36,
+            297
+          ],
+          "rows": 342,
+          "slot": 21635
+        },
+        {
+          "experts": [
+            185,
+            14,
+            88,
+            103,
+            228
+          ],
+          "rows": 305,
+          "slot": 23345
+        },
+        {
+          "experts": [
+            360,
+            146
+          ],
+          "rows": 277,
+          "slot": 24870
+        }
+      ],
+      "slots": 25424,
+      "source_batch_cap": 5
+    },
+    {
+      "rows": 8192,
+      "active_experts": 132,
+      "fused_tiers": [
+        {
+          "tile_m": 64,
+          "tile_n": 128,
+          "lo": 33,
+          "hi": 256,
+          "active": 55,
+          "width": 8,
+          "groups": 23
+        },
+        {
+          "tile_m": 32,
+          "tile_n": 128,
+          "lo": 17,
+          "hi": 32,
+          "active": 6,
+          "width": 31,
+          "groups": 6
+        },
+        {
+          "tile_m": 16,
+          "tile_n": 256,
+          "lo": 1,
+          "hi": 16,
+          "active": 17,
+          "width": 11,
+          "groups": 17
+        }
+      ],
+      "heavy_experts": 54,
+      "heavy_groups": [
+        {
+          "experts": [
+            248
+          ],
+          "rows": 2614,
+          "slot": 7057
+        },
+        {
+          "experts": [
+            161,
+            366
+          ],
+          "rows": 1997,
+          "slot": 9671
+        },
+        {
+          "experts": [
+            273,
+            331,
+            307,
+            138,
+            314
+          ],
+          "rows": 1534,
+          "slot": 13665
+        },
+        {
+          "experts": [
+            78,
+            110,
+            191,
+            81,
+            48
+          ],
+          "rows": 1147,
+          "slot": 21335
+        },
+        {
+          "experts": [
+            51,
+            378,
+            99,
+            150,
+            190
+          ],
+          "rows": 994,
+          "slot": 27070
+        },
+        {
+          "experts": [
+            229,
+            222,
+            201,
+            70,
+            1
+          ],
+          "rows": 857,
+          "slot": 32040
+        },
+        {
+          "experts": [
+            382,
+            173,
+            293,
+            36,
+            297
+          ],
+          "rows": 684,
+          "slot": 36325
+        },
+        {
+          "experts": [
+            185,
+            14,
+            88,
+            103,
+            228
+          ],
+          "rows": 611,
+          "slot": 39745
+        },
+        {
+          "experts": [
+            360,
+            146,
+            64,
+            40
+          ],
+          "rows": 554,
+          "slot": 42800
+        },
+        {
+          "experts": [
+            283,
+            53,
+            179,
+            91
+          ],
+          "rows": 465,
+          "slot": 45016
+        },
+        {
+          "experts": [
+            164,
+            169,
+            101,
+            311,
+            261
+          ],
+          "rows": 392,
+          "slot": 46876
+        },
+        {
+          "experts": [
+            83,
+            184,
+            295,
+            207,
+            230
+          ],
+          "rows": 344,
+          "slot": 48836
+        },
+        {
+          "experts": [
+            328,
+            330,
+            308
+          ],
+          "rows": 288,
+          "slot": 50556
+        }
+      ],
+      "slots": 51420,
+      "source_batch_cap": 5
+    }
+  ],
+  "numerical_findings": {
+    "cross_library": [
+      {
+        "rows": 64,
+        "f16acc_enabled": 0,
+        "outputs": {
+          "slots": {
+            "values": 1966080,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 327680,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "shared_gate": {
+            "values": 147456,
+            "bit_mismatches": 61603,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 147456,
+            "bit_mismatches": 60822,
+            "max_abs": 0.03125
+          },
+          "shared_act": {
+            "values": 147456,
+            "bit_mismatches": 81175,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 327680,
+            "bit_mismatches": 317427,
+            "max_abs": 0.232513427734375
+          },
+          "final": {
+            "values": 327680,
+            "bit_mismatches": 317388,
+            "max_abs": 0.232513427734375
+          }
+        }
+      },
+      {
+        "rows": 64,
+        "f16acc_enabled": 1,
+        "outputs": {
+          "slots": {
+            "values": 1966080,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 327680,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "shared_gate": {
+            "values": 147456,
+            "bit_mismatches": 61603,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 147456,
+            "bit_mismatches": 60822,
+            "max_abs": 0.03125
+          },
+          "shared_act": {
+            "values": 147456,
+            "bit_mismatches": 81175,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 327680,
+            "bit_mismatches": 317427,
+            "max_abs": 0.232513427734375
+          },
+          "final": {
+            "values": 327680,
+            "bit_mismatches": 317388,
+            "max_abs": 0.232513427734375
+          }
+        }
+      },
+      {
+        "rows": 256,
+        "f16acc_enabled": 0,
+        "outputs": {
+          "slots": {
+            "values": 7864320,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 1310720,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "shared_gate": {
+            "values": 589824,
+            "bit_mismatches": 229276,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 589824,
+            "bit_mismatches": 229995,
+            "max_abs": 0.03125
+          },
+          "shared_act": {
+            "values": 589824,
+            "bit_mismatches": 314415,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 1310720,
+            "bit_mismatches": 1300420,
+            "max_abs": 0.06982421875
+          },
+          "final": {
+            "values": 1310720,
+            "bit_mismatches": 1300207,
+            "max_abs": 0.06982421875
+          }
+        }
+      },
+      {
+        "rows": 256,
+        "f16acc_enabled": 1,
+        "outputs": {
+          "slots": {
+            "values": 7864320,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 1310720,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "shared_gate": {
+            "values": 589824,
+            "bit_mismatches": 229276,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 589824,
+            "bit_mismatches": 229995,
+            "max_abs": 0.03125
+          },
+          "shared_act": {
+            "values": 589824,
+            "bit_mismatches": 314415,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 1310720,
+            "bit_mismatches": 1300420,
+            "max_abs": 0.06982421875
+          },
+          "final": {
+            "values": 1310720,
+            "bit_mismatches": 1300207,
+            "max_abs": 0.06982421875
+          }
+        }
+      },
+      {
+        "rows": 1024,
+        "f16acc_enabled": 0,
+        "outputs": {
+          "slots": {
+            "values": 31457280,
+            "bit_mismatches": 1674166,
+            "max_abs": 0.0012581348419189453
+          },
+          "routed": {
+            "values": 5242880,
+            "bit_mismatches": 1673397,
+            "max_abs": 0.0003533363342285156
+          },
+          "shared_gate": {
+            "values": 2359296,
+            "bit_mismatches": 1052239,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 2359296,
+            "bit_mismatches": 1051158,
+            "max_abs": 0.03125
+          },
+          "shared_act": {
+            "values": 2359296,
+            "bit_mismatches": 1393170,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 5242880,
+            "bit_mismatches": 5232404,
+            "max_abs": 0.160491943359375
+          },
+          "final": {
+            "values": 5242880,
+            "bit_mismatches": 5231644,
+            "max_abs": 0.1605224609375
+          }
+        }
+      },
+      {
+        "rows": 1024,
+        "f16acc_enabled": 1,
+        "outputs": {
+          "slots": {
+            "values": 31457280,
+            "bit_mismatches": 1674166,
+            "max_abs": 0.0012581348419189453
+          },
+          "routed": {
+            "values": 5242880,
+            "bit_mismatches": 1673397,
+            "max_abs": 0.0003533363342285156
+          },
+          "shared_gate": {
+            "values": 2359296,
+            "bit_mismatches": 1052239,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 2359296,
+            "bit_mismatches": 1051158,
+            "max_abs": 0.03125
+          },
+          "shared_act": {
+            "values": 2359296,
+            "bit_mismatches": 1393170,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 5242880,
+            "bit_mismatches": 5232404,
+            "max_abs": 0.160491943359375
+          },
+          "final": {
+            "values": 5242880,
+            "bit_mismatches": 5231644,
+            "max_abs": 0.1605224609375
+          }
+        }
+      },
+      {
+        "rows": 4096,
+        "f16acc_enabled": 0,
+        "outputs": {
+          "slots": {
+            "values": 130170880,
+            "bit_mismatches": 6691592,
+            "max_abs": 0.0010251998901367188
+          },
+          "routed": {
+            "values": 20971520,
+            "bit_mismatches": 6689234,
+            "max_abs": 0.00030422210693359375
+          },
+          "shared_gate": {
+            "values": 9437184,
+            "bit_mismatches": 3360162,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 9437184,
+            "bit_mismatches": 3369416,
+            "max_abs": 0.0625
+          },
+          "shared_act": {
+            "values": 9437184,
+            "bit_mismatches": 4709978,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 20971520,
+            "bit_mismatches": 20959993,
+            "max_abs": 0.05499267578125
+          },
+          "final": {
+            "values": 20971520,
+            "bit_mismatches": 20956683,
+            "max_abs": 0.05499267578125
+          }
+        }
+      },
+      {
+        "rows": 4096,
+        "f16acc_enabled": 1,
+        "outputs": {
+          "slots": {
+            "values": 130170880,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 20971520,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "shared_gate": {
+            "values": 9437184,
+            "bit_mismatches": 3360162,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 9437184,
+            "bit_mismatches": 3369416,
+            "max_abs": 0.0625
+          },
+          "shared_act": {
+            "values": 9437184,
+            "bit_mismatches": 4709978,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 20971520,
+            "bit_mismatches": 20959993,
+            "max_abs": 0.05499267578125
+          },
+          "final": {
+            "values": 20971520,
+            "bit_mismatches": 20956342,
+            "max_abs": 0.05499267578125
+          }
+        }
+      },
+      {
+        "rows": 8192,
+        "f16acc_enabled": 0,
+        "outputs": {
+          "slots": {
+            "values": 263270400,
+            "bit_mismatches": 13383256,
+            "max_abs": 0.0010242462158203125
+          },
+          "routed": {
+            "values": 41943040,
+            "bit_mismatches": 13378279,
+            "max_abs": 0.0003039836883544922
+          },
+          "shared_gate": {
+            "values": 18874368,
+            "bit_mismatches": 6721308,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 18874368,
+            "bit_mismatches": 6739545,
+            "max_abs": 0.0625
+          },
+          "shared_act": {
+            "values": 18874368,
+            "bit_mismatches": 9422599,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 41943040,
+            "bit_mismatches": 41930644,
+            "max_abs": 0.05493927001953125
+          },
+          "final": {
+            "values": 41943040,
+            "bit_mismatches": 41923937,
+            "max_abs": 0.05493927001953125
+          }
+        }
+      },
+      {
+        "rows": 8192,
+        "f16acc_enabled": 1,
+        "outputs": {
+          "slots": {
+            "values": 263270400,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 41943040,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "shared_gate": {
+            "values": 18874368,
+            "bit_mismatches": 6721308,
+            "max_abs": 0.03125
+          },
+          "shared_up": {
+            "values": 18874368,
+            "bit_mismatches": 6739545,
+            "max_abs": 0.0625
+          },
+          "shared_act": {
+            "values": 18874368,
+            "bit_mismatches": 9422599,
+            "max_abs": 0.125
+          },
+          "shared": {
+            "values": 41943040,
+            "bit_mismatches": 41930644,
+            "max_abs": 0.05493927001953125
+          },
+          "final": {
+            "values": 41943040,
+            "bit_mismatches": 41922793,
+            "max_abs": 0.05493927001953125
+          }
+        }
+      }
+    ],
+    "fp16_partial_policy": [
+      {
+        "profile": "original",
+        "rows": 64,
+        "outputs": {
+          "slots": {
+            "values": 1966080,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 327680,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "final": {
+            "values": 327680,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          }
+        }
+      },
+      {
+        "profile": "original",
+        "rows": 256,
+        "outputs": {
+          "slots": {
+            "values": 7864320,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 1310720,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "final": {
+            "values": 1310720,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          }
+        }
+      },
+      {
+        "profile": "original",
+        "rows": 1024,
+        "outputs": {
+          "slots": {
+            "values": 31457280,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 5242880,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "final": {
+            "values": 5242880,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          }
+        }
+      },
+      {
+        "profile": "original",
+        "rows": 4096,
+        "outputs": {
+          "slots": {
+            "values": 130170880,
+            "bit_mismatches": 89964342,
+            "max_abs": 0.1438140869140625
+          },
+          "routed": {
+            "values": 20971520,
+            "bit_mismatches": 20959690,
+            "max_abs": 0.062221527099609375
+          },
+          "final": {
+            "values": 20971520,
+            "bit_mismatches": 20959162,
+            "max_abs": 0.062225341796875
+          }
+        }
+      },
+      {
+        "profile": "original",
+        "rows": 8192,
+        "outputs": {
+          "slots": {
+            "values": 263270400,
+            "bit_mismatches": 215495794,
+            "max_abs": 0.1438140869140625
+          },
+          "routed": {
+            "values": 41943040,
+            "bit_mismatches": 41929691,
+            "max_abs": 0.081207275390625
+          },
+          "final": {
+            "values": 41943040,
+            "bit_mismatches": 41928686,
+            "max_abs": 0.081207275390625
+          }
+        }
+      },
+      {
+        "profile": "paired",
+        "rows": 64,
+        "outputs": {
+          "slots": {
+            "values": 1966080,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 327680,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "final": {
+            "values": 327680,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          }
+        }
+      },
+      {
+        "profile": "paired",
+        "rows": 256,
+        "outputs": {
+          "slots": {
+            "values": 7864320,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 1310720,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "final": {
+            "values": 1310720,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          }
+        }
+      },
+      {
+        "profile": "paired",
+        "rows": 1024,
+        "outputs": {
+          "slots": {
+            "values": 31457280,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "routed": {
+            "values": 5242880,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          },
+          "final": {
+            "values": 5242880,
+            "bit_mismatches": 0,
+            "max_abs": 0.0
+          }
+        }
+      },
+      {
+        "profile": "paired",
+        "rows": 4096,
+        "outputs": {
+          "slots": {
+            "values": 130170880,
+            "bit_mismatches": 89964358,
+            "max_abs": 0.1438140869140625
+          },
+          "routed": {
+            "values": 20971520,
+            "bit_mismatches": 20959686,
+            "max_abs": 0.062221527099609375
+          },
+          "final": {
+            "values": 20971520,
+            "bit_mismatches": 20959205,
+            "max_abs": 0.062225341796875
+          }
+        }
+      },
+      {
+        "profile": "paired",
+        "rows": 8192,
+        "outputs": {
+          "slots": {
+            "values": 263270400,
+            "bit_mismatches": 215495776,
+            "max_abs": 0.1438140869140625
+          },
+          "routed": {
+            "values": 41943040,
+            "bit_mismatches": 41929659,
+            "max_abs": 0.081207275390625
+          },
+          "final": {
+            "values": 41943040,
+            "bit_mismatches": 41928570,
+            "max_abs": 0.081207275390625
+          }
+        }
+      }
+    ],
+    "interpretation": "Library changes affect every final case. Enabled versus disabled adaptive FP16-partial policy changes final outputs at 4096 and 8192 rows in both profiles. Executor qualification must retain the matched library profile and exact upstream group B/M geometry."
+  },
+  "artifacts": {
+    "directory": "/tmp/bitnet-goal-native-layer",
+    "original_manifest_sha256": "977bfa524fae4af4ac003a0da67a2d18ea7e8c0a95be0c1e26329b7e6cdf5c6c",
+    "paired_manifest_sha256": "a7a4b0ef42022891cb9b91850c049cadbd681656e7de2ca34bc4e7ec7693685f",
+    "audit_sha256": "79d4d952dcb1062c78a624f595c7c734d1918cb4f2994eb2898f88fb66e7c0a7",
+    "capture_sha256": "c4ad9bdb9b293f0eff8eb9e84152773622f86615cd091a30fe5d3f6c46cdf324",
+    "planner_probe_sha256": "cdce38eafd354c680423bd9456a14a12426a19b9922f499cf32a3e42aac1b6e7"
+  },
+  "limits": [
+    "This is an independent reference milestone, not native whole-layer or full-model execution qualification.",
+    "The references compose unchanged upstream component entry points and upstream Python planning; they do not invoke a native candidate or the end-to-end upstream model loader.",
+    "Layer39 exercises the learned router. V4.1 defaults to zero hash-routing layers. Routed default BC decode for <=8 tokens is outside this capture.",
+    "132 selected expert triples are resident during source capture; these runs do not qualify bounded native offload, asynchronous overlap, or throughput.",
+    "Default source heavy-group cap is five; reducing group batch or padded rows to fit smaller raw-weight windows requires separate numerical qualification.",
+    "No full attention, Engram, generation, CLI, performance parity or serving admission is added."
+  ]
+}

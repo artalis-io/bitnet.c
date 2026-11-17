@@ -1,0 +1,36 @@
+#ifndef BN_CUDA_SIGNED_SQRT_BATCH_REFERENCE_H
+#define BN_CUDA_SIGNED_SQRT_BATCH_REFERENCE_H
+#include <stdint.h>
+/* Independent pinned GGML df18bee11 CUDA, 188-SM geometry. */
+typedef struct { int dim, tokens, seed; uint64_t hash; } BnCudaSignedSqrtBatchReference;
+static const BnCudaSignedSqrtBatchReference cuda_signed_sqrt_batch_reference[] = {
+{256,1,0,UINT64_C(0x559a547e8277f495)},
+{256,1,23,UINT64_C(0x4ca0cfa3cabbb6f9)},
+{256,8,0,UINT64_C(0x44cd496e78c5d0f4)},
+{256,8,23,UINT64_C(0x3d7f44238acc0c72)},
+{256,93,0,UINT64_C(0x0245f28a27c4790e)},
+{256,93,23,UINT64_C(0x053f30cd8c695479)},
+{256,94,0,UINT64_C(0xd1e4c7994dad96bf)},
+{256,94,23,UINT64_C(0xbb3f89ef934096b7)},
+{256,95,0,UINT64_C(0x046965a7e679e315)},
+{256,95,23,UINT64_C(0x1c2442524c6faaac)},
+{256,512,0,UINT64_C(0xbbc5c5560b76a6d1)},
+{256,512,23,UINT64_C(0xc6146e5f86969b7e)},
+{256,1047,0,UINT64_C(0xe31774b9cc886198)},
+{256,1047,23,UINT64_C(0x7a6203dd47c1dee2)},
+{2560,1,0,UINT64_C(0x388bd4dc4d814935)},
+{2560,1,23,UINT64_C(0x081433f5541e8f8e)},
+{2560,8,0,UINT64_C(0xeb98cb8842f7bffb)},
+{2560,8,23,UINT64_C(0xae2cc83eb938b4cd)},
+{2560,93,0,UINT64_C(0xfc9074d385eacc3f)},
+{2560,93,23,UINT64_C(0x83fbcb5e6c1e5d86)},
+{2560,94,0,UINT64_C(0xa9f69be375c263fd)},
+{2560,94,23,UINT64_C(0x8f8648ce5be806e1)},
+{2560,95,0,UINT64_C(0xe1bcfb7a66278a38)},
+{2560,95,23,UINT64_C(0x1e30057e06ce8b62)},
+{2560,512,0,UINT64_C(0xf9d5a33d45e19232)},
+{2560,512,23,UINT64_C(0xb11305573ba74e0d)},
+{2560,1047,0,UINT64_C(0xffdcbbf77d37f38a)},
+{2560,1047,23,UINT64_C(0xedc77bad3bc94da4)},
+};
+#endif

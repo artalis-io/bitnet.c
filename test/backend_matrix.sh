@@ -2438,7 +2438,12 @@ if ! grep -q -- '"--benchmark-runs"' test/compare_llama_topk.py ||
    ! grep -q -- '"--benchmark-warmup-runs"' test/compare_llama_topk.py ||
    ! grep -q 'retains its model mapping for all repetitions' \
         test/compare_llama_topk.py ||
-   ! grep -q 'bn_session_reset(session, &model)' src/main.c; then
+   ! sed -n '/^static int cli_reset_request/,/^}/p' src/main.c |
+        grep -q 'bn_session_reset(session, model)' ||
+   ! sed -n '/^static int cli_reset_request/,/^}/p' src/main.c |
+        grep -q 'return cli_init_bf16_request(model, session, args)' ||
+   ! sed -n '/if (benchmark_run > 0)/,/bn_sampler_reset_recent/p' src/main.c |
+        grep -q 'cli_reset_request(&model, session, &args)'; then
     echo "llama comparison benchmarks must repeat with one loaded model"
     fail=1
 fi

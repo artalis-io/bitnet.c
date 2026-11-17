@@ -1,0 +1,196 @@
+{
+  "scope": "Ordered integer-MMA execution of the existing IQ4 BF16 MMVQ precision contract on SM120",
+  "whole_goal_complete": false,
+  "correctness_qualified": true,
+  "performance_parity_qualified": false,
+  "evidence_directory": "/tmp/bitnet-goal-iq4-ordered-mma",
+  "source_sha256": {
+    "src/quant/iq4_bf16_mmvq_cuda.cuh": "2cbb50c3b722c8bb38288545b87b2007a8e06f70af4aa068c321336a470a223f",
+    "src/gpu_cuda.cu": "ef24341547fa9a24bb2511826663d049b6479eafd0cce387e9e5b45050c41034",
+    "src/gpu_cuda_gdn.cuh": "615bcf5815a488f545022be6227d8089645d9bd52fa17d23835b8094a08d9b31",
+    "test/test_cuda_backend.c": "6fe7befb6fc4af41cdba044898b3103f866a62324d7de57a23450bebef3cd609"
+  },
+  "checks": {
+    "build/clean": {
+      "exit": 0
+    },
+    "build/build": {
+      "exit": 0
+    },
+    "build/standard": {
+      "exit": 0
+    },
+    "build/benches": {
+      "exit": 0
+    },
+    "focused-build": {
+      "exit": 0
+    },
+    "focused-dispatch": {
+      "exit": 0
+    },
+    "runtime": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "mixed16": {
+      "exit": 0
+    },
+    "mixed16-heads": {
+      "exit": 0
+    },
+    "mixed16-accounting": {
+      "exit": 0
+    },
+    "mixed8": {
+      "exit": 0
+    },
+    "mixed8-heads": {
+      "exit": 0
+    },
+    "mixed8-accounting": {
+      "exit": 0
+    },
+    "periodic": {
+      "exit": 0
+    },
+    "periodic-heads": {
+      "exit": 0
+    },
+    "periodic-accounting": {
+      "exit": 0
+    },
+    "memcheck": {
+      "exit": 0
+    },
+    "racecheck": {
+      "exit": 0
+    },
+    "ordered-trace": {
+      "exit": 0
+    },
+    "ordered-stats": {
+      "exit": 0
+    },
+    "ordered-application": {
+      "exit": 0,
+      "scope": "Fixed identical geometry diagnostic trace, not a free-clock performance sample"
+    }
+  },
+  "algorithm": "Integer MMA retains every original lane integer dot, block stride, FP16 scale product and FP32 FMA; 32 lane partials use the original XOR16/8/4/2/1 reduction order before BF16 rounding.",
+  "eligibility": {
+    "cuda_compute_capability": 1200,
+    "minimum_rows": 2048,
+    "minimum_columns": 4096,
+    "iq4_xs_minimum_tokens": 4,
+    "iq4_nl_minimum_tokens": 8,
+    "workspace_condition": "32 FP32 partials per output element fit the admitted request workspace",
+    "otherwise": "Existing MMVQ implementation; larger-token precision-plan GEMM selection unchanged"
+  },
+  "ownership": {
+    "additional_allocation_bytes": 0,
+    "scratch": "Existing request-local cuBLAS user workspace, used on the same stream between library calls",
+    "model_weights_mutated": false,
+    "new_gpu_handles_on_model_weights": false,
+    "reference": "https://docs.nvidia.com/cuda/cublas/#cublassetworkspace"
+  },
+  "correctness": {
+    "focused_gpu_words": 5377492,
+    "full_head_cases": {
+      "mixed16": {
+        "matrices": 2432,
+        "heads": 12880,
+        "bf16_words": 3198361600,
+        "performance_qualified": false
+      },
+      "mixed8": {
+        "matrices": 2296,
+        "heads": 15924,
+        "bf16_words": 3954247680,
+        "performance_qualified": false
+      },
+      "periodic": {
+        "matrices": 2100,
+        "heads": 8400,
+        "bf16_words": 2085888000,
+        "performance_qualified": false
+      }
+    },
+    "total_bf16_words": 9238497280,
+    "independent_reference_headers_unchanged": true,
+    "tolerance": 0,
+    "legacy_and_new_cohort_recurrence_policies_covered": true,
+    "device_memcheck_errors": 0,
+    "device_leaked_bytes": 0,
+    "shared_tile_racecheck_errors": 0,
+    "racecheck_scope": "Ordered MMA producer shared-memory accesses; full dispatch fixture and repeated-row cases executed"
+  },
+  "profiling": {
+    "scope": "Full identical 2432-cohort controlled diagnostic workload, including model initialization and cleanup. GPU kernel duration sums and copies are not unprofiled performance or total VRAM metrics.",
+    "identical_2432_cohort_geometry": true,
+    "before_iq4_gpu_ns": 25958760506,
+    "after_iq4_gpu_ns": 16407834485,
+    "iq4_gpu_time_reduction": 0.3679268899912397,
+    "all_kernel_gpu_time_reduction": 0.08756440571985302,
+    "logical_iq4_operations": 182352,
+    "ordered_mma_operations": 155520,
+    "legacy_gpu_operations": 26832,
+    "gpu_legacy_selection_fraction": 0.14714398525927877,
+    "before_transfers": [
+      {
+        "kind": 1,
+        "calls": 328407,
+        "bytes": 17301151744,
+        "device_ns_sum": 1213001404
+      },
+      {
+        "kind": 2,
+        "calls": 22681,
+        "bytes": 6396804196,
+        "device_ns_sum": 198402307
+      },
+      {
+        "kind": 8,
+        "calls": 44400,
+        "bytes": 104888827904,
+        "device_ns_sum": 65159215
+      }
+    ],
+    "after_transfers": [
+      {
+        "kind": 1,
+        "calls": 328407,
+        "bytes": 17301151744,
+        "device_ns_sum": 1220249251
+      },
+      {
+        "kind": 2,
+        "calls": 22681,
+        "bytes": 6396804196,
+        "device_ns_sum": 199981910
+      },
+      {
+        "kind": 8,
+        "calls": 44400,
+        "bytes": 104888827904,
+        "device_ns_sum": 65077221
+      }
+    ],
+    "transfer_scope": "Entire model initialization plus fixed-work execution and cleanup; not steady-state-only transfer bytes or total memory",
+    "before_sync_api": [],
+    "after_sync_api": [],
+    "unprofiled_speedup_claimed": false
+  },
+  "rejected_prototype": {
+    "directory": "/tmp/bitnet-goal-iq4-bf16-batch",
+    "variant": "Four-token DP4A weight reuse",
+    "reason": "Correct but only 0.84% raw IQ4 GPU-time change and regressions on small-token shapes; replaced after matched full-model profiling."
+  },
+  "remaining_work": [
+    "Three independently qualified native timing samples against all predeclared vLLM references.",
+    "Mixed-serving p99 latency gap; budget256 pilot currently reaches about89ms versus71.6ms strict reference target.",
+    "Remaining whole-goal model, RAM expert offload, CPU/Metal and total-memory qualification."
+  ]
+}

@@ -1,0 +1,1234 @@
+{
+  "status": "Qualified native CUDA F16 latent-attention primitive for prefill and split decode. Request/controller integration, output projections/Engram, full model admission and vLLM parity remain open.",
+  "architecture": "DeepseekV41ForCausalLM",
+  "apis": [
+    "BnGPUF16LatentAttentionWorkspace",
+    "bn_gpu_latent_attention_workspace",
+    "BnGPUF16LatentAttentionResidentPlan",
+    "latent_attention_f16_resident"
+  ],
+  "implementation": {
+    "geometry": "H64,D512=(C448,R64),group-major output[8,rows,4096],V is K. CUDA SM80+ tensor-core implementation with sufficient opt-in shared memory; qualification hardware is the designated SM120 GPU.",
+    "ownership": "Immutable F32[1,64] raw sink handle belongs to backend model. All activation, pool, frequency, index, output and scratch views belong to one caller request. No GPU handles added to CPU model weights; no model-family logic added to transformer/provider bridge.",
+    "window": "Attend newest-first over the PRE-update sliding ring and current rotated KV chunk, clipped by shared floor. Then attend pool entries in source order, without deduplicating overlapping window/pool contributions. This operation does not update rings or advance positions.",
+    "pool": "Dense per-row bound=min(floor((pos0+row+1)/rate),entries), or512 gathered logical IDs with -1 padding and caller-guaranteed valid/causal IDs. Immutable page table maps valid IDs to split F16 C/R pools. Empty pools/ring/current-chunk/unused scratch require canonical empty views where unused.",
+    "execution": "Source auto split8/16 when rows<=8, based on estimated visible contributions; otherwise one-shot32-head tiles. Split16-head partials write explicit F32 m/l and numerator workspace, then combine with learned sink. No hidden scratch allocation, host transfer, internal fence or state commit.",
+    "arithmetic": "Latent dot (including explicit padded zeros) then RoPE dot, scale1/sqrt512. Online FP32 exp/normalizer, source-ordered reduction, F16 probabilities BEFORE tensor-core value product. Prior accumulators are scaled BEFORE MMA. F32 division and source-contracted de-rotation precede final F16 store.",
+    "optimizations": "Precompute physical key addresses once per tile, power-of-two page shifts, aligned128-bit loads with scalar fallback, ldmatrix/shared matrix operands, register accumulators, parallel four-lane-per-head softmax preserving original sum order, shared scratch padding, split-combine merge reused across eight output pairs per thread, cached one-shot trigonometry/denominators.",
+    "preflight": "Dimensions, positions, window/history capacity, physical pool capacity, exact counts/types, request identity, canonical empty views, sink owner/type/shape and pairwise overlap validated before enqueue. Malformed late metadata rejects without output writes. CUDA execution errors mark request failed."
+  },
+  "references": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "source_sha256": "5ce9b120f1ab339bb2035d1a7af9363d3aae7ba264ab25f1bac7c154cc3521b6",
+    "synthetic_cases": 12,
+    "checkpoint_derived_cases": 28,
+    "original_source": "Unchanged original dsa_attn wrapper, all original one-shot/split/combine kernels and original shared-memory configuration picker.",
+    "synthetic_scope": "Unchanged original full dsa_attn wrapper, original kernels and original SMEM configuration picker; synthetic finite F16 full target geometry, auto one-shot/split execution.",
+    "checkpoint_scope": "Original dsa_attn wrapper/kernels/config picker; immutable independent paired-library QKV projection captures, original fused KV norm/RoPE at actual new positions, learned checkpoint sinks, canonical compressed C/R values and SWA history. Extended histories repeat canonical checkpoint-derived values; synthetic valid causal selection lists. Not a full-prefix model forward.",
+    "norm_epsilon": 1e-20,
+    "checkpoint_layers": [
+      0,
+      2,
+      20,
+      39
+    ],
+    "positions": [
+      0,
+      31,
+      127,
+      200,
+      510,
+      4095,
+      65264,
+      65535,
+      1048569
+    ],
+    "rows": [
+      1,
+      4,
+      7,
+      8,
+      9,
+      17,
+      33,
+      256,
+      273
+    ],
+    "cases": [
+      {
+        "label": "c0",
+        "rows": 1,
+        "position": 0,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c1",
+        "rows": 1,
+        "position": 127,
+        "entries": 64,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c2",
+        "rows": 4,
+        "position": 510,
+        "entries": 513,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c3",
+        "rows": 8,
+        "position": 65535,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c4",
+        "rows": 9,
+        "position": 200,
+        "entries": 201,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c5",
+        "rows": 17,
+        "position": 65535,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c6",
+        "rows": 33,
+        "position": 4095,
+        "entries": 512,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c7",
+        "rows": 273,
+        "position": 65264,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c8",
+        "rows": 1,
+        "position": 0,
+        "entries": 0,
+        "dense": 1,
+        "window": 0,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c9",
+        "rows": 9,
+        "position": 0,
+        "entries": 0,
+        "dense": 1,
+        "window": 0,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c10",
+        "rows": 9,
+        "position": 127,
+        "entries": 513,
+        "dense": 0,
+        "window": 0,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "c11",
+        "rows": 4,
+        "position": 65535,
+        "entries": 17,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l0.r1.p0",
+        "rows": 1,
+        "position": 0,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l0.r1.p65535",
+        "rows": 1,
+        "position": 65535,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l0.r7.p1048569",
+        "rows": 7,
+        "position": 1048569,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l0.r33.p31",
+        "rows": 33,
+        "position": 31,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l0.r256.p31",
+        "rows": 256,
+        "position": 31,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l0.r33.p65535",
+        "rows": 33,
+        "position": 65535,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l0.r256.p65535",
+        "rows": 256,
+        "position": 65535,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l2.r1.p0",
+        "rows": 1,
+        "position": 0,
+        "entries": 0,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l2.r1.p65535",
+        "rows": 1,
+        "position": 65535,
+        "entries": 32768,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l2.r7.p1048569",
+        "rows": 7,
+        "position": 1048569,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l2.r33.p31",
+        "rows": 33,
+        "position": 31,
+        "entries": 32,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l2.r256.p31",
+        "rows": 256,
+        "position": 31,
+        "entries": 143,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l2.r33.p65535",
+        "rows": 33,
+        "position": 65535,
+        "entries": 32784,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l2.r256.p65535",
+        "rows": 256,
+        "position": 65535,
+        "entries": 32895,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l20.r1.p0",
+        "rows": 1,
+        "position": 0,
+        "entries": 1,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l20.r1.p65535",
+        "rows": 1,
+        "position": 65535,
+        "entries": 65536,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l20.r7.p1048569",
+        "rows": 7,
+        "position": 1048569,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l20.r33.p31",
+        "rows": 33,
+        "position": 31,
+        "entries": 64,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l20.r256.p31",
+        "rows": 256,
+        "position": 31,
+        "entries": 287,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l20.r33.p65535",
+        "rows": 33,
+        "position": 65535,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l20.r256.p65535",
+        "rows": 256,
+        "position": 65535,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l39.r1.p0",
+        "rows": 1,
+        "position": 0,
+        "entries": 1,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l39.r1.p65535",
+        "rows": 1,
+        "position": 65535,
+        "entries": 65536,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l39.r7.p1048569",
+        "rows": 7,
+        "position": 1048569,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn_split",
+            "config": [
+              16,
+              32,
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l39.r33.p31",
+        "rows": 33,
+        "position": 31,
+        "entries": 64,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l39.r256.p31",
+        "rows": 256,
+        "position": 31,
+        "entries": 287,
+        "dense": 1,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l39.r33.p65535",
+        "rows": 33,
+        "position": 65535,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "label": "l39.r256.p65535",
+        "rows": 256,
+        "position": 65535,
+        "entries": 65537,
+        "dense": 0,
+        "window": 128,
+        "source_configs": [
+          {
+            "name": "dsa_attn",
+            "config": [
+              32,
+              32,
+              3
+            ]
+          }
+        ]
+      }
+    ],
+    "manifests": {
+      "/tmp/bitnet-goal-native-attention/reference": "4de680ca2d51216048391f5e9eb39aa764b3a83d1864bc0ef44abad87c78ea18",
+      "/tmp/bitnet-goal-native-attention/checkpoint-reference": "e73e6f201233f1788002b66864b6b445c7f50b482c934faa36e651777b944b12"
+    },
+    "audited_payloads": 4287,
+    "audited_manifests": 7,
+    "no_expected_values_relaxed": true
+  },
+  "verification": {
+    "clean_product_build_zero_warnings": true,
+    "standard_suite": true,
+    "complete_cuda_suite_and_diagnostics": true,
+    "unit_cases": "48 primary synthetic calls plus canonical-empty ring/pool extension; two requests, two repeats, exact independent output hashes, readonly inputs and guards. All scalar/view/preflight rejection checks included.",
+    "full_byte_comparisons": {
+      "real-synthetic": {
+        "calls": 48,
+        "compared_bytes": 1047896400,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      },
+      "asan-synthetic": {
+        "calls": 48,
+        "compared_bytes": 1047896400,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      },
+      "memcheck-synthetic": {
+        "calls": 48,
+        "compared_bytes": 1047896400,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      },
+      "initcheck-synthetic": {
+        "calls": 48,
+        "compared_bytes": 1047896400,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      },
+      "real-checkpoint": {
+        "calls": 112,
+        "compared_bytes": 4198280256,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      },
+      "asan-checkpoint": {
+        "calls": 112,
+        "compared_bytes": 4198280256,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      },
+      "memcheck-checkpoint": {
+        "calls": 112,
+        "compared_bytes": 4198280256,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      },
+      "initcheck-checkpoint": {
+        "calls": 112,
+        "compared_bytes": 4198280256,
+        "hot_allocations": 0,
+        "internal_syncs": 0
+      }
+    },
+    "cuda_memory": "All40cases,160primarycalls per full normal/ASAN/memcheck/initcheck pass. Zero CUDA memory/init errors,zero full-check leaks. Both aligned and four-byte-unaligned input/output views exercised.",
+    "race_scope": "20 primary bounded unit calls plus canonical-empty extension, four c1 scalar-fallback calls and four c4 windowed one-shot calls; full all-shape normal/ASAN/memcheck/initcheck. No unbounded whole-model race run.",
+    "race_results": "All bounded unit and selected component race checks: zero hazards/errors/warnings.",
+    "asan_scope": "C probe/inline workspace planner and JSON module; CUDA host validation TU is not ASAN instrumented.",
+    "legacy_index_session": "Rebuilt final-object combined FFN/KV/SWA/index probe:136 source-reference calls,43431718 bytes exact,0hotallocations,setup rollback and completion recovery preserved.",
+    "qwen27_compatibility": {
+      "exit_code": 0,
+      "scope": "Eight short prompts,24 generated tokens each, greedy CUDA both engines, context512,F32 KV,flash off,8 CPU threads, repetition penalty1,production llama sampled-token trace,loop abort disabled.",
+      "continuation_matches": 192,
+      "continuation_total": 192,
+      "first_token_matches": 8,
+      "prompts": 8,
+      "token_count_mismatches": 0,
+      "model": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+      "bitnet_sha256": "4b6fae25f6cfacf0cd4f77a81ca3cd4a78ede04aaebb092db2ea15a48911c920",
+      "llama_sha256": "a06847ec98ae7f69aa9250eff18a2e735652dd31aa27d64a386e6c6257902188",
+      "trace_sha256": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "log_sha256": "cca389bdc3df4b1cadfe94e3b87b6bd4cd07563865a054b7756c97faacfb8167",
+      "command": "env -u LD_LIBRARY_PATH -u LD_PRELOAD CUDA_VISIBLE_DEVICES=GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05 CUDA_DEVICE_ORDER=PCI_BUS_ID BN_CUDA_DEVICE=0 bash test/compare_llama.sh MODEL --cuda --llama-cuda --strict -n 24 -t 8 --maxseq 512"
+    },
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "legacy-index-session-build": 0,
+      "bench-build": 0,
+      "real-synthetic": 0,
+      "asan-synthetic": 0,
+      "memcheck-synthetic": 0,
+      "initcheck-synthetic": 0,
+      "real-checkpoint": 0,
+      "asan-checkpoint": 0,
+      "memcheck-checkpoint": 0,
+      "initcheck-checkpoint": 0,
+      "race-bounded": 0,
+      "race-component-c1": 0,
+      "race-component-c4": 0,
+      "legacy-index-session": 0,
+      "nsys-prefill": 0,
+      "export-prefill": 0,
+      "nsys-decode": 0,
+      "export-decode": 0,
+      "bench-final": 0
+    },
+    "frozen_source_files": 796,
+    "preserved_user_binaries": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "profile": {
+    "prefill": {
+      "scope": "One warmed aligned component invocation, followed by one CALLER completion; no fence inside primitive. Not whole forward, serving or vLLM benchmark.",
+      "fixture": "synthetic c7 R273/T65537, gathered/window128, pos65264",
+      "kernels": [
+        {
+          "name": "void bn_cuda_native_attention_detail::attention<(int)32, (bool)0>(BnCudaNativeLatentAttentionArgs)",
+          "ns": 475810,
+          "grid": [
+            546,
+            1,
+            1
+          ],
+          "block": [
+            128,
+            1,
+            1
+          ],
+          "registers": 216,
+          "dynamic_shared": 83200
+        }
+      ],
+      "kernel_count": 1,
+      "kernel_ns": 475810,
+      "runtime_api": {
+        "cuKernelGetName": 1,
+        "cudaLaunchKernel_v7000": 1,
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "observed_allocation_free_copy_memset_api": {},
+      "device_memcpy_events": 0,
+      "caller_completion": {
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "sqlite_sha256": "bf92f9d248a49b8e89741be0a1f4d3e61887d6c5cfc29f93bd69960af4fae4cf"
+    },
+    "decode": {
+      "scope": "One warmed aligned component invocation, followed by one CALLER completion; no fence inside primitive. Not whole forward, serving or vLLM benchmark.",
+      "fixture": "checkpoint-derived layer2 R1/T32768, gathered/window128, pos65535",
+      "kernels": [
+        {
+          "name": "void bn_cuda_native_attention_detail::attention<(int)16, (bool)1>(BnCudaNativeLatentAttentionArgs)",
+          "ns": 14336,
+          "grid": [
+            4,
+            16,
+            1
+          ],
+          "block": [
+            128,
+            1,
+            1
+          ],
+          "registers": 123,
+          "dynamic_shared": 60480
+        },
+        {
+          "name": "bn_cuda_native_attention_detail::combine(BnCudaNativeLatentAttentionArgs)",
+          "ns": 8192,
+          "grid": [
+            4,
+            4,
+            1
+          ],
+          "block": [
+            128,
+            1,
+            1
+          ],
+          "registers": 48,
+          "dynamic_shared": 0
+        }
+      ],
+      "kernel_count": 2,
+      "kernel_ns": 22528,
+      "runtime_api": {
+        "cuKernelGetName": 2,
+        "cudaLaunchKernel_v7000": 2,
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "observed_allocation_free_copy_memset_api": {},
+      "device_memcpy_events": 0,
+      "caller_completion": {
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "sqlite_sha256": "26e89a63a56243094dbf9f7448f0e691fbe9d1843b49bffc95864b94dcad4b46"
+    }
+  },
+  "performance": {
+    "method": "Seven alternating-order trials, CUDA graph replay100decode/30prefill calls per event interval; complete output bitwise match checked before timing. Component only, not vLLM.",
+    "results": [
+      {
+        "case": 1,
+        "R": 1,
+        "T": 64,
+        "S": 8,
+        "native_us": 18.449920415878296,
+        "source_us": 12.308800220489502,
+        "native_over_source": 1.4989211040379182,
+        "samples": [
+          [
+            18.707200288772583,
+            18.448959589004517,
+            18.449920415878296,
+            18.449920415878296,
+            18.44607949256897,
+            18.45088005065918,
+            18.447999954223633
+          ],
+          [
+            12.358399629592896,
+            12.298239469528198,
+            12.310080528259277,
+            12.311359643936157,
+            12.308800220489502,
+            12.30463981628418,
+            12.306560277938843
+          ]
+        ],
+        "graph_nodes": [
+          2,
+          2
+        ]
+      },
+      {
+        "case": 2,
+        "R": 4,
+        "T": 513,
+        "S": 16,
+        "native_us": 36.88191890716553,
+        "source_us": 22.547519207000732,
+        "native_over_source": 1.6357417669130596,
+        "samples": [
+          [
+            36.94047927856445,
+            36.881279945373535,
+            36.868159770965576,
+            36.884799003601074,
+            36.88191890716553,
+            36.884799003601074,
+            36.88096046447754
+          ],
+          [
+            22.555840015411377,
+            22.546238899230957,
+            22.547519207000732,
+            22.546560764312744,
+            22.546560764312744,
+            22.547519207000732,
+            22.54784107208252
+          ]
+        ],
+        "graph_nodes": [
+          2,
+          2
+        ]
+      },
+      {
+        "case": 3,
+        "R": 8,
+        "T": 65537,
+        "S": 16,
+        "native_us": 49.18015956878662,
+        "source_us": 30.576000213623047,
+        "native_over_source": 1.60845628025848,
+        "samples": [
+          [
+            49.251837730407715,
+            49.204158782958984,
+            49.177279472351074,
+            49.18015956878662,
+            49.176321029663086,
+            49.20095920562744,
+            49.18015956878662
+          ],
+          [
+            30.639679431915283,
+            30.455360412597656,
+            30.576000213623047,
+            30.470080375671387,
+            30.514240264892578,
+            30.59231996536255,
+            32.818241119384766
+          ]
+        ],
+        "graph_nodes": [
+          2,
+          2
+        ]
+      },
+      {
+        "case": 4,
+        "R": 9,
+        "T": 201,
+        "S": 1,
+        "native_us": 94.07040278116862,
+        "source_us": 53.316267331441246,
+        "native_over_source": 1.764384633237334,
+        "samples": [
+          [
+            94.43519910176595,
+            93.95840167999268,
+            94.12906964619954,
+            94.07040278116862,
+            93.99680296579997,
+            94.06720002492268,
+            94.14292971293132
+          ],
+          [
+            53.33653291066488,
+            53.31519842147827,
+            53.316267331441246,
+            53.30880085627238,
+            53.30666700998942,
+            53.3951997756958,
+            53.318401177724205
+          ]
+        ],
+        "graph_nodes": [
+          1,
+          1
+        ]
+      },
+      {
+        "case": 5,
+        "R": 17,
+        "T": 65537,
+        "S": 1,
+        "native_us": 161.7525259653727,
+        "source_us": 75.83893140157063,
+        "native_over_source": 2.1328428944876037,
+        "samples": [
+          [
+            161.90932591756186,
+            161.7706616719564,
+            161.83466911315918,
+            161.47947311401367,
+            161.5445295969645,
+            161.5488052368164,
+            161.7525259653727
+          ],
+          [
+            75.91040134429932,
+            75.78026453653972,
+            75.83893140157063,
+            75.83680152893066,
+            75.8623997370402,
+            75.7695992787679,
+            75.8687973022461
+          ]
+        ],
+        "graph_nodes": [
+          1,
+          1
+        ]
+      },
+      {
+        "case": 6,
+        "R": 33,
+        "T": 512,
+        "S": 1,
+        "native_us": 157.99786249796549,
+        "source_us": 75.64906279246013,
+        "native_over_source": 2.0885633828858614,
+        "samples": [
+          [
+            158.21654001871744,
+            157.92320569356283,
+            158.1493377685547,
+            157.79627164204916,
+            157.99786249796549,
+            157.79520670572916,
+            158.13120206197104
+          ],
+          [
+            75.64906279246013,
+            75.59146881103516,
+            75.78879992167155,
+            75.49013296763103,
+            75.764266649882,
+            75.22453467051189,
+            75.70239702860515
+          ]
+        ],
+        "graph_nodes": [
+          1,
+          1
+        ]
+      },
+      {
+        "case": 7,
+        "R": 273,
+        "T": 65537,
+        "S": 1,
+        "native_us": 474.83625411987305,
+        "source_us": 231.97226524353027,
+        "native_over_source": 2.04695269764848,
+        "samples": [
+          [
+            476.92480087280273,
+            474.09388224283856,
+            474.83625411987305,
+            475.05067189534503,
+            474.615478515625,
+            474.5973269144694,
+            475.08907318115234
+          ],
+          [
+            232.18347231547037,
+            232.11946487426758,
+            231.81440035502115,
+            231.81866010030112,
+            231.97226524353027,
+            231.94452921549478,
+            231.97654088338217
+          ]
+        ],
+        "graph_nodes": [
+          1,
+          1
+        ]
+      }
+    ],
+    "native_over_original_source_range": [
+      1.4989211040379182,
+      2.1328428944876037
+    ],
+    "initial_correct_port": "Initial valid matched source comparison measured8.3..14.7x slower; subsequent optimizations reduced this substantially without changing original expected values.",
+    "invalid_initial_timing": "The first graph harness used a pre-capture stream, yielding an empty native graph. Those timings are explicitly invalidated in bench-before-invalid-empty-graph.json and are not performance evidence. Corrected benchmarks verify nonempty node counts and poisoned-output replay.",
+    "remaining_gap": "Current primitive is still about1.5..2.1x the original source kernel across these cases. No vLLM parity or end-to-end throughput/latency claim."
+  },
+  "limits": [
+    "Primitive only: PRE-update ring/index/KV resources are supplied by caller. Production native attention session/controller integration remains required.",
+    "Checkpoint-derived histories repeat canonical vectors and selections are synthetic valid causal lists. They are not a full-prefix or full-model execution.",
+    "Full source-compatible grouped output projection, Engram and complete forward/generation admission must be qualified independently.",
+    "No continuous-batching/tail-latency evidence or whole-forward asynchronous fence coordination is provided by this component.",
+    "ARM/Metal execution is not newly qualified; existing shared CPU/backend compatibility remains subject to the broad goal gates."
+  ],
+  "artifacts": "/tmp/bitnet-goal-native-attention",
+  "goal_status": "active"
+}

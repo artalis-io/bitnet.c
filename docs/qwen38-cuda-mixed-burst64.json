@@ -1,0 +1,175 @@
+{
+  "scope": "Qwen3.8 27B heterogeneous mixed-burst recurrence correctness qualification",
+  "whole_goal_complete": false,
+  "correctness_case_qualified": true,
+  "performance_qualified": false,
+  "default_policy_changed": false,
+  "evidence_directory": "/tmp/bitnet-goal-mixed-burst64",
+  "checks": {
+    "selection-build/clean": {
+      "exit": 0
+    },
+    "selection-build/build": {
+      "exit": 0
+    },
+    "selection-build/standard": {
+      "exit": 0
+    },
+    "selection-build/benches": {
+      "exit": 0
+    },
+    "selection-runtime": {
+      "exit": 0
+    },
+    "controlled-cohort-corrected": {
+      "exit": 0,
+      "purpose": "Native cohort-selection replay of unchanged independent original heads"
+    },
+    "selection-fullheads": {
+      "exit": 0
+    },
+    "selection-accounting": {
+      "exit": 0
+    },
+    "selection-cuda": {
+      "exit": 0
+    },
+    "sanitize-test_transformer-build": {
+      "exit": 0
+    },
+    "sanitize-test_transformer": {
+      "exit": 0
+    },
+    "sanitize-runtime-build": {
+      "exit": 0
+    },
+    "selection-sanitize-runtime": {
+      "exit": 0
+    },
+    "selection-legacy-periodic": {
+      "exit": 0
+    },
+    "selection-legacy-periodic-heads": {
+      "exit": 0
+    },
+    "selection-legacy-periodic-accounting": {
+      "exit": 0
+    }
+  },
+  "exports": {
+    "test/bf16_cuda_mixed_burst64_workload.json": "ff2097794256a54ce693819fa52da0c58a2d0f6ee36ecc5a86570ed9fc125256",
+    "test/bf16_cuda_mixed_burst64_reference.json": "ba9c79ebce5ebb27bc3dfa597bebbca8cdc9000bdd549473a66d872b26d1b917",
+    "test/reference_cuda_bf16_mixed_burst_control.py": "a928d25ff5af841d91c63a62cccd46c3d39b43dcf42f40163317c713320180cf",
+    "bench/policies/qwen38-cuda-sm120-188sm-cohort.json": "52e17ca109785a6fe7b53b6d5fd5da956b23e32daef6ebe0a30472b5f17fb925",
+    "test/test_bf16_reference_scheduler.py": "a1e6c5ed55afab68ba1309f43d966fbc3f0a78665f21167519d77bdcda38aaf1"
+  },
+  "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+  "hardware": {
+    "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "multiprocessors": 188,
+    "total_memory": 101973491712,
+    "compute_capability": [
+      12,
+      0
+    ],
+    "torch_cuda": "13.4"
+  },
+  "workload": {
+    "requests": 64,
+    "outputs_each": 192,
+    "total_outputs": 12288,
+    "prompt_lengths_per_wave": [
+      129,
+      5,
+      129,
+      5
+    ],
+    "pair_spacing_ms": 16000,
+    "in_pair_wave_spacing_ms": 4000,
+    "max_live": 8,
+    "max_prefills": 4,
+    "chunk_tokens": 64,
+    "mixed_budget": 8,
+    "bulk_budget": 256,
+    "context": 8192,
+    "kv_quota_bytes": 4294967296
+  },
+  "diagnosis": {
+    "old_failure": {
+      "matrices": 2296,
+      "bf16_words": 3954247680,
+      "mismatched_matrices": 1082,
+      "first_mismatch": 519,
+      "prefix_matrices_exact": 519,
+      "first_original_cp_call": 519,
+      "expected_failure_preserved": true
+    },
+    "first_cp_rows": {
+      "call": 519,
+      "request_ids": [
+        8,
+        10,
+        12,
+        13,
+        15,
+        14
+      ],
+      "old_row_byte_equal": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "corrected_matrix_byte_equal": true
+    },
+    "old_greedy_token_mismatches": 628,
+    "original_cp_cohorts": 132,
+    "original_noncp_cohorts": 1693
+  },
+  "policy": {
+    "field": "gdn_prefill_selection",
+    "default": 0,
+    "single_cp": 1,
+    "meaning": "Explicit CP for exactly one recurrent prefill sequence, NONCP for multiple; one-token tails count as prefill. Requires arithmetic 5 and both recurrence capabilities. No default or existing fixed-profile changes.",
+    "source_dispatch": "Unmodified original FlashInfer host predicate: num_sequences * 48 * 3 < 188 on the qualified GDDR SM120 device. Not a universal hardware autotuner.",
+    "ownership": "Immutable request/coordinator copies; restart retains policy; incompatible cohorts reject before device work."
+  },
+  "proof": {
+    "matrices": 2296,
+    "heads": 15924,
+    "bf16_words": 3954247680,
+    "tokens": 12288,
+    "tolerance": 0,
+    "independent_original_heads_unchanged": true,
+    "all_partial_prefill_heads_checked": true,
+    "normalization_contracts_unchanged": true,
+    "host_control": "FIFO selection plus decode-reserved fixed shares derived from own live metadata; 10000 integer cases checked against the unmodified C planner. Original model operators, weights, KV, sampling and worker unchanged. This is numerical control, not the original performance scheduler."
+  },
+  "compatibility": {
+    "legacy_policy_wire_files_byte_identical": 11,
+    "legacy_periodic": {
+      "matrices": 2100,
+      "heads": 8400,
+      "bf16_words": 2085888000,
+      "performance_qualified": false
+    },
+    "full_cuda_and_diagnostics": true,
+    "real_model_arithmetic_profiles_and_lifecycle": true,
+    "clang_asan_ubsan_cpu_and_all_host_c_real_cuda_runtime": true,
+    "product_gcc_zero_warnings": true
+  },
+  "limitations": [
+    "Corrected controlled replay is a correctness gate, not a performance result.",
+    "The earlier arithmetic-unqualified mixed-budget-8 timing pilot showed queue growth; no stable-load or vLLM parity claim.",
+    "New free-clock geometries require their own independent numerical qualification.",
+    "Remaining whole-goal scope includes serving performance, modern MoE/offload coverage, CPU backends, total memory accounting and secondary Metal support."
+  ],
+  "reproducibility": {
+    "exported_input_binaries_byte_identical": true,
+    "reference_control_python_compiles": true,
+    "host_scheduler_differential_cases": 10000,
+    "policy_parser_protocol": true
+  }
+}

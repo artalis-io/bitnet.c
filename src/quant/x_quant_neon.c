@@ -206,7 +206,8 @@ void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n
         }
 
         float scale = amax / 127.0f;
-        float inv_scale = 1.0f / scale;
+        /* Match GGML's reciprocal before rounding activation ties. */
+        float inv_scale = 127.0f / amax;
         x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(scale));
 
         float32x4_t vinv = vdupq_n_f32(inv_scale);

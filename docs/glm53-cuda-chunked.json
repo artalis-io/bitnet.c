@@ -1,0 +1,623 @@
+{
+  "scope": "Whole45-layer GLM chunked/resumed prefill and greedy decode, including every committed KDA state/history and MLA cache/tail",
+  "whole_goal_complete": false,
+  "ordinary_generation_admitted": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-chunked",
+  "source_sha256": {
+    "src/transformer/bf16.c": "967613b7f79dd7e7d7818bec2c22709b5d3b8dbe7210f6feae21d63f7c029076",
+    "src/transformer/bf16_internal.h": "56e2f32e6cba2bfe38da474722c0198c9c763f3761f75681fd899205c46f992e",
+    "test/test_cuda_glm_request.c": "ea4acb20661ed3ffcaf7a67d73263fb256a416a6432f25b1c95e7a3ae41bd500",
+    "test/reference_glm_model.py": "b0d049102d54566023a32920820d093e131f9cd50def7e6252921616637bdb6f",
+    "Makefile": "acac721d796ac6ebe151db53648ad313c2cdcc233b46fbe1cc7cd1d7f6c5aec6"
+  },
+  "validation": {
+    "clean": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "legacy-fast": {
+      "exit": 0
+    },
+    "memcheck": {
+      "exit": 0
+    },
+    "synccheck": {
+      "exit": 0
+    },
+    "trace": {
+      "exit": 0
+    },
+    "trace-export": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "sanitize-build": {
+      "exit": 0
+    },
+    "sanitize": {
+      "exit": 0
+    },
+    "chunked-native": {
+      "exit": 0
+    },
+    "chunked-reference": {
+      "exit": 0
+    },
+    "resumed-native": {
+      "exit": 0
+    },
+    "resumed-reference": {
+      "exit": 0
+    },
+    "tails-native": {
+      "exit": 0
+    },
+    "tails-reference": {
+      "exit": 0
+    },
+    "serial-native": {
+      "exit": 0
+    },
+    "serial-reference": {
+      "exit": 0
+    }
+  },
+  "clean_build_zero_warnings": true,
+  "user_probe_binaries_preserved": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "prior_execution_and_operator_sources_preserved": true,
+  "cases": {
+    "chunked": {
+      "schedule": [
+        3,
+        6
+      ],
+      "frames": 3,
+      "exact_tuple_elements": 9225000,
+      "exact_state_elements": 116173056,
+      "exact_logit_elements": 464640,
+      "matching_files": 843,
+      "greedy": [
+        154827,
+        369,
+        279
+      ]
+    },
+    "resumed": {
+      "schedule": [
+        3,
+        9
+      ],
+      "frames": 3,
+      "exact_tuple_elements": 11992500,
+      "exact_state_elements": 116173056,
+      "exact_logit_elements": 464640,
+      "matching_files": 843,
+      "greedy": [
+        154827,
+        576,
+        1196
+      ]
+    },
+    "tails": {
+      "schedule": [
+        7,
+        1,
+        1
+      ],
+      "frames": 4,
+      "exact_tuple_elements": 9225000,
+      "exact_state_elements": 154897408,
+      "exact_logit_elements": 619520,
+      "matching_files": 1124,
+      "greedy": [
+        23742,
+        264,
+        304,
+        279
+      ]
+    },
+    "serial": {
+      "schedule": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "frames": 10,
+      "exact_tuple_elements": 9225000,
+      "exact_state_elements": 387243520,
+      "exact_logit_elements": 1548800,
+      "matching_files": 2810,
+      "greedy": [
+        314,
+        154842,
+        154827,
+        1,
+        7,
+        198,
+        23742,
+        12202,
+        448,
+        264
+      ]
+    }
+  },
+  "totals": {
+    "exact_tuple_elements": 39667500,
+    "exact_state_elements": 774487040,
+    "exact_logit_elements": 3097600,
+    "frames": 20,
+    "matching_files": 5620
+  },
+  "total_exact_elements": 817252140,
+  "reference_audit": {
+    "chunked": {
+      "manifest_sha256": "26acbb4fe428f7790462b5a1319652b38f08ad90261c4612980c513ff0434a36",
+      "matched_files": 843,
+      "maximum_selected_expert": 287,
+      "selected_expert_projection_hashes": 6642
+    },
+    "resumed": {
+      "manifest_sha256": "804ac41d9032492ec2423c000e6e81d7e8bcd3248cb67ccb08cb25f60cef8d91",
+      "matched_files": 843,
+      "maximum_selected_expert": 287,
+      "selected_expert_projection_hashes": 7563
+    },
+    "tails": {
+      "manifest_sha256": "cfd99e62b7a556c8bf16e4fadbf3752a1ab9d0061aa0debd3d28e07326b2d6ca",
+      "matched_files": 1124,
+      "maximum_selected_expert": 287,
+      "selected_expert_projection_hashes": 6618
+    },
+    "serial": {
+      "manifest_sha256": "b8560260987fd12117af7274adae855c55119b8b9561ba138823a846111ad773",
+      "matched_files": 2810,
+      "maximum_selected_expert": 287,
+      "selected_expert_projection_hashes": 6651
+    }
+  },
+  "request_state_inspection": {
+    "api": "bn_transformer_bf16_glm_layer_views",
+    "contract": "Healthy idle committed generation only; read-only borrowed views expire at next begin/restart/release. No allocation, GPU queueing or implicit fence.",
+    "kda": {
+      "history": "73728 BF16",
+      "state": "1048576 F32"
+    },
+    "mla": {
+      "latent": "41984 bytes",
+      "index": "8448 bytes",
+      "tail": "1024 BF16"
+    },
+    "guards": [
+      "Active request",
+      "Failed request",
+      "Invalid layer",
+      "Null output",
+      "Missing/unprepared session"
+    ]
+  },
+  "oracle": {
+    "independence": "Every frame starts from original checkpoint IDs or the original previous final-prompt greedy prediction for decode. All weights, routing, states and activations computed independently with original operators; no native activation/routing/weight injection.",
+    "expert_domain": "Full288-domain original vector operators, actual IDs through287. Only original router-selected raw expert rows populated before each unchanged original operator.",
+    "arithmetic": "Fused-recurrent KDA, short causal MLA, deferred/fused mHC, original identity-materialized K/V, checkpoint clamp10, raw Q8 endpoints and all-row final RMS before sampled-row head. Default non-batch-invariant normalization launch.",
+    "repeats": "Each independent original schedule runs twice; every saved tuple/state/head file matches original repeat and native execution exactly.",
+    "prompt_continuation": "Prompt chunks always consume the next checkpoint fixture IDs. Intermediate greedy heads are recorded but never substituted for subsequent prompt IDs.",
+    "chunk_geometry": "Matched per-schedule original geometry; chunk-invariance is not assumed. Unsplit9 predicts304 while [3,6] predicts369 at the last prompt row in both original and native."
+  },
+  "memory": {
+    "max_tokens": 9,
+    "sequence_capacity": 64,
+    "device_payload_bytes": 511946960,
+    "host_metadata_staging_and_pinned_payload_bytes": 141123100,
+    "shared_source_cache_budget_bytes": 134217728,
+    "model_nonexpert_payload_bytes": 9916407032,
+    "expert_bank_slots": 2,
+    "experts_per_bank": 3,
+    "runtime_resident_allocations": 0
+  },
+  "trace": {
+    "scope": "One complete NT1 decode of token314 at position1, after one-token prefill; bounded128MiB shared source cache, streamed routed weights. Profiler-instrumented diagnostic, not a latency or vLLM parity benchmark.",
+    "kernel_count": 2390,
+    "copy_count": 365,
+    "h2d_bytes": 5152182216,
+    "d2h_bytes": 359256,
+    "allocation_api_calls": 0,
+    "activation_h2d_bytes": 0,
+    "activation_d2h_excluding_final_logits_bytes": 0,
+    "final_logits_d2h_bytes": 309760,
+    "h2d": {
+      "routed_weight_bytes": 5152178176,
+      "bank_descriptor_bytes": 4032,
+      "scheduler_bytes": 8
+    },
+    "d2h": {
+      "routing_metadata_bytes": 49224,
+      "explicit_mla_status_bytes": 44,
+      "embedding_guard_bytes": 228,
+      "final_logits_bytes": 309760
+    },
+    "embedding_guard": "The unchanged CUDA resident synchronize() copies the4-byte embedding guard on every fence:57*4=228 extra control bytes; confirmed in src/gpu_cuda_gdn.cuh.",
+    "stream_fences": 57,
+    "fence_roles": {
+      "scheduler_writes": 2,
+      "routing_metadata": 42,
+      "mla_status": 11,
+      "final_logits_read": 1,
+      "final_commit": 1
+    },
+    "runtime_apis": {
+      "cuKernelGetFunction": {
+        "calls": 22,
+        "total_ms": 0.044229
+      },
+      "cuKernelGetName": {
+        "calls": 2368,
+        "total_ms": 0.667122
+      },
+      "cuLaunchKernel": {
+        "calls": 22,
+        "total_ms": 0.085804
+      },
+      "cudaEventQuery_v3020": {
+        "calls": 126,
+        "total_ms": 0.44254
+      },
+      "cudaEventRecord_v3020": {
+        "calls": 252,
+        "total_ms": 0.721476
+      },
+      "cudaLaunchKernel_v7000": {
+        "calls": 2368,
+        "total_ms": 11.981244
+      },
+      "cudaMemcpyAsync_v3020": {
+        "calls": 365,
+        "total_ms": 26.910747
+      },
+      "cudaMemsetAsync_v3020": {
+        "calls": 43,
+        "total_ms": 0.438822
+      },
+      "cudaStreamSynchronize_v3020": {
+        "calls": 57,
+        "total_ms": 0.143842
+      },
+      "cudaStreamWaitEvent_v3020": {
+        "calls": 126,
+        "total_ms": 0.490295
+      }
+    },
+    "copy_sizes": [
+      {
+        "direction": "H2D",
+        "bytes": 4,
+        "count": 2
+      },
+      {
+        "direction": "H2D",
+        "bytes": 24,
+        "count": 42
+      },
+      {
+        "direction": "H2D",
+        "bytes": 36,
+        "count": 84
+      },
+      {
+        "direction": "H2D",
+        "bytes": 30408704,
+        "count": 39
+      },
+      {
+        "direction": "H2D",
+        "bytes": 32636928,
+        "count": 2
+      },
+      {
+        "direction": "H2D",
+        "bytes": 36831232,
+        "count": 1
+      },
+      {
+        "direction": "H2D",
+        "bytes": 45613056,
+        "count": 78
+      },
+      {
+        "direction": "H2D",
+        "bytes": 48955392,
+        "count": 4
+      },
+      {
+        "direction": "H2D",
+        "bytes": 55246848,
+        "count": 2
+      },
+      {
+        "direction": "D2H",
+        "bytes": 4,
+        "count": 68
+      },
+      {
+        "direction": "D2H",
+        "bytes": 1172,
+        "count": 42
+      },
+      {
+        "direction": "D2H",
+        "bytes": 309760,
+        "count": 1
+      }
+    ],
+    "kernels": [
+      {
+        "name": "q8_bf16_mmvq_kernel",
+        "count": 304,
+        "total_ms": 6.125434
+      },
+      {
+        "name": "bank_project_grouped",
+        "count": 252,
+        "total_ms": 3.630736
+      },
+      {
+        "name": "mhc_collapse_kernel",
+        "count": 90,
+        "total_ms": 2.931142
+      },
+      {
+        "name": "mhc_coeff_kernel",
+        "count": 90,
+        "total_ms": 0.439937
+      },
+      {
+        "name": "mhc_fused_project_kernel",
+        "count": 89,
+        "total_ms": 0.287938
+      },
+      {
+        "name": "bank_map_input",
+        "count": 42,
+        "total_ms": 0.28784
+      },
+      {
+        "name": "Kernel2",
+        "count": 22,
+        "total_ms": 0.287105
+      },
+      {
+        "name": "sparse_mla_decode_dsv3_2_kernel",
+        "count": 11,
+        "total_ms": 0.287104
+      },
+      {
+        "name": "biased_sigmoid_f32_kernel",
+        "count": 42,
+        "total_ms": 0.267969
+      },
+      {
+        "name": "quantize_bf16_q8_batch_kernel",
+        "count": 304,
+        "total_ms": 0.260898
+      },
+      {
+        "name": "kernel",
+        "count": 53,
+        "total_ms": 0.25405
+      },
+      {
+        "name": "kda_recurrent_kernel",
+        "count": 34,
+        "total_ms": 0.236096
+      },
+      {
+        "name": "group_gather",
+        "count": 42,
+        "total_ms": 0.186786
+      },
+      {
+        "name": "bank_quantize_grouped",
+        "count": 126,
+        "total_ms": 0.147713
+      },
+      {
+        "name": "bank_activate_grouped",
+        "count": 126,
+        "total_ms": 0.124032
+      },
+      {
+        "name": "causal_conv_silu_bf16_batch_kernel",
+        "count": 34,
+        "total_ms": 0.1064
+      },
+      {
+        "name": "split_columns_kernel",
+        "count": 102,
+        "total_ms": 0.094688
+      },
+      {
+        "name": "route_validate",
+        "count": 84,
+        "total_ms": 0.079393
+      },
+      {
+        "name": "gated_norm_kernel",
+        "count": 34,
+        "total_ms": 0.061761
+      },
+      {
+        "name": "route_weight",
+        "count": 42,
+        "total_ms": 0.060896
+      },
+      {
+        "name": "group_prefix",
+        "count": 42,
+        "total_ms": 0.059136
+      },
+      {
+        "name": "route_sum",
+        "count": 42,
+        "total_ms": 0.059072
+      },
+      {
+        "name": "clamped_swiglu_kernel",
+        "count": 45,
+        "total_ms": 0.046176
+      },
+      {
+        "name": "cast_bf16_f32",
+        "count": 53,
+        "total_ms": 0.045056
+      },
+      {
+        "name": "quantize_bf16_q8_affine_batch_kernel",
+        "count": 42,
+        "total_ms": 0.040641
+      },
+      {
+        "name": "vector8_rmsnorm_kernel",
+        "count": 22,
+        "total_ms": 0.0392
+      },
+      {
+        "name": "add_bf16_kernel",
+        "count": 42,
+        "total_ms": 0.038496
+      },
+      {
+        "name": "tail_kernel",
+        "count": 11,
+        "total_ms": 0.036448
+      },
+      {
+        "name": "physical_indices_kernel",
+        "count": 11,
+        "total_ms": 0.035264
+      },
+      {
+        "name": "group_count",
+        "count": 42,
+        "total_ms": 0.035072
+      },
+      {
+        "name": "sparse_mla_decode_dsv4_merge_kernel",
+        "count": 11,
+        "total_ms": 0.03056
+      },
+      {
+        "name": "group_reset",
+        "count": 42,
+        "total_ms": 0.027776
+      },
+      {
+        "name": "mhc_project_kernel",
+        "count": 1,
+        "total_ms": 0.027584
+      },
+      {
+        "name": "mhc_post_kernel",
+        "count": 1,
+        "total_ms": 0.020352
+      },
+      {
+        "name": "cache_append_kernel",
+        "count": 11,
+        "total_ms": 0.017216
+      },
+      {
+        "name": "layernorm_kernel",
+        "count": 11,
+        "total_ms": 0.016064
+      },
+      {
+        "name": "select_kernel",
+        "count": 11,
+        "total_ms": 0.0136
+      },
+      {
+        "name": "fwht_kernel",
+        "count": 11,
+        "total_ms": 0.013121
+      },
+      {
+        "name": "weight_scale_kernel",
+        "count": 11,
+        "total_ms": 0.009312
+      },
+      {
+        "name": "vector8_4096_rmsnorm_kernel",
+        "count": 1,
+        "total_ms": 0.0032
+      },
+      {
+        "name": "join_columns_kernel",
+        "count": 2,
+        "total_ms": 0.001952
+      },
+      {
+        "name": "embedding_q8_kernel",
+        "count": 1,
+        "total_ms": 0.001824
+      },
+      {
+        "name": "stream_mean_kernel",
+        "count": 1,
+        "total_ms": 0.001184
+      }
+    ],
+    "timings_ms": {
+      "gpu_interval_span": 652.095322,
+      "kernel_sum": 16.776224,
+      "copy_sum": 89.459154,
+      "gpu_active_union": 106.235378,
+      "gpu_idle_within_span": 545.859944
+    },
+    "limits": [
+      "CPU source/cache work and profiler overhead are included in GPU gaps; gaps are not isolated DMA stall measurements.",
+      "Routed weights are streamed even after shape warmup; this is not a fully resident or hot-VRAM-cache result.",
+      "Final host sampling consumes the explicit vocabulary readback.",
+      "Prefill tracing and resident vLLM performance comparison remain pending."
+    ]
+  },
+  "sanitizers": {
+    "cuda_memcheck": "3,9 prefill then decode; forced-BUSY replay/lifecycle; full leak check",
+    "cuda_synccheck": "7,1,1 prefill then decode; forced-BUSY replay/lifecycle",
+    "host_asan_ubsan": "Actual3,9 request test with inspection guards, restart/BUSY and failed-fence paths. ASAN_OPTIONS=protect_shadow_gap=0:detect_leaks=1:halt_on_error=1; UBSAN_OPTIONS=halt_on_error=1."
+  },
+  "backend": {
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "compute_capability": "SM120",
+    "runtime_cublas": "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib",
+    "gpu_jobs_serial": true
+  },
+  "limits": [
+    "Largest qualified prompt here has12tokens and largest single frame has9; capacity64, one latent page and one pooled-indexer page.",
+    "Matrix-prefill NT65+ and whole-model long-page/context cases remain unqualified.",
+    "Sparse chronological ordering versus original atomic ordering beyond2048 remains unresolved through generation.",
+    "This trace measures streamed routed experts with a small source cache, not resident vLLM latency/throughput parity.",
+    "Default chunk-KDA/HF merged loader and ordinary generation/serving admission are not claimed."
+  ],
+  "next": "Qualify actual whole-model matrix-prefill batches and multi-page/long-context execution, preserving original expert-domain partition semantics, then integrate ordinary generation and measure RAM/VRAM placement and matched resident performance."
+}

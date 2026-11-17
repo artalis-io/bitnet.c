@@ -157,6 +157,8 @@ static void test_iq3s_serialized_size(void) {
     size_t bytes = 0;
     assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_IQ3_S, 512, &bytes));
     assert(bytes == 220);
+    assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_I32, 17, &bytes) && bytes == 68);
+    assert(!bn_gguf_tensor_size(BN_GGUF_TENSOR_I32, UINT64_MAX, &bytes));
     printf("PASSED\n");
 }
 

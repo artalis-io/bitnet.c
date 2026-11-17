@@ -1,4 +1,8 @@
 #include "transformer_ssm_internal.h"
+#include "kda_reference.h"
+#include "kda_norm_reference.h"
+#include "kda_coefficients_reference.h"
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -150,10 +154,10 @@ static void test_l2norm(void) {
     memcpy(q_test, q_ref, total * sizeof(float));
     memcpy(k_test, k_ref, total * sizeof(float));
 
-    BnSSML2NormCtx ctx_ref = { q_ref, k_ref, 1e-6f, head_dim };
+    BnSSML2NormCtx ctx_ref = { q_ref, k_ref, 1e-6f, head_dim, BN_SSM_QK_NORM_CLAMPED_L2 };
     bn_transformer_ssm_l2norm_scalar_range(&ctx_ref, 0, num_heads);
 
-    BnSSML2NormCtx ctx_test = { q_test, k_test, 1e-6f, head_dim };
+    BnSSML2NormCtx ctx_test = { q_test, k_test, 1e-6f, head_dim, BN_SSM_QK_NORM_CLAMPED_L2 };
 #ifdef __ARM_NEON
     bn_transformer_ssm_l2norm_neon_range(&ctx_test, 0, num_heads);
 #elif defined(__AVX2__)
@@ -172,6 +176,67 @@ static void test_l2norm(void) {
     free(q_ref); free(k_ref);
     free(q_test); free(k_test);
     printf("PASSED (max_diff q=%.2e k=%.2e)\n", dq, dk);
+}
+
+// Independent GGML graph fixtures: reference_cpu_gdn_norm.c.
+static void test_qk_rmsnorm_reference(void) {
+    printf("test_ssm_qk_rmsnorm_reference... ");
+    const struct { int hd; float eps; uint64_t hash; } cases[] = {
+        {1, 1e-6f, UINT64_C(0xb87c0d60e44cfc61)},
+        {7, 1e-6f, UINT64_C(0x478e515efa2ee10c)},
+        {16, 1e-6f, UINT64_C(0x5242569b5cee0e98)},
+        {128, 1e-6f, UINT64_C(0x2a61c1ae3be88d36)},
+        {256, 1e-6f, UINT64_C(0xa1b09d53143339a0)},
+        {1, 1e-5f, UINT64_C(0x3bf82f006cb599ec)},
+        {7, 1e-5f, UINT64_C(0x9af71c7c6d9d271e)},
+        {16, 1e-5f, UINT64_C(0xf1aae4ca5b681b27)},
+        {128, 1e-5f, UINT64_C(0xb6cc48d1cf6ba031)},
+        {256, 1e-5f, UINT64_C(0x0689be0d3d2b200c)},
+    };
+    const float scales[] = {0.0f, 1e-8f, 1.0f, 1e10f};
+    for (unsigned c = 0; c < sizeof(cases)/sizeof(cases[0]); c++) {
+        int hd = cases[c].hd;
+        for (int backend = 0; backend < 2; backend++) {
+            float q[4*256+2], k[4*256+2];
+            for (int i = 0; i < 4*256+2; i++) q[i] = k[i] = NAN;
+            for (int h = 0; h < 4; h++) for (int d = 0; d < hd; d++)
+                q[1+h*hd+d] = k[1+h*hd+d] =
+                    sinf((float)(h*hd+d+1)*0.13f) * scales[h];
+            BnSSML2NormCtx ctx = {q+1, k+1, cases[c].eps, hd,
+                                   BN_SSM_QK_NORM_RMS_SCALED};
+            if (!backend) {
+                bn_transformer_ssm_l2norm_scalar_range(&ctx, 0, 4);
+            } else {
+                // Split head ranges checks partial dispatch without changing sums.
+#ifdef __ARM_NEON
+                bn_transformer_ssm_l2norm_neon_range(&ctx, 0, 1);
+                bn_transformer_ssm_l2norm_neon_range(&ctx, 1, 4);
+#elif defined(__AVX2__)
+                bn_transformer_ssm_l2norm_avx2_range(&ctx, 0, 1);
+                bn_transformer_ssm_l2norm_avx2_range(&ctx, 1, 4);
+#elif defined(__wasm_simd128__)
+                bn_transformer_ssm_l2norm_wasm_range(&ctx, 0, 1);
+                bn_transformer_ssm_l2norm_wasm_range(&ctx, 1, 4);
+#else
+                bn_transformer_ssm_l2norm_scalar_range(&ctx, 0, 1);
+                bn_transformer_ssm_l2norm_scalar_range(&ctx, 1, 4);
+#endif
+            }
+            uint64_t hash = UINT64_C(14695981039346656037);
+            assert(memcmp(q+1, k+1, (size_t)4*hd*sizeof(float)) == 0);
+            for (int i = 1; i <= 4*hd; i++) {
+                uint32_t bits; memcpy(&bits, q+i, sizeof(bits));
+                hash = (hash ^ bits) * UINT64_C(1099511628211);
+            }
+            if (hash != cases[c].hash)
+                fprintf(stderr, "GDN RMS hd=%d backend=%d hash=%016llx expected=%016llx\n",
+                    hd, backend, (unsigned long long)hash, (unsigned long long)cases[c].hash);
+            assert(hash == cases[c].hash);
+            assert(isnan(q[0]) && isnan(k[0]));
+            for (int i = 4*hd+1; i < 4*256+2; i++) assert(isnan(q[i]) && isnan(k[i]));
+        }
+    }
+    printf("PASSED\n");
 }
 
 // --- Test delta ---
@@ -430,6 +495,183 @@ static void test_sigmoid_gate_rounding(void) {
 }
 #endif
 
+static void test_kda_reference(void) {
+    for (int split = 0; split < 2; split++) {
+        float state[18], out[6];
+        memcpy(state, kda_ref_initial, sizeof(state));
+        for (int t = 0; t < 4; t++) {
+            for (int i = 0; i < 6; i++) out[i] = 77.0f;
+            BnSSMKDACtx c = {state, out, kda_ref_q + t * 6,
+                kda_ref_k + t * 6, kda_ref_v + t * 6,
+                kda_ref_g + t * 6, kda_ref_beta + t * 2, 2, 3, 3,
+                kda_ref_scale};
+            if (split) {
+                float saved[9]; memcpy(saved, state + 9, sizeof(saved));
+                assert(bn_transformer_ssm_kda_step(&c, 0, 1) == 0);
+                assert(memcmp(saved, state + 9, sizeof(saved)) == 0);
+                for (int i = 3; i < 6; i++) assert(out[i] == 77.0f);
+                assert(bn_transformer_ssm_kda_step(&c, 1, 2) == 0);
+            } else assert(bn_transformer_ssm_kda_step(&c, 0, 2) == 0);
+            assert(max_diff(state, kda_ref_states + t * 18, 18) < 2e-6f);
+            assert(max_diff(out, kda_ref_out + t * 6, 6) < 2e-6f);
+        }
+    }
+    /* Rectangular state and beta=1 have an exact rank-one solution. */
+    float state[6] = {0}, out[3] = {0};
+    const float q[] = {2, 0}, k[] = {0.5f, 0.25f};
+    const float v[] = {1, 2, -3}, gate[] = {0, -5}, beta[] = {1};
+    const float expected[] = {0.5f, 0.25f, 1, 0.5f, -1.5f, -0.75f};
+    BnSSMKDACtx c = {state, out, q, k, v, gate, beta, 1, 2, 3, 1};
+    assert(bn_transformer_ssm_kda_step(&c, 0, 1) == 0);
+    assert(memcmp(state, expected, sizeof(state)) == 0);
+    assert(memcmp(out, v, sizeof(out)) == 0);
+    /* Invalid metadata and missing buffers cannot partially mutate outputs. */
+    for (int bad = 0; bad < 10; bad++) {
+        BnSSMKDACtx invalid = c;
+        int start = 0, end = 1;
+        if (bad == 0) invalid.head_k_dim = 0;
+        if (bad == 1) invalid.head_k_dim = 257;
+        if (bad == 2) invalid.head_v_dim = 0;
+        if (bad == 3) invalid.head_v_dim = 257;
+        if (bad == 4) invalid.num_heads = 0;
+        if (bad == 5) invalid.q_scale = NAN;
+        if (bad == 6) invalid.q_scale = 0;
+        if (bad == 7) start = -1;
+        if (bad == 8) end = 2;
+        if (bad == 9) invalid.beta = NULL;
+        assert(bn_transformer_ssm_kda_step(&invalid, start, end) == -1);
+        assert(memcmp(state, expected, sizeof(state)) == 0);
+        assert(memcmp(out, v, sizeof(out)) == 0);
+    }
+    BnSSMKDACtx empty = {0};
+    empty.num_heads = 1; empty.head_k_dim = empty.head_v_dim = 1;
+    empty.q_scale = 1;
+    assert(bn_transformer_ssm_kda_step(&empty, 0, 0) == 0);
+    assert(bn_transformer_ssm_kda_step(NULL, 0, 0) == -1);
+    printf("KDA independent reference, head isolation and validation PASSED\n");
+}
+
+static void test_kda_coefficients(void) {
+    for (int storage = 0; storage < 2; storage++)
+    for (int t = 0; t < 7; t++) for (int inplace = 0; inplace < 2; inplace++) {
+        float gate[6], beta[2], input[6], raw[2], parameter[2];
+        for (int h = 0; h < 2; h++) parameter[h] = storage
+            ? -expf(kda_coeff_a_log[h]) : kda_coeff_a_log[h];
+        memcpy(input, kda_coeff_gate + t * 6, sizeof(input));
+        memcpy(raw, kda_coeff_beta_raw + t * 2, sizeof(raw));
+        BnSSMKDACoeffCtx c = {inplace ? input : gate, inplace ? raw : beta,
+            input, kda_coeff_bias, parameter, raw, 2, 3, -5,
+            (BnSSMKDAParameterStorage)storage};
+        if (inplace) {
+            float saved[3]; memcpy(saved, input, sizeof(saved));
+            float b = raw[0];
+            assert(bn_transformer_ssm_kda_coefficients(&c, 1, 2) == 0);
+            assert(memcmp(saved, input, sizeof(saved)) == 0 && raw[0] == b);
+            assert(bn_transformer_ssm_kda_coefficients(&c, 0, 1) == 0);
+        } else assert(bn_transformer_ssm_kda_coefficients(&c, 0, 2) == 0);
+        assert(max_diff(c.log_decay, kda_coeff_log_decay + t * 6, 6) < 2e-6f);
+        assert(max_diff(c.beta, kda_coeff_beta + t * 2, 2) < 2e-7f);
+        for (int j = 0; j < 6; j++) assert(c.log_decay[j] >= -5 && c.log_decay[j] <= 0);
+    }
+    float gate[6], bias[6], a[2], raw[2], out[6], beta[2];
+    for (int bad = 0; bad < 18; bad++) {
+        for (int j = 0; j < 6; j++) {gate[j] = 1; bias[j] = 0; out[j] = 7;}
+        for (int j = 0; j < 2; j++) {a[j] = 0; raw[j] = 0; beta[j] = 8;}
+        BnSSMKDACoeffCtx c = {out, beta, gate, bias, a, raw, 2, 3, -5, BN_SSM_KDA_A_LOG};
+        int start = 0, end = 2;
+        if (bad == 0) gate[5] = NAN;
+        if (bad == 1) bias[5] = INFINITY;
+        if (bad == 2) a[1] = 1000;
+        if (bad == 3) a[1] = NAN;
+        if (bad == 4) raw[1] = INFINITY;
+        if (bad == 5) {gate[5] = FLT_MAX; bias[5] = FLT_MAX;}
+        if (bad == 6) c.lower_bound = NAN;
+        if (bad == 7) c.lower_bound = 0;
+        if (bad == 8) c.lower_bound = 1;
+        if (bad == 9) c.head_k_dim = 0;
+        if (bad == 10) c.head_k_dim = 257;
+        if (bad == 11) c.num_heads = 0;
+        if (bad == 12) start = -1;
+        if (bad == 13) end = 3;
+        if (bad == 14) c.log_decay = NULL;
+        if (bad == 15) c.bias = NULL;
+        if (bad == 16) c.parameter_storage = (BnSSMKDAParameterStorage)9;
+        if (bad == 17) {c.parameter_storage = BN_SSM_KDA_A_NEGATIVE_EXP; a[1] = 1;}
+        assert(bn_transformer_ssm_kda_coefficients(&c, start, end) == -1);
+        for (int j = 0; j < 6; j++) assert(out[j] == 7);
+        for (int j = 0; j < 2; j++) assert(beta[j] == 8);
+    }
+    /* A disjoint head range must not inspect or modify unrelated bad inputs. */
+    for (int j = 0; j < 6; j++) {gate[j] = bias[j] = 0; out[j] = 99;}
+    a[0] = raw[0] = NAN; a[1] = raw[1] = 0; beta[0] = beta[1] = 99;
+    BnSSMKDACoeffCtx isolated = {out, beta, gate, bias, a, raw, 2, 3, -5,
+        BN_SSM_KDA_A_LOG};
+    assert(bn_transformer_ssm_kda_coefficients(&isolated, 1, 2) == 0);
+    for (int j = 0; j < 3; j++) assert(out[j] == 99 && out[j + 3] == -2.5f);
+    assert(beta[0] == 99 && beta[1] == 0.5f);
+    assert(bn_transformer_ssm_kda_coefficients(&isolated, 0, 2) == -1);
+    for (int j = 0; j < 3; j++) assert(out[j] == 99 && out[j + 3] == -2.5f);
+    assert(beta[0] == 99 && beta[1] == 0.5f);
+    /* Finite amplitudes may saturate their product; underflow to zero is valid. */
+    for (int j = 0; j < 6; j++) {gate[j] = 1e30f; bias[j] = 0;}
+    a[0] = 80; a[1] = -1000; raw[0] = 1000; raw[1] = -1000;
+    BnSSMKDACoeffCtx c = {out, beta, gate, bias, a, raw, 2, 3, -5, BN_SSM_KDA_A_LOG};
+    assert(bn_transformer_ssm_kda_coefficients(&c, 0, 2) == 0);
+    for (int j = 0; j < 3; j++) assert(out[j] == -5 && out[j + 3] == -2.5f);
+    assert(beta[0] == 1 && beta[1] == 0);
+    c.log_decay = c.beta = NULL; c.gate = c.bias = c.decay_parameter = c.beta_raw = NULL;
+    assert(bn_transformer_ssm_kda_coefficients(&c, 1, 1) == 0);
+    assert(bn_transformer_ssm_kda_coefficients(NULL, 0, 0) == -1);
+    printf("KDA coefficients reference, aliases, isolation and atomic rejection PASSED\n");
+}
+
+static void test_kda_sum_eps_norm(void) {
+    void (*functions[])(void *, int, int) = {
+        bn_transformer_ssm_l2norm_scalar_range,
+#ifdef __AVX2__
+        bn_transformer_ssm_l2norm_avx2_range,
+#endif
+#ifdef __ARM_NEON
+        bn_transformer_ssm_l2norm_neon_range,
+#endif
+#ifdef __wasm_simd128__
+        bn_transformer_ssm_l2norm_wasm_range,
+#endif
+    };
+    for (size_t f = 0; f < sizeof(functions) / sizeof(functions[0]); f++)
+    for (int t = 0; t < 5; t++) {
+        float q[6], k[6], saved_q[3], saved_k[3];
+        memcpy(q, kda_norm_q + 6 * t, sizeof(q));
+        memcpy(k, kda_norm_k + 6 * t, sizeof(k));
+        memcpy(saved_q, q + 3, sizeof(saved_q));
+        memcpy(saved_k, k + 3, sizeof(saved_k));
+        BnSSML2NormCtx c = {q, k, 1e-6f, 3, BN_SSM_QK_NORM_L2_SUM_EPS};
+        functions[f](&c, 0, 1);
+        assert(memcmp(saved_q, q + 3, sizeof(saved_q)) == 0);
+        assert(memcmp(saved_k, k + 3, sizeof(saved_k)) == 0);
+        functions[f](&c, 1, 2);
+        for (int j = 0; j < 6; j++) {
+            assert(isfinite(q[j]) && isfinite(k[j]));
+            assert(fabsf(q[j] - kda_norm_nq[6 * t + j]) < 2e-6f);
+            assert(fabsf(k[j] - kda_norm_nk[6 * t + j]) < 2e-6f);
+        }
+    }
+    float q[] = {1, 1}, k[] = {1e-3f, 0};
+    BnSSML2NormCtx c = {q, k, 1e-6f, 2, BN_SSM_QK_NORM_L2_SUM_EPS};
+    bn_transformer_ssm_l2norm_scalar_range(&c, 0, 1);
+    assert(fabsf(k[0] - 0.70710678f) < 2e-6f);
+    uint32_t bits; memcpy(&bits, q, sizeof(bits));
+    assert((bits & 0xffffu) != 0); /* No hidden BF16 store after normalization. */
+    float before_q[2], before_k[2];
+    memcpy(before_q, q, sizeof(q)); memcpy(before_k, k, sizeof(k));
+    c.eps = NAN; bn_transformer_ssm_qk_sum_eps_range(&c, 0, 1);
+    c.eps = 1e-6f; c.head_dim = 100000;
+    bn_transformer_ssm_qk_sum_eps_range(&c, 0, 1);
+    assert(memcmp(before_q, q, sizeof(q)) == 0 && memcmp(before_k, k, sizeof(k)) == 0);
+    bn_transformer_ssm_qk_sum_eps_range(NULL, 0, 0);
+    puts("Direct F32 sum-epsilon Q/K normalization and backend routing PASSED");
+}
+
 int main(void) {
 #ifdef __AVX2__
     test_sigmoid_gate_rounding();
@@ -453,7 +695,11 @@ int main(void) {
 
     test_conv_silu();
     test_l2norm();
+    test_qk_rmsnorm_reference();
     test_delta();
+    test_kda_reference();
+    test_kda_sum_eps_norm();
+    test_kda_coefficients();
 #ifdef __ARM_NEON
     test_delta_neon_reduction_order();
 #endif

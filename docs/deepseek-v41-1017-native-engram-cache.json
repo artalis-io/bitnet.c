@@ -1,0 +1,303 @@
+{
+  "status": "CPU row source/backend cache/registry decoder coupling qualified; whole-model integration remains open",
+  "artifact_directory": "/tmp/bitnet-goal-native-engram-cache",
+  "public_interfaces": [
+    "bn_trellis_row_source_init/free/layout/read",
+    "bn_backend_model_row_cache_init/free/stats/gather"
+  ],
+  "ownership": {
+    "source": "Immutable explicit tensor-ID binding, borrows unchanged safetensors index; no GPU handles or model names. Uses quant-registry row format metadata.",
+    "cache": "Backend-owned mutable caller-serialized handle; no borrowed leases. Caller owns returned raw planes independently of cache lifetime.",
+    "budget": "One allocation includes cache state, LRU/hash metadata, payload, maximum gather staging/hash and miss scratch. Borrowed source/index, caller output, allocator overhead and OS page cache are separate."
+  },
+  "behavior": {
+    "storage": "pread-backed row reads, packed U8 weights and F16 scale tensor planes may live in different shards. No whole table read.",
+    "cache": "Open-addressing row lookup with backshift deletion and intrusive LRU. Batch hash reuses staged duplicates even after LRU eviction. No hot linked heap allocations.",
+    "failure": "Preflight complete ID/output geometry before cache or I/O updates; staged commit leaves both caller planes unchanged on I/O failure. Failed reads never evict or overwrite a cached row. Earlier valid fills in a failed gather may remain.",
+    "stats": "Cache hits/misses, staged reuse, evictions, I/O failures, requested logical bundle bytes and host read milliseconds. Counts saturate at UINT64_MAX. Cache-cold does not imply storage/disk-cold."
+  },
+  "checks": [
+    "Synthetic two-shard row source binding, malformed type/ID rejection, exact row boundaries.",
+    "1500 variable-size gathers with an independent LRU oracle; hash collisions and evictions.",
+    "Single-row LRU with 8 requests: 3 source reads and 5 staged reuses.",
+    "Bad late ID and aliased/private buffers reject before observable cache changes.",
+    "Failure in the scale-plane read after successful packed-plane read leaves caller output and cache victim intact.",
+    "Wrapped malloc/calloc/realloc fault injection rejects source/cache initialization atomically; no linked allocation calls during successful gather.",
+    "Actual layer1/14 storage->cache->quant registry->decoder agrees with original Triton raw/BF16 reference at 32KiB and256KiB budgets.",
+    "ASan/UBSan/leak checks cover new source/cache, storage, int4 row decoder and callers."
+  ],
+  "scope_limits": [
+    "No default model admission or whole Engram forward integration yet.",
+    "No GPU row placement/cache/decode candidate, pinned staging, asynchronous read/transfer overlap or phase-specific scheduling yet.",
+    "No actual performance parity claim; reported times are host read times under an unspecified OS page-cache state.",
+    "Caller must serialize each cache handle; independent handles may borrow the same immutable source.",
+    "WASM source list updated; WASM/NEON execution was not available for this new path."
+  ],
+  "qualification": {
+    "checks": {
+      "unit": 0,
+      "unit-wrap": 0,
+      "asan-unit-wrap": 0,
+      "probe": 0,
+      "asan-probe": 0,
+      "source-replay": 0,
+      "qwen27-compat": 0
+    },
+    "records": {
+      "probe": [
+        {
+          "layer": 1,
+          "budget": 262144,
+          "pass": 0,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.307007
+        },
+        {
+          "layer": 1,
+          "budget": 262144,
+          "pass": 1,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 1026,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.307007
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "pass": 0,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 962,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 0.394499
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "pass": 1,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 2052,
+          "staging_hits": 0,
+          "evictions": 1988,
+          "source_bytes_requested": 295488,
+          "source_read_ms": 0.771983
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "pass": 0,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.240567
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "pass": 1,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 1026,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.240567
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "pass": 0,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 962,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 0.386842
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "pass": 1,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 2052,
+          "staging_hits": 0,
+          "evictions": 1988,
+          "source_bytes_requested": 295488,
+          "source_read_ms": 0.764179
+        }
+      ],
+      "asan-probe": [
+        {
+          "layer": 1,
+          "budget": 262144,
+          "pass": 0,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.365661
+        },
+        {
+          "layer": 1,
+          "budget": 262144,
+          "pass": 1,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 1026,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.365661
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "pass": 0,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 962,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.025592
+        },
+        {
+          "layer": 1,
+          "budget": 32768,
+          "pass": 1,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 2052,
+          "staging_hits": 0,
+          "evictions": 1988,
+          "source_bytes_requested": 295488,
+          "source_read_ms": 1.750486
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "pass": 0,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.369935
+        },
+        {
+          "layer": 14,
+          "budget": 262144,
+          "pass": 1,
+          "allocated": 262112,
+          "capacity": 1241,
+          "hits": 1026,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 0,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.369935
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "pass": 0,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 1026,
+          "staging_hits": 0,
+          "evictions": 962,
+          "source_bytes_requested": 147744,
+          "source_read_ms": 1.075726
+        },
+        {
+          "layer": 14,
+          "budget": 32768,
+          "pass": 1,
+          "allocated": 32632,
+          "capacity": 64,
+          "hits": 0,
+          "misses": 2052,
+          "staging_hits": 0,
+          "evictions": 1988,
+          "source_bytes_requested": 295488,
+          "source_read_ms": 1.799336
+        }
+      ]
+    },
+    "frozen_sources": 809,
+    "asan_scope": "All new source binding/cache code, storage reader, JSON, platform and int4 row decoder plus test/probe. Unchanged other quant objects are normal build. Allocation wrappers cover linked malloc/calloc/realloc call sites.",
+    "ram_scope": "Cache allocation plus metadata/staging/scratch within its configured budget; borrowed index/source, caller output and allocator/OS overhead excluded. Cache-cold does not mean disk-cold.",
+    "goal_status": "active"
+  },
+  "build_validation": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "terminal_handles": {
+    "baseline": 13450,
+    "initial_target": 7980,
+    "final_target": 5472,
+    "normal_actual_probe": 98007,
+    "protected_clean_full_build_and_tests": 38849,
+    "sanitizer_build_and_probe": 81468,
+    "final_qualifier": 77114
+  },
+  "qwen27": {
+    "strict_cuda_continuation_ids": "192/192",
+    "first_token_ids": "8/8",
+    "count_mismatches": "0/8"
+  },
+  "normal_probe_max_rss_kbytes": 134452,
+  "normal_probe_rss_scope": "Entire probe process including borrowed multi-shard index, golden/caller buffers and cache; not the cache budget.",
+  "actual_comparisons": {
+    "raw_and_bf16_bytes": 5384448,
+    "logical_rows": 8208,
+    "gathers": 72,
+    "unique_checkpoint_rows": 2052
+  },
+  "build_notes": [
+    "Preliminary fixture test indentation warnings were fixed before final clean build.",
+    "Initial ASan link required the established explicit system libstdc++13 path; final ASan builds and runs passed with zero warnings."
+  ]
+}

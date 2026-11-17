@@ -1,0 +1,191 @@
+{
+  "milestone": "Resident BF16-lookup to F16 conv-less Engram math",
+  "status": "qualified CUDA math primitive; full goal remains active",
+  "parent": "docs/deepseek-v41-1017-native-history.json",
+  "api": {
+    "plan": "BnGPUPLEF16FromBF16ResidentPlan",
+    "entry": "BnGPUBackend.ple_f16_from_bf16_resident",
+    "implementation": "src/gpu_cuda_native_ple.cuh",
+    "ownership": "Borrowed immutable packed backend-owned weights and raw BF16 norm handles; ten exact, mutually disjoint request-owned views. Reserve existing linear_f16 cuBLAS resources before execution. No model/session position, history or KV commit; no execution admission.",
+    "preflight": "Validate owner/generation, types, exact counts, extents, alignment, pairwise overlaps, weight kinds/shapes, scalar domains and both grouped norms before any queued cast or projection. Rejected metadata preserves output buffers. Execution errors poison the request.",
+    "payload_precondition": "Lookup values must be finite and within finite F16 range before upload. Scalar conversion rounds to nearest even and retains the intermediate BF16 boundary. No GPU value readback is hidden in preflight."
+  },
+  "precision_profile": {
+    "name": "Explicit Diffbot INT4 BF16 lookup -> F16 adapter + pinned Exllama conv-less Engram math",
+    "not_equivalent_to": "Original Diffbot full-forward arithmetic or unmodified Exllama loading of this INT4 checkpoint. The pinned generic Exllama row loader does not admit the separate-scale INT4 table.",
+    "sequence": [
+      "Preserved original BF16 row lookup, then explicit BF16->F16 conversion",
+      "Two unequal strided FP16 GEMMs from one packed K x ((H+1)*D) weight; key H*D and value D, F32 accumulation/F16 output",
+      "Original vector4 grouped RMS: F16 key and F32 stream inputs, raw BF16 gamma, F32 outputs, eps1e-20 and bias0",
+      "Exact Torch singleton-matrix BLAS dispatch: TT with ldaD/ldb1; ordinary SGEMM for batch1 and strided-batched SGEMM otherwise",
+      "Signed-sqrt clamp1e-6, sign(0)=0, source fast-math sigmoid/value broadcast into F32 delta",
+      "Separate rounded F32 residual addition"
+    ],
+    "actual_dimensions": {
+      "layers": [
+        1,
+        14
+      ],
+      "embedding_k": 6144,
+      "hidden_d": 5120,
+      "streams_h": 4,
+      "packed_weight_columns": 25600,
+      "key_columns": 20480,
+      "value_columns": 5120
+    },
+    "adapter_differences_from_direct_f16": 5922903,
+    "blas_evidence": "Independent source-only LD_PRELOAD tracer records Torch TT dispatch and batch1 SGEMM; initial native NN equivalent formula selected a different reduction kernel and was corrected. Source references preserved.",
+    "original_vs_paired_main_case_differences": {
+      "emb": 0,
+      "key": 8,
+      "value": 8,
+      "key_norm": 8,
+      "query_norm": 0,
+      "dot": 6,
+      "delta": 10,
+      "final": 10
+    }
+  },
+  "independent_reference": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "producer": "test/reference_native_engram_math.py",
+    "fixture_generator": "test/gen_native_ple_reference.py",
+    "original_kernels": "Unchanged source PLE gate and independently qualified original grouped-RMS kernel. Gate compiled with original --use_fast_math. No candidate imports or candidate-generated expected values.",
+    "actual_inputs": "Original hashed row IDs from source text cases; actual packed INT4/scales decoded by original Diffbot Triton kernel. Actual E4M3/E8M0->F16 WKV source captures and raw BF16 key/query norms from checkpoint. Streams are synthetic F32, not full-model activations.",
+    "main_cases": 22,
+    "extra_nonzero_decode_cases": 4,
+    "unit_fixtures": 14,
+    "main_rows": [
+      1,
+      2,
+      7,
+      17,
+      33,
+      129,
+      513
+    ],
+    "library_policy": "Original packaged cuBLAS and paired system13.10 captures both retained. Native matches paired corpus. Every payload, source, wrapper/binary and actual packed weight is hash-checked; all four captures and fixture header replay identically.",
+    "nonzero_decode_coverage": "Original main cases used a zero first query row; four additional source-only captures cover nonzero one-token queries, including both actual layers. Original22 cases unchanged.",
+    "negative_checks": "Changed source/hash payload rejected before output creation; conflicting fixture preserved."
+  },
+  "validation": {
+    "baseline": "Full standard suite passed before runtime edits",
+    "clean_product_build": "zero warnings",
+    "standard_suite": "passed",
+    "serving_bench_and_runtime_builds": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "unit_normal_and_asan": "28 calls,2859500 words, all intermediate hashes/guards/owner rejection exact",
+    "full_probe_per_mode": {
+      "cases": 26,
+      "calls": 52,
+      "exact_compared_bytes": 1307238064,
+      "requests_per_case": 2
+    },
+    "sanitizers": "ASAN/UBSAN instrument probe/test C; CUDA host/kernel translation units use normal builds. Memcheck full leaks and initcheck cover all26cases, zero errors/leaks. Bounded race covers two small nonzero single-token calls: zero errors/warnings/hazards; no whole-model race workload.",
+    "qwen27": "Fresh strict CUDA192/192 sampled IDs, first8/8, zero count mismatches; words147/147.",
+    "checks": {
+      "unit": 0,
+      "asan-unit": 0,
+      "normal-paired": 0,
+      "normal-extra-paired": 0,
+      "asan-paired": 0,
+      "asan-extra-paired": 0,
+      "memcheck-paired": 0,
+      "memcheck-extra-paired": 0,
+      "initcheck-paired": 0,
+      "initcheck-extra-paired": 0,
+      "bounded-race": 0,
+      "replay-original": 0,
+      "replay-paired": 0,
+      "replay-extra-original": 0,
+      "replay-extra-paired": 0,
+      "fixture-replay": 0,
+      "negative-reference": 0,
+      "resident-profile": 0,
+      "resident-export": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 836,
+    "controller_resume": "Initial controller expected ERROR SUMMARY from racecheck; corrected to RACECHECK SUMMARY after confirming terminal0 and zero hazards. Full frozen hashes verified; only controller changed. Passed checks retained, no runtime/probe/oracle changes or rebuild after freeze."
+  },
+  "resident_trace": {
+    "calls_in_capture": 16,
+    "streams": 2,
+    "tokens_per_call": 129,
+    "kernels": [
+      {
+        "name": "bn_cuda_gdn::add_f32_kernel(float *, const float *, const float *, unsigned long)",
+        "calls": 16,
+        "nanoseconds": 771841
+      },
+      {
+        "name": "bn_cuda_native_ple::cast_lookup(const __nv_bfloat16 *, __half *, unsigned long)",
+        "calls": 16,
+        "nanoseconds": 172161
+      },
+      {
+        "name": "bn_cuda_native_ple::gate_value(const float *, const __half *, float *, unsigned long, int, int, float)",
+        "calls": 16,
+        "nanoseconds": 247777
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_256x80x64_2_64x40x64_tmaAB_alignCD4_bz_NNNN",
+        "calls": 16,
+        "nanoseconds": 3590636
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_256x80x64_2_64x40x64_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 16,
+        "nanoseconds": 868897
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 16,
+        "nanoseconds": 668483
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<float, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "calls": 16,
+        "nanoseconds": 1232004
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "calls": 16,
+        "nanoseconds": 233922
+      },
+      {
+        "name": "void gemv2T_kernel_val<int, int, float, float, float, float, (int)128, (int)16, (int)4, (int)4, (bool)0, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13, T6, T6)",
+        "calls": 16,
+        "nanoseconds": 360065
+      }
+    ],
+    "kernel_launches": 144,
+    "kernels_per_call": 9,
+    "summed_kernel_nanoseconds": 8145786,
+    "runtime_apis": {
+      "cuKernelGetName": 96,
+      "cuKernelSetAttribute": 32,
+      "cuLaunchKernelEx": 32,
+      "cuStreamGetGreenCtx": 96,
+      "cudaDeviceSynchronize_v3020": 1,
+      "cudaLaunchKernelExC_v11060": 16,
+      "cudaLaunchKernel_v7000": 96
+    },
+    "all_api_returns": 0,
+    "captured_allocations": 0,
+    "captured_copies": 0,
+    "captured_memsets": 0,
+    "explicit_caller_device_completion_fences": 1,
+    "primitive_internal_host_fences": 0,
+    "scope": "Warmed actual layer1 packed weight and norms, two serialized-owner requests. Diagnostic only; summed kernel duration is not wall latency or vLLM parity."
+  },
+  "qualification_artifacts": "/tmp/bitnet-goal-native-engram-math",
+  "not_claimed": [
+    "Full native layer/model execution, CPU execution or generation admission",
+    "History/position/KV commit gate or backend state rewind",
+    "Canonical model/request coupling of row supply and this new math primitive",
+    "Native text encoding, multimodal masks or complete Engram/HCA integration",
+    "Cold allocator behavior, full-model prefill/decode throughput, continuous serving or matched vLLM parity",
+    "New AVX2/AVX512/NEON/Metal execution coverage"
+  ]
+}

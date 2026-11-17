@@ -1,0 +1,2623 @@
+{
+  "version": 1,
+  "goal_status": "active_incomplete",
+  "objective_reference": {
+    "path": "/home/mark/.codex/attachments/0bc15c20-ae15-440b-a1e9-d50fc5c89283/pasted-text-1.txt",
+    "sha256": "e89f9b5fd0bd7a64a1f3644d5884984983f1f50e6a1950969c315614e72d03aa"
+  },
+  "scope": "Opt-in native layer-coordinated full forwards share immutable expert leases across request-private execution. Reduces duplicate expert transfers using existing tiled kernels; attention, routing, activation, KV and history storage retain their request owners. Static-cohort benchmark exercises the runtime API. Full production scheduler batching, concatenated-row GEMM and matched vLLM parity remain open.",
+  "interface": {
+    "runtime": "bn_transformer_trellis_forward_group / bn_transformer_trellis_forward_group_cancel in include/transformer_internal.h",
+    "members": "2..16 distinct prepared sessions from the same immutable model, ordered membership fixed over BUSY. Uniform expert admission policy. Normal single forward/reset/release/free prohibited while bound; retry identical cohort or cancel all.",
+    "benchmark": "bench/bench_native_forward.c and bench/native_text_group.h",
+    "flags": [
+      "--text",
+      "--forward-group N1..16",
+      "--session-pool N at least group width",
+      "--text-timing optional"
+    ],
+    "behavior": "Actual raw encoding and greedy logits drive execution; immutable reference data only asserts. Static cohorts advance each request through its own prompt chunks and committed decode. Singletons and mixed prefill/decode admission policies use existing individual forwards. Grouped layers with any request at most8 tokens use existing individual expert FFNs.",
+    "default": "Opt-in internal API and benchmark; existing product CLI and native single-forward arithmetic preserved. The explicit F16 accumulation option now correctly propagates through its request config helper; prior qualified flag0 configurations unchanged."
+  },
+  "execution": {
+    "weights": "All shared immutable expert handles borrowed through existing expert placement API, once per bounded wave. Fused experts shared across all selecting requests. Folded groups preserve each request original B/M arithmetic; fused peers reuse those same handles. Folded/folded overlap may reload.",
+    "arithmetic": "Fused group widths computed from the full request tier, never the residency window, preserving F16 rounding. Existing per-request routed reduction, shared dense FFN and HC application retained. No new GPU kernels, host activation bridge or combined-row projection.",
+    "lifetime": "All consumer requests drained before any shared lease released. If a synchronization fails, destroy that GPU request before releasing shared handles. Bounded waves at most32 experts, private temporary arrays at most16 requests; no new persistent GPU allocations.",
+    "atomicity": "Every head read and finiteness check succeeds before any participant CPU history, position, host logits or output result publishes. Session helper prevalidates all tickets and distinct owners before nonfailing history copies. Hard failure tears down all cohort backend resources, preserves prior CPU state and requires replay; cancellation does the same without CPU commit.",
+    "busy": "Prepared attention/HC/KV progress retained; FFN retry may repeat already completed expert work without double HC application. Same ordered cohort and history epochs required. Output result/host logits/history/position remain unpublished on BUSY.",
+    "statistics": "Group stats count work retained in the successful or BUSY transaction. Failed/discarded transactions lose their private group stats; global expert/RAM/read byte counters include failed work. shared_layers and individual_layers count cohort layer steps, not a sum over members. Individual-layer fallback counted; detailed original profiling remains separate."
+  },
+  "ownership": {
+    "model": "Immutable shared anatomy/config/CPU weights and existing expert/cache ownership. No backend handles added to model weights.",
+    "sessions": "Independent session histories, mutable HC/index/KV/activation/logits and backend request lifetimes. Atomic group publication provided by session module, not model mutation.",
+    "budgets": "Existing bounded expert RAM/VRAM caches and request-sized retained session pool used. Summary retained_device/peak_device are quoted retained request payload, not total physical VRAM. Model/shared cache/driver/codec/workspace/metadata have separate bounds; no total RSS claim."
+  },
+  "timing": {
+    "valid": "Only --text-timing cases: callbacks record clocks, actual input IDs, actual generated IDs and counted UTF8 bytes. No callback file IO, heap allocation, F32-logit copies or added GPU fences; actual ID/chunk/full-byte checks run after interval.",
+    "interval": "Includes pool acquisition/preparation, raw encoding, all forward steps, per-request healthy release/restart and cohort cleanup. Immutable model/shared cache and codec/job workspace/recorder setup outside interval; pool destruction and source verification after interval. All requests are a static burst, grouped into sequential cohorts.",
+    "caveats": "Non-timed source-check cases have timing_valid=false due to reference IO and every-last-F32-logit comparisons. Each timed case starts a fresh process and GPU/expert caches; OS filesystem cache uncontrolled. Counters are aggregate logical source reads and upload API time, not physical disk bandwidth or critical-path DMA stalls. One8-request sample, not statistically qualified tails, separate prefill/decode rates or vLLM parity."
+  },
+  "hardware": {
+    "gpu": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 97887 MiB, 595.104.02"
+  },
+  "baseline": {
+    "exit": 0,
+    "zero_warnings": true,
+    "prior": {
+      "Makefile": "8b4a9b27b0dceb46628e763ba1ff4f32b7fcd455b3a501135a314daed7251bb2",
+      "test/native_session_checks.h": "5fe258ca45bbb25c557df71ea28101ff577451caa0191c0ccbe4e098fb88edc5",
+      "test/test_native_restart.c": "b08ec81edda215dd78883bf4e0cf6f555298c74bab70f8bdefd4d9c324eba171",
+      "src/session.c": "93150fb5047d06a16cd7bef78302bdd9ec8d8a4cc5bfcf49092aad119eac97cb",
+      "include/session_internal.h": "3cd8c10d721c5523dbccfc88ae12fabdbd6411628031ba08df4c124d7a2a76c5",
+      "include/transformer_internal.h": "f607e6d4cadd76a9d0ffcc435e1888b0b72e77a71762db869582cbd06f85954d",
+      "bench/bench_native_forward.c": "5220a3d860c63ba451aa046f07f46fcb76165c5988650aa63b2f79c5cf201179",
+      "src/transformer/trellis_block.h": "a6260c756d07d85061bfe82ff3f128bdec16b37f34dff040d408684df550be7c",
+      "src/transformer/trellis_forward.h": "32b884502a307d53526c9b6b09fb48a57181ff92830651c13820044c1955c329",
+      "src/transformer/trellis.c": "58b61388affbc9dcba2f546577229ccd575a6647bb8dd0948e665a104933c1b4",
+      "src/transformer/trellis_reuse.h": "fffc303fd2a48bc9052a66f13bdbc804f7d92543621b2f09124193fad00e19f2"
+    }
+  },
+  "changes": {
+    "Makefile": {
+      "before": "8b4a9b27b0dceb46628e763ba1ff4f32b7fcd455b3a501135a314daed7251bb2",
+      "after": "8180d6a8f29298106660115a6489e68cdc452ce99a4cc296f6f3eb5a2f9a85c3"
+    },
+    "test/native_session_checks.h": {
+      "before": "5fe258ca45bbb25c557df71ea28101ff577451caa0191c0ccbe4e098fb88edc5",
+      "after": "ab52325902e6cd2c6d3bc53ae7aba54d8b4fc215d30210d29bca410bf4a3878d"
+    },
+    "test/test_native_restart.c": {
+      "before": "b08ec81edda215dd78883bf4e0cf6f555298c74bab70f8bdefd4d9c324eba171",
+      "after": "6f754c08fb7b7634647b6d5518883e90cbc73c611e164a76d5eed9c1c47c7388"
+    },
+    "src/session.c": {
+      "before": "93150fb5047d06a16cd7bef78302bdd9ec8d8a4cc5bfcf49092aad119eac97cb",
+      "after": "c0fa8ff27f3af61f65d240d78ff30f24e9b4d9ef090ffb2c60e865e68a2d4df8"
+    },
+    "include/session_internal.h": {
+      "before": "3cd8c10d721c5523dbccfc88ae12fabdbd6411628031ba08df4c124d7a2a76c5",
+      "after": "3803d5a53ab3bd082f7df68466842b33c120221f83e6b531ad2320bf4cf51789"
+    },
+    "include/transformer_internal.h": {
+      "before": "f607e6d4cadd76a9d0ffcc435e1888b0b72e77a71762db869582cbd06f85954d",
+      "after": "52e5d4b5c07a2bed7f031c57798bbbbad7f21eac0ef20a24b10fb7880988aeb4"
+    },
+    "bench/bench_native_forward.c": {
+      "before": "5220a3d860c63ba451aa046f07f46fcb76165c5988650aa63b2f79c5cf201179",
+      "after": "ff05b46b8c24f8bdde993c14515bf587ee91f07d27007b5dd4c7e02092613e93"
+    },
+    "src/transformer/trellis_block.h": {
+      "before": "a6260c756d07d85061bfe82ff3f128bdec16b37f34dff040d408684df550be7c",
+      "after": "dfc5c6f1e316c3a10ae5db205e6bc582b470dd5df6bd8cf821a891dc1f85e1b5"
+    },
+    "src/transformer/trellis_forward.h": {
+      "before": "32b884502a307d53526c9b6b09fb48a57181ff92830651c13820044c1955c329",
+      "after": "8c5a68d80c344de071c903215fc3efafc8e39ce7efeef46280fad6119f004fc3"
+    },
+    "src/transformer/trellis.c": {
+      "before": "58b61388affbc9dcba2f546577229ccd575a6647bb8dd0948e665a104933c1b4",
+      "after": "65c2c8784c643b23d6db5be2afde54cc6f51b1fe384661f0e8889dbda9877d12"
+    },
+    "src/transformer/trellis_reuse.h": {
+      "before": "fffc303fd2a48bc9052a66f13bdbc804f7d92543621b2f09124193fad00e19f2",
+      "after": "513b2634cdf7ca28a5de9de5ef807b3432a7c77079a59f2d223dad1994fc0297"
+    },
+    "src/transformer/trellis_group.h": {
+      "before": null,
+      "after": "8442874963cd913508412dd1f543deae876184262171221c8a5f624972622222"
+    },
+    "test/test_native_group.c": {
+      "before": null,
+      "after": "0bc1c9928dcdfca026a70724617bee69672b164b33569869290bd7743609706b"
+    },
+    "bench/native_text_group.h": {
+      "before": null,
+      "after": "eea5974aad17405520eda9def1f0f1b649e26b6fa197e00f11f1fe0e6efaf763"
+    }
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "qualification": {
+    "checks": {
+      "unit-group": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./test_native_group"
+        ]
+      },
+      "asan-group": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/asan-group"
+        ]
+      },
+      "unit-session": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./test_session"
+        ]
+      },
+      "asan-session": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/asan-session-unit"
+        ]
+      },
+      "control-long": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048"
+        ]
+      },
+      "control-short": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048"
+        ]
+      },
+      "control512": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-cli/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048"
+        ]
+      },
+      "old-serving-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "6",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--schedule-live",
+          "2",
+          "--arrival-ms",
+          "1"
+        ]
+      },
+      "old-serving-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "6",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "3",
+          "--schedule-live",
+          "2",
+          "--arrival-ms",
+          "1"
+        ]
+      },
+      "group-baseline": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "1"
+        ]
+      },
+      "group-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "group-ba": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "group-ac": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-cli/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "group-bc": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-cli/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "group-aa": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "group-busy": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/group-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "group-cancel": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/group-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "group-head": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/group-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "asan-group-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/asan-bench",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "asan-group-cancel": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/asan-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "asan-group-head": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-group/asan-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "memcheck-group-busy": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/usr/local/cuda/bin/compute-sanitizer",
+          "--tool",
+          "memcheck",
+          "--error-exitcode",
+          "86",
+          "/tmp/bitnet-goal-native-group/group-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "initcheck-group-head": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/usr/local/cuda/bin/compute-sanitizer",
+          "--tool",
+          "initcheck",
+          "--error-exitcode",
+          "86",
+          "/tmp/bitnet-goal-native-group/group-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      },
+      "native-legacy": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-forward-resume/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "1",
+          "0"
+        ]
+      },
+      "qwen27-compat": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "bash",
+          "test/compare_llama.sh",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--cuda",
+          "--llama-cuda",
+          "--strict",
+          "-n",
+          "24",
+          "-t",
+          "8",
+          "--maxseq",
+          "512"
+        ]
+      },
+      "timing-width1": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "8",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--text-timing",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "1"
+        ]
+      },
+      "timing-width2": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "8",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "--text-timing",
+          "--session-pool",
+          "3",
+          "--forward-group",
+          "2"
+        ]
+      }
+    },
+    "goal_status": "active",
+    "source_files": 896,
+    "reference_files": 51751,
+    "scope": "Native lockstep full forwards with shared expert leases and request-owned routing/activations/KV; atomic host publication, BUSY retry/cancel/head failure recovery, unchanged independent references; matched static-cohort measurements, not concatenated-row GEMM or vLLM parity"
+  },
+  "preflight": {
+    "preflight-ab": {
+      "kind": "native_forward_group_summary",
+      "timing_valid": false,
+      "cohort_width": 2,
+      "completed": 4,
+      "window_ms": 31636.702414,
+      "tokens": 20,
+      "group_calls": 10,
+      "single_forwards": 6,
+      "attempts": 10,
+      "shared_layers": 80,
+      "individual_layers": 320,
+      "shared_expert_borrows": 18720,
+      "fused_launches": 3696,
+      "folded_launches": 514,
+      "waits": 0,
+      "created": 2,
+      "reused": 2,
+      "discarded": 0,
+      "retained_device": 4786680158,
+      "peak_device": 4786680158,
+      "expert_upload_bytes": 256125258240,
+      "expert_upload_ms": 10039.242216,
+      "ram_miss_bytes": 250612606464,
+      "source_read_bytes": 250612606464,
+      "source_read_ms": 17090.058527
+    },
+    "preflight-ba": {
+      "kind": "native_forward_group_summary",
+      "timing_valid": false,
+      "cohort_width": 2,
+      "completed": 4,
+      "window_ms": 31563.9778,
+      "tokens": 20,
+      "group_calls": 10,
+      "single_forwards": 6,
+      "attempts": 10,
+      "shared_layers": 80,
+      "individual_layers": 320,
+      "shared_expert_borrows": 18720,
+      "fused_launches": 3696,
+      "folded_launches": 514,
+      "waits": 0,
+      "created": 2,
+      "reused": 2,
+      "discarded": 0,
+      "retained_device": 4786680158,
+      "peak_device": 4786680158,
+      "expert_upload_bytes": 255166536192,
+      "expert_upload_ms": 10046.626501,
+      "ram_miss_bytes": 250319663616,
+      "source_read_bytes": 250319663616,
+      "source_read_ms": 16963.856333
+    },
+    "preflight-busy": {
+      "kind": "native_forward_group_summary",
+      "timing_valid": false,
+      "cohort_width": 2,
+      "completed": 4,
+      "window_ms": 32004.805266,
+      "tokens": 20,
+      "group_calls": 10,
+      "single_forwards": 6,
+      "attempts": 11,
+      "shared_layers": 80,
+      "individual_layers": 320,
+      "shared_expert_borrows": 18752,
+      "fused_launches": 3702,
+      "folded_launches": 514,
+      "waits": 1,
+      "created": 2,
+      "reused": 2,
+      "discarded": 0,
+      "retained_device": 4786680158,
+      "peak_device": 4786680158,
+      "expert_upload_bytes": 256551356928,
+      "expert_upload_ms": 10035.536506,
+      "ram_miss_bytes": 250612606464,
+      "source_read_bytes": 250612606464,
+      "source_read_ms": 17428.304561
+    },
+    "preflight-cancel": {
+      "kind": "native_forward_group_summary",
+      "timing_valid": false,
+      "cohort_width": 2,
+      "completed": 4,
+      "window_ms": 31897.551256,
+      "tokens": 20,
+      "group_calls": 10,
+      "single_forwards": 6,
+      "attempts": 10,
+      "shared_layers": 80,
+      "individual_layers": 320,
+      "shared_expert_borrows": 18720,
+      "fused_launches": 3696,
+      "folded_launches": 514,
+      "waits": 0,
+      "created": 4,
+      "reused": 2,
+      "discarded": 2,
+      "retained_device": 4786680158,
+      "peak_device": 4786680158,
+      "expert_upload_bytes": 258348960768,
+      "expert_upload_ms": 10129.088615,
+      "ram_miss_bytes": 250319663616,
+      "source_read_bytes": 250319663616,
+      "source_read_ms": 17123.919959
+    },
+    "preflight-head": {
+      "kind": "native_forward_group_summary",
+      "timing_valid": false,
+      "cohort_width": 2,
+      "completed": 4,
+      "window_ms": 45591.053841,
+      "tokens": 20,
+      "group_calls": 10,
+      "single_forwards": 6,
+      "attempts": 10,
+      "shared_layers": 80,
+      "individual_layers": 320,
+      "shared_expert_borrows": 18720,
+      "fused_launches": 3696,
+      "folded_launches": 514,
+      "waits": 0,
+      "created": 4,
+      "reused": 2,
+      "discarded": 2,
+      "retained_device": 4786680158,
+      "peak_device": 4786680158,
+      "expert_upload_bytes": 380759124480,
+      "expert_upload_ms": 14703.481631,
+      "ram_miss_bytes": 373395606528,
+      "source_read_bytes": 373395606528,
+      "source_read_ms": 24474.458836
+    }
+  },
+  "preflight_checks": {
+    "preflight-ab": {
+      "exit": 0,
+      "expected": 0,
+      "command": [
+        "./bench_native_forward",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+        "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+        "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+        "32",
+        "4",
+        "0",
+        "--text",
+        "--ram-admit-misses",
+        "--ram-cache-experts",
+        "1024",
+        "--admit-decode",
+        "--decode-cache-experts",
+        "2048",
+        "--request-reference",
+        "/tmp/bitnet-goal-native-prefill1026/paired",
+        "--session-pool",
+        "3",
+        "--forward-group",
+        "2"
+      ]
+    },
+    "preflight-ba": {
+      "exit": 0,
+      "expected": 0,
+      "command": [
+        "./bench_native_forward",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+        "/tmp/bitnet-goal-native-prefill1026/paired",
+        "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+        "32",
+        "4",
+        "0",
+        "--text",
+        "--ram-admit-misses",
+        "--ram-cache-experts",
+        "1024",
+        "--admit-decode",
+        "--decode-cache-experts",
+        "2048",
+        "--request-reference",
+        "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+        "--session-pool",
+        "3",
+        "--forward-group",
+        "2"
+      ]
+    },
+    "preflight-busy": {
+      "exit": 0,
+      "expected": 0,
+      "command": [
+        "/tmp/bitnet-goal-native-group/group-probe",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+        "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+        "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+        "32",
+        "4",
+        "0",
+        "--text",
+        "--ram-admit-misses",
+        "--ram-cache-experts",
+        "1024",
+        "--admit-decode",
+        "--decode-cache-experts",
+        "2048",
+        "--request-reference",
+        "/tmp/bitnet-goal-native-prefill1026/paired",
+        "--session-pool",
+        "3",
+        "--forward-group",
+        "2"
+      ]
+    },
+    "preflight-cancel": {
+      "exit": 0,
+      "expected": 0,
+      "command": [
+        "/tmp/bitnet-goal-native-group/group-probe",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+        "/tmp/bitnet-goal-native-prefill1026/paired",
+        "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+        "32",
+        "4",
+        "0",
+        "--text",
+        "--ram-admit-misses",
+        "--ram-cache-experts",
+        "1024",
+        "--admit-decode",
+        "--decode-cache-experts",
+        "2048",
+        "--request-reference",
+        "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+        "--session-pool",
+        "3",
+        "--forward-group",
+        "2"
+      ]
+    },
+    "preflight-head": {
+      "exit": 0,
+      "expected": 0,
+      "command": [
+        "/tmp/bitnet-goal-native-group/group-probe",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+        "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+        "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+        "32",
+        "4",
+        "0",
+        "--text",
+        "--ram-admit-misses",
+        "--ram-cache-experts",
+        "1024",
+        "--admit-decode",
+        "--decode-cache-experts",
+        "2048",
+        "--request-reference",
+        "/tmp/bitnet-goal-native-prefill1026/paired",
+        "--session-pool",
+        "3",
+        "--forward-group",
+        "2"
+      ]
+    }
+  },
+  "source_checks": {
+    "unit-group": 0,
+    "asan-group": 0,
+    "unit-session": 0,
+    "asan-session": 0,
+    "control-long": 2,
+    "control-short": 2,
+    "control512": 2,
+    "old-serving-ab": 6,
+    "old-serving-ba-predict": 6,
+    "group-baseline": 4,
+    "group-ab": 4,
+    "group-ba": 4,
+    "group-ac": 4,
+    "group-bc": 4,
+    "group-aa": 4,
+    "group-busy": 4,
+    "group-cancel": 4,
+    "group-head": 4,
+    "asan-group-ab": 4,
+    "asan-group-cancel": 4,
+    "asan-group-head": 4,
+    "memcheck-group-busy": 4,
+    "initcheck-group-head": 4,
+    "native-legacy": 0,
+    "qwen27-compat": 0,
+    "timing-width1": 0,
+    "timing-width2": 0
+  },
+  "full_f32_source_exact_completed": 74,
+  "timed_id_byte_source_exact_completed": 16,
+  "total_completed_native_requests": 90,
+  "new_group_driver_completed": 72,
+  "old_control_and_serving_completed": 18,
+  "discarded_uncommitted_participant_instances": 10,
+  "controlled_busy_retries": 2,
+  "additional_preflight_completed": 20,
+  "additional_preflight_discarded_participant_instances": 4,
+  "results": {
+    "summaries": {
+      "group-baseline": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 1,
+        "completed": 4,
+        "window_ms": 50392.733768,
+        "tokens": 20,
+        "group_calls": 0,
+        "single_forwards": 26,
+        "attempts": 0,
+        "shared_layers": 0,
+        "individual_layers": 0,
+        "shared_expert_borrows": 0,
+        "fused_launches": 0,
+        "folded_launches": 0,
+        "waits": 0,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 449361013248,
+        "expert_upload_ms": 17251.314605,
+        "ram_miss_bytes": 444594034176,
+        "source_read_bytes": 444594034176,
+        "source_read_ms": 29244.761857
+      },
+      "group-ab": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 31201.24518,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 256125258240,
+        "expert_upload_ms": 9979.094881,
+        "ram_miss_bytes": 250612606464,
+        "source_read_bytes": 250612606464,
+        "source_read_ms": 16728.449498
+      },
+      "group-ba": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 31207.63307,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 255166536192,
+        "expert_upload_ms": 9945.294134,
+        "ram_miss_bytes": 250319663616,
+        "source_read_bytes": 250319663616,
+        "source_read_ms": 16745.212651
+      },
+      "group-ac": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 45791.237333,
+        "tokens": 20,
+        "group_calls": 12,
+        "single_forwards": 6,
+        "attempts": 12,
+        "shared_layers": 80,
+        "individual_layers": 400,
+        "shared_expert_borrows": 18452,
+        "fused_launches": 3682,
+        "folded_launches": 392,
+        "waits": 0,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 4149706872,
+        "peak_device": 4149706872,
+        "expert_upload_bytes": 401744484864,
+        "expert_upload_ms": 15510.297346,
+        "ram_miss_bytes": 389840352768,
+        "source_read_bytes": 389840352768,
+        "source_read_ms": 25222.639388
+      },
+      "group-bc": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 43498.87408,
+        "tokens": 20,
+        "group_calls": 8,
+        "single_forwards": 12,
+        "attempts": 8,
+        "shared_layers": 80,
+        "individual_layers": 240,
+        "shared_expert_borrows": 17614,
+        "fused_launches": 3508,
+        "folded_launches": 210,
+        "waits": 0,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 2888847184,
+        "peak_device": 2888847184,
+        "expert_upload_bytes": 384181229568,
+        "expert_upload_ms": 14618.544191,
+        "ram_miss_bytes": 381185223168,
+        "source_read_bytes": 381185223168,
+        "source_read_ms": 24706.33694
+      },
+      "group-aa": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 31573.039802,
+        "tokens": 20,
+        "group_calls": 14,
+        "single_forwards": 0,
+        "attempts": 14,
+        "shared_layers": 80,
+        "individual_layers": 480,
+        "shared_expert_borrows": 18872,
+        "fused_launches": 3452,
+        "folded_launches": 696,
+        "waits": 0,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 6047539846,
+        "peak_device": 6047539846,
+        "expert_upload_bytes": 265938843648,
+        "expert_upload_ms": 10279.667382,
+        "ram_miss_bytes": 246591300096,
+        "source_read_bytes": 246591300096,
+        "source_read_ms": 16555.756409
+      },
+      "group-busy": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 31267.629779,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 11,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18752,
+        "fused_launches": 3702,
+        "folded_launches": 514,
+        "waits": 1,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 256551356928,
+        "expert_upload_ms": 10020.685838,
+        "ram_miss_bytes": 250612606464,
+        "source_read_bytes": 250612606464,
+        "source_read_ms": 16748.213531
+      },
+      "group-cancel": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 31833.977405,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 4,
+        "reused": 2,
+        "discarded": 2,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 258348960768,
+        "expert_upload_ms": 10063.39733,
+        "ram_miss_bytes": 250319663616,
+        "source_read_bytes": 250319663616,
+        "source_read_ms": 17157.967643
+      },
+      "group-head": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 45849.350859,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 4,
+        "reused": 2,
+        "discarded": 2,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 380759124480,
+        "expert_upload_ms": 14759.517339,
+        "ram_miss_bytes": 373395606528,
+        "source_read_bytes": 373395606528,
+        "source_read_ms": 24641.790367
+      },
+      "asan-group-ab": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 32226.209657,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 256125258240,
+        "expert_upload_ms": 10203.220912,
+        "ram_miss_bytes": 250612606464,
+        "source_read_bytes": 250612606464,
+        "source_read_ms": 17346.786062
+      },
+      "asan-group-cancel": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 32888.737077,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 4,
+        "reused": 2,
+        "discarded": 2,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 258348960768,
+        "expert_upload_ms": 10287.665622,
+        "ram_miss_bytes": 250319663616,
+        "source_read_bytes": 250319663616,
+        "source_read_ms": 17768.392221
+      },
+      "asan-group-head": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 46589.856348,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 4,
+        "reused": 2,
+        "discarded": 2,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 380759124480,
+        "expert_upload_ms": 14854.202239,
+        "ram_miss_bytes": 373395606528,
+        "source_read_bytes": 373395606528,
+        "source_read_ms": 25115.290144
+      },
+      "memcheck-group-busy": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 300451.253473,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 11,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18752,
+        "fused_launches": 3702,
+        "folded_launches": 514,
+        "waits": 1,
+        "created": 2,
+        "reused": 2,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 256551356928,
+        "expert_upload_ms": 36241.547432,
+        "ram_miss_bytes": 250612606464,
+        "source_read_bytes": 250612606464,
+        "source_read_ms": 17104.82141
+      },
+      "initcheck-group-head": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": false,
+        "cohort_width": 2,
+        "completed": 4,
+        "window_ms": 196920.710042,
+        "tokens": 20,
+        "group_calls": 10,
+        "single_forwards": 6,
+        "attempts": 10,
+        "shared_layers": 80,
+        "individual_layers": 320,
+        "shared_expert_borrows": 18720,
+        "fused_launches": 3696,
+        "folded_launches": 514,
+        "waits": 0,
+        "created": 4,
+        "reused": 2,
+        "discarded": 2,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 379800402432,
+        "expert_upload_ms": 22142.274415,
+        "ram_miss_bytes": 373102663680,
+        "source_read_bytes": 373102663680,
+        "source_read_ms": 24676.260156
+      },
+      "timing-width1": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": true,
+        "cohort_width": 1,
+        "completed": 8,
+        "window_ms": 93660.785819,
+        "tokens": 40,
+        "group_calls": 0,
+        "single_forwards": 52,
+        "attempts": 0,
+        "shared_layers": 0,
+        "individual_layers": 0,
+        "shared_expert_borrows": 0,
+        "fused_launches": 0,
+        "folded_launches": 0,
+        "waits": 0,
+        "created": 2,
+        "reused": 6,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 850213353984,
+        "expert_upload_ms": 32383.590569,
+        "ram_miss_bytes": 843821873664,
+        "source_read_bytes": 843821873664,
+        "source_read_ms": 53689.236087
+      },
+      "timing-width2": {
+        "kind": "native_forward_group_summary",
+        "timing_valid": true,
+        "cohort_width": 2,
+        "completed": 8,
+        "window_ms": 56894.518771,
+        "tokens": 40,
+        "group_calls": 20,
+        "single_forwards": 12,
+        "attempts": 20,
+        "shared_layers": 160,
+        "individual_layers": 640,
+        "shared_expert_borrows": 37440,
+        "fused_launches": 7392,
+        "folded_launches": 1028,
+        "waits": 0,
+        "created": 2,
+        "reused": 6,
+        "discarded": 0,
+        "retained_device": 4786680158,
+        "peak_device": 4786680158,
+        "expert_upload_bytes": 469387651584,
+        "expert_upload_ms": 17958.636205,
+        "ram_miss_bytes": 461984186880,
+        "source_read_bytes": 461984186880,
+        "source_read_ms": 30147.509412
+      }
+    },
+    "requests": {
+      "group-baseline": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "group-ab": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "group-ba": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        }
+      ],
+      "group-ac": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 8,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 8,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "group-bc": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 8,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 8,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "group-aa": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        }
+      ],
+      "group-busy": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "group-cancel": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        }
+      ],
+      "group-head": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "asan-group-ab": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "asan-group-cancel": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        }
+      ],
+      "asan-group-head": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "memcheck-group-busy": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "initcheck-group-head": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        }
+      ],
+      "timing-width1": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 4,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 5,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 6,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 7,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ],
+      "timing-width2": [
+        {
+          "kind": "native_forward_group_request",
+          "id": 0,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 1,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 2,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 3,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 4,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 5,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 6,
+          "position": 2055,
+          "forwards": 7,
+          "generated_ids": [
+            6645,
+            34319,
+            53769,
+            225,
+            16
+          ],
+          "output_hex": "2072656d61696e20696e7461637420f09f98802e"
+        },
+        {
+          "kind": "native_forward_group_request",
+          "id": 7,
+          "position": 1031,
+          "forwards": 6,
+          "generated_ids": [
+            25744,
+            14,
+            223,
+            21,
+            16
+          ],
+          "output_hex": "3738392c20332e"
+        }
+      ]
+    }
+  },
+  "performance": {
+    "timing-width1": {
+      "kind": "native_forward_group_summary",
+      "timing_valid": true,
+      "cohort_width": 1,
+      "completed": 8,
+      "window_ms": 93660.785819,
+      "tokens": 40,
+      "group_calls": 0,
+      "single_forwards": 52,
+      "attempts": 0,
+      "shared_layers": 0,
+      "individual_layers": 0,
+      "shared_expert_borrows": 0,
+      "fused_launches": 0,
+      "folded_launches": 0,
+      "waits": 0,
+      "created": 2,
+      "reused": 6,
+      "discarded": 0,
+      "retained_device": 4786680158,
+      "peak_device": 4786680158,
+      "expert_upload_bytes": 850213353984,
+      "expert_upload_ms": 32383.590569,
+      "ram_miss_bytes": 843821873664,
+      "source_read_bytes": 843821873664,
+      "source_read_ms": 53689.236087
+    },
+    "timing-width2": {
+      "kind": "native_forward_group_summary",
+      "timing_valid": true,
+      "cohort_width": 2,
+      "completed": 8,
+      "window_ms": 56894.518771,
+      "tokens": 40,
+      "group_calls": 20,
+      "single_forwards": 12,
+      "attempts": 20,
+      "shared_layers": 160,
+      "individual_layers": 640,
+      "shared_expert_borrows": 37440,
+      "fused_launches": 7392,
+      "folded_launches": 1028,
+      "waits": 0,
+      "created": 2,
+      "reused": 6,
+      "discarded": 0,
+      "retained_device": 4786680158,
+      "peak_device": 4786680158,
+      "expert_upload_bytes": 469387651584,
+      "expert_upload_ms": 17958.636205,
+      "ram_miss_bytes": 461984186880,
+      "source_read_bytes": 461984186880,
+      "source_read_ms": 30147.509412
+    }
+  },
+  "descriptive_comparison": {
+    "width2_over_width1_throughput": 1.6462180864203093,
+    "window_reduction_fraction": 0.3925470700091179,
+    "expert_upload_reduction_fraction": 0.44791780864825925,
+    "source_read_reduction_fraction": 0.4525098231052058
+  },
+  "qualification_scope": {
+    "matrix": "New driver width1 AB baseline; width2 AB/BA/AC/BC/AA x4 completions; controlled BUSY/cancel/head x4; ASAN normal/cancel/head x4; CUDA memcheck BUSY and initcheck head x4; timed width1/2 x8. Old blocking long/short-predict/512 x2, old streaming scheduler committedAB/predictionBA x6; legacy native14checks, fresh Qwen27 strict192/192.",
+    "sources": "Every normal published last-F32 vocabulary word, actual input/greedy token IDs, UTF8 chunks/full bytes and final position compared to unchanged independent sources. Timed callbacks record actual input/generated IDs/chunks/full bytes, verified after timing. Controlled failed/cohort-cancelled attempts publish no CPU state.",
+    "profile": "Explicit Diffbot INT4/BF16-lookup to ExllamaF16 Engram source adapter; not unmodified Diffbot whole-runtime equivalence.",
+    "tools": "Protected clean product build, complete standard suite, CUDA suite and diagnostics passed with zero warnings; user4 binaries preserved. ASAN/UBSAN group unit and session commit unit instrument every C dependency. Real ASAN benchmark/probes link current instrumented session/trellis/benchmark plus retained instrumented generation/tokenizer/JSON/bridge/cache; other unchanged runtime/CUDA objects normal. Not whole-runtime ASAN or racecheck."
+  },
+  "controlled_probes": {
+    "scope": "Temporary qualification-only linked upload-acquire wrapper and GPU creation proxies, injected during the first cohort initial prefill. Absent from repository/default runtime. No gold edits. Real nonzero-position injected failures are not separately qualified here.",
+    "busy": "Acquisition33 returns legal BUSY after32 shared borrows with real consumer work. Require calls1/waits1/borrows32 and both staged/uncommitted CPU histories, logits17, results0xa5 unchanged. Retry same bound cohort, eventually full source-exact.",
+    "cancel": "Upload-acquire2 returns BUSY after1 actual queued embedding launch, no added fence. Cancel complete ordered cohort, assert2 GPU requests destroyed before pool refunds and no CPU publication. Discard both leases, reacquire/replay actual raw inputs, source-exact.",
+    "head": "Reject second last-logit read after first head completed and second head GEMM queued. Require2 GPU requests destroyed and both CPU histories/logits/positions/results unchanged. Replace/replay source-exact.",
+    "files": [
+      "group-probe.c",
+      "group-probe.h",
+      "native_text_group.h",
+      "make-probe.py"
+    ]
+  },
+  "option_fix": {
+    "problem": "trellis_full_plan positional initializer stored f16acc_enabled in host_budget and then overwrote it, silently ignoring the flag.",
+    "change": "Designated initializer in private trellis_full_options preserves f16acc_enabled and budget fields.",
+    "validation": "Targeted restart unit checks enabled flag propagation; all real source fixtures use flag0. No new full-model numerical qualification of flag1."
+  },
+  "audit": {
+    "source_files": 896,
+    "reference_paths": 51751,
+    "method": "All content hashes verified with4 workers, all futures examined.14 intentional source paths and actual rebuilt compiler outputs repinned; numerical reference files preserved. User4 restored and checked."
+  },
+  "limits": [
+    "Static-cohort benchmark is not yet integrated into production public raw-text scheduler grouped execution. Existing public scheduler still invokes whole single-request forwards.",
+    "Each consumer still has its own tiled GEMM launch. No concatenated activation rows, merged single-GEMM projection, decode-specific shared execution or fully overlapped pipeline claim.",
+    "Synthetic related2050/1026-token prompts and5 generated tokens, two cohort members in real model matrix. Wider cohorts, realistic arrivals, long generations and domains remain unqualified.",
+    "Failure probes cover controlled legal boundaries and cleanup, not arbitrary driver failures or concurrent multi-thread API access.",
+    "No new whole-model Qwen Flash Next, GLM5.3, ARM/Metal qualification or matched fully resident vLLM result; within5% parity and full original objective remain open."
+  ],
+  "next": "Updated goal prioritizes an integrated CUDA release: expose all four declared model profiles through supported product interfaces with whole-model and integrated multi-request serving evidence. Integrate grouped execution with shared scheduler admission/step/publication and explicit capability rejection. Then qualify resident matched vLLM parity, sustained serving and matched-budget offload efficiency before CPU/Metal expansion. Operator tests and this diagnostic benchmark do not establish release readiness.",
+  "artifacts": "/tmp/bitnet-goal-native-group"
+}

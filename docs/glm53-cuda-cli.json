@@ -1,0 +1,309 @@
+{
+  "scope": "Explicit single-shot GLM CUDA recurrent-KDA/chronological-sparse CLI admission, natural rendered text tokenization, shared source cache ownership and cleanup",
+  "whole_goal_complete": false,
+  "ordinary_generation_admitted": true,
+  "interactive_chat_admitted": false,
+  "performance_parity_claimed": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-cli",
+  "source_sha256": {
+    "src/main.c": "52bbdcb1d11913058a3d5bbd7de51e59f9cec0003aec1090ba3cb2a38a74ac66",
+    "include/model_config.h": "8f5abd430a6245e0243470c0654bd0361239a4aefb9f8710418e364580ee465b",
+    "src/model_arch.c": "57753e98a469fd84a9b6d66c95af2521c044c7591e02891d003b5338343e3c8e",
+    "test/glm_anatomy_checks.h": "481697f3bf207583c00b9e5bf03506cdf77be3ed56d897bbd5ed1b66083f3a27",
+    "src/moe_internal.h": "49963c7276da66467b73ba293112464e32cc77fa6cd5c225b71be05b76b1ab66",
+    "src/moe_policy.c": "51cd7b887725b2be0999078fdbf05725b9bfa4509e42638bea4e11fb32838ce3",
+    "src/moe_cache.c": "1eabda5f58e794d9c52a4ee1153b69820ec5a0f4337cc83dc0f4f3773b95df53",
+    "test/test_moe.c": "0141cfb9dc42d4a90be9c822ace3794edc005cb67f00fa815fc29ad771d2f870",
+    "include/moe.h": "8572a31c9fc5eba8b7b36a908cc2e6070044014b0cd0b5db09073fbe4e2a50f1",
+    "test/reference_glm_model.py": "652e754a70cc67d371a398b6c348e845af9f4d5182dbf87e3756d6ea17e5877d",
+    "Makefile": "b27d8074a370cf13493844a60ec2f3769cccfca1dc7cdd33b83ba6735b82f716",
+    "include/model_internal.h": "6fc2a569ca4e052bcfd5af370adb4264c64144acc7430ed0a3719a285c7af7db",
+    "src/model_policy.c": "f0df2f4f241d3db7449f6235ebc9337610cda42b9f8779bee84684049e2b1ab0",
+    "test/test_glm_cli_profile.py": "16ba26773490ec5ed076a981cfa0bff971c654cf098022adf5198564e01cd232",
+    "src/tokenizer.c": "6b09403865a74a1a1eb550fc86bdfc933673f4ce143983c1226cf3dac0385d1f",
+    "include/tokenizer.h": "006b6dd5c4817c39dc243370f54d5067840a16240a583aca458721b364c7f4ab",
+    "include/model_tokenizer_policy.h": "1a04a5aac208141f23abda23f27c25f2fcf0c88ec068c40e8e422ca5d26f3453",
+    "test/test_tokenizer.c": "4643cacdbcf2ad9562dc71194dceb8bc4c0c7b7c2c731b133b1d963127eae7ce"
+  },
+  "validation": {
+    "clean": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "arithmetic-reference": {
+      "exit": 0
+    },
+    "chinese-reference": {
+      "exit": 0
+    },
+    "arithmetic-chunk8-reference": {
+      "exit": 0
+    },
+    "arithmetic-fixed-raw": {
+      "exit": 0
+    },
+    "chinese-fixed-raw": {
+      "exit": 0
+    },
+    "pread-zero": {
+      "exit": 0
+    },
+    "mmap": {
+      "exit": 0
+    },
+    "arithmetic-chunk8": {
+      "exit": 0
+    },
+    "sanitize-test_tokenizer-build": {
+      "exit": 0
+    },
+    "sanitize-test_tokenizer": {
+      "exit": 0
+    },
+    "sanitize-test_moe-build": {
+      "exit": 0
+    },
+    "sanitize-test_moe": {
+      "exit": 0
+    },
+    "sanitize-test_transformer-build": {
+      "exit": 0
+    },
+    "sanitize-test_transformer": {
+      "exit": 0
+    },
+    "sanitize-bitnet-build": {
+      "exit": 0
+    },
+    "private-regression": {
+      "exit": 0
+    },
+    "default-compat-reference": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "sanitize-cli-success": {
+      "exit": 0,
+      "expected": 0
+    },
+    "sanitize-cli-prompt-overflow": {
+      "exit": 1,
+      "expected": 1
+    },
+    "sanitize-cli-invalid-id": {
+      "exit": 1,
+      "expected": 1
+    }
+  },
+  "natural_prompts": {
+    "english": {
+      "prompt_ids": [
+        154822,
+        154824,
+        154826,
+        25062,
+        287,
+        29905,
+        371,
+        25,
+        12035,
+        154826,
+        16127,
+        3529,
+        285,
+        974,
+        13,
+        154827,
+        3838,
+        374,
+        220,
+        17,
+        488,
+        220,
+        17,
+        30,
+        17815,
+        448,
+        279,
+        1372,
+        1172,
+        13,
+        154828,
+        154841
+      ],
+      "greedy_ids": [
+        154842,
+        19,
+        154827
+      ],
+      "decoded_output": "</think>4\n",
+      "rendered_prompt": "/tmp/bitnet-goal-glm-cli/arithmetic-prompt.txt",
+      "tokenizer_provenance": "/tmp/bitnet-goal-glm-cli/arithmetic-tokenizer.json",
+      "original_reference": "/tmp/bitnet-goal-glm-cli/arithmetic-reference"
+    },
+    "chinese": {
+      "prompt_ids": [
+        154822,
+        154824,
+        154826,
+        25062,
+        287,
+        29905,
+        371,
+        25,
+        12035,
+        154826,
+        16127,
+        3529,
+        285,
+        974,
+        13,
+        154827,
+        127017,
+        100295,
+        99770,
+        5122,
+        98511,
+        98431,
+        98511,
+        104965,
+        98789,
+        11314,
+        154828,
+        154841
+      ],
+      "greedy_ids": [
+        154842,
+        19,
+        154827
+      ],
+      "decoded_output": "</think>4\n",
+      "rendered_prompt": "/tmp/bitnet-goal-glm-cli/chinese-prompt.txt",
+      "tokenizer_provenance": "/tmp/bitnet-goal-glm-cli/chinese-tokenizer.json",
+      "original_reference": "/tmp/bitnet-goal-glm-cli/chinese-reference"
+    }
+  },
+  "tokenizer": {
+    "policy": "glm4 three-digit regex groups; longest GGUF CONTROL/USER_DEFINED token isolation before byte BPE; model-owned user/observation stop tokens",
+    "independent_actual_gguf_cases": 14,
+    "comparison": "/tmp/bitnet-goal-glm-cli/tokenizer-parity.json",
+    "explicit_no_bos": true,
+    "default_bos_parity_claimed": false,
+    "tests": "Overlapping added tokens, neighboring ordinary BPE, truncation guards, digit segmentation, malformed token-type arrays; old Qwen and Gemma regressions retained"
+  },
+  "cache_modes": [
+    "pread with 128 MiB RAM cache",
+    "pread with zero RAM cache",
+    "mmap"
+  ],
+  "automatic_prefill_chunks": [
+    8,
+    8,
+    8,
+    8
+  ],
+  "chunked_reference": "/tmp/bitnet-goal-glm-cli/arithmetic-chunk8-reference",
+  "reference_default_fixture_compatibility": {
+    "exact_files": 1692,
+    "bytes": 927977280,
+    "immutable_reference": "/tmp/bitnet-goal-glm-chunked/chunked-reference",
+    "first_records_exact": true,
+    "new_repeat_records_equal_old_first": true,
+    "old_manifest_has_repeat_records": false,
+    "initial_harness_failure": "All binary files and first records matched; old manifest lacks newer repeat_records field. Rechecked new repeat against both first records and every old repeat binary."
+  },
+  "ownership": "Request teardown drains GPU loans before freeing shared source caches; topology-owned expert maps supply heterogeneous raw projection extents; CPU prepared-expert APIs reject topology-only bindings",
+  "arithmetic_profile": "Explicit glm-recurrent: qualified fused recurrent KDA and deterministic chronological sparse indices. No default HF/chunk-KDA bit-parity claim.",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "runtime_libraries": "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib",
+  "preserved_failures": [
+    "arithmetic-cli.*: original raw-text encoding split control tokens and omitted glm4 pretokenization, 48 versus independent 32 prompt tokens; incorrect generation then context overflow",
+    "initial-* architecture-boundary failure corrected by model policy adapter; no weakened checks",
+    "tokenizer-parity-default-bos*: initial external harness used GGUF default BOS while independent input explicitly disabled special-token insertion; corrected test helper to request no BOS, retaining both results"
+  ],
+  "limitations": [
+    "Only two natural answer prompts qualified; these are not broad conversational or task-quality evaluations.",
+    "Rendered official local chat-template text accepted through -p with --no-bos; --chat is explicitly rejected for this profile.",
+    "GPU expert preload/cache and legacy CPU expert preparation are explicitly rejected for this topology-only profile.",
+    "No GLM resident performance claim: routed checkpoint source bytes exceed this GPU capacity.",
+    "No vLLM throughput/latency parity, continuous batching, concurrent service, or Metal/CPU GLM qualification is claimed.",
+    "GGUF directory/file and shared MoE source I/O must outlive model and requests.",
+    "Other model-family goals and full production acceptance remain active.",
+    "Qwen NFC Unicode normalization remains an independently reproduced preexisting gap; 14/15 cross-family tokenizer cases match versus 10/15 with the previous tokenizer. This is not full Qwen text-tokenizer qualification."
+  ],
+  "qwen_cross_family_check": {
+    "normalizer": {
+      "type": "NFC"
+    },
+    "candidate_exact": 14,
+    "baseline_exact": 10,
+    "cases": 15,
+    "remaining_failure_predates_changes": true,
+    "remaining_cases": [
+      {
+        "text": "á b̈ १२३४ ١٢٣٤",
+        "actual": [
+          64,
+          52033,
+          292,
+          136,
+          230,
+          220,
+          12256,
+          100,
+          12256,
+          101,
+          12256,
+          102,
+          12256,
+          103,
+          220,
+          149,
+          94,
+          149,
+          95,
+          149,
+          96,
+          149,
+          97
+        ],
+        "expected": [
+          1886,
+          292,
+          136,
+          230,
+          220,
+          12256,
+          100,
+          12256,
+          101,
+          12256,
+          102,
+          12256,
+          103,
+          220,
+          149,
+          94,
+          149,
+          95,
+          149,
+          96,
+          149,
+          97
+        ],
+        "exact": false
+      }
+    ],
+    "status": "open; must implement and independently qualify Qwen NFC normalization; GLM normalizer is None"
+  }
+}

@@ -12,6 +12,9 @@
 #include "sampler.h"
 #include "threadpool.h"
 #include "session.h"
+#include "session_internal.h"
+#include "backend_layout.h"
+#include "transformer/bf16_internal.h"
 #include "prompt_cache.h"
 #include "sh_log.h"
 #ifdef BN_ENABLE_WEBGPU
@@ -75,6 +78,11 @@ typedef struct {
     int webgpu;         // use WebGPU backend for matvec (requires BN_ENABLE_WEBGPU)
     int metal;          // use Metal backend (requires BN_ENABLE_METAL)
     int cuda;           // use CUDA backend (requires BN_ENABLE_CUDA)
+    int cuda_bf16;
+    BnTransformerBF16Arithmetic bf16_arithmetic;
+    int bf16_profile_set;
+    int glm_recurrent;
+    int prefill_batch;
     int gpu_cpu_logits; // hidden diagnostic: run final logits on CPU
     int gpu_compare_logits; // hidden diagnostic: compare GPU logits to CPU
     int gpu_max_storage_binding_mb; // hidden diagnostic: allow large GPU logits
@@ -103,12 +111,14 @@ typedef struct {
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
     int gpu_cache_mb;   // GPU expert buffer cache in MB (default 4096, 0 to disable)
     int gpu_cache_mb_set; // whether user explicitly set --gpu-cache-mb
+    int gpu_preload_experts;
 } CLIArgs;
 
 #define BN_GPU_DEFAULT_MAXSEQ 4096
 
 static void print_usage(const char *prog) {
     fprintf(stderr, "Usage: %s <model.gguf> [options]\n", prog);
+    fprintf(stderr, "Native CUDA raw text: %s --native-text --help\n", prog);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -p <prompt>     Input prompt (default: \"Hello\")\n");
     fprintf(stderr, "  --prompt-token-ids <ids>  Comma-separated prompt token IDs for parity debugging\n");
@@ -125,7 +135,8 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
     fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
     fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
-    fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert buffer cache in MB (default: 4096, 0 to disable)\n");
+    fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert cache MB (legacy default: 4096; native BF16: explicit only)\n");
+    fprintf(stderr, "  --gpu-preload-experts  Preload every native Flash expert (requires full --gpu-cache-mb capacity)\n");
     fprintf(stderr, "  --madvise         Use madvise-guided mmap for MoE expert prefetch\n");
     fprintf(stderr, "  --prefault-moe    Fault all mmap'd MoE expert pages during startup\n");
     fprintf(stderr, "  --bench-warmup-tokens <int>  Untimed decode warmup before reporting tok/s\n");
@@ -140,6 +151,9 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --webgpu        Enable WebGPU backend (requires BN_ENABLE_WEBGPU=1)\n");
     fprintf(stderr, "  --metal         Enable Metal backend (requires BN_ENABLE_METAL=1)\n");
     fprintf(stderr, "  --cuda          Enable experimental CUDA backend (requires BN_ENABLE_CUDA=1)\n");
+    fprintf(stderr, "  --cuda-bf16     Enable qualified resident BF16 CUDA execution (requires MKL VML)\n");
+    fprintf(stderr, "  --cuda-bf16-profile eager|cp-fp32|glm-recurrent  Qualified arithmetic profile (GLM: single-shot rendered prompts)\n");
+    fprintf(stderr, "  --prefill-batch N  BF16 prompt chunk size (default 1025)\n");
     fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
     fprintf(stderr, "  --dump-binary <path>  Write a selected transformer state as float32\n");
     fprintf(stderr, "  --dump-tag <tag>       Select the shared diagnostic state tag\n");
@@ -306,8 +320,13 @@ static CLIArgs parse_args(int argc, char **argv) {
         } else if (strcmp(argv[i], "--cache-mb") == 0 && i + 1 < argc) {
             args.cache_mb = parse_int(argv[++i], "--cache-mb");
             args.cache_mb_set = 1;
+        } else if (strcmp(argv[i], "--gpu-preload-experts") == 0) {
+            args.gpu_preload_experts = 1;
         } else if (strcmp(argv[i], "--gpu-cache-mb") == 0 && i + 1 < argc) {
             args.gpu_cache_mb = parse_int(argv[++i], "--gpu-cache-mb");
+            if (args.gpu_cache_mb < 0) {
+                fprintf(stderr,"--gpu-cache-mb must be nonnegative\n");exit(1);
+            }
             args.gpu_cache_mb_set = 1;
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             args.threads = parse_int(argv[++i], "-t");
@@ -322,6 +341,29 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.metal = 1;
         } else if (strcmp(argv[i], "--cuda") == 0) {
             args.cuda = 1;
+        } else if (strcmp(argv[i], "--cuda-bf16") == 0) {
+            args.cuda = args.cuda_bf16 = 1;
+        } else if (strcmp(argv[i], "--cuda-bf16-profile") == 0 && i + 1 < argc) {
+            const char *profile = argv[++i];
+            args.glm_recurrent = 0;
+            args.bf16_arithmetic = BN_TRANSFORMER_BF16_ARITHMETIC_EAGER;
+            if (strcmp(profile, "eager") == 0)
+                args.bf16_arithmetic = BN_TRANSFORMER_BF16_ARITHMETIC_EAGER;
+            else if (strcmp(profile, "cp-fp32") == 0)
+                args.bf16_arithmetic = BN_TRANSFORMER_BF16_ARITHMETIC_CP_FP32;
+            else if (strcmp(profile, "glm-recurrent") == 0)
+                args.glm_recurrent = 1;
+            else {
+                fprintf(stderr, "--cuda-bf16-profile must be eager, cp-fp32, or glm-recurrent\n");
+                exit(1);
+            }
+            args.bf16_profile_set = 1;
+        } else if (strcmp(argv[i], "--prefill-batch") == 0 && i + 1 < argc) {
+            args.prefill_batch = parse_int(argv[++i], "--prefill-batch");
+            if (args.prefill_batch <= 0) {
+                fprintf(stderr, "--prefill-batch must be positive\n");
+                exit(1);
+            }
         } else if (strcmp(argv[i], "--gpu-cpu-logits") == 0) {
             args.gpu_cpu_logits = 1;
         } else if (strcmp(argv[i], "--gpu-compare-logits") == 0) {
@@ -459,48 +501,6 @@ main_loaded_moe_layer_policy(const BnLayerWeights *lw) {
     return policy;
 }
 
-static size_t model_moe_entry_bytes(const BnModel *model,
-                                    const BnGPUBackend *gpu) {
-    if (!model || model->config.n_layers <= 0)
-        return 0;
-    for (int l = 0; l < model->config.n_layers; l++) {
-        const BnLayerWeights *lw = &model->weights.layers[l];
-        if (!main_loaded_moe_layer_policy(lw).uses_moe)
-            continue;
-        const BnMoEExpertMap *em = &lw->moe.expert_map;
-        const BnMoEIO *io = bn_model_moe_io_const(model);
-        size_t gate_charge = bn_moe_mmap_base_for_proj(io, em, 0)
-            ? bn_gpu_backend_buffer_cache_charge(
-                  gpu, em->expert_gate_bytes, em->gate_type,
-                  em->gate_rows, em->gate_cols)
-            : em->expert_gate_bytes;
-        size_t up_charge = bn_moe_mmap_base_for_proj(io, em, 1)
-            ? bn_gpu_backend_buffer_cache_charge(
-                  gpu, em->expert_up_bytes, em->up_type,
-                  em->up_rows, em->up_cols)
-            : em->expert_up_bytes;
-        size_t down_charge = bn_moe_mmap_base_for_proj(io, em, 2)
-            ? bn_gpu_backend_buffer_cache_charge(
-                  gpu, em->expert_down_bytes, em->down_type,
-                  em->down_rows, em->down_cols)
-            : em->expert_down_bytes;
-        if (gate_charge > SIZE_MAX - up_charge ||
-            gate_charge + up_charge > SIZE_MAX - down_charge)
-            return 0;
-        size_t entry = gate_charge + up_charge + down_charge;
-        size_t cache_bytes = down_charge == em->expert_down_bytes &&
-                bn_gpu_policy_moe_lazy_aux_cache_enabled(gpu)
-            ? bn_gpu_policy_moe_down_aux_cache_bytes(
-                  gpu, em->down_type, em->down_rows, em->down_cols)
-            : 0;
-        if (cache_bytes > SIZE_MAX - entry)
-            return 0;
-        entry += cache_bytes;
-        return entry;
-    }
-    return 0;
-}
-
 static int model_moe_layer_count(const BnModel *model) {
     if (!model)
         return 0;
@@ -624,7 +624,7 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
     if (!args->gpu_cache_mb_set && !duplicate_cache_enabled &&
         routed_moe_layers > 0 && routed_resident_layers == routed_moe_layers)
         return;
-    size_t entry_bytes = model_moe_entry_bytes(model, gpu);
+    size_t entry_bytes = bn_gpu_moe_bridge_cache_entry_bytes(model, gpu);
     if (entry_bytes == 0)
         return;
     int auto_resident = 0;
@@ -666,11 +666,18 @@ typedef struct {
     int history_len;
     int history_cap;
     int token_ids;
+    int last_token;
+    int last_position;
+    const int *position;
 } BnChatHistory;
 
 static int print_token(const char *piece, int token_id, void *user_data) {
     // Track generated tokens in history for prompt cache
     BnChatHistory *h = (BnChatHistory *)user_data;
+    if (h) {
+        h->last_token = token_id;
+        h->last_position = h->position ? *h->position : -1;
+    }
     if (h && h->history && h->history_len < h->history_cap) {
         h->history[h->history_len++] = token_id;
     }
@@ -848,9 +855,125 @@ static BnGPUBackend *create_cuda_backend(const CLIArgs *args) {
 }
 #endif
 
+/* All request consumers must be drained before shared source caches and the
+ * model are released. This also covers setup failures before a session exists. */
+static void cli_release_model(BnModel *model) {
+    bn_model_moe_io_shutdown(model);
+    bn_moe_cache_free(bn_model_moe_cache(model));
+    bn_model_set_moe_cache(model, NULL);
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
+    if (bn_model_gpu_moe_cache(model)) {
+        bn_gpu_moe_cache_print_stats(bn_model_gpu_moe_cache(model));
+        bn_gpu_moe_cache_free(bn_model_gpu_moe_cache(model));
+        bn_model_set_gpu_moe_cache(model, NULL);
+    }
+#endif
+    bn_model_free(model);
+}
+
+static int cli_init_bf16_request(BnModel *model, BnSession *session,
+                               const CLIArgs *args) {
+    if (!args->cuda_bf16) return 0;
+    if (bn_backend_layout_bf16_glm_model(bn_model_backend(model))) {
+        int batch = args->prefill_batch ? args->prefill_batch : 1025;
+        if (batch > model->config.seq_len) batch = model->config.seq_len;
+        return bn_transformer_bf16_glm_prepare_context(model, session, batch,
+            model->config.seq_len, (size_t)16 * 1024 * 1024 * 1024,
+            256u * 1024 * 1024);
+    }
+    if (bn_backend_layout_bf16_flash_model(bn_model_backend(model))) {
+        int batch = args->prefill_batch ? args->prefill_batch : 1025;
+        if (batch > model->config.seq_len) batch = model->config.seq_len;
+        return bn_transformer_bf16_flash_prepare_context(model, bn_model_gpu(model),
+            bn_session_backend(session), batch, model->config.seq_len,
+            (size_t)4 * 1024 * 1024 * 1024, 256u * 1024 * 1024);
+    }
+    const BnBackendBF16Model *layout = bn_backend_layout_bf16(bn_model_backend(model));
+    int status = layout ? bn_transformer_bf16_request_init_with_arithmetic(model, bn_model_gpu(model),
+        bn_session_backend(session), layout->max_tokens, model->config.seq_len,
+        NULL, 0, args->bf16_arithmetic) : -1;
+    if (!status)
+        SH_LOG_INFO("Resident BF16 CUDA request prepared", "profile",
+            args->bf16_arithmetic == BN_TRANSFORMER_BF16_ARITHMETIC_CP_FP32
+                ? "cp-fp32" : "eager");
+    else if (args->bf16_arithmetic == BN_TRANSFORMER_BF16_ARITHMETIC_CP_FP32)
+        fprintf(stderr, "cp-fp32 requires a supported dense hybrid model and SM120 CUDA backend\n");
+    return status;
+}
+
+static int cli_reset_request(BnModel *model, BnSession *session,
+                             const CLIArgs *args) {
+    if (args->cuda_bf16 &&
+        bn_transformer_bf16_session_restart(model, session) == 0) return 0;
+    bn_session_reset(session, model);
+    return cli_init_bf16_request(model, session, args);
+}
+
+static void cli_free_request_model(BnModel *model, BnSession *session,
+    BnGPUBackend *gpu, void (*destroy_gpu)(BnGPUBackend *), BnGGUFFile *file) {
+    bn_session_free(session, NULL);
+    cli_release_model(model);
+    if (destroy_gpu) destroy_gpu(gpu);
+    bn_gguf_free(file);
+}
+
+#include "main_native_text.h"
+#include "main_gguf_batch.h"
+
 int main(int argc, char **argv) {
     sh_log_init(NULL);
+    if(argc>1&&!strcmp(argv[1],"--native-text"))return native_cli_main(argc,argv);
+    if(argc>1&&!strcmp(argv[1],"--cuda-batch"))return gguf_batch_main(argc,argv);
     CLIArgs args = parse_args(argc, argv);
+    int exit_status = 0;
+    if (args.gpu_preload_experts && (!args.cuda_bf16 || !args.gpu_cache_mb_set || args.gpu_cache_mb<=0)) {
+        fprintf(stderr,"--gpu-preload-experts requires --cuda-bf16 and positive explicit --gpu-cache-mb\n");
+        return 1;
+    }
+    if (args.prefill_batch && !args.cuda_bf16) {
+        fprintf(stderr, "--prefill-batch requires --cuda-bf16\n");
+        return 1;
+    }
+    if (args.bf16_profile_set && !args.cuda_bf16) {
+        fprintf(stderr, "--cuda-bf16-profile requires --cuda-bf16\n");
+        return 1;
+    }
+    if (args.glm_recurrent && (args.chat || args.prefault_moe ||
+        args.gpu_preload_experts || (args.gpu_cache_mb_set && args.gpu_cache_mb > 0) ||
+        args.cache_mb < 0 || getenv("BN_CPU_PREPARE_ALL_EXPERTS"))) {
+        fprintf(stderr, "glm-recurrent requires single-shot prompts and does not support --prefault-moe, GPU expert caching/preload, or CPU expert preparation; --cache-mb must be nonnegative\n");
+        return 1;
+    }
+    if (args.cuda_bf16) {
+#ifndef BN_ENABLE_CUDA
+        fprintf(stderr, "--cuda-bf16 requires BN_ENABLE_CUDA=1\n");
+        return 1;
+#endif
+        if (!bn_backend_layout_bf16_math_available(BN_BACKEND_BF16_MATH_MKL_VML_HA)) {
+            fprintf(stderr, "--cuda-bf16 requires BN_ENABLE_MKL_VML=1\n");
+            return 1;
+        }
+        if (args.draft_path || args.kv_f16 || args.kv_tq_bits || args.flash_attn ||
+            args.gpu_cpu_logits || args.gpu_compare_logits || args.gpu_profile ||
+            args.gpu_debug_qkv_split || args.gpu_disable_qkv_split ||
+            args.gpu_disable_gateup_split || args.gpu_disable_fused_gateup ||
+            args.gpu_split_residual_rmsnorm || args.gpu_flash_min_kv >= 0 ||
+            args.gpu_max_storage_binding_mb >= 0 ||
+            args.small_dense_native_quant_to_layer >= 0 ||
+            args.small_dense_native_quant_tail >= 0 ||
+            args.small_dense_native_quant_attn_only ||
+            args.small_dense_native_quant_ffn_only ||
+            args.small_dense_native_quant_disable_gateup ||
+            args.small_dense_native_quant_disable_ffn_down ||
+            args.metal_disable_barriers || args.metal_specialized_native_quant ||
+            args.metal_disable_specialized_native_quant ||
+            args.metal_native_quant_prepared || args.metal_private_weights ||
+            args.metal_disable_small_dense_native_quant ||
+            args.metal_cpu_route_resident_moe) {
+            fprintf(stderr, "--cuda-bf16 uses resident BF16 KV and attention; draft, KV format, and legacy GPU overrides are unsupported\n");
+            return 1;
+        }
+    }
     /* Compatibility mirror for policy predicates not yet migrated to the
      * immutable backend snapshot. Backend constructors receive the snapshot
      * built from these same values below. */
@@ -1070,14 +1193,28 @@ int main(int argc, char **argv) {
     }
 
     // Load model
-    BnModel model;
+    int glm_topology = bn_model_gguf_bf16_layout(gf) == BN_MODEL_BF16_LAYOUT_GLM_MHC;
+    if (glm_topology != args.glm_recurrent) {
+        fprintf(stderr, "%s\n", glm_topology
+            ? "GLM requires --cuda-bf16 --cuda-bf16-profile glm-recurrent"
+            : "glm-recurrent requires a supported GLM topology checkpoint");
+        bn_gguf_free(gf);
+#ifdef BN_ENABLE_METAL
+        if (early_metal_gpu) bn_gpu_metal_destroy(early_metal_gpu);
+#endif
+        return 1;
+    }
+    BnModel model = {0};
     int prepare_cpu_weights =
-        !(early_metal_gpu &&
+        !args.cuda_bf16 && !(early_metal_gpu &&
           bn_model_gguf_has_auxiliary_prediction_blocks(gf));
-    if (bn_model_load_with_cpu_preparation(
-            &model, gf, args.max_seq_len, args.kv_f16, args.kv_tq_bits,
-            prepare_cpu_weights) != 0) {
+    int load_status = args.glm_recurrent
+        ? bn_model_load_topology(&model, gf, args.max_seq_len)
+        : bn_model_load_with_cpu_preparation(&model, gf, args.max_seq_len,
+            args.kv_f16, args.kv_tq_bits, prepare_cpu_weights);
+    if (load_status != 0) {
         SH_LOG_ERROR("Failed to load model");
+        cli_release_model(&model);
         bn_gguf_free(gf);
 #ifdef BN_ENABLE_METAL
         if (early_metal_gpu) bn_gpu_metal_destroy(early_metal_gpu);
@@ -1099,7 +1236,7 @@ int main(int argc, char **argv) {
             if (bn_model_set_moe_shard_files(&model, gf->owned_maps,
                                              gf->n_shards) != 0) {
                 SH_LOG_ERROR("Failed to configure sharded expert I/O");
-                bn_model_free(&model);
+                cli_release_model(&model);
                 bn_gguf_free(gf);
 #ifdef BN_ENABLE_METAL
                 if (early_metal_gpu) bn_gpu_metal_destroy(early_metal_gpu);
@@ -1135,21 +1272,20 @@ int main(int argc, char **argv) {
         }
 
         // Create I/O prefetch thread for pread pipeline (not needed for madvise)
-        if (!moe_io->madvise_mode)
+        if (!moe_io->madvise_mode && !bn_model_anatomy(&model))
             bn_moe_prefetch_create(moe_io);
 
         // Create expert LRU cache (pread only, not needed for madvise)
         if (!moe_io->madvise_mode &&
-            args.cache_mb > 0 && !bn_moe_io_has_mmap(moe_io) && moe_io->fd >= 0
+            args.cache_mb > 0 && bn_moe_io_has_pread(moe_io)
             && model.config.n_layers > 0) {
             BnMoEProjectionBufferLayout layout =
-                bn_moe_projection_buffer_layout(&model.config,
-                                                &model.weights);
+                bn_moe_model_projection_buffer_layout(&model);
             bn_model_set_moe_cache(&model, bn_moe_cache_create(
                 (size_t)args.cache_mb * 1024 * 1024,
                 layout.gate_bytes, layout.up_bytes, layout.down_bytes));
         }
-        if (args.cache_mb > 0 && bn_moe_io_has_mmap(moe_io)) {
+        if (!bn_model_anatomy(&model) && args.cache_mb > 0 && bn_moe_io_has_mmap(moe_io)) {
             size_t prepared_cache_mb = (size_t)args.cache_mb;
             const char *prepared_cache_env =
                 getenv("BN_CPU_PREPARED_CACHE_MB");
@@ -1267,7 +1403,53 @@ int main(int argc, char **argv) {
 
     // CUDA backend (optional)
 #ifdef BN_ENABLE_CUDA
-    if (args.cuda) {
+    if (args.cuda_bf16) {
+        if (args.bf16_arithmetic == BN_TRANSFORMER_BF16_ARITHMETIC_CP_FP32 &&
+            model.config.bf16_layout != BN_MODEL_BF16_LAYOUT_HYBRID_OFFSET_NORM) {
+            fprintf(stderr, "--cuda-bf16-profile cp-fp32 requires a dense hybrid model\n");
+            cli_release_model(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        BnGPUBackend *gpu = create_cuda_backend(&args);
+        int batch = args.prefill_batch ? args.prefill_batch : 1025;
+        if (batch > model.config.seq_len) batch = model.config.seq_len;
+        int prepared = -1;
+        if (gpu) {
+            if (model.config.bf16_layout == BN_MODEL_BF16_LAYOUT_GLM_MHC)
+                prepared = bn_model_prepare_bf16_topology(&model, gpu,
+                    (size_t)12 * 1024 * 1024 * 1024, 256u * 1024 * 1024);
+            else if (model.config.bf16_layout == BN_MODEL_BF16_LAYOUT_FLASH_HC)
+                prepared = bn_backend_layout_prepare_bf16_flash_model_with_cache(
+                    bn_model_backend(&model), gpu, &model.config, &model.weights,
+                    (size_t)12 * 1024 * 1024 * 1024, 64u * 1024 * 1024,
+                    args.gpu_cache_mb_set ? (size_t)args.gpu_cache_mb*1024*1024 : 0);
+            else if (!args.gpu_cache_mb_set || !args.gpu_cache_mb)
+                prepared = bn_backend_layout_prepare_bf16_with_math(
+                    bn_model_backend(&model), gpu, &model.config, &model.weights,
+                    batch, BN_BACKEND_BF16_MATH_MKL_VML_HA);
+        }
+        if (!prepared && args.gpu_preload_experts) {
+            BnTransformerBF16FlashPreloadInfo info;
+            double start=bn_platform_time_ms();
+            prepared=bn_transformer_bf16_flash_preload_experts(&model,4u*1024*1024,&info);
+            if(!prepared)fprintf(stderr,"BF16 expert preload: experts=%zu upload_bytes=%zu resident_bytes=%zu staging_bytes=%zu source_io_bytes=%zu source_io_count=%d ms=%.1f\n",
+                info.cache.resident_experts,info.cache.upload_bytes,info.cache.resident_bytes,
+                info.cache.host_staging_bytes,info.source.io_bytes,info.source.io_count,bn_platform_time_ms()-start);
+        }
+        if (prepared) {
+            SH_LOG_ERROR("Resident BF16 CUDA model preparation failed");
+            cli_release_model(&model);
+            if (gpu) bn_gpu_cuda_destroy(gpu);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        owned_gpu = gpu;
+        destroy_owned_gpu = bn_gpu_cuda_destroy;
+        const BnBackendBF16Model *layout = bn_backend_layout_bf16(bn_model_backend(&model));
+        SH_LOG_INFO("Resident BF16 CUDA model prepared", "math",
+            layout ? layout->math_library : (args.glm_recurrent ? "glm-recurrent" : "Flash HC / MKL VML HA"));
+    } else if (args.cuda) {
         BnGPUBackend *gpu = create_cuda_backend(&args);
         if (gpu) {
             double gpu_t0 = bn_platform_time_ms();
@@ -1307,10 +1489,11 @@ int main(int argc, char **argv) {
     if (!bn_model_gpu(&model))
         bn_tp_set_cpu_decode_policy(bn_model_pool(&model));
 
-    BnSession *session = bn_session_create(&model, NULL);
+    BnSession *session = args.cuda_bf16
+        ? bn_session_create_backend(&model, NULL) : bn_session_create(&model, NULL);
     if (!session) {
         SH_LOG_ERROR("Failed to create session");
-        bn_model_free(&model);
+        cli_release_model(&model);
         if (destroy_owned_gpu)
             destroy_owned_gpu(owned_gpu);
         bn_gguf_free(gf);
@@ -1318,12 +1501,18 @@ int main(int argc, char **argv) {
     }
 
     BnConfig *cfg = &model.config;
+    if (cli_init_bf16_request(&model, session, &args)) {
+        SH_LOG_ERROR("Resident BF16 CUDA request preparation failed");
+        cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
+        return 1;
+    }
 
     {
         char dim[16], layers[16], heads[16], vocab[16], seq[16];
         snprintf(dim, sizeof(dim), "%d", cfg->dim);
         snprintf(layers, sizeof(layers), "%d", cfg->n_layers);
-        snprintf(heads, sizeof(heads), "%d", cfg->n_heads);
+        const BnModelAnatomy *anatomy = bn_model_anatomy(&model);
+        snprintf(heads, sizeof(heads), "%d", anatomy ? anatomy->attention_heads : cfg->n_heads);
         snprintf(vocab, sizeof(vocab), "%d", cfg->vocab_size);
         snprintf(seq, sizeof(seq), "%d", cfg->seq_len);
         SH_LOG_INFO("Model loaded", "dim", dim, "layers", layers, "heads", heads,
@@ -1334,8 +1523,7 @@ int main(int argc, char **argv) {
     BnTokenizer tokenizer;
     if (bn_tokenizer_init(&tokenizer, gf) != 0) {
         SH_LOG_ERROR("Failed to init tokenizer");
-        bn_model_free(&model);
-        bn_gguf_free(gf);
+        cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
         return 1;
     }
     {
@@ -1353,8 +1541,7 @@ int main(int argc, char **argv) {
     if (bn_sampler_init(&sampler, cfg->vocab_size, args.temperature, args.topp, args.seed) != 0) {
         fprintf(stderr, "Failed to allocate sampler\n");
         bn_tokenizer_free(&tokenizer);
-        bn_model_free(&model);
-        bn_gguf_free(gf);
+        cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
         return 1;
     }
     if (args.repeat_penalty > 1.0f)
@@ -1371,8 +1558,7 @@ int main(int argc, char **argv) {
             SH_LOG_ERROR("Failed to parse draft GGUF");
             bn_sampler_free(&sampler);
             bn_tokenizer_free(&tokenizer);
-            bn_model_free(&model);
-            bn_gguf_free(gf);
+            cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
             return 1;
         }
         if (bn_model_load(&draft_model, draft_gf, args.max_seq_len, args.kv_f16, args.kv_tq_bits) != 0) {
@@ -1380,8 +1566,7 @@ int main(int argc, char **argv) {
             bn_gguf_free(draft_gf);
             bn_sampler_free(&sampler);
             bn_tokenizer_free(&tokenizer);
-            bn_model_free(&model);
-            bn_gguf_free(gf);
+            cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
             return 1;
         }
         draft_model.config.flash_attn = args.flash_attn;
@@ -1391,12 +1576,11 @@ int main(int argc, char **argv) {
         // Validate vocab compatibility
         if (draft_model.config.vocab_size != cfg->vocab_size) {
             SH_LOG_ERROR("Draft model vocab size mismatch");
-            bn_model_free(&draft_model);
+            cli_release_model(&draft_model);
             bn_gguf_free(draft_gf);
             bn_sampler_free(&sampler);
             bn_tokenizer_free(&tokenizer);
-            bn_model_free(&model);
-            bn_gguf_free(gf);
+            cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
             return 1;
         }
 
@@ -1415,13 +1599,11 @@ int main(int argc, char **argv) {
         draft_session = bn_session_create(&draft_model, NULL);
         if (!draft_session) {
             SH_LOG_ERROR("Failed to create draft session");
-            bn_model_free(&draft_model);
+            cli_release_model(&draft_model);
             bn_gguf_free(draft_gf);
-            bn_session_free(session, NULL);
             bn_sampler_free(&sampler);
             bn_tokenizer_free(&tokenizer);
-            bn_model_free(&model);
-            bn_gguf_free(gf);
+            cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
             return 1;
         }
     }
@@ -1434,13 +1616,13 @@ int main(int argc, char **argv) {
             SH_LOG_ERROR("Failed to allocate token buffer");
             bn_sampler_free(&sampler);
             bn_tokenizer_free(&tokenizer);
-            bn_model_free(&model);
-            bn_gguf_free(gf);
+            cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
             return 1;
         }
 
         // Prompt cache: saves KV prefix for fast /reset and context overflow recovery
-        BnPromptCache *prompt_cache = bn_prompt_cache_create(0, NULL);
+        /* CPU cache snapshots do not contain backend-owned KV/SSM state. */
+        BnPromptCache *prompt_cache = args.cuda_bf16 ? NULL : bn_prompt_cache_create(0, NULL);
 
         int pos = 0;
         int seq_len = cfg->seq_len;
@@ -1451,7 +1633,11 @@ int main(int argc, char **argv) {
 
         // Feed BOS at pos=0 (skip if model says not to)
         if (tokenizer.add_bos) {
-            bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
+            if (!bn_prefill(&model, session, &tokenizer.bos_id, 1, pos, args.no_prefill)) {
+                SH_LOG_ERROR("Failed to prefill BOS");
+                exit_status = 1;
+                goto chat_cleanup;
+            }
             pos++;
             // Track in history and cache
             if (history) { history[0] = tokenizer.bos_id; history_len = 1; }
@@ -1485,11 +1671,19 @@ int main(int argc, char **argv) {
                     pos = restored;
                     history_len = restored;
                 } else {
-                    bn_session_reset(session, &model);
+                    if (cli_reset_request(&model, session, &args)) {
+                        SH_LOG_ERROR("Failed to recreate request after reset");
+                        exit_status = 1;
+                        break;
+                    }
                     pos = 0;
                     history_len = 0;
                     if (tokenizer.add_bos) {
-                        bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
+                        if (!bn_prefill(&model, session, &tokenizer.bos_id, 1, pos, args.no_prefill)) {
+                            SH_LOG_ERROR("Failed to prefill BOS");
+                            exit_status = 1;
+                            goto chat_cleanup;
+                        }
                         pos++;
                         if (history) { history[0] = tokenizer.bos_id; history_len = 1; }
                     }
@@ -1505,11 +1699,19 @@ int main(int argc, char **argv) {
             // Context overflow: reset and try restoring cached prefix
             if (pos + n > seq_len) {
                 printf("[context full — resetting]\n");
-                bn_session_reset(session, &model);
+                if (cli_reset_request(&model, session, &args)) {
+                    SH_LOG_ERROR("Failed to recreate request after reset");
+                    exit_status = 1;
+                    break;
+                }
                 pos = 0;
                 history_len = 0;
                 if (tokenizer.add_bos) {
-                    bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
+                    if (!bn_prefill(&model, session, &tokenizer.bos_id, 1, pos, args.no_prefill)) {
+                        SH_LOG_ERROR("Failed to prefill BOS");
+                        exit_status = 1;
+                        goto chat_cleanup;
+                    }
                     pos++;
                     if (history) { history[0] = tokenizer.bos_id; history_len = 1; }
                 }
@@ -1523,13 +1725,13 @@ int main(int argc, char **argv) {
 
             // Feed prompt tokens through forward pass
             float *logits = bn_prefill(&model, session, tokens, n, pos, args.no_prefill);
-            pos += n;
-            if (history && history_len + n <= seq_len) history_len += n;
-
             if (!logits) {
                 SH_LOG_ERROR("Forward pass returned NULL during prompt");
+                exit_status = 1;
                 break;
             }
+            pos += n;
+            if (history && history_len + n <= seq_len) history_len += n;
             for (int i = 0; i < n; i++) {
                 bn_sampler_accept(&sampler, tokens[i]);
             }
@@ -1540,16 +1742,39 @@ int main(int argc, char **argv) {
             if (remaining < max_gen) max_gen = remaining;
             if (max_gen < 1) max_gen = 1;
 
-            BnChatHistory hist_ctx = { history, history_len, seq_len, args.token_ids };
+            BnChatHistory hist_ctx = { history, history_len, seq_len, args.token_ids,
+                                      -1, -1, &pos };
             int gen_count = bn_generate(&model, session, &tokenizer, &sampler,
                                          max_gen, &pos,
                                          print_token, &hist_ctx, NULL, NULL);
             history_len = hist_ctx.history_len;
+            if (gen_count == -2) {
+                SH_LOG_ERROR("Generation failed");
+                exit_status = 1;
+                break;
+            }
+
+            /* Generation samples its final token without forwarding it. Commit
+             * it before another turn; a loop-abort callback may already have
+             * been forwarded, so use its recorded position rather than count. */
+            if (hist_ctx.last_token >= 0 && hist_ctx.last_position == pos &&
+                pos < seq_len) {
+                if (!bn_transformer_forward(&model, session, hist_ctx.last_token, pos)) {
+                    SH_LOG_ERROR("Failed to commit final assistant token");
+                    exit_status = 1;
+                    break;
+                }
+                pos++;
+            }
 
             // Feed end-of-turn token into KV cache to close the assistant turn
             int turn_end_id = bn_chat_turn_end_id(&tokenizer, BN_CHAT_AUTO);
-            if (turn_end_id >= 0 && pos < seq_len) {
-                bn_transformer_forward(&model, session, turn_end_id, pos);
+            if (turn_end_id >= 0 && hist_ctx.last_token != turn_end_id && pos < seq_len) {
+                if (!bn_transformer_forward(&model, session, turn_end_id, pos)) {
+                    SH_LOG_ERROR("Failed to close assistant turn");
+                    exit_status = 1;
+                    break;
+                }
                 pos++;
                 if (history && history_len < seq_len) history[history_len++] = turn_end_id;
             }
@@ -1571,6 +1796,7 @@ int main(int argc, char **argv) {
             }
         }
 
+chat_cleanup:
         free(tokens);
         free(history);
         bn_prompt_cache_free(prompt_cache);
@@ -1584,8 +1810,7 @@ int main(int argc, char **argv) {
                     args.prompt_token_ids ? args.prompt_token_ids : "");
             bn_sampler_free(&sampler);
             bn_tokenizer_free(&tokenizer);
-            bn_model_free(&model);
-            bn_gguf_free(gf);
+            cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
             return 1;
         }
         int *prompt_tokens = (int *)malloc(max_prompt_tokens * sizeof(int));
@@ -1593,8 +1818,7 @@ int main(int argc, char **argv) {
             SH_LOG_ERROR("Failed to allocate prompt token buffer");
             bn_sampler_free(&sampler);
             bn_tokenizer_free(&tokenizer);
-            bn_model_free(&model);
-            bn_gguf_free(gf);
+            cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
             return 1;
         }
         int n_prompt = 0;
@@ -1607,8 +1831,7 @@ int main(int argc, char **argv) {
                 free(prompt_tokens);
                 bn_sampler_free(&sampler);
                 bn_tokenizer_free(&tokenizer);
-                bn_model_free(&model);
-                bn_gguf_free(gf);
+                cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
                 return 1;
             }
             for (int i = 0; i < n_prompt; i++) {
@@ -1618,8 +1841,7 @@ int main(int argc, char **argv) {
                     free(prompt_tokens);
                     bn_sampler_free(&sampler);
                     bn_tokenizer_free(&tokenizer);
-                    bn_model_free(&model);
-                    bn_gguf_free(gf);
+                    cli_free_request_model(&model, session, owned_gpu, destroy_owned_gpu, gf);
                     return 1;
                 }
             }
@@ -1646,7 +1868,11 @@ int main(int argc, char **argv) {
             ? args.benchmark_warmup_runs + args.benchmark_runs : 1;
         for (int benchmark_run = 0; benchmark_run < total_runs; benchmark_run++) {
         if (benchmark_run > 0) {
-            bn_session_reset(session, &model);
+            if (cli_reset_request(&model, session, &args)) {
+                SH_LOG_ERROR("Failed to recreate request after reset");
+                exit_status = 1;
+                break;
+            }
             bn_sampler_reset_recent(&sampler);
         }
         if (repeated_benchmark && session->moe_state)
@@ -1664,6 +1890,8 @@ int main(int argc, char **argv) {
             if (bn_prefill_no_logits(&model, session, prompt_tokens, n_prompt, 0,
                                      args.no_prefill) != 0) {
                 SH_LOG_ERROR("Forward pass returned NULL during prompt");
+                exit_status = 1;
+                n_generated = -2;
             }
             pos = n_prompt;
             gen_start = bn_platform_time_ms();
@@ -1679,6 +1907,7 @@ int main(int argc, char **argv) {
 
             if (!logits) {
                 SH_LOG_ERROR("Forward pass returned NULL during prompt");
+                n_generated = -2;
             } else {
                 for (int i = 0; i < n_prompt; i++) {
                     bn_sampler_accept(&sampler, prompt_tokens[i]);
@@ -1704,7 +1933,7 @@ int main(int argc, char **argv) {
                 gen_start = bn_platform_time_ms();
 #ifdef DEBUG
                 // Dump top-10 logits after prefill
-                {
+                if (logits) {
                     int top[10];
                     for (int k = 0; k < 10; k++) top[k] = 0;
                     for (int v = 0; v < cfg->vocab_size; v++) {
@@ -1732,7 +1961,7 @@ int main(int argc, char **argv) {
                     if (n_generated < 0)
                         SH_LOG_ERROR("Speculative generation failed");
                 } else {
-                    BnChatHistory out_ctx = { NULL, 0, 0, args.token_ids };
+                    BnChatHistory out_ctx = { NULL, 0, 0, args.token_ids, -1, -1, NULL };
                     bn_token_callback output_callback = repeated_benchmark
                         ? NULL
                         : args.quiet
@@ -1747,6 +1976,10 @@ int main(int argc, char **argv) {
             }
         }
 
+        if (n_generated < 0 || exit_status) {
+            exit_status = 1;
+            break;
+        }
         double gen_end = bn_platform_time_ms();
         double gen_time = gen_end - gen_start;
         double total_time = gen_end - t0;
@@ -1779,6 +2012,13 @@ int main(int argc, char **argv) {
         // Print MoE stats if applicable
         if (session->moe_state)
             bn_moe_print_stats(session->moe_state, n_generated + n_prompt);
+        if (args.cuda_bf16 && args.gpu_cache_mb_set && args.gpu_cache_mb>0) {
+            BnTransformerBF16FlashFFNInfo info;
+            if (!bn_transformer_bf16_flash_ffn_info(bn_session_backend(session),&info))
+                fprintf(stderr,"BF16 expert cache cumulative: hits=%zu misses=%zu hit_bytes=%zu miss_bytes=%zu upload_bytes=%zu reserved_bytes=%zu resident_bytes=%zu evictions=%zu\n",
+                    info.cache.hits,info.cache.misses,info.cache.hit_bytes,info.cache.miss_bytes,
+                    info.banks.upload_bytes,info.cache.reserved_device_bytes,info.cache.resident_bytes,info.cache.evictions);
+        }
         }
 
         free(prompt_tokens);
@@ -1787,27 +2027,16 @@ int main(int argc, char **argv) {
     // Cleanup
     if (has_draft) {
         bn_session_free(draft_session, NULL);
-        bn_model_free(&draft_model);
+        cli_release_model(&draft_model);
         bn_gguf_free(draft_gf);
     }
-    if (bn_model_moe_cache(&model)) {
-        bn_moe_cache_free(bn_model_moe_cache(&model));
-        bn_model_set_moe_cache(&model, NULL);
-    }
-#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
-    if (bn_model_gpu_moe_cache(&model)) {
-        bn_gpu_moe_cache_print_stats(bn_model_gpu_moe_cache(&model));
-        bn_gpu_moe_cache_free(bn_model_gpu_moe_cache(&model));
-        bn_model_set_gpu_moe_cache(&model, NULL);
-    }
-#endif
     bn_session_free(session, NULL);
     bn_sampler_free(&sampler);
     bn_tokenizer_free(&tokenizer);
-    bn_model_free(&model);
+    cli_release_model(&model);
     if (destroy_owned_gpu)
         destroy_owned_gpu(owned_gpu);
     bn_gguf_free(gf);
 
-    return 0;
+    return exit_status;
 }

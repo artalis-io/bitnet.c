@@ -1,0 +1,162 @@
+{
+  "milestone": "Bounded preparation of native BF16/F32 parameters in the existing core owner",
+  "status": "Qualified preparation component; whole inference/vLLM goal remains active",
+  "implementation": {
+    "anatomy": "Architecture emits594 typed parameter bindings, with global/layer roles, source IDs, geometry and layout policy. Backend consumes these descriptors without model-family dispatch.",
+    "storage": "534 row-major parameters preserve BF16 or F32 bits;60 BF16 linear matrices become packed FP16 [K,N] using bounded CPU conversion and the existing immutable F16 constructor. Large Engram U8/F16 tables remain outside resident preparation.",
+    "raw_backend": "New synchronous immutable raw-row constructor for F16/BF16/F32. One host tile, final GPU allocation only, explicit upload completion before publication, dedicated ownership and direct free. Ordinary matvec/matmul reject these private raw handles.",
+    "publication": "Extend SAME model-owned native core container once. Validate all bindings, coverage, extents and aggregate budgets before construction; finite-check every source chunk. Stage parameters separately and publish only on complete success. Failures preserve all existing core handles and metadata.",
+    "scope": "Storage policies replay original loader choices: embedding/RMSNorm keep BF16, HC/bias/sink keep F32, ordinary BF16 linear weights become FP16. Derived fused norm copies, centered routing bias variants and numerical operators are not implemented by this preparation step."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "asan-native": 0,
+      "memcheck": 0,
+      "raw-memcheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "parameters": 594,
+    "fp16_linear_parameters": 60,
+    "parameter_bytes": 3003356608,
+    "core_matrices_retained": 330,
+    "packed_core_words_per_run": 6836715520,
+    "runs": {
+      "native": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 499200,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 16677112256,
+        "host_staging_bytes": 1966080,
+        "parameter_bytes": 3003356608,
+        "aggregate_resident_bytes": 16676787648,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 499200,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 16677112256,
+        "host_staging_bytes": 1966080,
+        "parameter_bytes": 3003356608,
+        "aggregate_resident_bytes": 16676787648,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 499200,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 16677112256,
+        "host_staging_bytes": 1966080,
+        "parameter_bytes": 3003356608,
+        "aggregate_resident_bytes": 16676787648,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "nsys": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 0,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 16677112256,
+        "host_staging_bytes": 1966080,
+        "parameter_bytes": 3003356608,
+        "aggregate_resident_bytes": 16676787648,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      }
+    },
+    "reference": "Frozen before production changes: original-loader storage-policy replay with Torch BF16-to-FP16 conversion/transpose for linear weights; raw BF16/F32 source bits otherwise. Not execution of complete original module loaders.",
+    "reference_source_sha256": {
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/loader/safetensors.py": "25a0354436599760d08fdb54594ea7f384f74008c480874d778ec5bf265f84da",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/linear.py": "4638fea2f6f2fbf897ea6206f06f06ee45a37848f8f605574b169cd4141671df",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/rmsnorm.py": "2145364078c17de81291a9b786b6517a880d6af79bec9ce6ff2f7686a3b41273",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/embedding.py": "978ba7f702cbc65a424b278727ab454fedbab3693cac97bba4f2fe3ce5839420",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/hyperconnections.py": "4d1d2af0f666e91c7059048d874923df8afe3beed0bbab4790455a71c4f484d7",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/dsv4.py": "ed8573473ff2284fc97c0dba6f6eebf627612219719ac72ee594c90c451759ff",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/block_sparse_mlp.py": "83efb2f79f23dc29e3f83fb13f08ae6797d9c7c5708e8a54c5f8feae4436aa15",
+      "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/architecture/deepseek_v41.py": "18e0dc275d300e68ee09e51d890a029907dfd32a2e1c13a53f1b2cc0a3a48aff"
+    },
+    "reference_manifest_sha256": "bf3d2de17798df35b83ef4f1378761bb86ef84241ed12132ba8a4fd17cb44f20",
+    "synthetic": "Raw CUDA byte identity, partial rows, owner/capacity/budget rejection, failed reader/retry, no idle-pool retention; aggregate parameter budgets, constructor failures1/250/594, stable core pointers, one-shot publication; source NaN in raw BF16 embedding, converted BF16 head and final F32 bias rejects while core remains intact.",
+    "actual": "Every parameter byte and every previously prepared core FP16 word compared after extension, per native/ASAN+UBSAN/memcheck/Nsight run. Two request streams still consume model-owned Q_A correctly,499200 exact outputwords per non-profile run.",
+    "memory_profile": {
+      "scope": "330 core projections plus594 parameters retained in SAME model-owned backend; parameter extension, readback, teardown. Requests skipped in capture.",
+      "native_allocations": 1314,
+      "native_frees": 1314,
+      "all_heap_allocations": 1318,
+      "other_context_payload": 100795392,
+      "native_resident_bytes": 16676787648,
+      "native_peak_bytes": 16677112256,
+      "all_heap_peak_bytes": 16777907648,
+      "host_staging_bound_bytes": 1966080,
+      "publication_fences": 924,
+      "gpu_tiles": 390,
+      "h2d_tiles": 83853,
+      "h2d_bytes": 16676787648,
+      "d2h_copies": 924,
+      "d2h_bytes": 16676787648,
+      "pack_kernels": 79280,
+      "sqlite_sha256": "72442b23876ce3e2c4ea5184aef2287e497942bd566f6990bc2f977cc10a51f4",
+      "limitations": "Requested payload, not total VRAM. Context/library/static/driver allocations separate. Host staging excludes metadata, page cache, CUDA internal staging and large test/reference buffers. No generation or performance parity claim."
+    },
+    "prior_attempts": "Initial product build zero warnings; standard source-ownership check caught direct upload-vtable calls in backend_layout. Corrected to public backend helpers, standalone backend matrix passed, added three nonfinite-source rollback tests, then repeated protected clean/product/standard/full CUDA/diagnostics successfully. Initial logs retained in build-initial."
+  },
+  "limitations": [
+    "Native source parameters and core projections are prepared; complete transformer execution and generation remain unfinished.",
+    "Engram tables/hash/token-map, HC4/norm/routing and compressed shared/indexed attention operators still require integration.",
+    "Some original runtime derived parameter copies remain to be prepared under explicit budgets. No full forward or numerical operator equivalence follows from storage equality.",
+    "Budgets cover requested tensor payload and explicit staging, not total VRAM/RSS, library/driver overhead, page cache or large diagnostic buffers.",
+    "No new vLLM throughput/decode parity, CPU/NEON/Metal/WASM execution claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-native-params/qualification.json",
+    "reference": "/tmp/bitnet-goal-native-params/reference.json",
+    "profile": "/tmp/bitnet-goal-native-params/profile-analysis.json",
+    "trace": "/tmp/bitnet-goal-native-params/lifetime.nsys-rep",
+    "continuation": "/tmp/bitnet-goal-native-params/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "b06ea2663c4aa4066c7eed6acd54712691809fd0965ba9279f50a236a1be6abe",
+    "include/gpu_cuda.h": "bb9e830a54747d86e45b43767c5b25d10d194814b82dc24fb18cde886f0e03e6",
+    "src/gpu_cuda.cu": "9ce79c02f252647976175be448557793cc4e7e0860f4b5c90dc9bcfc1a3729f9",
+    "src/gpu_cuda_f16_rows.cuh": "4fb19f06a74133458ba3d7d6b714078de8874e5b4e2789281db32a7c455df421",
+    "test/cuda_raw_rows_checks.h": "c7eebef614b011e57759b9957463dfdd453e88e49e810bb76b3600f7bd6ffc36",
+    "test/native_parameter_checks.h": "ec508dd1711d98b7f57d596b69a1b8f67ccd07a58d6b6747cb1d58852c415465",
+    "test/test_cuda_backend.c": "25e86781352a6edeb1c4c576602c26adb27a7e75bc1fce42223fee7e0fd0a025",
+    "include/model_anatomy.h": "62a0fbe37856515c9c54d151897953c4f0b7c4b253c9e491e0529829ea76fd3c",
+    "include/model.h": "40581b7907a21523eab6cb3c331ea04b8eaef0283e92581471e1c0afcb474e4d",
+    "include/model_internal.h": "18adf095f57a9b2bab6773199505acbe1125e4e2bd9d95062014e4339895e86a",
+    "include/backend_layout.h": "c4e59255ab17c14a3ce5016624bc9277cac96532dc4b84aa168e20eb809033b8",
+    "src/model_arch.c": "39ded7d03891e95682c2ed30a04b24b61b8b413dcd4846680dcd907dd2f9a3ca",
+    "src/model.c": "945568fa48772f341918869c3d46f8a5504c5f34d0a3938e2585bc9334522cd9",
+    "src/model_backend.c": "5a3b47457da4fe4acf76505bfbc6913b2ed337673fe8421ca11d759aa423280d",
+    "src/backend_layout.c": "321276d44ecef47d3f4ea4c88c2014153ccf7364fa6808fc58ced334744b74ff",
+    "test/native_core_checks.h": "3f7b80057f8dc1f4f872d590311fc95fb03bdd25b56b5ab03d7a3faaebfdb83c",
+    "test/native_f16_layout_checks.h": "f427b3492f8c1206853aac825f592b916dea46b25a0ac542d8dfd86239699d82",
+    "test/test_moe.c": "15c0fb05a091e76271b63200dd0a76ccad409fc7ac64dfd4de2f47478f506b3d",
+    "Makefile": "1f11aa4cc415fa77ea0592cccbb9f58729681dc3ce541f8746feb8c2fc403ecf"
+  }
+}

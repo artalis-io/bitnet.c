@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "goal_status": "active",
+  "public_api": "bn_generate_native_text",
+  "contract": "Prepared backend-only session at zero; counted raw UTF8, explicit prefill batches, greedy self-fed tokens, counted UTF8 callback after successful commit, final flush including early stop. No automatic template/BOS/EOS/CPU fallback.",
+  "input": {
+    "bytes": 4948,
+    "tokens": 1026,
+    "tokenizer": {
+      "version": "0.23.3",
+      "file": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw/tokenizer.json",
+      "sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b"
+    }
+  },
+  "generated_ids": [
+    25744,
+    14,
+    223,
+    21,
+    16
+  ],
+  "output_hex": "3738392c20332e",
+  "frames": [
+    {
+      "rows": 513,
+      "position": 0
+    },
+    {
+      "rows": 513,
+      "position": 513
+    },
+    {
+      "rows": 1,
+      "position": 1026
+    },
+    {
+      "rows": 1,
+      "position": 1027
+    },
+    {
+      "rows": 1,
+      "position": 1028
+    },
+    {
+      "rows": 1,
+      "position": 1029
+    },
+    {
+      "rows": 1,
+      "position": 1030
+    }
+  ],
+  "per_run": {
+    "forwards": 7,
+    "generated": 5,
+    "stream_chunks": 6,
+    "exact_host_logit_bytes": 3619840,
+    "final_position": 1031
+  },
+  "source_payload_repeat": {
+    "binary_payloads": 2538,
+    "exact_bytes": 9679171056,
+    "all_identical": true,
+    "change": "Inherited prompt metadata corrected; leaf producer digests updated. No numerical source outputs changed."
+  },
+  "memory_bytes": {
+    "encoder": 8885376,
+    "decoder": 4266280,
+    "encoding_scratch": 455296,
+    "prompt_tokens": 4104,
+    "output_piece": 65536
+  },
+  "memory_exclusions": [
+    "Borrowed JSON/parser and allocator overhead",
+    "Separately planned model/core/experts/KV/activation/backend state",
+    "Benchmark reference verification buffers"
+  ],
+  "owned_orchestration_allocations": 0,
+  "controls": {
+    "threaded_source_prefix_cases": 168,
+    "hot_linked_allocations_denied": true,
+    "asan_ubsan": true,
+    "tsan": true,
+    "real_weight_normal": true,
+    "real_weight_decode_admission": true,
+    "real_weight_asan": true,
+    "native_control_checks": 14,
+    "qwen_token_matches": 192,
+    "qwen_tokens": 192
+  },
+  "qualification": {
+    "checks": {
+      "unit": 0,
+      "asan-unit": 0,
+      "tsan-unit": 0,
+      "legacy-generate": 0,
+      "text": 0,
+      "text-admit": 0,
+      "asan-text": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "control-replay": 0,
+      "negative-reference": 0,
+      "native-control": 0,
+      "qwen27-compat": 0
+    },
+    "records": {
+      "text": [
+        [
+          "0",
+          "0",
+          "4948",
+          "1026",
+          "7",
+          "5",
+          "6",
+          "3619840",
+          "7",
+          "1031",
+          "3738392c20332e"
+        ],
+        [
+          "1",
+          "1",
+          "4948",
+          "1026",
+          "7",
+          "5",
+          "6",
+          "3619840",
+          "7",
+          "1031",
+          "3738392c20332e"
+        ]
+      ],
+      "text-admit": [
+        [
+          "0",
+          "0",
+          "4948",
+          "1026",
+          "7",
+          "5",
+          "6",
+          "3619840",
+          "7",
+          "1031",
+          "3738392c20332e"
+        ],
+        [
+          "1",
+          "1",
+          "4948",
+          "1026",
+          "7",
+          "5",
+          "6",
+          "3619840",
+          "7",
+          "1031",
+          "3738392c20332e"
+        ]
+      ],
+      "asan-text": [
+        [
+          "0",
+          "0",
+          "4948",
+          "1026",
+          "7",
+          "5",
+          "6",
+          "3619840",
+          "7",
+          "1031",
+          "3738392c20332e"
+        ],
+        [
+          "1",
+          "1",
+          "4948",
+          "1026",
+          "7",
+          "5",
+          "6",
+          "3619840",
+          "7",
+          "1031",
+          "3738392c20332e"
+        ]
+      ]
+    },
+    "frozen_sources": 873,
+    "reference_files": 34818,
+    "goal_status": "active",
+    "scope": "Explicit native raw-text generation API; independently encoded real UTF8 prompt, fresh513/resumed513 and five self-fed greedy steps, exact source last-row F32 logits/input IDs/output chunks; normal/admission/ASAN controls, threaded controlled-source tests with hot allocation denied; no native CLI/chat/EOS policy or vLLM parity claim."
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "artifacts": "/tmp/bitnet-goal-native-text-forward",
+  "limits": [
+    "Explicit Diffbot INT4 BF16 lookup to Exllama F16 Engram adapter; not original Diffbot full-runtime equivalence",
+    "No ordinary native CLI/chat/EOS stopping admission",
+    "Synchronous committed-token delivery waits for a decode forward and forwards the last reported token too; prediction-first/last-forward avoidance remain performance work",
+    "No async scheduler/cancellation or GPU multi-user concurrency claim",
+    "Only new CPU orchestration/codec/benchmark paths sanitizer-instrumented in the real-weight ASAN control; backend/GPU math unchanged",
+    "No new native CPU/ARM whole-model qualification or matched vLLM parity"
+  ]
+}

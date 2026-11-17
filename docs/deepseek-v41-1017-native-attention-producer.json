@@ -1,0 +1,108 @@
+{
+  "status": "Qualified native CUDA QKV/compressor/key/index/attention/output/SWA producer path from normalized resident x, with actual checkpoint parameters. Native whole-model admission, generation and vLLM parity remain open.",
+  "apis": [
+    "BnTransformerTrellisProducerOptions",
+    "BnTransformerTrellisProducerWorkspace",
+    "bn_transformer_trellis_producer_session_plan",
+    "bn_transformer_trellis_prepare_session_producer",
+    "bn_transformer_trellis_attention_forward"
+  ],
+  "implementation": {
+    "sequence": "Already normalized resident F16 x -> Q_A/RMS q_res/Q_B and normalized/rotated KV -> owner compressor projections/windows -> unrotated latents -> index key projection/norm -> absolute-entry rotation of keys AND latents -> paged owner publication -> current index selection -> attention against PRE-update SWA/current KV -> grouped projection -> SWA update/completion-gated cursor commit.",
+    "ownership": "All mutable scratch/rings/pools stay in the same existing native backend session request. Core/parameter weight handles remain backend-owned and immutable. Architecture anatomy supplies role bindings, dimensions and sharing. No model-family dispatch or raw GGUF dtype tags added to transformer.",
+    "metadata": "Setup reads each owner BF16 compressor gamma once from immutable native storage and converts it to source F16. Allocates request-owned read-only norm views plus zero APE/frequency metadata for unrotated HCA compression. Setup scratch and payload are budgeted; no execution file reads or activation allocation/transfers.",
+    "causality": "Begin once per full chunk before owner production. Borrowing layers require fresh owner extent/generation; gathered readers require current selection and candidate state. Retained ring bounds and duplicate layer execution checked before work. Zero-emission steps still update compressor rings and publish a fresh owner generation. Rewinds limited by retained projected history.",
+    "synchronization": "Existing pool publication, source index selection and attention completion fences retained. Numeric fixtures use two fences per owner call and one per sliding/borrowed call; gathered producing index sources add their existing index fence. No whole-forward asynchronous transaction claim.",
+    "failure": "Metadata rejection preserves output; any backend/completion failure destroys request and invalidates all borrowed views until reset/setup. No whole-model position advance."
+  },
+  "references": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "method": "Original unmodified norm/RoPE/compression CABI bodies, original attention kernels/SMEM picker and grouped projection/LinearFP16.forward AST. Matmul policy matches system cuBLAS13.10; F32 original hgemm argument/workspace policy replay, not compiled full PyTorch extension.",
+    "synthetic": "28 frames, H64 D512 G8; hidden/Q-rank/output-rank128; nonzero synthetic FP8/BF16 projections and gamma1.",
+    "checkpoint": "28 frames with actual immutable checkpoint QKV/compressor/key/output matrices, norms and learned sinks, hidden5120/Q-rank1280/output-rank1024. Synthetic normalized input activations; not full-model hidden states or generation.",
+    "sharing": "Sliding layer0, gated owner2/reader3, and independent gateless owner20 sequence. Includes R273 prefill, R1 decode, partial windows,32/33 boundary, compressor ring wraps, zero-emission step, resumed chunks and41-token rewind.",
+    "frequency": "Explicit preserved original-source main/compress frequency tables; model-native frequency construction still open."
+  },
+  "artifacts": "/tmp/bitnet-goal-native-attention-producer",
+  "remaining": [
+    "Native source-exact frequency-table construction",
+    "Engram token map/hash/table access/projection/gating",
+    "HCA/embedding/attention/FFN/output whole-forward integration and generation admission",
+    "Long/gathered/candidate full-chain checkpoint sequences beyond component qualification",
+    "Matched vLLM throughput/latency, bounded offload and serving acceptance criteria"
+  ],
+  "qualification": {
+    "frozen_files": 801,
+    "clean_build": "Protected clean product build, standard suite, BF16 diagnostics, complete CUDA suite and diagnostic isolation: zero warnings.",
+    "synthetic": {
+      "calls": 112,
+      "compared_bytes": 843902848,
+      "hot_allocations": 0,
+      "hot_writes": 0,
+      "hot_reads": 0,
+      "completion_fences": 176
+    },
+    "checkpoint": {
+      "calls": 112,
+      "compared_bytes": 1071083392,
+      "hot_allocations": 0,
+      "hot_writes": 0,
+      "hot_reads": 0,
+      "completion_fences": 176
+    },
+    "sanitizers": "Both datasets112calls each under normal execution,ASAN/UBSAN,CUDA memcheck/full leak check andinitcheck: all exact,zero errors/leaks.",
+    "asan_scope": "C orchestration/model/session/metadata code compiled with ASAN/UBSAN. Unrelated existing MoE CPU SIMD TU uses its normal object (Clang reports three unused inline helpers); CUDA host/kernel TUs are not ASAN instrumented.",
+    "host_tests": "Normal and ASAN:16 allocation failure points,quota/idempotence,metadata rejection/session isolation,source256+17 gathered index and reader sharing,zero-emission,projection/publication/attention/completion failures.",
+    "race_scope": "Bounded already-qualified QKV/compression/latent-key/attention/projection fixtures only. No full-core/controller race run (prior resource hazard). All five bounded fixtures zero hazards.",
+    "legacy_index_session": "136 independent captured calls rebuilt with final headers/objects pass exactly.",
+    "reference_integrity": "Own/parent payloads, source/binary/library/weight manifests verified before/after;8119 payloads across11 manifests audited; all independent values preserved. Four user binaries preserved/hash verified.",
+    "qwen27": "Fresh strict CUDA gate:192/192 continuation token IDs,8/8 first-token IDs,equal token counts.",
+    "history": "First capture script syntax error fixed before execution. First external probe build had a nonexistent signed JSON helper and indentation warnings; corrected in harness only. One fake test omitted its owner flag after a reader call; corrected in test only. Final runtime/source references unchanged during frozen qualification."
+  },
+  "traces": {
+    "prefill": {
+      "rows": 273,
+      "pos0": 273,
+      "layer": 2,
+      "dim": 5120,
+      "q_rank": 1280,
+      "o_rank": 1024,
+      "pool_entries": 273,
+      "emitted": 137,
+      "kernels": 41,
+      "producer_kernels": 21,
+      "attention_kernels": 1,
+      "projection_kernels": 18,
+      "ring_kernels": 1,
+      "kernel_ns": 729503,
+      "device_span_ns": 787874,
+      "completion_fences": 2,
+      "stream_count": 1,
+      "transfer_bytes": 0,
+      "hot_allocations": 0,
+      "scope": "One warmed actual-checkpoint producer call from normalized x. Pool visibility fence precedes attention; final fence precedes SWA commit. No strictly disjoint activity-bound claim for vendor dependent launches. Single sample, not source/vLLM performance parity."
+    },
+    "decode": {
+      "rows": 1,
+      "pos0": 546,
+      "layer": 2,
+      "dim": 5120,
+      "q_rank": 1280,
+      "o_rank": 1024,
+      "pool_entries": 273,
+      "emitted": 0,
+      "kernels": 34,
+      "producer_kernels": 13,
+      "attention_kernels": 2,
+      "projection_kernels": 18,
+      "ring_kernels": 1,
+      "kernel_ns": 245153,
+      "device_span_ns": 332194,
+      "completion_fences": 2,
+      "stream_count": 1,
+      "transfer_bytes": 0,
+      "hot_allocations": 0,
+      "scope": "One warmed actual-checkpoint producer call from normalized x. Pool visibility fence precedes attention; final fence precedes SWA commit. No strictly disjoint activity-bound claim for vendor dependent launches. Single sample, not source/vLLM performance parity."
+    }
+  }
+}

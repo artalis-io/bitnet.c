@@ -1,0 +1,160 @@
+{
+  "directory_sha256": "655d2f55e7281ed972060640673f31f6888d8a517c410d75c98e7fccf1ce893f",
+  "main_layers": 45,
+  "kda_layers": [
+    0,
+    1,
+    2,
+    4,
+    5,
+    6,
+    8,
+    9,
+    10,
+    12,
+    13,
+    14,
+    16,
+    17,
+    18,
+    20,
+    21,
+    22,
+    24,
+    25,
+    26,
+    28,
+    29,
+    30,
+    32,
+    33,
+    34,
+    36,
+    37,
+    38,
+    40,
+    41,
+    42,
+    44
+  ],
+  "mla_layers": [
+    3,
+    7,
+    11,
+    15,
+    19,
+    23,
+    27,
+    31,
+    35,
+    39,
+    43
+  ],
+  "expert_profiles": [
+    {
+      "gate_up_down": [
+        "Q4_K",
+        "Q4_K",
+        "Q5_K"
+      ],
+      "layers": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43
+      ],
+      "per_expert_payload_bytes": 15204352,
+      "all_experts_per_layer_bytes": 4378853376,
+      "bank_capacity3_payload_bytes": 45613056,
+      "weight_upload8_selected_bytes": 121634816,
+      "binder_currently_accepts": true,
+      "resident_bank_currently_accepts": true
+    },
+    {
+      "gate_up_down": [
+        "Q4_K",
+        "Q4_K",
+        "Q6_K"
+      ],
+      "layers": [
+        12,
+        44
+      ],
+      "per_expert_payload_bytes": 16318464,
+      "all_experts_per_layer_bytes": 4699717632,
+      "bank_capacity3_payload_bytes": 48955392,
+      "weight_upload8_selected_bytes": 130547712,
+      "binder_currently_accepts": false,
+      "resident_bank_currently_accepts": false
+    },
+    {
+      "gate_up_down": [
+        "Q5_K",
+        "Q5_K",
+        "Q6_K"
+      ],
+      "layers": [
+        11
+      ],
+      "per_expert_payload_bytes": 18415616,
+      "all_experts_per_layer_bytes": 5303697408,
+      "bank_capacity3_payload_bytes": 55246848,
+      "weight_upload8_selected_bytes": 147324928,
+      "binder_currently_accepts": false,
+      "resident_bank_currently_accepts": false
+    }
+  ],
+  "routed_weight_payload_bytes": 185478414336,
+  "unsupported_binder_layers": [
+    11,
+    12,
+    44
+  ],
+  "findings": [
+    "Current binder fixes Q4_K gate/up and Q5_K down in src/backend_layout.c; three main layers cannot load.",
+    "Q5_K gate/up already has grouped vector/matrix dispatch. Q6_K has general BF16 linear support, but bf16_moe registry kind is NONE and resident/grouped bank dispatch rejects it.",
+    "Q6_K expert support requires registry metadata plus qualified vector/matrix/grouped down execution, then binder and budget updates; changing binder alone is insufficient.",
+    "Fully resident routed weights exceed the 96GB target GPU before non-expert weights, KV, activations, and allocator overhead. This checkpoint requires offload; resident parity must use an actually fitting model/workload."
+  ],
+  "source_sha256": {
+    "src/backend_layout.c": "606dafd8160828531bced71a719bfbc31cc0a1d25f757d957c4b1b7d2e090aae",
+    "src/quant/registry.c": "36d9b60a1d88e6a623a6ce9dd285e5ba8719f98ca0ec168ef88d5dad7986f923",
+    "src/gpu_cuda_moe_resident.cuh": "b1f5657ba863f732a047f6b713e8cf4f8b026617add17050c1b21d4ac91122d6",
+    "src/gpu_cuda_moe_grouped.cuh": "8be924734ff9a53e1064524a0187581686deb5b01a30e857ce24b5d27145684b"
+  }
+}

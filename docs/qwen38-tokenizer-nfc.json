@@ -1,0 +1,171 @@
+{
+  "scope": "Qwen tokenizer Unicode NFC normalization under the exact pinned original tokenizer profile",
+  "whole_goal_complete": false,
+  "performance_parity_claimed": false,
+  "gpu_operator_math_changed": false,
+  "evidence_root": "/tmp/bitnet-goal-qwen-nfc",
+  "source_sha256": {
+    "src/tokenizer.c": "69639a2ca42e7705edb076bd86c51b44c84e56556d3e0a628648d7f060a785a9",
+    "src/model_arch.c": "cf2758237aa3e6b35003f913fa936817a03e8967ab60e851e2a28a5626556eea",
+    "include/tokenizer.h": "ae75906d6bb2e76b889ef928880bfa0a2d3b3fe0ef82017544c6583cf30e4256",
+    "include/model_tokenizer_policy.h": "805a5b075a772d477d702a2417f3fd15e547257d3e0c60c7e5988c786a6d16b4",
+    "test/test_tokenizer.c": "a64a5c714f8f88ad0bd3d51f80e0e1e3f6baa76a2e04477ae2084582c150ad42",
+    "Makefile": "b27d8074a370cf13493844a60ec2f3769cccfca1dc7cdd33b83ba6735b82f716",
+    "src/tokenizer_nfc_data.h": "5b82d63145b20bd75fd76b89b0f99952b418f80a0b40b25125ac666cae102908",
+    "test/tokenizer_nfc_cases.h": "314b6bd4566b60c2be7f36ed4f831a1b2c2e4050c0888d5c8b6455f28b22dd08",
+    "test/gen_tokenizer_nfc.py": "7e810206fc838ae09752cd04cbff6766512ebeb1bc56a665fb18ceb2f765baa9"
+  },
+  "validation": {
+    "clean": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "sanitize-test_tokenizer-build": {
+      "exit": 0
+    },
+    "sanitize-test_tokenizer": {
+      "exit": 0
+    },
+    "sanitize-test_transformer-build": {
+      "exit": 0
+    },
+    "sanitize-test_transformer": {
+      "exit": 0
+    },
+    "sanitize-tokenize-model-build": {
+      "exit": 0
+    },
+    "sanitize-real-tokenizer-parity": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "raw-cli-smoke": {
+      "exit": 0
+    },
+    "private-regression": {
+      "exit": 0
+    }
+  },
+  "baseline": {
+    "exit": 0,
+    "standard_log": "/tmp/bitnet-goal-glm-cli/tokenizer-build/standard.log",
+    "baseline_source_sha256": {
+      "src/tokenizer.c": "6b09403865a74a1a1eb550fc86bdfc933673f4ce143983c1226cf3dac0385d1f",
+      "src/model_arch.c": "57753e98a469fd84a9b6d66c95af2521c044c7591e02891d003b5338343e3c8e",
+      "include/tokenizer.h": "006b6dd5c4817c39dc243370f54d5067840a16240a583aca458721b364c7f4ab",
+      "include/model_tokenizer_policy.h": "1a04a5aac208141f23abda23f27c25f2fcf0c88ec068c40e8e422ca5d26f3453",
+      "test/test_tokenizer.c": "4643cacdbcf2ad9562dc71194dceb8bc4c0c7b7c2c731b133b1d963127eae7ce",
+      "Makefile": "b27d8074a370cf13493844a60ec2f3769cccfca1dc7cdd33b83ba6735b82f716"
+    }
+  },
+  "zero_warning_product_build": true,
+  "reference": {
+    "url": "https://www.unicode.org/Public/9.0.0/ucd/NormalizationTest.txt",
+    "sha256": "2d48d848656b3cf889df59980ab13551988950c4ca8c5190a17c691a17f8b9bb",
+    "independent_tokenizers_nfc_conformance_cases": 93610,
+    "exact": true,
+    "reference_crate_unicode_version": "9.0.0",
+    "tokenizers_version": "0.23.3",
+    "reference_dependency_source": "https://raw.githubusercontent.com/huggingface/tokenizers/v0.23.3/tokenizers/Cargo.toml"
+  },
+  "ucd_sources": {
+    "UnicodeData-9.0.0.txt": {
+      "url": "https://www.unicode.org/Public/9.0.0/ucd/UnicodeData.txt",
+      "sha256": "68dfc414d28257b9b5d6ddbb8b466c768c00ebdf6cbf7784364a9b6cad55ee8f"
+    },
+    "DerivedNormalizationProps-9.0.0.txt": {
+      "url": "https://www.unicode.org/Public/9.0.0/ucd/DerivedNormalizationProps.txt",
+      "sha256": "02d8e12cea7c61a9f3cc5fbf8eaceadf8da23fe83d60c64cf647088830b810cc"
+    },
+    "LICENSE-UNICODE.txt": {
+      "url": "https://www.unicode.org/license.txt",
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+    }
+  },
+  "reference_crate": {
+    "url": "https://static.crates.io/crates/unicode-normalization-alignments/unicode-normalization-alignments-0.1.12.crate",
+    "sha256": "43f613e4fa046e69818dd287fdc4bc78175ff20331479dab6e1b0f98d57062de"
+  },
+  "reproduction": {
+    "exact": true,
+    "files": {
+      "src/tokenizer_nfc_data.h": "5b82d63145b20bd75fd76b89b0f99952b418f80a0b40b25125ac666cae102908",
+      "test/tokenizer_nfc_cases.h": "314b6bd4566b60c2be7f36ed4f831a1b2c2e4050c0888d5c8b6455f28b22dd08"
+    }
+  },
+  "independent_public_api_conformance_cases": 93610,
+  "real_gguf_tokenizers": {
+    "qwen27": {
+      "cases": 18,
+      "exact": true,
+      "gguf": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "assets": "/data/models/safetensors/qwen3.8-27b-nvfp4",
+      "tokenizer_json_sha256": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+    },
+    "qwenflash": {
+      "cases": 18,
+      "exact": true,
+      "gguf": "/data/models/gguf/qwen3_8/flash_next/q4_k_xl/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+      "assets": "/data/models/safetensors/qwen3.8-flash-next-fp4-local",
+      "tokenizer_json_sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3"
+    },
+    "glm": {
+      "cases": 18,
+      "exact": true,
+      "gguf": "/data/models/gguf/glm5_3_flash/ud_q4_k_xl/GLM-5.3-Flash-UD-Q4_K_XL-00001-of-00006.gguf",
+      "assets": "/data/models/safetensors/glm5.3-flash-fp4-local",
+      "tokenizer_json_sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
+    }
+  },
+  "real_gguf_cases_exact": 54,
+  "asan_ubsan": {
+    "compiler": "Clang 18",
+    "leak_detection": true,
+    "halt_on_error": true,
+    "checks_disabled": false,
+    "public_api_conformance_cases": 93610,
+    "real_gguf_cases_exact": 54
+  },
+  "policy": "Model-owned qwen35 policy enables NFC. GLM normalizer remains absent; existing default BOS policy is unchanged. Comparisons explicitly disable BOS to match add_special_tokens=False.",
+  "algorithm": "Pinned Unicode 9 canonical decomposition, stable canonical ordering, blocked canonical composition and algorithmic Hangul composition; original added tokens extracted before normalization; no second added-token recognition after normalization; ASCII fast path retained.",
+  "additional_tests": [
+    "4096 repeated combining-mark triples; expected long output independently confirmed by original NFC",
+    "Unicode post-9 combining mark retains original version-9 barrier behavior",
+    "normalized=false added-token spelling preservation and composition boundaries",
+    "No added token is created by a second recognition pass after NFC",
+    "Output truncation and BOS guards",
+    "Canonical expansion, Hangul, malformed UTF-8 byte barriers",
+    "Existing Qwen raw regex expected IDs retained in an explicitly isolated regex test; full NFC pipeline independently covered"
+  ],
+  "preserved_failure": "/tmp/bitnet-goal-glm-cli/qwen-normalization-gap.json: decomposed accent mismatch reproduced with previous source, 14/15 candidate versus 10/15 pre-added-token implementation. This stage resolves the remaining case.",
+  "integration_regression": {
+    "glm_raw_prompts": [
+      "English arithmetic",
+      "Chinese arithmetic"
+    ],
+    "greedy_ids": [
+      154842,
+      19,
+      154827
+    ],
+    "private_full_heads_byte_exact": true,
+    "immutable_reference": "/tmp/bitnet-goal-glm-integration/chunked-native.bin"
+  },
+  "limitations": [
+    "Unicode 9 is intentional compatibility with the pinned original tokenizer dependency, rather than an assertion of current Unicode conformance.",
+    "The NFC policy applies to explicit qwen35 GGUF tokenizer metadata.",
+    "Actual ARM and Metal execution was not measured in this stage; normalization code is scalar C11.",
+    "This qualifies text tokenization; broad language-model task quality, remaining model-family support, serving and performance acceptance remain open.",
+    "No existing GPU/operator oracle was regenerated or modified."
+  ]
+}

@@ -50,6 +50,8 @@ enum {
     BN_GGUF_TENSOR_IQ3_S    = 21,
     BN_GGUF_TENSOR_IQ2_S    = 22,
     BN_GGUF_TENSOR_IQ4_XS   = 23,
+    BN_GGUF_TENSOR_I8       = 24,
+    BN_GGUF_TENSOR_I32      = 26,
     BN_GGUF_TENSOR_BF16     = 30,
     BN_GGUF_TENSOR_TQ1_0    = 34,
     BN_GGUF_TENSOR_TQ2_0    = 35,

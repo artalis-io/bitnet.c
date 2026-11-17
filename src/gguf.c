@@ -573,6 +573,7 @@ int bn_gguf_tensor_size(uint32_t type, uint64_t nelements, size_t *out) {
     *out = 0;
     switch (type) {
         case BN_GGUF_TENSOR_F32:
+        case BN_GGUF_TENSOR_I32:
             if (nelements > SIZE_MAX / 4) return 0;
             *out = (size_t)nelements * 4;
             return 1;

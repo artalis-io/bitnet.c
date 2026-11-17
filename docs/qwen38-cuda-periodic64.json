@@ -1,0 +1,3289 @@
+{
+  "scope": "Qualified periodic Qwen3.8 27B offered-load case and bounded verifier generalization",
+  "whole_goal_complete": false,
+  "periodic_load_case_qualified": true,
+  "sustained_mixed_serving_qualified": false,
+  "maximum_throughput_claimed": false,
+  "evidence_directory": "/tmp/bitnet-goal-sustained64",
+  "workload": {
+    "parent_workload": "/tmp/bitnet-goal-load48/workload.json",
+    "parent_sha256": "ad939991db3188136fcfb07fbe451c10791e221ed84510aca8275662d525c03f",
+    "prompt_source": "/tmp/bitnet-goal-mixed-budget/oracle-wall/input-plan.json",
+    "workload_sha256": "8ec31124926a4e02037e0d529efc261926be99092254939c8849329708684c6a",
+    "binary_sha256": "86c43a0096df6bf0f04af036ce08599a4f3892de7d5be8c273a7d092d06d3ffc",
+    "generated_before_any_model_outputs": true,
+    "requests": 64,
+    "outputs_each": 128,
+    "total_outputs": 8192,
+    "total_prompt_tokens": 13456,
+    "first_offer_ms": 100,
+    "last_offer_ms": 120100,
+    "offered_outputs_per_second": 64
+  },
+  "analysis_plan": {
+    "scope": "Fixed offered-load finite two-minute experiment; observed stability must be established, not presumed.",
+    "defined_before_inspecting_completed_run_metrics": true,
+    "steady_window_ms": [
+      24100,
+      120100
+    ],
+    "steady_window_rule": "Half-open window spanning four complete three-wave prompt-class cycles after the first cycle.",
+    "balanced_middle_request_ids": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59
+    ],
+    "queue_sample_ms": [
+      24100,
+      48100,
+      72100,
+      96100,
+      120100
+    ],
+    "queue_sample_rule": "Use offers strictly before the boundary; compare unfinished and not-yet-admitted counts at equivalent cycle phase.",
+    "metrics": [
+      "Full-run delivered output rate and elapsed time",
+      "Output rate and token-gap p50/p95/p99 within the fixed steady window",
+      "TTFT and admission delay for the predeclared balanced middle 48 requests",
+      "Per-wave and per-prompt-class TTFT, token-gap distributions and pending requests",
+      "Peak live slots, created/reused/discarded leases, final zero leases and retained KV payload",
+      "Per-width pure decode distributions, with actual context/schedule differences explicit"
+    ],
+    "comparisons": "Report both original DA8 and RR256 settings. For within-5% serving comparisons, retain the best measured original value for each metric rather than selecting the slower configuration.",
+    "nonclaims": [
+      "Fixed offered-load throughput does not establish maximum engine throughput.",
+      "No new isolated prefill-throughput or matched-context decode-kernel parity claim.",
+      "Unbounded queue stability and total VRAM budgeting are not proved by a finite run or KV payload alone.",
+      "Native numerical correctness remains unqualified until every distinct observed geometry is independently checked with original model math and full heads."
+    ]
+  },
+  "medians": {
+    "native": {
+      "full_output_tokens_per_second": 65.17420290325308,
+      "elapsed_ms": 125693.903954,
+      "steady_window_output_tokens_per_second": 64.0,
+      "steady_window_p99_inter_token_ms": 39.09920099998999,
+      "balanced_middle_p95_ttft_ms": 2482.0753930000064
+    },
+    "da8": {
+      "full_output_tokens_per_second": 62.82912769389051,
+      "elapsed_ms": 130385.384942987,
+      "steady_window_output_tokens_per_second": 63.958333333333336,
+      "steady_window_p99_inter_token_ms": 71.59840001258999,
+      "balanced_middle_p95_ttft_ms": 5715.695407916792
+    },
+    "rr256": {
+      "full_output_tokens_per_second": 63.85110080968768,
+      "elapsed_ms": 128298.49283909425,
+      "steady_window_output_tokens_per_second": 64.0,
+      "steady_window_p99_inter_token_ms": 100.53503408562392,
+      "balanced_middle_p95_ttft_ms": 5691.066625039093
+    }
+  },
+  "best_original_by_metric": {
+    "full_output_tokens_per_second": 63.85110080968768,
+    "elapsed_ms": 128298.49283909425,
+    "steady_window_output_tokens_per_second": 64.0,
+    "steady_window_p99_inter_token_ms": 71.59840001258999,
+    "balanced_middle_p95_ttft_ms": 5691.066625039093
+  },
+  "within_five_percent_by_metric": {
+    "full_output_tokens_per_second": true,
+    "elapsed_ms": true,
+    "steady_window_output_tokens_per_second": true,
+    "steady_window_p99_inter_token_ms": true,
+    "balanced_middle_p95_ttft_ms": true
+  },
+  "runs": {
+    "native": [
+      {
+        "elapsed_ms": 125624.827648,
+        "full_output_tokens_per_second": 65.21003971407573,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 37.474327341535435,
+          "p50": 37.48203900000226,
+          "p95": 38.42249699999229,
+          "p99": 38.5183340000076,
+          "maximum": 38.799803999994765
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 1027.135111625,
+          "p50": 630.3103490000067,
+          "p95": 2450.5404169999965,
+          "p99": 2450.5404169999965,
+          "maximum": 2450.5404169999965
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6144,
+        "steady_window_output_tokens_per_second": 64.0,
+        "steady_window_inter_token_ms": {
+          "count": 6096,
+          "mean": 37.62415109580052,
+          "p50": 37.74576299999899,
+          "p95": 38.36833399999887,
+          "p99": 38.48492200000328,
+          "maximum": 38.799803999994765
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 1050.3228293333339,
+          "p50": 622.7907459999988,
+          "p95": 2450.5404169999965,
+          "p99": 2450.5404169999965,
+          "maximum": 2450.5404169999965
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 0
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 2032,
+            "mean": 37.47421722047244,
+            "p50": 37.48199,
+            "p95": 38.422427,
+            "p99": 38.518654,
+            "maximum": 38.800715
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 714.643404,
+              "p50": 714.643404,
+              "p95": 714.643404,
+              "p99": 714.643404,
+              "maximum": 714.643404
+            },
+            "last_delivery_ms": 5438.68779
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 106.77843700000085,
+              "p50": 106.77843700000085,
+              "p95": 106.77843700000085,
+              "p99": 106.77843700000085,
+              "maximum": 106.77843700000085
+            },
+            "last_delivery_ms": 12836.538668
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2361.2302799999998,
+              "p50": 2361.2302799999998,
+              "p95": 2361.2302799999998,
+              "p99": 2361.2302799999998,
+              "maximum": 2361.2302799999998
+            },
+            "last_delivery_ms": 23138.861868
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 620.2396430000008,
+              "p50": 620.2396430000008,
+              "p95": 620.2396430000008,
+              "p99": 620.2396430000008,
+              "maximum": 620.2396430000008
+            },
+            "last_delivery_ms": 29416.349178
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 105.77322600000116,
+              "p50": 105.77322600000116,
+              "p95": 105.77322600000116,
+              "p99": 105.77322600000116,
+              "maximum": 105.77322600000116
+            },
+            "last_delivery_ms": 36901.318009
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2395.954651,
+              "p50": 2395.954651,
+              "p95": 2395.954651,
+              "p99": 2395.954651,
+              "maximum": 2395.954651
+            },
+            "last_delivery_ms": 47240.668854
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 622.7907459999988,
+              "p50": 622.7907459999988,
+              "p95": 622.7907459999988,
+              "p99": 622.7907459999988,
+              "maximum": 622.7907459999988
+            },
+            "last_delivery_ms": 53455.095635
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 96.48603600000206,
+              "p50": 96.48603600000206,
+              "p95": 96.48603600000206,
+              "p99": 96.48603600000206,
+              "maximum": 96.48603600000206
+            },
+            "last_delivery_ms": 60919.645649
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2407.157422999997,
+              "p50": 2407.157422999997,
+              "p95": 2407.157422999997,
+              "p99": 2407.157422999997,
+              "maximum": 2407.157422999997
+            },
+            "last_delivery_ms": 71297.690276
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 630.3103490000067,
+              "p50": 630.3103490000067,
+              "p95": 630.3103490000067,
+              "p99": 630.3103490000067,
+              "maximum": 630.3103490000067
+            },
+            "last_delivery_ms": 77528.504109
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 96.98061600000074,
+              "p50": 96.98061600000074,
+              "p95": 96.98061600000074,
+              "p99": 96.98061600000074,
+              "maximum": 96.98061600000074
+            },
+            "last_delivery_ms": 84987.392524
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2430.245358999993,
+              "p50": 2430.245358999993,
+              "p95": 2430.245358999993,
+              "p99": 2430.245358999993,
+              "maximum": 2430.245358999993
+            },
+            "last_delivery_ms": 95363.086798
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 643.7852850000054,
+              "p50": 643.7852850000054,
+              "p95": 643.7852850000054,
+              "p99": 643.7852850000054,
+              "maximum": 643.7852850000054
+            },
+            "last_delivery_ms": 101585.266086
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 103.61020100000314,
+              "p50": 103.61020100000314,
+              "p95": 103.61020100000314,
+              "p99": 103.61020100000314,
+              "maximum": 103.61020100000314
+            },
+            "last_delivery_ms": 109027.511817
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2450.5404169999965,
+              "p50": 2450.5404169999965,
+              "p95": 2450.5404169999965,
+              "p99": 2450.5404169999965,
+              "maximum": 2450.5404169999965
+            },
+            "last_delivery_ms": 119420.551287
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 647.635712999996,
+              "p50": 647.635712999996,
+              "p95": 647.635712999996,
+              "p99": 647.635712999996,
+              "maximum": 647.635712999996
+            },
+            "last_delivery_ms": 125624.826396
+          }
+        ],
+        "native_admission_delay_ms": {
+          "count": 64,
+          "mean": 7.2927417187499195,
+          "p50": 7.704484999994747,
+          "p95": 11.558467999999266,
+          "p99": 33.278504999999996,
+          "maximum": 33.278504999999996
+        },
+        "steps": 2100,
+        "peak_live": 4,
+        "phase_counts": {
+          "prefill_calls": 68,
+          "mixed_calls": 0,
+          "decode_calls": 2032
+        },
+        "kv_pool": {
+          "kind": "kv_pool",
+          "scope": "kv_payload_only",
+          "created": 4,
+          "reused": 60,
+          "discarded": 0,
+          "leased_slots": 0,
+          "allocated_slots": 4,
+          "budget_bytes": 4294967296,
+          "reserved_kv_bytes": 2147483648,
+          "peak_kv_bytes": 2147483648,
+          "kv_bytes_per_slot": 536870912
+        }
+      },
+      {
+        "elapsed_ms": 125693.903954,
+        "full_output_tokens_per_second": 65.17420290325308,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 38.68161717175196,
+          "p50": 38.72189499999513,
+          "p95": 38.994200999994064,
+          "p99": 39.075104999996256,
+          "maximum": 39.609410999997635
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 1055.343090437501,
+          "p50": 647.0477320000064,
+          "p95": 2482.0753930000064,
+          "p99": 2482.0753930000064,
+          "maximum": 2482.0753930000064
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6144,
+        "steady_window_output_tokens_per_second": 64.0,
+        "steady_window_inter_token_ms": {
+          "count": 6096,
+          "mean": 38.72043151115485,
+          "p50": 38.756116999997175,
+          "p95": 39.00395600000047,
+          "p99": 39.09920099998999,
+          "maximum": 39.609410999997635
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 1077.334781083334,
+          "p50": 646.666373,
+          "p95": 2482.0753930000064,
+          "p99": 2482.0753930000064,
+          "maximum": 2482.0753930000064
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 0
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 2032,
+            "mean": 38.681522116141736,
+            "p50": 38.721745,
+            "p95": 38.99407,
+            "p99": 39.075084,
+            "maximum": 39.609411
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 746.54714,
+              "p50": 746.54714,
+              "p95": 746.54714,
+              "p99": 746.54714,
+              "maximum": 746.54714
+            },
+            "last_delivery_ms": 5727.501434
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 100.08643699999993,
+              "p50": 100.08643699999993,
+              "p95": 100.08643699999993,
+              "p99": 100.08643699999993,
+              "maximum": 100.08643699999993
+            },
+            "last_delivery_ms": 13067.493027
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2461.3847620000015,
+              "p50": 2461.3847620000015,
+              "p95": 2461.3847620000015,
+              "p99": 2461.3847620000015,
+              "maximum": 2461.3847620000015
+            },
+            "last_delivery_ms": 23459.683091
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 644.6894119999997,
+              "p50": 644.6894119999997,
+              "p95": 644.6894119999997,
+              "p99": 644.6894119999997,
+              "maximum": 644.6894119999997
+            },
+            "last_delivery_ms": 29654.211153
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 102.76483100000041,
+              "p50": 102.76483100000041,
+              "p95": 102.76483100000041,
+              "p99": 102.76483100000041,
+              "maximum": 102.76483100000041
+            },
+            "last_delivery_ms": 37082.990441
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2473.1328339999964,
+              "p50": 2473.1328339999964,
+              "p95": 2473.1328339999964,
+              "p99": 2473.1328339999964,
+              "maximum": 2473.1328339999964
+            },
+            "last_delivery_ms": 47483.792684
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 646.666373,
+              "p50": 646.666373,
+              "p95": 646.666373,
+              "p99": 646.666373,
+              "maximum": 646.666373
+            },
+            "last_delivery_ms": 53666.909018
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 104.98482499999955,
+              "p50": 104.98482499999955,
+              "p95": 104.98482499999955,
+              "p99": 104.98482499999955,
+              "maximum": 104.98482499999955
+            },
+            "last_delivery_ms": 61095.5658
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2480.437812999997,
+              "p50": 2480.437812999997,
+              "p95": 2480.437812999997,
+              "p99": 2480.437812999997,
+              "maximum": 2480.437812999997
+            },
+            "last_delivery_ms": 71503.069579
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 647.0477320000064,
+              "p50": 647.0477320000064,
+              "p95": 647.0477320000064,
+              "p99": 647.0477320000064,
+              "maximum": 647.0477320000064
+            },
+            "last_delivery_ms": 77682.081871
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 102.42778199999884,
+              "p50": 102.42778199999884,
+              "p95": 102.42778199999884,
+              "p99": 102.42778199999884,
+              "maximum": 102.42778199999884
+            },
+            "last_delivery_ms": 85106.634821
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2482.032229999997,
+              "p50": 2482.032229999997,
+              "p95": 2482.032229999997,
+              "p99": 2482.032229999997,
+              "maximum": 2482.032229999997
+            },
+            "last_delivery_ms": 95525.174299
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 656.0837710000051,
+              "p50": 656.0837710000051,
+              "p95": 656.0837710000051,
+              "p99": 656.0837710000051,
+              "maximum": 656.0837710000051
+            },
+            "last_delivery_ms": 101687.233664
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 105.674377000003,
+              "p50": 105.674377000003,
+              "p95": 105.674377000003,
+              "p99": 105.674377000003,
+              "maximum": 105.674377000003
+            },
+            "last_delivery_ms": 109115.074392
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2482.0753930000064,
+              "p50": 2482.0753930000064,
+              "p95": 2482.0753930000064,
+              "p99": 2482.0753930000064,
+              "maximum": 2482.0753930000064
+            },
+            "last_delivery_ms": 119535.217274
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 649.4537350000028,
+              "p50": 649.4537350000028,
+              "p95": 649.4537350000028,
+              "p99": 649.4537350000028,
+              "maximum": 649.4537350000028
+            },
+            "last_delivery_ms": 125693.902992
+          }
+        ],
+        "native_admission_delay_ms": {
+          "count": 64,
+          "mean": 6.442717796874384,
+          "p50": 4.223023999998986,
+          "p95": 11.300745999993524,
+          "p99": 33.972386,
+          "maximum": 33.972386
+        },
+        "steps": 2100,
+        "peak_live": 4,
+        "phase_counts": {
+          "prefill_calls": 68,
+          "mixed_calls": 0,
+          "decode_calls": 2032
+        },
+        "kv_pool": {
+          "kind": "kv_pool",
+          "scope": "kv_payload_only",
+          "created": 4,
+          "reused": 60,
+          "discarded": 0,
+          "leased_slots": 0,
+          "allocated_slots": 4,
+          "budget_bytes": 4294967296,
+          "reserved_kv_bytes": 2147483648,
+          "peak_kv_bytes": 2147483648,
+          "kv_bytes_per_slot": 536870912
+        }
+      },
+      {
+        "elapsed_ms": 125695.534206,
+        "full_output_tokens_per_second": 65.17335760373386,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 38.87219951820868,
+          "p50": 38.90975199999957,
+          "p95": 39.07733800000278,
+          "p99": 39.2315729999973,
+          "maximum": 39.44183399999747
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 1061.3949683124974,
+          "p50": 653.8434269999998,
+          "p95": 2493.312619999997,
+          "p99": 2493.312619999997,
+          "maximum": 2493.312619999997
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6144,
+        "steady_window_output_tokens_per_second": 64.0,
+        "steady_window_inter_token_ms": {
+          "count": 6096,
+          "mean": 38.874656549212624,
+          "p50": 38.914429000011296,
+          "p95": 39.08312599999772,
+          "p99": 39.21280499999921,
+          "maximum": 39.44183399999747
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 1082.6897633333303,
+          "p50": 653.8434269999998,
+          "p95": 2493.312619999997,
+          "p99": 2493.312619999997,
+          "maximum": 2493.312619999997
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 0
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 0
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 2032,
+            "mean": 38.87208926624016,
+            "p50": 38.909732,
+            "p95": 39.077579,
+            "p99": 39.232224,
+            "maximum": 39.442235
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 754.840354,
+              "p50": 754.840354,
+              "p95": 754.840354,
+              "p99": 754.840354,
+              "maximum": 754.840354
+            },
+            "last_delivery_ms": 5790.91329
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 100.45087699999931,
+              "p50": 100.45087699999931,
+              "p95": 100.45087699999931,
+              "p99": 100.45087699999931,
+              "maximum": 100.45087699999931
+            },
+            "last_delivery_ms": 13113.897666
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2486.1455920000008,
+              "p50": 2486.1455920000008,
+              "p95": 2486.1455920000008,
+              "p99": 2486.1455920000008,
+              "maximum": 2486.1455920000008
+            },
+            "last_delivery_ms": 23533.031213
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 656.1596229999996,
+              "p50": 656.1596229999996,
+              "p95": 656.1596229999996,
+              "p99": 656.1596229999996,
+              "maximum": 656.1596229999996
+            },
+            "last_delivery_ms": 29700.207627
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 103.28501999999935,
+              "p50": 103.28501999999935,
+              "p95": 103.28501999999935,
+              "p99": 103.28501999999935,
+              "maximum": 103.28501999999935
+            },
+            "last_delivery_ms": 37115.191025
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2493.312619999997,
+              "p50": 2493.312619999997,
+              "p95": 2493.312619999997,
+              "p99": 2493.312619999997,
+              "maximum": 2493.312619999997
+            },
+            "last_delivery_ms": 47537.607971
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 653.8434269999998,
+              "p50": 653.8434269999998,
+              "p95": 653.8434269999998,
+              "p99": 653.8434269999998,
+              "maximum": 653.8434269999998
+            },
+            "last_delivery_ms": 53697.477969
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 103.18122299999959,
+              "p50": 103.18122299999959,
+              "p95": 103.18122299999959,
+              "p99": 103.18122299999959,
+              "maximum": 103.18122299999959
+            },
+            "last_delivery_ms": 61122.778071
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2487.5412309999956,
+              "p50": 2487.5412309999956,
+              "p95": 2487.5412309999956,
+              "p99": 2487.5412309999956,
+              "maximum": 2487.5412309999956
+            },
+            "last_delivery_ms": 71535.17863
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 650.0507919999945,
+              "p50": 650.0507919999945,
+              "p95": 650.0507919999945,
+              "p99": 650.0507919999945,
+              "maximum": 650.0507919999945
+            },
+            "last_delivery_ms": 77695.294624
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 105.73461899999529,
+              "p50": 105.73461899999529,
+              "p95": 105.73461899999529,
+              "p99": 105.73461899999529,
+              "maximum": 105.73461899999529
+            },
+            "last_delivery_ms": 85125.55005
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2490.909050999995,
+              "p50": 2490.909050999995,
+              "p95": 2490.909050999995,
+              "p99": 2490.909050999995,
+              "maximum": 2490.909050999995
+            },
+            "last_delivery_ms": 95541.936461
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 655.7416229999944,
+              "p50": 655.7416229999944,
+              "p95": 655.7416229999944,
+              "p99": 655.7416229999944,
+              "maximum": 655.7416229999944
+            },
+            "last_delivery_ms": 101697.089371
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 104.47539799999504,
+              "p50": 104.47539799999504,
+              "p95": 104.47539799999504,
+              "p99": 104.47539799999504,
+              "maximum": 104.47539799999504
+            },
+            "last_delivery_ms": 109127.194367
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 2488.042533,
+              "p50": 2488.042533,
+              "p95": 2488.042533,
+              "p99": 2488.042533,
+              "maximum": 2488.042533
+            },
+            "last_delivery_ms": 119541.747575
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 648.605509999994,
+              "p50": 648.605509999994,
+              "p95": 648.605509999994,
+              "p99": 648.605509999994,
+              "maximum": 648.605509999994
+            },
+            "last_delivery_ms": 125695.533004
+          }
+        ],
+        "native_admission_delay_ms": {
+          "count": 64,
+          "mean": 7.506505734374884,
+          "p50": 7.564376000002085,
+          "p95": 11.283082000001741,
+          "p99": 33.79593700000001,
+          "maximum": 33.79593700000001
+        },
+        "steps": 2100,
+        "peak_live": 4,
+        "phase_counts": {
+          "prefill_calls": 68,
+          "mixed_calls": 0,
+          "decode_calls": 2032
+        },
+        "kv_pool": {
+          "kind": "kv_pool",
+          "scope": "kv_payload_only",
+          "created": 4,
+          "reused": 60,
+          "discarded": 0,
+          "leased_slots": 0,
+          "allocated_slots": 4,
+          "budget_bytes": 4294967296,
+          "reserved_kv_bytes": 2147483648,
+          "peak_kv_bytes": 2147483648,
+          "kv_bytes_per_slot": 536870912
+        }
+      }
+    ],
+    "da8": [
+      {
+        "elapsed_ms": 130385.384942987,
+        "full_output_tokens_per_second": 62.82912769389051,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 49.7674606393148,
+          "p50": 38.40648801997304,
+          "p95": 70.29217400122434,
+          "p99": 71.68953900691122,
+          "maximum": 72.44964095298201
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 3653.5464774464344,
+          "p50": 5399.805778963491,
+          "p95": 5717.551146028563,
+          "p99": 5717.592979990877,
+          "maximum": 5717.592979990877
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6140,
+        "steady_window_output_tokens_per_second": 63.958333333333336,
+        "steady_window_inter_token_ms": {
+          "count": 6088,
+          "mean": 52.22717647393079,
+          "p50": 39.243005914613605,
+          "p95": 70.2908820239827,
+          "p99": 71.67489698622376,
+          "maximum": 72.44964095298201
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 3817.4726083510905,
+          "p50": 5399.805778963491,
+          "p95": 5717.56559794303,
+          "p99": 5717.592979990877,
+          "maximum": 5717.592979990877
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 4
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 1250,
+            "mean": 38.19156699022278,
+            "p50": 38.122614030726254,
+            "p95": 39.07948697451502,
+            "p99": 39.65747100301087,
+            "maximum": 40.01575708389282
+          },
+          "8": {
+            "count": 214,
+            "mean": 66.31479250695817,
+            "p50": 66.04212999809533,
+            "p95": 67.49376899097115,
+            "p99": 67.82271096017212,
+            "maximum": 68.1445529917255
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1446.749874978559,
+              "p50": 1446.7451049480587,
+              "p95": 1446.767669962719,
+              "p99": 1446.767669962719,
+              "maximum": 1446.767669962719
+            },
+            "last_delivery_ms": 6400.010643992573
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 98.28276275075041,
+              "p50": 98.28159594908357,
+              "p95": 98.28724500257522,
+              "p99": 98.28724500257522,
+              "maximum": 98.28724500257522
+            },
+            "last_delivery_ms": 13031.88848902937
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5675.859526736895,
+              "p50": 5675.852942024358,
+              "p95": 5675.880433968268,
+              "p99": 5675.880433968268,
+              "maximum": 5675.880433968268
+            },
+            "last_delivery_ms": 28733.411430031992
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5327.1600884676445,
+              "p50": 5327.156270015985,
+              "p95": 5327.173165953718,
+              "p99": 5327.173165953718,
+              "maximum": 5327.173165953718
+            },
+            "last_delivery_ms": 35901.47638798226
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 356.55456275562756,
+              "p50": 356.5524869831279,
+              "p95": 356.56150102149695,
+              "p99": 356.56150102149695,
+              "maximum": 356.56150102149695
+            },
+            "last_delivery_ms": 38769.60318197962
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5692.796344991075,
+              "p50": 5692.786665027961,
+              "p95": 5692.827156954445,
+              "p99": 5692.827156954445,
+              "maximum": 5692.827156954445
+            },
+            "last_delivery_ms": 52816.72054401133
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5403.875148220686,
+              "p50": 5403.87136999052,
+              "p95": 5403.888475941494,
+              "p99": 5403.888475941494,
+              "maximum": 5403.888475941494
+            },
+            "last_delivery_ms": 60046.84857302345
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 361.57419972587377,
+              "p50": 361.5721090231091,
+              "p95": 361.5812129341066,
+              "p99": 361.5812129341066,
+              "maximum": 361.5812129341066
+            },
+            "last_delivery_ms": 62833.76964100171
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5703.673645452363,
+              "p50": 5703.6674309987575,
+              "p95": 5703.693710942753,
+              "p99": 5703.693710942753,
+              "maximum": 5703.693710942753
+            },
+            "last_delivery_ms": 76811.45755399484
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5399.78167473455,
+              "p50": 5399.773158924654,
+              "p95": 5399.805778963491,
+              "p99": 5399.805778963491,
+              "maximum": 5399.805778963491
+            },
+            "last_delivery_ms": 84044.15506694932
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 357.760472985683,
+              "p50": 357.75840198621154,
+              "p95": 357.7678069472313,
+              "p99": 357.7678069472313,
+              "maximum": 357.7678069472313
+            },
+            "last_delivery_ms": 86840.87905997876
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5715.895710460609,
+              "p50": 5715.885644988157,
+              "p95": 5715.927819930948,
+              "p99": 5715.927819930948,
+              "maximum": 5715.927819930948
+            },
+            "last_delivery_ms": 100819.48061299045
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5409.1382812242955,
+              "p50": 5409.132339968346,
+              "p95": 5409.15768800769,
+              "p99": 5409.15768800769,
+              "maximum": 5409.15768800769
+            },
+            "last_delivery_ms": 108060.26580394246
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 363.8890032074414,
+              "p50": 363.8867669273168,
+              "p95": 363.89638201799244,
+              "p99": 363.89638201799244,
+              "maximum": 363.89638201799244
+            },
+            "last_delivery_ms": 110852.53841697704
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5717.572167987237,
+              "p50": 5717.56559794303,
+              "p95": 5717.592979990877,
+              "p99": 5717.592979990877,
+              "maximum": 5717.592979990877
+            },
+            "last_delivery_ms": 124836.69375500176
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5426.180174463661,
+              "p50": 5426.176583953202,
+              "p95": 5426.192988967523,
+              "p99": 5426.192988967523,
+              "maximum": 5426.192988967523
+            },
+            "last_delivery_ms": 130385.36889792886
+          }
+        ],
+        "steps": 1872,
+        "original_host_roles_verified": true
+      },
+      {
+        "elapsed_ms": 130396.92878397182,
+        "full_output_tokens_per_second": 62.82356552715793,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 49.80706350022412,
+          "p50": 38.44809206202626,
+          "p95": 70.30831801239401,
+          "p99": 71.57845899928361,
+          "maximum": 72.84703792538494
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 3664.1497866407008,
+          "p50": 5391.590860998258,
+          "p95": 5715.673924982548,
+          "p99": 5715.735799027607,
+          "maximum": 5715.735799027607
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6144,
+        "steady_window_output_tokens_per_second": 64.0,
+        "steady_window_inter_token_ms": {
+          "count": 6092,
+          "mean": 52.245684367991636,
+          "p50": 39.33341498486698,
+          "p95": 70.36597607657313,
+          "p99": 71.57845899928361,
+          "maximum": 72.84703792538494
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 3828.9861319897077,
+          "p50": 5391.590860998258,
+          "p95": 5715.695407916792,
+          "p99": 5715.735799027607,
+          "maximum": 5715.735799027607
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 4
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 1250,
+            "mean": 38.22888364912942,
+            "p50": 38.14090299420059,
+            "p95": 39.2416650429368,
+            "p99": 39.652941981330514,
+            "maximum": 40.24440597277135
+          },
+          "8": {
+            "count": 214,
+            "mean": 66.36476766635776,
+            "p50": 66.0991279873997,
+            "p95": 67.47502007056028,
+            "p99": 67.67605699133128,
+            "maximum": 67.82113807275891
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1451.7093457456212,
+              "p50": 1451.7039520200342,
+              "p95": 1451.7277090111747,
+              "p99": 1451.7277090111747,
+              "maximum": 1451.7277090111747
+            },
+            "last_delivery_ms": 6421.3328619953245
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 99.90366249112412,
+              "p50": 99.90152202080935,
+              "p95": 99.91134700831026,
+              "p99": 99.91134700831026,
+              "maximum": 99.91134700831026
+            },
+            "last_delivery_ms": 13042.842946015298
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5702.024497446837,
+              "p50": 5702.018312970176,
+              "p95": 5702.044602925889,
+              "p99": 5702.044602925889,
+              "maximum": 5702.044602925889
+            },
+            "last_delivery_ms": 28805.257904925384
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5391.572772967629,
+              "p50": 5391.5675149532035,
+              "p95": 5391.590860998258,
+              "p99": 5391.590860998258,
+              "maximum": 5391.590860998258
+            },
+            "last_delivery_ms": 35997.077731997706
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 377.03506919788197,
+              "p50": 377.0328929880634,
+              "p95": 377.0419269334525,
+              "p99": 377.0419269334525,
+              "maximum": 377.0419269334525
+            },
+            "last_delivery_ms": 38818.97994491737
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5705.049746209988,
+              "p50": 5705.039925966412,
+              "p95": 5705.081098922528,
+              "p99": 5705.081098922528,
+              "maximum": 5705.081098922528
+            },
+            "last_delivery_ms": 52782.0325269131
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5378.7676029664,
+              "p50": 5378.766062995419,
+              "p95": 5378.789638960734,
+              "p99": 5378.789638960734,
+              "maximum": 5378.789638960734
+            },
+            "last_delivery_ms": 60019.08761798404
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 386.5535794524476,
+              "p50": 386.5523729240522,
+              "p95": 386.5583019563928,
+              "p99": 386.5583019563928,
+              "maximum": 386.5583019563928
+            },
+            "last_delivery_ms": 62848.019992001355
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5702.413981233258,
+              "p50": 5702.403777954169,
+              "p95": 5702.446883986704,
+              "p99": 5702.446883986704,
+              "maximum": 5702.446883986704
+            },
+            "last_delivery_ms": 76827.4050289765
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5415.7894717413,
+              "p50": 5415.786004019901,
+              "p95": 5415.802017995156,
+              "p99": 5415.802017995156,
+              "maximum": 5415.802017995156
+            },
+            "last_delivery_ms": 84060.87198702153
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 375.7429262099322,
+              "p50": 375.7416369393468,
+              "p95": 375.7470649201423,
+              "p99": 375.7470649201423,
+              "maximum": 375.7470649201423
+            },
+            "last_delivery_ms": 86849.9630499864
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5713.298823457444,
+              "p50": 5713.28953395132,
+              "p95": 5713.3290549740195,
+              "p99": 5713.3290549740195,
+              "maximum": 5713.3290549740195
+            },
+            "last_delivery_ms": 100824.23348794691
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5412.842475989601,
+              "p50": 5412.836641981266,
+              "p95": 5412.860878952779,
+              "p99": 5412.860878952779,
+              "maximum": 5412.860878952779
+            },
+            "last_delivery_ms": 108059.35235891957
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 373.062046978157,
+              "p50": 373.0600139591843,
+              "p95": 373.0688469717279,
+              "p99": 373.0688469717279,
+              "maximum": 373.0688469717279
+            },
+            "last_delivery_ms": 110845.80380795524
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5715.705087472452,
+              "p50": 5715.695407916792,
+              "p95": 5715.735799027607,
+              "p99": 5715.735799027607,
+              "maximum": 5715.735799027607
+            },
+            "last_delivery_ms": 124835.50350298174
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5424.925496691139,
+              "p50": 5424.920691968873,
+              "p95": 5424.943265947513,
+              "p99": 5424.943265947513,
+              "maximum": 5424.943265947513
+            },
+            "last_delivery_ms": 130396.91238896921
+          }
+        ],
+        "steps": 1872,
+        "original_host_roles_verified": true
+      },
+      {
+        "elapsed_ms": 130385.21543797106,
+        "full_output_tokens_per_second": 62.829209373797674,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 49.68366323551232,
+          "p50": 38.397063966840506,
+          "p95": 70.27449808083475,
+          "p99": 71.59638695884496,
+          "maximum": 72.50260096043348
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 3648.037084382304,
+          "p50": 5361.111122043803,
+          "p95": 5711.839915928431,
+          "p99": 5711.901891021989,
+          "maximum": 5711.901891021989
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6140,
+        "steady_window_output_tokens_per_second": 63.958333333333336,
+        "steady_window_inter_token_ms": {
+          "count": 6088,
+          "mean": 52.087813197675196,
+          "p50": 39.24276609905064,
+          "p95": 70.28902904130518,
+          "p99": 71.59840001258999,
+          "maximum": 72.26644002366811
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 3809.75730848974,
+          "p50": 5361.111122043803,
+          "p95": 5711.861007940024,
+          "p99": 5711.901891021989,
+          "maximum": 5711.901891021989
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 4
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 1256,
+            "mean": 38.203917257358015,
+            "p50": 38.09152694884688,
+            "p95": 39.39836390782148,
+            "p99": 39.74474302958697,
+            "maximum": 40.393784060142934
+          },
+          "8": {
+            "count": 212,
+            "mean": 66.30914153548765,
+            "p50": 66.01644097827375,
+            "p95": 67.53395008854568,
+            "p99": 68.01098899450153,
+            "maximum": 68.29584389925003
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1451.5350917412434,
+              "p50": 1451.529616001062,
+              "p95": 1451.5534420264885,
+              "p99": 1451.5534420264885,
+              "maximum": 1451.5534420264885
+            },
+            "last_delivery_ms": 6434.871905017644
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 98.28278251225129,
+              "p50": 98.28156603034586,
+              "p95": 98.28773499466479,
+              "p99": 98.28773499466479,
+              "maximum": 98.28773499466479
+            },
+            "last_delivery_ms": 13043.070763000287
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5680.877418234013,
+              "p50": 5680.86738998536,
+              "p95": 5680.908843968064,
+              "p99": 5680.908843968064,
+              "maximum": 5680.908843968064
+            },
+            "last_delivery_ms": 28737.691659014672
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5332.325917703565,
+              "p50": 5332.32081993483,
+              "p95": 5332.34452593606,
+              "p99": 5332.34452593606,
+              "maximum": 5332.34452593606
+            },
+            "last_delivery_ms": 35883.55803198647
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 353.07446346851066,
+              "p50": 353.0722500057891,
+              "p95": 353.08205496985465,
+              "p99": 353.08205496985465,
+              "maximum": 353.08205496985465
+            },
+            "last_delivery_ms": 38740.07298401557
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5691.286203253549,
+              "p50": 5691.276072966866,
+              "p95": 5691.318356990814,
+              "p99": 5691.318356990814,
+              "maximum": 5691.318356990814
+            },
+            "last_delivery_ms": 52764.56572301686
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5361.092380748596,
+              "p50": 5361.086925002746,
+              "p95": 5361.111122043803,
+              "p99": 5361.111122043803,
+              "maximum": 5361.111122043803
+            },
+            "last_delivery_ms": 59982.289941981435
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 358.25227349996567,
+              "p50": 358.25081900693476,
+              "p95": 358.2568380283192,
+              "p99": 358.2568380283192,
+              "maximum": 358.2568380283192
+            },
+            "last_delivery_ms": 62808.477901970036
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5694.95456899167,
+              "p50": 5694.944608933292,
+              "p95": 5694.985341024585,
+              "p99": 5694.985341024585,
+              "maximum": 5694.985341024585
+            },
+            "last_delivery_ms": 76785.60914902482
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5382.728147529997,
+              "p50": 5382.7224960317835,
+              "p95": 5382.747224043123,
+              "p99": 5382.747224043123,
+              "maximum": 5382.747224043123
+            },
+            "last_delivery_ms": 83999.34211897198
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 370.7468147389591,
+              "p50": 370.74459097348154,
+              "p95": 370.7541560055688,
+              "p99": 370.7541560055688,
+              "maximum": 370.7541560055688
+            },
+            "last_delivery_ms": 86824.17994295247
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5705.223418254172,
+              "p50": 5705.213756044395,
+              "p95": 5705.254918988794,
+              "p99": 5705.254918988794,
+              "maximum": 5705.254918988794
+            },
+            "last_delivery_ms": 100810.14599499758
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5399.357914959546,
+              "p50": 5399.352070968598,
+              "p95": 5399.377619940788,
+              "p99": 5399.377619940788,
+              "maximum": 5399.377619940788
+            },
+            "last_delivery_ms": 108052.4849089561
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 356.1744999955408,
+              "p50": 356.1730650020763,
+              "p95": 356.1792550375685,
+              "p99": 356.1792550375685,
+              "maximum": 356.1792550375685
+            },
+            "last_delivery_ms": 110841.55009302776
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5711.871098732809,
+              "p50": 5711.861007940024,
+              "p95": 5711.901891021989,
+              "p99": 5711.901891021989,
+              "maximum": 5711.901891021989
+            },
+            "last_delivery_ms": 124833.05893698707
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5420.810355752474,
+              "p50": 5420.805423031561,
+              "p95": 5420.82805801183,
+              "p99": 5420.82805801183,
+              "maximum": 5420.82805801183
+            },
+            "last_delivery_ms": 130385.1990730036
+          }
+        ],
+        "steps": 1874,
+        "original_host_roles_verified": true
+      }
+    ],
+    "rr256": [
+      {
+        "elapsed_ms": 128260.3912090417,
+        "full_output_tokens_per_second": 63.87006871551243,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 50.544112429104025,
+          "p50": 38.12915401067585,
+          "p95": 67.27458001114428,
+          "p99": 68.39936901815236,
+          "maximum": 710.2954940637574
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 2380.4081475467683,
+          "p50": 1534.3646850436926,
+          "p95": 5689.676188025624,
+          "p99": 5689.73738104105,
+          "maximum": 5689.73738104105
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6136,
+        "steady_window_output_tokens_per_second": 63.916666666666664,
+        "steady_window_inter_token_ms": {
+          "count": 6084,
+          "mean": 51.511474000890864,
+          "p50": 38.19659794680774,
+          "p95": 67.32329400256276,
+          "p99": 100.53503408562392,
+          "maximum": 710.2134689921513
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 2448.491302865538,
+          "p50": 1534.3646850436926,
+          "p95": 5689.696970023215,
+          "p99": 5689.73738104105,
+          "maximum": 5689.73738104105
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 4
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 1375,
+            "mean": 37.97643611614,
+            "p50": 37.928718025796115,
+            "p95": 38.97999401669949,
+            "p99": 39.473879034630954,
+            "maximum": 40.38728401064873
+          },
+          "8": {
+            "count": 319,
+            "mean": 66.2137203087861,
+            "p50": 66.01480604149401,
+            "p95": 67.39674601703882,
+            "p99": 67.81705003231764,
+            "maximum": 68.21459694765508
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1432.3278410069179,
+              "p50": 1432.3223629966378,
+              "p95": 1432.3464489774778,
+              "p99": 1432.3464489774778,
+              "maximum": 1432.3464489774778
+            },
+            "last_delivery_ms": 6348.149680998176
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 98.28765979036689,
+              "p50": 98.285544058308,
+              "p95": 98.29558907076716,
+              "p99": 98.29558907076716,
+              "maximum": 98.29558907076716
+            },
+            "last_delivery_ms": 12985.909636016004
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5630.422706285026,
+              "p50": 5630.406043003313,
+              "p95": 5630.473736999556,
+              "p99": 5630.473736999556,
+              "maximum": 5630.473736999556
+            },
+            "last_delivery_ms": 29668.960024020635
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1538.1794970366172,
+              "p50": 1538.1744020618498,
+              "p95": 1538.1961250444874,
+              "p99": 1538.1961250444874,
+              "maximum": 1538.1961250444874
+            },
+            "last_delivery_ms": 32252.35501199495
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 152.36541329650208,
+              "p50": 152.36377608962357,
+              "p95": 152.37044598907232,
+              "p99": 152.37044598907232,
+              "maximum": 152.37044598907232
+            },
+            "last_delivery_ms": 37084.80649406556
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5657.017093041213,
+              "p50": 5657.006795029156,
+              "p95": 5657.050081039779,
+              "p99": 5657.050081039779,
+              "maximum": 5657.050081039779
+            },
+            "last_delivery_ms": 53749.88186405972
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1540.9893860400189,
+              "p50": 1540.986121026799,
+              "p95": 1541.0006229998544,
+              "p99": 1541.0006229998544,
+              "maximum": 1541.0006229998544
+            },
+            "last_delivery_ms": 56356.435651076026
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 123.43770251609385,
+              "p50": 123.43386407010257,
+              "p95": 123.44953799620271,
+              "p99": 123.44953799620271,
+              "maximum": 123.44953799620271
+            },
+            "last_delivery_ms": 61115.6344760675
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5667.1860962873325,
+              "p50": 5667.17547501903,
+              "p95": 5667.218481050804,
+              "p99": 5667.218481050804,
+              "maximum": 5667.218481050804
+            },
+            "last_delivery_ms": 77817.7107970696
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1521.363119513262,
+              "p50": 1521.358042000793,
+              "p95": 1521.3799649849534,
+              "p99": 1521.3799649849534,
+              "maximum": 1521.3799649849534
+            },
+            "last_delivery_ms": 80388.60642607324
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 154.08579429495148,
+              "p50": 154.0836260886863,
+              "p95": 154.09295002464205,
+              "p99": 154.09295002464205,
+              "maximum": 154.09295002464205
+            },
+            "last_delivery_ms": 85148.59975699801
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5675.991465547122,
+              "p50": 5675.981841026805,
+              "p95": 5676.022543082945,
+              "p99": 5676.022543082945,
+              "maximum": 5676.022543082945
+            },
+            "last_delivery_ms": 101821.87726406846
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1534.3482875090558,
+              "p50": 1534.3433919828385,
+              "p95": 1534.3646850436926,
+              "p99": 1534.3646850436926,
+              "maximum": 1534.3646850436926
+            },
+            "last_delivery_ms": 104427.29915003292
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 127.224841772113,
+              "p50": 127.2234900156036,
+              "p95": 127.2293990245089,
+              "p99": 127.2293990245089,
+              "maximum": 127.2293990245089
+            },
+            "last_delivery_ms": 109138.85308301542
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5689.7069375321735,
+              "p50": 5689.696970023215,
+              "p95": 5689.73738104105,
+              "p99": 5689.73738104105,
+              "maximum": 5689.73738104105
+            },
+            "last_delivery_ms": 125827.03671499621
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1543.5965192795265,
+              "p50": 1543.5929760336876,
+              "p95": 1543.6078790575266,
+              "p99": 1543.6078790575266,
+              "maximum": 1543.6078790575266
+            },
+            "last_delivery_ms": 128260.37502405234
+          }
+        ],
+        "steps": 1762,
+        "original_host_roles_verified": true
+      },
+      {
+        "elapsed_ms": 128298.49283909425,
+        "full_output_tokens_per_second": 63.85110080968768,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 50.93759548077559,
+          "p50": 38.22956804651767,
+          "p95": 67.51341605558991,
+          "p99": 69.20400902163237,
+          "maximum": 712.744927033782
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 2388.392937642857,
+          "p50": 1528.211835050024,
+          "p95": 5691.044490993954,
+          "p99": 5691.108088102192,
+          "maximum": 5691.108088102192
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6144,
+        "steady_window_output_tokens_per_second": 64.0,
+        "steady_window_inter_token_ms": {
+          "count": 6092,
+          "mean": 51.92659973010643,
+          "p50": 38.25387603137642,
+          "p95": 67.53313890658319,
+          "p99": 100.75379896443337,
+          "maximum": 712.744927033782
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 2453.028267568152,
+          "p50": 1528.211835050024,
+          "p95": 5691.066625039093,
+          "p99": 5691.108088102192,
+          "maximum": 5691.108088102192
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 4
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 1359,
+            "mean": 38.07980209156238,
+            "p50": 38.02781004924327,
+            "p95": 38.79095590673387,
+            "p99": 39.51230808161199,
+            "maximum": 40.085743996314704
+          },
+          "8": {
+            "count": 327,
+            "mean": 66.4846373541104,
+            "p50": 66.43002398777753,
+            "p95": 67.59430293459445,
+            "p99": 68.08406999334693,
+            "maximum": 69.01471898891032
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1443.8505852944218,
+              "p50": 1443.845119071193,
+              "p95": 1443.8689260045066,
+              "p99": 1443.8689260045066,
+              "maximum": 1443.8689260045066
+            },
+            "last_delivery_ms": 6396.019620005973
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 99.32964828331023,
+              "p50": 99.32757003698498,
+              "p95": 99.33731504715979,
+              "p99": 99.33731504715979,
+              "maximum": 99.33731504715979
+            },
+            "last_delivery_ms": 13030.314269009978
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5680.180271569407,
+              "p50": 5680.169983045198,
+              "p95": 5680.213099089451,
+              "p99": 5680.213099089451,
+              "maximum": 5680.213099089451
+            },
+            "last_delivery_ms": 29812.794886995107
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1526.744337263517,
+              "p50": 1526.7393550369889,
+              "p95": 1526.7607070039958,
+              "p99": 1526.7607070039958,
+              "maximum": 1526.7607070039958
+            },
+            "last_delivery_ms": 32416.991982026957
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 117.66361605841666,
+              "p50": 117.66150009352714,
+              "p95": 117.67043403815478,
+              "p99": 117.67043403815478,
+              "maximum": 117.67043403815478
+            },
+            "last_delivery_ms": 37140.28107607737
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5684.361284022452,
+              "p50": 5684.35197006911,
+              "p95": 5684.392011002637,
+              "p99": 5684.392011002637,
+              "maximum": 5684.392011002637
+            },
+            "last_delivery_ms": 53837.601329083554
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1542.6158330577891,
+              "p50": 1542.611226066947,
+              "p95": 1542.6323980558664,
+              "p99": 1542.6323980558664,
+              "maximum": 1542.6323980558664
+            },
+            "last_delivery_ms": 56450.23066899739
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 148.42202005675063,
+              "p50": 148.41988703701645,
+              "p95": 148.42882005032152,
+              "p99": 148.42882005032152,
+              "maximum": 148.42882005032152
+            },
+            "last_delivery_ms": 61172.87270503584
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5679.10010132473,
+              "p50": 5679.090031050146,
+              "p95": 5679.131935094483,
+              "p99": 5679.131935094483,
+              "maximum": 5679.131935094483
+            },
+            "last_delivery_ms": 77841.30543505307
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1528.195542783942,
+              "p50": 1528.1903920462355,
+              "p95": 1528.211835050024,
+              "p99": 1528.211835050024,
+              "maximum": 1528.211835050024
+            },
+            "last_delivery_ms": 80448.15736904275
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 148.3964087732602,
+              "p50": 148.39422502554953,
+              "p95": 148.40337899513543,
+              "p99": 148.40337899513543,
+              "maximum": 148.40337899513543
+            },
+            "last_delivery_ms": 85177.51122207846
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5689.128683798481,
+              "p50": 5689.111708058044,
+              "p95": 5689.181034080684,
+              "p99": 5689.181034080684,
+              "maximum": 5689.181034080684
+            },
+            "last_delivery_ms": 101833.88080308214
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1542.5620940863155,
+              "p50": 1542.5586791010574,
+              "p95": 1542.5730910850689,
+              "p99": 1542.5730910850689,
+              "maximum": 1542.5730910850689
+            },
+            "last_delivery_ms": 104439.99640108086
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 138.07272204430774,
+              "p50": 138.07048401795328,
+              "p95": 138.080068025738,
+              "p99": 138.080068025738,
+              "maximum": 138.080068025738
+            },
+            "last_delivery_ms": 109162.14437608141
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5691.0765675478615,
+              "p50": 5691.066625039093,
+              "p95": 5691.108088102192,
+              "p99": 5691.108088102192,
+              "maximum": 5691.108088102192
+            },
+            "last_delivery_ms": 125861.22797708958
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1554.5872863207478,
+              "p50": 1554.5820680912584,
+              "p95": 1554.6036510262638,
+              "p99": 1554.6036510262638,
+              "maximum": 1554.6036510262638
+            },
+            "last_delivery_ms": 128298.47727506422
+          }
+        ],
+        "steps": 1754,
+        "original_host_roles_verified": true
+      },
+      {
+        "elapsed_ms": 128315.91053807642,
+        "full_output_tokens_per_second": 63.842433612853554,
+        "inter_token_ms": {
+          "count": 8128,
+          "mean": 50.968765257665815,
+          "p50": 38.253234000876546,
+          "p95": 67.42473295889795,
+          "p99": 68.80017404910177,
+          "maximum": 713.7780879857019
+        },
+        "ttft_ms": {
+          "count": 64,
+          "mean": 2388.751830540423,
+          "p50": 1535.8589130686596,
+          "p95": 5699.075233051553,
+          "p99": 5699.151299055666,
+          "maximum": 5699.151299055666
+        },
+        "steady_window_ms": [
+          24100,
+          120100
+        ],
+        "steady_window_outputs": 6144,
+        "steady_window_output_tokens_per_second": 64.0,
+        "steady_window_inter_token_ms": {
+          "count": 6092,
+          "mean": 51.94347123608182,
+          "p50": 38.28156797681004,
+          "p95": 67.42473295889795,
+          "p99": 100.49824404995888,
+          "maximum": 713.7780879857019
+        },
+        "balanced_middle_ttft_ms": {
+          "count": 48,
+          "mean": 2453.50177280828,
+          "p50": 1535.8589130686596,
+          "p95": 5699.096806091256,
+          "p99": 5699.151299055666,
+          "maximum": 5699.151299055666
+        },
+        "cycle_boundary_pending": [
+          {
+            "boundary_ms": 24100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 48100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 72100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 96100,
+            "unfinished_before_offer": 4
+          },
+          {
+            "boundary_ms": 120100,
+            "unfinished_before_offer": 4
+          }
+        ],
+        "pure_decode_step_by_width_ms": {
+          "4": {
+            "count": 1357,
+            "mean": 38.12058126881949,
+            "p50": 38.050074013881385,
+            "p95": 39.2571889096871,
+            "p99": 39.58203294314444,
+            "maximum": 40.41904304176569
+          },
+          "8": {
+            "count": 328,
+            "mean": 66.41179188254017,
+            "p50": 66.2085049552843,
+            "p95": 67.47494998853654,
+            "p99": 68.09283408802003,
+            "maximum": 68.61132604535669
+          }
+        },
+        "by_wave": [
+          {
+            "wave": 0,
+            "prompt_tokens": 129,
+            "offered_ms": 100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1445.06957004196,
+              "p50": 1445.0636460445821,
+              "p95": 1445.088344020769,
+              "p99": 1445.088344020769,
+              "maximum": 1445.088344020769
+            },
+            "last_delivery_ms": 6404.02359503787
+          },
+          {
+            "wave": 1,
+            "prompt_tokens": 5,
+            "offered_ms": 8100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 98.6114862957038,
+              "p50": 98.60943802632391,
+              "p95": 98.61932308413088,
+              "p99": 98.61932308413088,
+              "maximum": 98.61932308413088
+            },
+            "last_delivery_ms": 13033.1616360927
+          },
+          {
+            "wave": 2,
+            "prompt_tokens": 513,
+            "offered_ms": 16100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5684.356721560471,
+              "p50": 5684.349713008851,
+              "p95": 5684.378137090243,
+              "p99": 5684.378137090243,
+              "maximum": 5684.378137090243
+            },
+            "last_delivery_ms": 29841.706620063633
+          },
+          {
+            "wave": 3,
+            "prompt_tokens": 129,
+            "offered_ms": 24100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1535.8422397752292,
+              "p50": 1535.8369790250435,
+              "p95": 1535.8589130686596,
+              "p99": 1535.8589130686596,
+              "maximum": 1535.8589130686596
+            },
+            "last_delivery_ms": 32449.22247901559
+          },
+          {
+            "wave": 4,
+            "prompt_tokens": 5,
+            "offered_ms": 32100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 146.31941577536054,
+              "p50": 146.31730502005666,
+              "p95": 146.32625898811966,
+              "p99": 146.32625898811966,
+              "maximum": 146.32625898811966
+            },
+            "last_delivery_ms": 37178.03139006719
+          },
+          {
+            "wave": 5,
+            "prompt_tokens": 513,
+            "offered_ms": 40100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5682.925873034401,
+              "p50": 5682.913011033088,
+              "p95": 5682.96181501355,
+              "p99": 5682.96181501355,
+              "maximum": 5682.96181501355
+            },
+            "last_delivery_ms": 53820.01227803994
+          },
+          {
+            "wave": 6,
+            "prompt_tokens": 129,
+            "offered_ms": 48100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1535.040793567896,
+              "p50": 1535.034256032668,
+              "p95": 1535.05929405801,
+              "p99": 1535.05929405801,
+              "maximum": 1535.05929405801
+            },
+            "last_delivery_ms": 56425.286561017856
+          },
+          {
+            "wave": 7,
+            "prompt_tokens": 5,
+            "offered_ms": 56100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 122.0533812942449,
+              "p50": 122.0512731000781,
+              "p95": 122.06026699859649,
+              "p99": 122.06026699859649,
+              "maximum": 122.06026699859649
+            },
+            "last_delivery_ms": 61158.40814099647
+          },
+          {
+            "wave": 8,
+            "prompt_tokens": 513,
+            "offered_ms": 64100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5699.1100712970365,
+              "p50": 5699.096806091256,
+              "p95": 5699.151299055666,
+              "p99": 5699.151299055666,
+              "maximum": 5699.151299055666
+            },
+            "last_delivery_ms": 77852.90447005536
+          },
+          {
+            "wave": 9,
+            "prompt_tokens": 129,
+            "offered_ms": 72100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1562.8678673005197,
+              "p50": 1562.8646850585938,
+              "p95": 1562.8789970418438,
+              "p99": 1562.8789970418438,
+              "maximum": 1562.8789970418438
+            },
+            "last_delivery_ms": 80490.8758070087
+          },
+          {
+            "wave": 10,
+            "prompt_tokens": 5,
+            "offered_ms": 80100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 124.06637453241274,
+              "p50": 124.06418609898537,
+              "p95": 124.07394100446254,
+              "p99": 124.07394100446254,
+              "maximum": 124.07394100446254
+            },
+            "last_delivery_ms": 85193.0316890357
+          },
+          {
+            "wave": 11,
+            "prompt_tokens": 513,
+            "offered_ms": 88100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5688.360996288247,
+              "p50": 5688.351236027665,
+              "p95": 5688.391889072955,
+              "p99": 5688.391889072955,
+              "maximum": 5688.391889072955
+            },
+            "last_delivery_ms": 101818.38874402456
+          },
+          {
+            "wave": 12,
+            "prompt_tokens": 129,
+            "offered_ms": 96100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1543.7768675095867,
+              "p50": 1543.7717820517719,
+              "p95": 1543.7933649867773,
+              "p99": 1543.7933649867773,
+              "maximum": 1543.7933649867773
+            },
+            "last_delivery_ms": 104416.23660200275
+          },
+          {
+            "wave": 13,
+            "prompt_tokens": 5,
+            "offered_ms": 104100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 116.64746652822942,
+              "p50": 116.6453410172835,
+              "p95": 116.65466506965458,
+              "p99": 116.65466506965458,
+              "maximum": 116.65466506965458
+            },
+            "last_delivery_ms": 109133.7010510033
+          },
+          {
+            "wave": 14,
+            "prompt_tokens": 513,
+            "offered_ms": 112100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 5685.009926796192,
+              "p50": 5685.0002070190385,
+              "p95": 5685.0411291001365,
+              "p99": 5685.0411291001365,
+              "maximum": 5685.0411291001365
+            },
+            "last_delivery_ms": 125858.0206350889
+          },
+          {
+            "wave": 15,
+            "prompt_tokens": 129,
+            "offered_ms": 120100,
+            "ttft_ms": {
+              "count": 4,
+              "mean": 1549.9702370492741,
+              "p50": 1549.9668570468202,
+              "p95": 1549.9819800956175,
+              "p99": 1549.9819800956175,
+              "maximum": 1549.9819800956175
+            },
+            "last_delivery_ms": 128315.8941330621
+          }
+        ],
+        "steps": 1753,
+        "original_host_roles_verified": true
+      }
+    ]
+  },
+  "independent_full_heads": {
+    "matrices_byte_exact": 2100,
+    "heads_byte_exact": 8400,
+    "bf16_words_byte_exact": 2085888000,
+    "bytes_byte_exact": 4171776000,
+    "reference": "/tmp/bitnet-goal-sustained64/oracle-control/reference.json",
+    "scope": "Direct immutable original matrix bytes and every sampled row hash; avoids existing manifest validator hardcoded64 output precondition. Does not modify or relax any oracle/math comparison."
+  },
+  "validation": {
+    "./verifier-baseline": {
+      "exit": 0
+    },
+    "./controlled-prepare": {
+      "exit": 0
+    },
+    "./controlled": {
+      "exit": 0
+    },
+    "./controlled-geometry-fixed": {
+      "exit": 0
+    },
+    "./controlled-heads-fixed": {
+      "exit": 0
+    },
+    "./legacy-controlled572-verifier": {
+      "exit": 0
+    },
+    "./timing-0": {
+      "exit": 0
+    },
+    "./timing-0-accounting": {
+      "exit": 0
+    },
+    "./timing-0-qualified": {
+      "exit": 0
+    },
+    "./timing-1": {
+      "exit": 0
+    },
+    "./timing-1-accounting": {
+      "exit": 0
+    },
+    "./timing-1-qualified": {
+      "exit": 0
+    },
+    "./timing-2": {
+      "exit": 0
+    },
+    "./timing-2-accounting": {
+      "exit": 0
+    },
+    "./timing-2-qualified": {
+      "exit": 0
+    },
+    "verifier-build/clean": {
+      "exit": 0
+    },
+    "verifier-build/build": {
+      "exit": 0
+    },
+    "verifier-build/standard": {
+      "exit": 0
+    },
+    "verifier-build/benches": {
+      "exit": 0
+    },
+    "oracle-control/reference": {
+      "exit": 0
+    },
+    "oracle-control/derive-inputs": {
+      "exit": 0
+    },
+    "oracle-control/derive-roles": {
+      "exit": 0
+    },
+    "oracle-control/derive-policy": {
+      "exit": 0
+    },
+    "da8/reference": {
+      "exit": 0
+    },
+    "da8/timing-roles": {
+      "exit": 0
+    },
+    "rr256/reference": {
+      "exit": 0
+    },
+    "rr256/timing-roles": {
+      "exit": 0
+    },
+    "final-standard": {
+      "exit": 0
+    }
+  },
+  "verifier_tests": 10,
+  "validation_source_sha256": {
+    "bench/verify_bf16_arrivals.py": "cf12bbbce5fa811a19327476ace271c0a2434bebdd75a86f7517b7b1598ee221",
+    "test/prepare_bf16_mixed_reference.py": "4e6518510d976a46646f681ce49e1186b46532c12d43d0be691e8084f845949f",
+    "test/test_bf16_mixed_reference.py": "74fd2bd21932094f878655db839db03246e2f1ed05c75c04d5b6af190be3d935"
+  },
+  "runtime_source_manifest": "/tmp/bitnet-goal-sustained64/source-freeze.json",
+  "runtime_source_manifest_sha256": "f69dd7d74b177e7a4543639e29d4d84f21c3553432a064457c7d91d5e829f875",
+  "timing_binary": {
+    "sha256": "eb8134902021154f9ada3b4de0e31f4e087d7e8fd74eff26fa849aa1769dd2a0",
+    "runtime_source_unchanged": true,
+    "rebuilt_sha256": "0f894b3cc7eea4bade31828d322a4e6d8d2703e0b2d5c8ad3452a40a9b40db61",
+    "binary_identical_after_verifier_only_changes": false
+  },
+  "native_policy": {
+    "arithmetic": 5,
+    "ffn_arithmetic": 2,
+    "input_norm_reductions": [
+      5,
+      4,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      4,
+      5,
+      4,
+      5,
+      5,
+      6
+    ],
+    "post_norm_reductions": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+    ],
+    "attention_split_policy": 1
+  },
+  "native_policy_changed": false,
+  "gpu_operator_math_changed": false,
+  "hardware": {
+    "rr256": {
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "multiprocessors": 188,
+      "total_memory": 101973491712,
+      "compute_capability": [
+        12,
+        0
+      ],
+      "torch_cuda": "13.4"
+    },
+    "da8": {
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "multiprocessors": 188,
+      "total_memory": 101973491712,
+      "compute_capability": [
+        12,
+        0
+      ],
+      "torch_cuda": "13.4"
+    }
+  },
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "comparison": "Same GGUF checkpoint, BF16 activations, F32 recurrent state, disabled CUDA graphs, 8192 context cap, eight-live limit, four prefill lanes, chunk64 and overall budget256. Native mixed cap8; originals use DA8 and RR256 respectively. Original runs warm up on the same workload before three measured samples.",
+  "preserved_initial_failures": [
+    "Controlled accounting validator incorrectly required actual peak to equal upper live limit; changed to a bounded actual peak independently checked against admission/completion timestamps and pool allocation.",
+    "General reference validator incorrectly required64 outputs, despite serving protocol supporting1..256. General histories now validate uniform1..256 counts; standalone BMS1 retains64 outputs/16requests/256steps and frozen SHA.",
+    "All8400 full-head matrices matched immutable original bytes before either validator change; no oracle or arithmetic policy was altered."
+  ],
+  "limitations": [
+    "Two-minute periodic finite arrivals, with complete drains between native waves; native has zero mixed prefill/decode steps. This does not qualify sustained mixed serving or maximum capacity.",
+    "Fixed offered-load output throughput is constrained by the workload; no new isolated prefill throughput or matched-context decode-kernel claim.",
+    "KV payload only is reported; model, recurrent state, activation/workspace, driver and allocator storage are outside that native quota. Total device-memory budgeting remains open.",
+    "Native maximum live limit is eight but actual peak is four; original schedulers may keep more requests active because their execution geometry differs.",
+    "Performance original schedulers are unmodified; the separate FIFO host-selection adapter is numerical-control-only, with original model/worker/math/sampling/KV.",
+    "No native/original free-clock token equality is assumed when their schedules differ. All native timing schedules and tokens match the independent controlled full-head reference.",
+    "Network serving, unbounded queue stability, larger mixed/staggered workloads and the complete modern-model goal remain open."
+  ],
+  "independent_source_sha256": {
+    "test/reference_cuda_bf16_periodic_control.py": "660fcbb2a0157748d056e766673c96b3a93054917eee17ec2c79538bd9d7a4da",
+    "test/reference_cuda_bf16_periodic.py": "70d4822e7071589168438b3c692990866547faeeb245a0ba78f89e2893318ab6"
+  },
+  "exported_artifacts": {
+    "byte_identical_workloads": true,
+    "byte_identical_independent_reference": true,
+    "reference_sources_compile": true
+  }
+}

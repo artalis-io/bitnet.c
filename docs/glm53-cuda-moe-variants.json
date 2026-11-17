@@ -1,0 +1,687 @@
+{
+  "scope": "Actual GLM checkpoint complete MoE FFNs for layers11,12,44; whole goal remains active",
+  "whole_goal_complete": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-moe-variants",
+  "source_sha256": {
+    "src/backend_layout.c": "e7bf63918fdc6563d71810f2e5f5d7e533f0269b56e7afaa0e50d9168121b393",
+    "include/backend_layout.h": "c44123d5d25cb1f390f878e1fb124ad19eedb7932c94a50dfbf352e620e47dc2",
+    "test/glm_moe_layout_checks.h": "1d01da6b0a79f82a2ac4c6ff762791b0bd4a3830de560a39ae0f80309428ad0e",
+    "test/reference_glm_moe_layer.py": "dd542aa5359d5e310bf801b297b7fce4d3b978bbfe8fe944cb63a3b897a28501",
+    "test/test_cuda_glm_moe_layer.c": "0505e396ee22eda5b63819371163cc820d7da40948eaab49101a7a42fae64de6"
+  },
+  "validation": {
+    "reference-11-exit": {
+      "exit": 0
+    },
+    "reference-12-exit": {
+      "exit": 0
+    },
+    "clean-exit": {
+      "exit": 0
+    },
+    "standard-exit": {
+      "exit": 0
+    },
+    "benches-exit": {
+      "exit": 0
+    },
+    "layer-3-regression-exit": {
+      "exit": 0
+    },
+    "layer-12-exit": {
+      "exit": 0
+    },
+    "reference-repeat-12-exit": {
+      "exit": 0
+    },
+    "layer-11-memcheck-exit": {
+      "exit": 0
+    },
+    "sanitize-exit": {
+      "exit": 0
+    },
+    "cuda-exit": {
+      "exit": 0
+    },
+    "layer-11-synccheck-exit": {
+      "exit": 0
+    },
+    "layer-44-exit": {
+      "exit": 0
+    },
+    "layer-12-memcheck-exit": {
+      "exit": 0
+    },
+    "build-exit": {
+      "exit": 0
+    },
+    "layer-44-synccheck-exit": {
+      "exit": 0
+    },
+    "reference-repeat-11-exit": {
+      "exit": 0
+    },
+    "layer-44-memcheck-exit": {
+      "exit": 0
+    },
+    "reference-44-exit": {
+      "exit": 0
+    },
+    "replay-build-exit": {
+      "exit": 0
+    },
+    "layer-12-synccheck-exit": {
+      "exit": 0
+    },
+    "layer-11-exit": {
+      "exit": 0
+    },
+    "reference-repeat-44-exit": {
+      "exit": 0
+    }
+  },
+  "cpu": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "independent_recapture_files": 237,
+  "previous_reference_files_preserved": 78,
+  "exact_reference_elements": 1583200080,
+  "layers": [
+    {
+      "layer": 11,
+      "gate_up_down_types": [
+        13,
+        13,
+        14
+      ],
+      "exact_reference_elements": 527733360,
+      "reference_manifest_sha256": "259253e77ea4b280f189e0c131541e1ff1a48083f0dc061e274ffc204d174758",
+      "weight_sha256": {
+        "ffn_gate_inp.weight": "f441520c818c224ec00ce3eaa01b6247d6c788f79ded70eaa1ae6a6632b8ef06",
+        "exp_probs_b.bias": "323e3e74b4a87e54dd6e65caee127dc0c6b7184652868dfaed6000da94c92774",
+        "ffn_gate_shexp.weight": "154e950b69b216c5961871b744cb07f848b30102994ff1ea7ab4f44f55e61c88",
+        "ffn_up_shexp.weight": "d3cceaee81e508e6220c5ece02a994ab2773a8fd6cc989692512d2332248b76c",
+        "ffn_down_shexp.weight": "eaa3f8c8eab6aa2caffbe70d549f13db971c658e32d1d3e45c6ebd52864ac35b",
+        "ffn_gate_exps.weight": "d05b65bbe03f811268bf9ccdee973654c2317f2f4674fbb3e05c79f70fec62b4",
+        "ffn_up_exps.weight": "0e82f144c5f45a47f9461d952ba13204efd8dcb630ff216c1b8d8cf711a9feba",
+        "ffn_down_exps.weight": "f56e8afafe027fb5602ab76adff49a0418f05cc0a4bdca07a22591fc2ccdd88b"
+      },
+      "original_extension_sha256": "19513f6a05ac8898d6ecff4c7a259326f87c3dcf185b74b2050d2a6a7fe8b561",
+      "schedules": [
+        {
+          "mode": 0,
+          "step": 0,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 147324928,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 147324928
+        },
+        {
+          "mode": 0,
+          "step": 1,
+          "tokens": 9,
+          "prefill": 1,
+          "active_experts": 60,
+          "source_read_bytes": 1104936960,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 1104936960
+        },
+        {
+          "mode": 0,
+          "step": 2,
+          "tokens": 65,
+          "prefill": 1,
+          "active_experts": 158,
+          "source_read_bytes": 2909667328,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 2909667328
+        },
+        {
+          "mode": 0,
+          "step": 3,
+          "tokens": 129,
+          "prefill": 1,
+          "active_experts": 181,
+          "source_read_bytes": 3333226496,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 3333226496
+        },
+        {
+          "mode": 0,
+          "step": 4,
+          "tokens": 1024,
+          "prefill": 1,
+          "active_experts": 243,
+          "source_read_bytes": 4474994688,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 4474994688
+        },
+        {
+          "mode": 0,
+          "step": 5,
+          "tokens": 1025,
+          "prefill": 1,
+          "active_experts": 234,
+          "source_read_bytes": 4309254144,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 4309254144
+        },
+        {
+          "mode": 1,
+          "step": 0,
+          "tokens": 1,
+          "prefill": 1,
+          "active_experts": 8,
+          "source_read_bytes": 147324928,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 147324928
+        },
+        {
+          "mode": 1,
+          "step": 1,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 147324928,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 147324928
+        },
+        {
+          "mode": 1,
+          "step": 2,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 147324928,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 147324928
+        },
+        {
+          "mode": 1,
+          "step": 3,
+          "tokens": 9,
+          "prefill": 1,
+          "active_experts": 60,
+          "source_read_bytes": 1031274496,
+          "ram_hits": 4,
+          "ram_misses": 56,
+          "weight_upload_bytes": 1104936960
+        },
+        {
+          "mode": 1,
+          "step": 4,
+          "tokens": 65,
+          "prefill": 1,
+          "active_experts": 158,
+          "source_read_bytes": 2780758016,
+          "ram_hits": 7,
+          "ram_misses": 151,
+          "weight_upload_bytes": 2909667328
+        },
+        {
+          "mode": 1,
+          "step": 5,
+          "tokens": 129,
+          "prefill": 1,
+          "active_experts": 181,
+          "source_read_bytes": 3222732800,
+          "ram_hits": 6,
+          "ram_misses": 175,
+          "weight_upload_bytes": 3333226496
+        },
+        {
+          "mode": 1,
+          "step": 6,
+          "tokens": 1024,
+          "prefill": 1,
+          "active_experts": 243,
+          "source_read_bytes": 4346085376,
+          "ram_hits": 7,
+          "ram_misses": 236,
+          "weight_upload_bytes": 4474994688
+        },
+        {
+          "mode": 1,
+          "step": 7,
+          "tokens": 1025,
+          "prefill": 1,
+          "active_experts": 234,
+          "source_read_bytes": 4180344832,
+          "ram_hits": 7,
+          "ram_misses": 227,
+          "weight_upload_bytes": 4309254144
+        },
+        {
+          "mode": 1,
+          "step": 8,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 147324928,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 147324928
+        }
+      ]
+    },
+    {
+      "layer": 12,
+      "gate_up_down_types": [
+        12,
+        12,
+        14
+      ],
+      "exact_reference_elements": 527733360,
+      "reference_manifest_sha256": "ac7bec7c02d045feef52beb6d6abb6a0bb51c51d05e6ec5750ab23f75eff46d6",
+      "weight_sha256": {
+        "ffn_gate_inp.weight": "b670e5766d1b3fb777e9ca5cf83968cd75d80af1ac25a449828f64a91d2b94d6",
+        "exp_probs_b.bias": "fb6efd405201d6872b0f791d7f430ce3efb4a6aba331769e9db5fc616b9be592",
+        "ffn_gate_shexp.weight": "0039d74002f02a1eb28813a077d1b72f76899e3f899f771e52d8a7b95df0e4fc",
+        "ffn_up_shexp.weight": "55342213da3e7b480a8fca83cc1d156fddc5650481a9c1101c742c54f39ff22a",
+        "ffn_down_shexp.weight": "d2b85eb9a8ea5cb7a1779966ca61f400278cb8a21954ea61371db3081e18597b",
+        "ffn_gate_exps.weight": "df7b8cd25ed0d4ee46217cdbec5876c945d9d975f37e72f2a07372e730b5be80",
+        "ffn_up_exps.weight": "fbab138dfae815ee7796c738958201c9e4df7233c0e4570817f236ffa66d2a6c",
+        "ffn_down_exps.weight": "e63d278d2bf812a0a5ccac23dbaa8a50873680f94fe075b6d81bc06a314b162c"
+      },
+      "original_extension_sha256": "19513f6a05ac8898d6ecff4c7a259326f87c3dcf185b74b2050d2a6a7fe8b561",
+      "schedules": [
+        {
+          "mode": 0,
+          "step": 0,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 130547712,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 0,
+          "step": 1,
+          "tokens": 9,
+          "prefill": 1,
+          "active_experts": 57,
+          "source_read_bytes": 930152448,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 930152448
+        },
+        {
+          "mode": 0,
+          "step": 2,
+          "tokens": 65,
+          "prefill": 1,
+          "active_experts": 146,
+          "source_read_bytes": 2382495744,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 2382495744
+        },
+        {
+          "mode": 0,
+          "step": 3,
+          "tokens": 129,
+          "prefill": 1,
+          "active_experts": 191,
+          "source_read_bytes": 3116826624,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 3116826624
+        },
+        {
+          "mode": 0,
+          "step": 4,
+          "tokens": 1024,
+          "prefill": 1,
+          "active_experts": 248,
+          "source_read_bytes": 4046979072,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 4046979072
+        },
+        {
+          "mode": 0,
+          "step": 5,
+          "tokens": 1025,
+          "prefill": 1,
+          "active_experts": 242,
+          "source_read_bytes": 3949068288,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 3949068288
+        },
+        {
+          "mode": 1,
+          "step": 0,
+          "tokens": 1,
+          "prefill": 1,
+          "active_experts": 8,
+          "source_read_bytes": 130547712,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 1,
+          "step": 1,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 130547712,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 1,
+          "step": 2,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 0,
+          "ram_hits": 8,
+          "ram_misses": 0,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 1,
+          "step": 3,
+          "tokens": 9,
+          "prefill": 1,
+          "active_experts": 57,
+          "source_read_bytes": 881197056,
+          "ram_hits": 3,
+          "ram_misses": 54,
+          "weight_upload_bytes": 930152448
+        },
+        {
+          "mode": 1,
+          "step": 4,
+          "tokens": 65,
+          "prefill": 1,
+          "active_experts": 146,
+          "source_read_bytes": 2251948032,
+          "ram_hits": 8,
+          "ram_misses": 138,
+          "weight_upload_bytes": 2382495744
+        },
+        {
+          "mode": 1,
+          "step": 5,
+          "tokens": 129,
+          "prefill": 1,
+          "active_experts": 191,
+          "source_read_bytes": 2986278912,
+          "ram_hits": 8,
+          "ram_misses": 183,
+          "weight_upload_bytes": 3116826624
+        },
+        {
+          "mode": 1,
+          "step": 6,
+          "tokens": 1024,
+          "prefill": 1,
+          "active_experts": 248,
+          "source_read_bytes": 3916431360,
+          "ram_hits": 8,
+          "ram_misses": 240,
+          "weight_upload_bytes": 4046979072
+        },
+        {
+          "mode": 1,
+          "step": 7,
+          "tokens": 1025,
+          "prefill": 1,
+          "active_experts": 242,
+          "source_read_bytes": 3818520576,
+          "ram_hits": 8,
+          "ram_misses": 234,
+          "weight_upload_bytes": 3949068288
+        },
+        {
+          "mode": 1,
+          "step": 8,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 0,
+          "ram_hits": 8,
+          "ram_misses": 0,
+          "weight_upload_bytes": 130547712
+        }
+      ]
+    },
+    {
+      "layer": 44,
+      "gate_up_down_types": [
+        12,
+        12,
+        14
+      ],
+      "exact_reference_elements": 527733360,
+      "reference_manifest_sha256": "edc477371f44a14f21ccafdfe32058fd7429076d239d01b2e3b2167c81fc9c7d",
+      "weight_sha256": {
+        "ffn_gate_inp.weight": "d511164ebdd556b675c35d936669e9b33159e55e77a31f81d26efe313e974edc",
+        "exp_probs_b.bias": "627c39a4732b65c355cb69ef64f12c13945827f685001b5bac94ca349e31b824",
+        "ffn_gate_shexp.weight": "31efa3c2e4c3522a1f082c512726433f0996f6f4ea9855199d70d04bc5c28b20",
+        "ffn_up_shexp.weight": "6c271a3db52f6b6072efa805176096718bd5e89f211bbe050c31f019d4947fb8",
+        "ffn_down_shexp.weight": "eef10eccd28047917e3e290c2b88d1a64d8b93bb3729a96a8b33ef8da684fa9c",
+        "ffn_gate_exps.weight": "14120902a97a829e7a8c12e576fc43836844a58a9d7cf7b7010944db6f6f7dcc",
+        "ffn_up_exps.weight": "0f247c9dde14bd2c1941135672ba80c92fe9c45272baa3a3f40838e7dbdcb7b0",
+        "ffn_down_exps.weight": "a5648457b0fcb80c92e7245a8cecefb1287a3de5d773b31717261b477d9b735c"
+      },
+      "original_extension_sha256": "19513f6a05ac8898d6ecff4c7a259326f87c3dcf185b74b2050d2a6a7fe8b561",
+      "schedules": [
+        {
+          "mode": 0,
+          "step": 0,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 130547712,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 0,
+          "step": 1,
+          "tokens": 9,
+          "prefill": 1,
+          "active_experts": 53,
+          "source_read_bytes": 864878592,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 864878592
+        },
+        {
+          "mode": 0,
+          "step": 2,
+          "tokens": 65,
+          "prefill": 1,
+          "active_experts": 148,
+          "source_read_bytes": 2415132672,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 2415132672
+        },
+        {
+          "mode": 0,
+          "step": 3,
+          "tokens": 129,
+          "prefill": 1,
+          "active_experts": 192,
+          "source_read_bytes": 3133145088,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 3133145088
+        },
+        {
+          "mode": 0,
+          "step": 4,
+          "tokens": 1024,
+          "prefill": 1,
+          "active_experts": 264,
+          "source_read_bytes": 4308074496,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 4308074496
+        },
+        {
+          "mode": 0,
+          "step": 5,
+          "tokens": 1025,
+          "prefill": 1,
+          "active_experts": 260,
+          "source_read_bytes": 4242800640,
+          "ram_hits": 0,
+          "ram_misses": 0,
+          "weight_upload_bytes": 4242800640
+        },
+        {
+          "mode": 1,
+          "step": 0,
+          "tokens": 1,
+          "prefill": 1,
+          "active_experts": 8,
+          "source_read_bytes": 130547712,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 1,
+          "step": 1,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 130547712,
+          "ram_hits": 0,
+          "ram_misses": 8,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 1,
+          "step": 2,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 0,
+          "ram_hits": 8,
+          "ram_misses": 0,
+          "weight_upload_bytes": 130547712
+        },
+        {
+          "mode": 1,
+          "step": 3,
+          "tokens": 9,
+          "prefill": 1,
+          "active_experts": 53,
+          "source_read_bytes": 766967808,
+          "ram_hits": 6,
+          "ram_misses": 47,
+          "weight_upload_bytes": 864878592
+        },
+        {
+          "mode": 1,
+          "step": 4,
+          "tokens": 65,
+          "prefill": 1,
+          "active_experts": 148,
+          "source_read_bytes": 2317221888,
+          "ram_hits": 6,
+          "ram_misses": 142,
+          "weight_upload_bytes": 2415132672
+        },
+        {
+          "mode": 1,
+          "step": 5,
+          "tokens": 129,
+          "prefill": 1,
+          "active_experts": 192,
+          "source_read_bytes": 3018915840,
+          "ram_hits": 7,
+          "ram_misses": 185,
+          "weight_upload_bytes": 3133145088
+        },
+        {
+          "mode": 1,
+          "step": 6,
+          "tokens": 1024,
+          "prefill": 1,
+          "active_experts": 264,
+          "source_read_bytes": 4177526784,
+          "ram_hits": 8,
+          "ram_misses": 256,
+          "weight_upload_bytes": 4308074496
+        },
+        {
+          "mode": 1,
+          "step": 7,
+          "tokens": 1025,
+          "prefill": 1,
+          "active_experts": 260,
+          "source_read_bytes": 4112252928,
+          "ram_hits": 8,
+          "ram_misses": 252,
+          "weight_upload_bytes": 4242800640
+        },
+        {
+          "mode": 1,
+          "step": 8,
+          "tokens": 1,
+          "prefill": 0,
+          "active_experts": 8,
+          "source_read_bytes": 0,
+          "ram_hits": 8,
+          "ram_misses": 0,
+          "weight_upload_bytes": 130547712
+        }
+      ]
+    }
+  ],
+  "geometry": {
+    "dim": 4096,
+    "hidden_dim": 2048,
+    "experts": 288,
+    "active_experts": 8,
+    "clamp": 10,
+    "route_scale": 2.5
+  },
+  "memory": {
+    "ram_expert_cache_budget_bytes": 134217728,
+    "bank_host_budget_bytes": 122683392,
+    "bank_device_budget_bytes": 122683392,
+    "bank_slots": 2,
+    "experts_per_bank": 3,
+    "backend_router_shared_weight_bytes": 31458432
+  },
+  "reference_profile": "Unchanged original full288 vector operators; matrix expert domain partitioned into [0,256) and [256,288), preserving token/slot geometry and bit-selecting outputs. Explicit checkpoint clamp10. Raw F32 router, BF16 activations, Q8 shared.",
+  "limitations": [
+    "Input activations are deterministic independent random BF16 values; no full decoder block or generation claim.",
+    "Original whole-plugin method omits clamp and matrix IDs above255 are unsupported; operator composition is the qualified profile.",
+    "No total process RSS bound: all GGUF source mappings remain open.",
+    "Layer11 repeated8 experts exceed128MiB cache and cause full misses; no universal warm-hit claim.",
+    "No GLM VRAM expert cache, serving, CPU/Metal full-model qualification, or vLLM performance parity claim."
+  ]
+}

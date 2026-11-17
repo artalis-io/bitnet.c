@@ -1,0 +1,175 @@
+{
+  "milestone": "Resident batched native FP16 dense projection",
+  "status": "Qualified CUDA component on pinned system cuBLAS; whole inference/vLLM objective remains active",
+  "implementation": {
+    "api": "BnGPUF16LinearResidentPlan and linear_f16_workspace_size/reserve/resident callbacks",
+    "weights": "Immutable backend-owned packed [K,N] FP16, created through bounded native block-row materialization. Source checkpoint remains unchanged.",
+    "execution": "Request-owned streams and cuBLAS handles. FP16 input and FP16 or FP32 output, full matrix geometry, COMPUTE_32F/default math. No bias or implicit conversions.",
+    "workspace": "48 MiB explicit request payload: dedicated 32 MiB for FP16 torch.matmul policy plus shared 16 MiB original F32 hgemm/trellis fallback. Setup-only, idempotent; existing trellis profile unchanged. Other library/context/resident allocations excluded.",
+    "validation": "Reject wrong backend/request/shape/type/count or overlapping views before queuing. Device errors poison request. Teardown drains stream before handles/workspaces are freed."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "probe-build": 0,
+      "library-link": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "native": 0,
+      "asan-native": 0,
+      "asan-unit": 0,
+      "memcheck": 0,
+      "memcheck-unit": 0,
+      "initcheck-unit": 0,
+      "nsys": 0,
+      "nsys-export": 0,
+      "nsys-cold": 0,
+      "nsys-cold-export": 0
+    },
+    "checkpoint_matrices": 10,
+    "batch_sizes": [
+      1,
+      7,
+      64,
+      256,
+      384,
+      1024
+    ],
+    "output_profiles": [
+      "FP16",
+      "FP32"
+    ],
+    "cases": 120,
+    "repetitions": 3,
+    "words_per_full_run": 909275136,
+    "mismatches": 0,
+    "synthetic_words": 886912,
+    "synthetic": "Exact dyadic integer dot products, 1x1/35x67/128x128 shapes, guards, rejection without output mutation, two request streams sharing one weight.",
+    "reference": "Paired system CUDA libraries only. Unchanged Torch forward AST for FP16; original F32 hgemm argument replay for FP32. Not original compiled extension or whole-model forward parity.",
+    "reference_manifest": "/tmp/bitnet-goal-f16-core-linear/paired-policy/reference.json",
+    "cuda_library_sha256": {
+      "/usr/local/cuda/lib64/libcublas.so.13": "b43f57b2185afdc10537b8422177edc7c1436f98cced0d2dc216b5acf9eeb00c",
+      "/usr/local/cuda/lib64/libcublasLt.so.13": "34e7a85fe998f33cff4e66968eb32b86ae973e10a66fc62e9ddb58d37763a1ff"
+    },
+    "profiles": {
+      "warmed": {
+        "scope": "Warmed native Engram wkv weight, M1024 K6144 N25600; 32 repeated FP16+FP32 output pairs, request-local stream/workspace. Capture delimiters excluded from no-synchronization statement.",
+        "operator_calls": 64,
+        "copies": [
+          0,
+          0
+        ],
+        "kernels": [
+          {
+            "name": "nvjet_sm120_hsh_mma_128x128x64_3_64x32x64_tmaAB_alignCD4_bz_NNNN",
+            "count": 32,
+            "total_ns": 36487010
+          },
+          {
+            "name": "nvjet_sm120_hss_mma_128x128x64_3_64x32x64_tmaAB_alignCD4_bz_NNNN",
+            "count": 32,
+            "total_ns": 36686404
+          }
+        ],
+        "runtime_api_counts": {
+          "cuDeviceGet": 64,
+          "cuKernelSetAttribute": 64,
+          "cuLaunchKernelEx": 64,
+          "cuStreamGetGreenCtx": 128,
+          "cudaGetLastError_v3020": 64,
+          "cudaSetDevice_v3020": 64
+        },
+        "allocation_copy_free_synchronize_api_calls": [],
+        "sqlite_sha256": "b33bf0635fa1acc0e1215dcae097444840a8b223ab4a2ab13b4b944050b52156",
+        "limitations": "One projection shape per capture. First-call capture includes GPU library module loads; no explicit allocation/copy/synchronization API does not imply no implicit library/driver memory or cold-start delay. No complete layer, generation, cold storage, CPU, Metal or vLLM throughput/latency parity claim."
+      },
+      "cold": {
+        "scope": "First-call native Engram wkv weight, M64 K6144 N25600; 32 repeated FP16+FP32 output pairs, request-local stream/workspace. Capture delimiters excluded from no-synchronization statement.",
+        "operator_calls": 64,
+        "copies": [
+          0,
+          0
+        ],
+        "kernels": [
+          {
+            "name": "nvjet_sm120_hsh_mma_256x112x64_2_64x56x64_tmaAB_alignCD4_splitK_NNNN",
+            "count": 32,
+            "total_ns": 6298902
+          },
+          {
+            "name": "nvjet_sm120_hss_mma_96x128x64_3_48x32x64_tmaAB_alignCD4_bz_NNNN",
+            "count": 32,
+            "total_ns": 7266395
+          },
+          {
+            "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+            "count": 32,
+            "total_ns": 385411
+          }
+        ],
+        "runtime_api_counts": {
+          "cuCtxGetCurrent": 80,
+          "cuDeviceGet": 64,
+          "cuKernelSetAttribute": 64,
+          "cuLaunchKernelEx": 64,
+          "cuLibraryGetKernel": 23,
+          "cuLibraryLoadData": 23,
+          "cuStreamGetGreenCtx": 128,
+          "cudaGetLastError_v3020": 128,
+          "cudaLaunchKernelExC_v11060": 32,
+          "cudaSetDevice_v3020": 64
+        },
+        "allocation_copy_free_synchronize_api_calls": [],
+        "sqlite_sha256": "be9f05643a4ec3fc3ab5c34042eed8aeaabfe9a79316665ea0fed345ea238ba5",
+        "limitations": "One projection shape per capture. First-call capture includes GPU library module loads; no explicit allocation/copy/synchronization API does not imply no implicit library/driver memory or cold-start delay. No complete layer, generation, cold storage, CPU, Metal or vLLM throughput/latency parity claim."
+      }
+    }
+  },
+  "numerical_findings": {
+    "workspace": "System cuBLAS: m6 Engram wkv M64 had 1287 FP16 differences with 16 MiB; 32 MiB exactly matches unchanged torch.matmul. Independent sweep held inputs/weights/source fixed and tested 1/4/8/16/32/64 MiB, math modes 0/1/16/17 and algorithms -1/99.",
+    "cross_version": {
+      "original_reference": "/tmp/bitnet-goal-f16-core-linear/reference.json",
+      "different_words": 93773073,
+      "total_words": 303091712,
+      "max_absolute_error": 0.00390625,
+      "note": "Original Torch-packaged versus paired system CUDA outputs differ. No bitwise equivalence claim across these library versions. Original references were retained."
+    }
+  },
+  "prior_attempts": {
+    "initial_cuda_suite": "One launch timeout in existing prefill-window test; no numeric failure in new checks. Focused flag lacked return and was corrected. A manually stopped rerun was superseded by subsequent clean passing suites.",
+    "initial_native_reference": "281319216 mismatches across three repeats against Torch-packaged cuBLAS. Oracle preserved.",
+    "paired_system_before_workspace_fix": "3861 mismatches (1287 repeated three times) only m6 M64 FP16; independent workspace sweep isolated 16 MiB versus Torch default 32 MiB. Both original output sets preserved."
+  },
+  "limitations": [
+    "Dense projection primitive only; complete numeric config, global core budgets/parameter assembly, HC4, routing, compressed shared/indexed attention, Engram and generation remain unfinished.",
+    "F32 reference replays original hgemm arguments rather than executing the compiled original extension. FP16 uses unchanged original LinearFP16.forward AST.",
+    "COMPUTE_32F/default math does not promise all internal vendor reductions stay FP32. Qualification covers pinned libraries, captured tensors and batch sizes.",
+    "Profiles cover warmed M1024 and first-call-after-setup M64 Engram wkv. No whole-model cold storage, throughput, latency, CPU/Metal execution or vLLM parity claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-f16-core-linear/qualification.json",
+    "reference": "/tmp/bitnet-goal-f16-core-linear/paired-policy/reference.json",
+    "cross_library": "/tmp/bitnet-goal-f16-core-linear/cross-library-comparison.json",
+    "continuation": "/tmp/bitnet-goal-f16-core-linear/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "c52e0eae21f5e211b004a07eb59274907dcc336cd76b32adc66ca1b4dc476b78",
+    "src/gpu_cuda.cu": "30d17cb99471aa2614a720ae1b58c66486d3e0d4ff7b1e26c1cb6951ddc00700",
+    "src/gpu_cuda_f16_rows.cuh": "0c0a11eaa217aa39cbc9520398579aa4b6a08905b3898b395fbe5530ef43e050",
+    "src/gpu_cuda_gdn.cuh": "96a3954422ade6a1662676c5305f5c1cf105c27ac519f9a4a4d5f949085a30d6",
+    "test/cuda_f16_linear_checks.h": "a0d1d93973b2e368aa5d3b5f2fbb703ead0d81f07205f2ae6450e8a58110d608",
+    "test/test_cuda_backend.c": "5f994bba8d2cf4f1c9a0c428e7914e05e1d295e7e4a75634447f9475fa5fd2df",
+    "Makefile": "e3b96cfb152348219abf03624bf8ab44520f8c448a0ff8860c9a7996f9761179"
+  }
+}

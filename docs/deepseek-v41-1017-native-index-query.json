@@ -1,0 +1,314 @@
+{
+  "status": "Qualified F16 index query and score backend components; full native attention, model admission, and vLLM parity remain open.",
+  "architecture": "DeepseekV41ForCausalLM",
+  "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "license": "MIT",
+    "file": "exllamav3/modules/attention_fn/dsa_triton.py",
+    "independent_reference": "Unchanged original Triton score kernels, source RoPE/norm, actual checkpoint projection matrices; original bundled and paired system cuBLAS captures retained separately.",
+    "rms_norm_epsilon": 1e-20
+  },
+  "apis": [
+    "index_query_f16_resident",
+    "index_score_f16_resident",
+    "index_query_score_f16_resident"
+  ],
+  "implementation": {
+    "query": "Caller-normalized F16 low-rank input -> F16 query projection; hidden states -> raw signed F16 head weights. Pure trailing-slice GPT-J RoPE, no query-head norm and no activation query scaling. INDEX_Q_SCALE describes checkpoint FP8 matrix storage, not an activation multiplier.",
+    "score": "F16 H32/D128 queries and keys, forward K128 tensor-core F32 accumulation, per-head ReLU, signed head-weight reduction, scale1/64, final half. Decode rows<=4 preserves compiled source first-pair FMA contraction and head reduction order; prefill uses ordered head FMAs. Future keys masked to negative infinity. Output stride multiple128; padding remains untouched.",
+    "storage": "Contiguous keys or caller-valid immutable I32 physical-page table with 128/256 entries per page. Exact disjoint request-owned views. No top-k, candidate selection, allocation, host transfer, or completion fence inside these operations.",
+    "loads": "Shared padded tiles; 16-byte vector loads when queries and keys permit, scalar staging fallback preserves four-byte public input alignment. Fallback exercised with keys shifted four bytes.",
+    "ownership": "Existing immutable backend projection owners and existing request F16 workspace. New kernels contain private CUDA mechanics only. No model anatomy, session cursor, pool ownership, or provider placement changes."
+  },
+  "coverage": {
+    "source_cases": 384,
+    "index_layers": [
+      2,
+      8,
+      14,
+      20,
+      24,
+      28,
+      32,
+      36
+    ],
+    "rows": [
+      1,
+      2,
+      4,
+      5,
+      7,
+      31,
+      32,
+      33,
+      64,
+      129,
+      256,
+      273
+    ],
+    "positions": [
+      0,
+      65535
+    ],
+    "layouts": [
+      "contiguous",
+      "reverse paged with spare physical page"
+    ],
+    "actual_calls_per_run": 768,
+    "request_instances": 2,
+    "compared_bytes_per_run": 1774778592,
+    "synthetic_pipeline_calls": 24,
+    "synthetic_cases": 12,
+    "guards": "Full output backing including padding; readonly input/key/table/frequency buffers; root guards, foreign request and alias rejection, whole-pipeline preflight and unreserved rejection.",
+    "history_scope": "Long logical key histories repeat checkpoint-derived canonical compressed key rows. This is synthetic extended history, not an independently qualified full long-prefix model run."
+  },
+  "verification": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "real": 0,
+        "score-original": 0,
+        "asan-real": 0,
+        "asan-score": 0,
+        "memcheck-combined": 0,
+        "memcheck-score": 0,
+        "initcheck-combined": 0,
+        "initcheck-score": 0,
+        "racecheck": 0,
+        "nsys-prefill": 0,
+        "export-prefill": 0,
+        "nsys-decode": 0,
+        "export-decode": 0
+      },
+      "records": {
+        "real": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 0
+        },
+        "score-original": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 1
+        },
+        "asan-real": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 0
+        },
+        "asan-score": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 1
+        },
+        "memcheck-combined": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 0
+        },
+        "memcheck-score": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 1
+        },
+        "initcheck-combined": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 0
+        },
+        "initcheck-score": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 1
+        },
+        "nsys-prefill": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 0
+        },
+        "nsys-decode": {
+          "calls": 768,
+          "compared_bytes": 1774778592,
+          "hot_allocations": 0,
+          "score_only": 0
+        }
+      },
+      "frozen_files": 774,
+      "references": {
+        "/tmp/bitnet-goal-native-index-query/original-reference": "2507197d18ef0db83de55a6891a7e13f4a7dcafca21caf61c4072c70a654d830",
+        "/tmp/bitnet-goal-native-index-query/paired-reference": "07444f17fc6c09b3b9a58df90ff51b4d5ddae7615c267c04df85d702f7a51aa1"
+      },
+      "probe_sha256": "184541301a4a01ed89b41afa8b6d5dd9a34925f61cca15df15cd5faf40dda569"
+    },
+    "profiles": {
+      "prefill": {
+        "kernels": [
+          {
+            "name": "nvjet_sm120_hsh_mma_64x16x128__1...",
+            "duration_ns": 6368
+          },
+          {
+            "name": "nvjet_sm120_hsh_mma_32x16x128__2...",
+            "duration_ns": 2208
+          },
+          {
+            "name": "splitKreduce_kernel",
+            "duration_ns": 1376
+          },
+          {
+            "name": "rope_kernel",
+            "duration_ns": 2304
+          },
+          {
+            "name": "score",
+            "duration_ns": 52640
+          }
+        ],
+        "transfers": {},
+        "runtime": {
+          "cuStreamGetGreenCtx": 4,
+          "cuKernelSetAttribute": 2,
+          "cuLaunchKernelEx": 2,
+          "cudaLaunchKernelExC_v11060": 1,
+          "cuKernelGetName": 2,
+          "cudaLaunchKernel_v7000": 2,
+          "cudaStreamSynchronize_v3020": 1
+        }
+      },
+      "decode": {
+        "kernels": [
+          {
+            "name": "nvjet_sm120_hsh_mma_64x8x128_5_1...",
+            "duration_ns": 4832
+          },
+          {
+            "name": "dot_kernel",
+            "duration_ns": 2144
+          },
+          {
+            "name": "reduce_1Block_kernel",
+            "duration_ns": 1120
+          },
+          {
+            "name": "rope_kernel",
+            "duration_ns": 2176
+          },
+          {
+            "name": "score",
+            "duration_ns": 4384
+          }
+        ],
+        "transfers": {},
+        "runtime": {
+          "cuStreamGetGreenCtx": 4,
+          "cuKernelSetAttribute": 1,
+          "cuLaunchKernelEx": 1,
+          "cuKernelGetName": 4,
+          "cudaLaunchKernel_v7000": 4,
+          "cudaStreamSynchronize_v3020": 1
+        }
+      }
+    }
+  },
+  "performance": {
+    "baseline": {
+      "method": "Median7 CUDA-event samples,400 kernel calls each via captured graphs; kernels only, not end-to-end model/vLLM.",
+      "cases": [
+        {
+          "rows": 1,
+          "keys": 513,
+          "source_us": 2.4612799286842346,
+          "native_us": 14.705920219421387,
+          "ratio": 5.974907627546032
+        },
+        {
+          "rows": 32,
+          "keys": 4097,
+          "source_us": 42.54439830780029,
+          "native_us": 107.67359733581543,
+          "ratio": 2.530852512164311
+        },
+        {
+          "rows": 33,
+          "keys": 16385,
+          "source_us": 43.62624168395996,
+          "native_us": 186.2015151977539,
+          "ratio": 4.268108092983277
+        },
+        {
+          "rows": 256,
+          "keys": 513,
+          "source_us": 48.33807945251465,
+          "native_us": 109.74240303039551,
+          "ratio": 2.2703095421530337
+        }
+      ]
+    },
+    "optimized": {
+      "method": "Median7 CUDA-event samples,400 kernel calls each via captured graphs; kernels only, not end-to-end model/vLLM.",
+      "cases": [
+        {
+          "rows": 1,
+          "keys": 513,
+          "source_us": 2.4587200582027435,
+          "native_us": 3.6985599994659424,
+          "ratio": 1.5042623445995262
+        },
+        {
+          "rows": 32,
+          "keys": 4097,
+          "source_us": 42.25024223327637,
+          "native_us": 50.1637601852417,
+          "ratio": 1.187301126186979
+        },
+        {
+          "rows": 33,
+          "keys": 16385,
+          "source_us": 43.23063850402832,
+          "native_us": 69.81152057647705,
+          "ratio": 1.614862120761225
+        },
+        {
+          "rows": 256,
+          "keys": 513,
+          "source_us": 48.143839836120605,
+          "native_us": 48.743038177490234,
+          "ratio": 1.0124460023007984
+        }
+      ]
+    },
+    "scope": "Isolated index score kernels compared with pinned source Triton under CUDA graphs; not vLLM and not full model prefill/decode. Remaining source-kernel gaps remain open."
+  },
+  "limitations": [
+    "CUDA execution qualified only on selected sm120a GPU.",
+    "Full-model short/long/chunked/resumed generation remains unqualified for this native path.",
+    "Candidate hierarchy, top-k tie semantics, compressed and sliding attention, F32 output de-rotation, output projection, and Engram integration remain open.",
+    "No new CPU or Metal implementation or performance claim.",
+    "Current component completion boundaries still need full-model asynchronous coordination."
+  ],
+  "artifacts": "/tmp/bitnet-goal-native-index-query",
+  "frozen_source_sha256": "ea630527b56321b54a930eb2b198a7ed1fff9932c061758b19c7f97dd9a30134"
+}

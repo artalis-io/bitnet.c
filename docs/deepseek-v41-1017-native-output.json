@@ -1,0 +1,74 @@
+{
+  "status": "Qualified native CUDA grouped output projection primitive and same-stream attention composition. Full native model forward/controller admission and vLLM parity remain open.",
+  "apis": [
+    "BnGPUF16GroupedOutputWorkspace",
+    "bn_gpu_f16_grouped_output_workspace",
+    "BnGPUF16GroupedOutputResidentPlan",
+    "grouped_output_f16_resident"
+  ],
+  "implementation": {
+    "geometry": "Generic groups1..64, positive K/N, rows1..16384. Actual checkpoint G8 K4096 N1024, down8192->5120.",
+    "layout": "One immutable packed[K,G*N] group weight. Eight independent GEMMs retain weight leading dimension G*N and write F16 directly into disjoint columns of down.x[rows,G*N]. Existing down linear emits F16/F32. No weight duplication, group-output scratch or concatenation kernel/copy, for prefill and decode.",
+    "arithmetic": "Group GEMMs use FP32 accumulation with F16 intermediate rounding. F16 down uses existing native32MiB cuBLAS handle; F32 down uses existing16MiB source-policy handle.",
+    "ownership": "Backend owns immutable weight handles; caller request owns activations and reserved48MiB linear workspace. No allocations, transfers, internal fences or position/ring commits in operation.",
+    "preflight": "Validate all dimensions, handles, types, exact view counts, alignment, request identity, reserved workspace and activation disjointness before any enqueue. Failed GEMMs mark request failed."
+  },
+  "references": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "method": "Unchanged original grouped projection and LinearFP16.forward AST. F16 original torch.matmul; F32 original hgemm.cu argument/workspace policy replay, not compiled full PyTorch extension. System cuBLAS13.10.",
+    "cases": 376,
+    "synthetic": "All40 layers with actual immutable packed checkpoint WoA/WoB; rows1/4/32/273; F16/F32 outputs.",
+    "checkpoint_derived": "28 independently captured attention outputs, two output dtypes. Parent histories repeat canonical checkpoint values and use synthetic causal IDs; not a full-prefix forward."
+  },
+  "artifacts": "/tmp/bitnet-goal-native-output",
+  "open_work": [
+    "Full native attention/controller/Engram/forward integration and admission",
+    "Matched vLLM prefill and decode within5%",
+    "Expert offload, serving and backend qualification in broader goal"
+  ],
+  "qualification": {
+    "clean_build": "Zero warnings; standard suite, full CUDA suite, BF16 diagnostics and diagnostic isolation passed.",
+    "frozen_files": 797,
+    "projection": {
+      "calls": 1504,
+      "compared_bytes": 17517618176,
+      "hot_allocations": 0,
+      "internal_syncs": 0
+    },
+    "combined": {
+      "calls": 224,
+      "compared_bytes": 6014004992,
+      "hot_allocations": 0,
+      "internal_syncs": 0
+    },
+    "sanitizers": "Normal, ASAN/UBSAN C probe, CUDA memcheck with full leak check, and initcheck passed all1504 projection and224 combined calls.",
+    "asan_scope": "C probes, inline workspace planner and JSON module; CUDA host validation TU not ASAN instrumented",
+    "race": "96 bounded dyadic unit calls; actual checkpoint normal/ASAN/memcheck/initcheck, no full-checkpoint race run; zero hazards.",
+    "unit": "96 exact dyadic calls,434576 output words, malformed preflight/request/guard checks.",
+    "legacy_attention": "160 independent synthetic/checkpoint attention calls passed with final objects.",
+    "references": "5575 unique payloads across7 parent manifests hash-audited. Independent golden values preserved.",
+    "qwen27": "Fresh strict CUDA gate:192/192 continuation IDs,8/8 first-token IDs; equal token counts.",
+    "harness_correction": "First qualification stopped before GPU execution for compiler path-truncation warning in external combined probe. Dynamic path construction corrected; final probes zero warnings. Runtime/goldens unchanged."
+  },
+  "traces": {
+    "prefill": {
+      "rows": 273,
+      "kernel_ns": 243617,
+      "transfer_bytes": 0,
+      "hot_allocations": 0,
+      "layout_kernels": 0,
+      "completion_fences": 1,
+      "scope": "One warmed real callback on request stream:9 GEMM kernels and9 cuBLAS split-K reductions. Sole fence is caller completion, outside primitive. Profiled time only; no source/vLLM comparison."
+    },
+    "decode": {
+      "rows": 1,
+      "kernel_ns": 120288,
+      "transfer_bytes": 0,
+      "hot_allocations": 0,
+      "layout_kernels": 0,
+      "completion_fences": 1,
+      "scope": "One warmed real callback on request stream:9 GEMM kernels and9 cuBLAS split-K reductions. Sole fence is caller completion, outside primitive. Profiled time only; no source/vLLM comparison."
+    },
+    "comparison": "Single profiled callback timings are not a source or vLLM parity benchmark."
+  }
+}

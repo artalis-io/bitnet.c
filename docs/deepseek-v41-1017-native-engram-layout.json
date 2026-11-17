@@ -1,0 +1,77 @@
+{
+  "milestone": "Native architecture-owned Engram hash-layout resolution",
+  "status": "qualified component; full goal remains active",
+  "parent": "docs/deepseek-v41-1017-native-row-binding.json",
+  "api": {
+    "architecture": "bn_model_arch_native_engram_layout(document,layer,out)",
+    "model": "bn_model_native_engram_layout(model,layer,out)",
+    "result": "Caller-owned BnModelNativeEngramLayout with sizes, offsets, odd multipliers, rows, head geometry and raw pad token ID."
+  },
+  "semantics": [
+    "Enumerate prime bucket sizes across all Engram tables in configuration order, including nonascending layer order. Validate every configured table row sum before publishing any result.",
+    "Portable C11 PCG64 with explicit high/low 64-bit arithmetic, SeedSequence and rejection sampling reproduces NumPy 2.3.5; includes cached 32-bit sampling when the bounded integer range fits. No compiler 128-bit extension.",
+    "Metadata-only deterministic query. No payload reads, persistent mutable RNG state, GPU work, token normalization, history or generation admission.",
+    "Model adapter requires prepared anatomy and numerics. Original pad token must be mapped before hashing."
+  ],
+  "limits": {
+    "layers": 128,
+    "max_ngram": 16,
+    "max_total_heads": 128,
+    "bucket_prime_max": "INT_MAX"
+  },
+  "reference": {
+    "source": "Pinned original Engram capture /tmp/bitnet-goal-native-engram/reference-final",
+    "manifest_sha256": "92875f3309c982a04a8d7bbea0221f729454af3c4be387019e610e97df8778ae",
+    "layout_sha256": "00206c2ca4f7ef0083fed816afdd3185194a1fa100d83a9d0c9d61647b0860b7",
+    "generator": "test/reference_native_engram_layout.py",
+    "primary_rng_sources": [
+      "https://github.com/numpy/numpy/blob/v2.3.5/numpy/random/bit_generator.pyx",
+      "https://github.com/numpy/numpy/blob/v2.3.5/numpy/random/src/pcg64/pcg64.h",
+      "https://github.com/numpy/numpy/blob/v2.3.5/numpy/random/src/distributions/distributions.c"
+    ],
+    "golden_header": "test/native_engram_layout_reference.h",
+    "cases": "Both original real table layouts plus 128 layer seeds x16 draws x2 compressed vocabulary ranges, including repeated cached32-bit draws/rejection. Output preservation on malformed tables, duplicate/out-of-range layers and geometry rejection; nonascending table order."
+  },
+  "qualification_artifacts": "/tmp/bitnet-goal-native-hash-layout",
+  "not_claimed": [
+    "Native token-map/normalization or carried hash history",
+    "Whole Engram/PLE/HCA forward or CLI admission",
+    "Full-model vLLM prefill/decode parity",
+    "New ARM/Metal/WASM execution coverage or CUDA kernels"
+  ],
+  "validation": {
+    "clean_product_build": "zero warnings",
+    "standard_suite": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "probes": "normal and ASAN builds with zero warnings",
+    "frozen_sources": 818,
+    "checks": {
+      "layout-unit": 0,
+      "asan-layout-unit": 0,
+      "negative-reference": 0,
+      "reference-replay": 0,
+      "row-binding-unit": 0,
+      "asan-row-binding-unit": 0,
+      "normal-probe": 0,
+      "asan-probe": 0,
+      "memcheck-probe": 0,
+      "initcheck-probe": 0,
+      "bounded-row-race": 0,
+      "qwen27-compat": 0
+    },
+    "actual_model_adapter": "Real checkpoint BnModel layout queries for both Engram layers match all original sizes, offsets and multipliers before GPU initialization.",
+    "row_pipeline_regression": {
+      "calls": 72,
+      "exact_bf16_bytes": 4202496,
+      "tables": 2,
+      "cache_host_bound": 525360,
+      "cache_host_allocated": 525296,
+      "session_row_host": 600,
+      "session_row_pinned": 65536,
+      "session_row_device": 167936
+    },
+    "qwen27": "Fresh strict independent llama.cpp sampled-ID match192/192, first8/8, count mismatch0/8.",
+    "sanitizer_scope": "New C layout/model/runtime and unit/probe instrumentation with ASAN+UBSAN. Legacy moe_cpu_kernels.o and CUDA translation units use normal build. CUDA memcheck with full leak check and initcheck pass; unchanged row kernel bounded racecheck passes. No whole-core racecheck.",
+    "reference_integrity": "Pinned original manifest and raw-layout hash checked by generator; checked-in header replay is byte-identical. Negative tests reject modified layout/manifest and preserve differing output. Before/after source, binary and reference hashes checked; four protected user binaries preserved."
+  }
+}

@@ -1,0 +1,1644 @@
+{
+  "schema": 1,
+  "status": "accepted_for_declared_linux_cuda_ram_resident_expert_workload",
+  "evidence_root": "/tmp/bitnet-goal-expert-ram-pages",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "change": "The existing expert-cache slab receives best-effort Linux MADV_HUGEPAGE advice through the platform module, before first use. Only complete OS pages within the allocation are advised. No new storage, pre-touch, handles or free path; unsupported platforms/kernel refusal keep existing behavior.",
+  "implementation": {
+    "api": "bn_platform_advise_huge_pages",
+    "header": "include/platform.h",
+    "implementation": "src/platform.c",
+    "consumer": "src/moe_cache.c",
+    "minimum_span_bytes": 2097152,
+    "platform_scope": "Linux with MADV_HUGEPAGE; no-op elsewhere",
+    "allocation_alignment_and_memory_quotes_unchanged": true,
+    "model_arch_quant_gpu_code_unchanged": true,
+    "global_kernel_settings_changed": false
+  },
+  "workload": {
+    "replication_of": "/tmp/bitnet-goal-expert-ram-pages/page-pair-plan.json",
+    "reason": "Original timed run2 reported48 filesystem input blocks, missing the predeclared zero-input condition. Repeat the same workload, warmups, paired order and thresholds; retain the original series.",
+    "scope": "Optional expert-RAM huge-page hint, current shared-fused CUDA product before/after. Two identical1026-token cohorts,2live,4requests,1output each. No trace or memory sampler in these runs.",
+    "runs": [
+      "old",
+      "new",
+      "old",
+      "new",
+      "new",
+      "old",
+      "old",
+      "new"
+    ],
+    "warmup_runs": [
+      0,
+      1
+    ],
+    "timed_pairs": [
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ]
+    ],
+    "ram_cache_mib": 195060,
+    "host_cap_mib": 200000,
+    "gpu_cache_mib": 26008,
+    "maxseq": 2304,
+    "prefill_tokens": 2048,
+    "total_prompt_tokens": 4104,
+    "timing": "Client receipt of first flushed admission to last flushed completion; cold and reused cohort windows separately. Target wait4 RSS/fault/CPU/IO counters after exit.",
+    "cache_state": "Application cache empty for every process. Two excluded old/new warmup processes precede measurements to prime source filesystem pages; record actual target filesystem-input counters.",
+    "affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127
+    ],
+    "acceptance": [
+      "Exact immutable source token/text/position prefixes in every run; independent full-head controls separate.",
+      "Same logical upload/source bytes, pool geometry and cache/host/device caps.",
+      "At least75% reduction of median target minor faults; at least5% gain in paired geometric mean cold-cohort throughput, with warm-cohort geometric mean latency no worse than1.05x.",
+      "All timed target filesystem-input counters must be zero for the OS-warm comparison claim.",
+      "Keep every run and reject/revise an unhelpful candidate; do not retune workload after seeing results."
+    ],
+    "full_goal_complete": false
+  },
+  "binaries": {
+    "old": {
+      "path": "/tmp/bitnet-goal-expert-ram-pages/prior-bitnet",
+      "sha256": "9dd6e487f0fb59673ae1d4a64b3ab4a49758d5ee501bb7f866756a670cdeeca7"
+    },
+    "new": {
+      "path": "/home/mark/artalis.io/src/bitnet.c/bitnet",
+      "sha256": "8e49cee42a832543ecae75f3f743d1229441177ca9f26ce03a5a5c9f05cb9725"
+    }
+  },
+  "accepted_measurements": {
+    "assessment": {
+      "pairs": [
+        {
+          "cold_throughput": 1.8075885535183736,
+          "warm_latency": 0.9903680512855981,
+          "total_throughput": 1.5798261870828518
+        },
+        {
+          "cold_throughput": 1.7916604017848003,
+          "warm_latency": 0.9986451241457323,
+          "total_throughput": 1.566785316952701
+        },
+        {
+          "cold_throughput": 1.7691225918333413,
+          "warm_latency": 0.9978544082983126,
+          "total_throughput": 1.5547023633633967
+        }
+      ],
+      "cold_throughput": 1.7893875119608023,
+      "warm_latency": 0.9956155308801974,
+      "total_throughput": 1.5670710468882383,
+      "median_fault_ratio": 0.010332992712798852,
+      "all_timed_filesystem_inputs_zero": true,
+      "input_blocks": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "accepted": true
+    },
+    "summary": {
+      "old": {
+        "cold_cohort_ms": 27466.968428,
+        "warm_cohort_ms": 6100.241248,
+        "window_ms": 33596.123815,
+        "prompt_tokens_per_second": 122.15694949212104,
+        "median_minor_faults": 28292481,
+        "max_reported_rss_bytes": 116140150784
+      },
+      "new": {
+        "cold_cohort_ms": 15325.229118,
+        "warm_cohort_ms": 6087.152621,
+        "window_ms": 21419.651411,
+        "prompt_tokens_per_second": 191.59975674918795,
+        "median_minor_faults": 292346,
+        "max_reported_rss_bytes": 116150849536
+      }
+    },
+    "runs": [
+      {
+        "index": 0,
+        "binary": "old",
+        "warmup": true,
+        "window_ms": 34243.999233,
+        "cold_cohort_ms": 28140.755962,
+        "warm_cohort_ms": 6099.788558,
+        "prompt_tokens_per_second": 119.84581508940953,
+        "total_process_ms": 51902.430494,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9151.494876,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 22225.830629
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116136030208,
+          "minor_page_faults": 28292479,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 26.147436,
+          "system_cpu_seconds": 25.739476
+        }
+      },
+      {
+        "index": 1,
+        "binary": "new",
+        "warmup": true,
+        "window_ms": 21401.989882,
+        "cold_cohort_ms": 15295.370507,
+        "warm_cohort_ms": 6102.751299,
+        "prompt_tokens_per_second": 191.75787030212743,
+        "total_process_ms": 37596.474924,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8703.766074,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 9786.502204
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116151832576,
+          "minor_page_faults": 292343,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 26.452492,
+          "system_cpu_seconds": 11.125786
+        }
+      },
+      {
+        "index": 2,
+        "binary": "old",
+        "warmup": false,
+        "window_ms": 33596.123815,
+        "cold_cohort_ms": 27466.968428,
+        "warm_cohort_ms": 6125.391211,
+        "prompt_tokens_per_second": 122.15694949212104,
+        "total_process_ms": 51829.734806,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9168.882101,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 21546.231288
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116132212736,
+          "minor_page_faults": 28292481,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 26.74736,
+          "system_cpu_seconds": 25.064652
+        }
+      },
+      {
+        "index": 3,
+        "binary": "new",
+        "warmup": false,
+        "window_ms": 21265.708905,
+        "cold_cohort_ms": 15195.365325,
+        "warm_cohort_ms": 6066.391757,
+        "prompt_tokens_per_second": 192.98674774181012,
+        "total_process_ms": 36735.3403,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8663.067291,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 9729.670212
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116150849536,
+          "minor_page_faults": 292346,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 25.754776,
+          "system_cpu_seconds": 10.964627
+        }
+      },
+      {
+        "index": 4,
+        "binary": "new",
+        "warmup": false,
+        "window_ms": 21419.651411,
+        "cold_cohort_ms": 15325.229118,
+        "warm_cohort_ms": 6090.661552,
+        "prompt_tokens_per_second": 191.59975674918795,
+        "total_process_ms": 36687.872069,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8714.644138,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 9794.778997
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116148289536,
+          "minor_page_faults": 292356,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 25.56999,
+          "system_cpu_seconds": 11.099259
+        }
+      },
+      {
+        "index": 5,
+        "binary": "old",
+        "warmup": false,
+        "window_ms": 33559.995325,
+        "cold_cohort_ms": 27457.606159,
+        "warm_cohort_ms": 6098.924838,
+        "prompt_tokens_per_second": 122.28845565251876,
+        "total_process_ms": 51500.584705,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9140.540786,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 21520.921959
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116136337408,
+          "minor_page_faults": 28292488,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 26.77002,
+          "system_cpu_seconds": 24.70948
+        }
+      },
+      {
+        "index": 6,
+        "binary": "old",
+        "warmup": false,
+        "window_ms": 33879.944674,
+        "cold_cohort_ms": 27776.31183,
+        "warm_cohort_ms": 6100.241248,
+        "prompt_tokens_per_second": 121.13360985354484,
+        "total_process_ms": 52232.693927,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9143.573603,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 21832.64705
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116140150784,
+          "minor_page_faults": 28292477,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 26.78722,
+          "system_cpu_seconds": 25.432513
+        }
+      },
+      {
+        "index": 7,
+        "binary": "new",
+        "warmup": false,
+        "window_ms": 21791.916879,
+        "cold_cohort_ms": 15700.614507,
+        "warm_cohort_ms": 6087.152621,
+        "prompt_tokens_per_second": 188.3267095220458,
+        "total_process_ms": 38006.657919,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8720.748579,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 10159.611772
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116149284864,
+          "minor_page_faults": 292343,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 26.530206,
+          "system_cpu_seconds": 11.451657
+        }
+      }
+    ]
+  },
+  "interpretation": "On this checkpoint/profile/GPU and fixed large-RAM prefill workload, the unchanged strict repeat passes all prospective gates: paired geometric mean cold throughput1.789x, total burst throughput1.567x, warm latency0.996x, median minor-fault ratio0.01033. This is an expert-RAM paging result, not a GPU-kernel, decode, vLLM parity or universal performance claim.",
+  "original_series": {
+    "assessment": {
+      "accepted_for_os_warm_comparison": false,
+      "reason": "Predeclared whole-target filesystem-input guard missed in timed run2.",
+      "timed_input_blocks": {
+        "2": 48,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        "6": 0,
+        "7": 0
+      },
+      "original_runs_preserved": true,
+      "criteria_unchanged": true
+    },
+    "runs": [
+      {
+        "index": 0,
+        "binary": "old",
+        "warmup": true,
+        "window_ms": 87944.447874,
+        "cold_cohort_ms": 57143.989621,
+        "warm_cohort_ms": 30786.537204,
+        "prompt_tokens_per_second": 46.66582256426118,
+        "total_process_ms": 108963.864278,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 33979.627492,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 51015.614406
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 115305275392,
+          "minor_page_faults": 28296739,
+          "major_page_faults": 3964593,
+          "filesystem_input_blocks": 31697744,
+          "user_cpu_seconds": 33.353726,
+          "system_cpu_seconds": 73.123646
+        }
+      },
+      {
+        "index": 1,
+        "binary": "new",
+        "warmup": true,
+        "window_ms": 83755.501706,
+        "cold_cohort_ms": 77596.07748,
+        "warm_cohort_ms": 6155.188909,
+        "prompt_tokens_per_second": 48.99976618140181,
+        "total_process_ms": 100418.74929,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9352.86086,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 71498.795202
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116148588544,
+          "minor_page_faults": 314810,
+          "major_page_faults": 15,
+          "filesystem_input_blocks": 10920,
+          "user_cpu_seconds": 27.590499,
+          "system_cpu_seconds": 72.80204
+        }
+      },
+      {
+        "index": 2,
+        "binary": "old",
+        "warmup": false,
+        "window_ms": 33768.99075,
+        "cold_cohort_ms": 27664.824557,
+        "warm_cohort_ms": 6100.676376,
+        "prompt_tokens_per_second": 121.53161551030365,
+        "total_process_ms": 52714.315355,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9136.98261,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 21753.322983
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116140474368,
+          "minor_page_faults": 28292487,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 48,
+          "user_cpu_seconds": 27.088138,
+          "system_cpu_seconds": 25.605186
+        }
+      },
+      {
+        "index": 3,
+        "binary": "new",
+        "warmup": false,
+        "window_ms": 21743.136618,
+        "cold_cohort_ms": 15679.782616,
+        "warm_cohort_ms": 6059.762159,
+        "prompt_tokens_per_second": 188.74921645860948,
+        "total_process_ms": 38445.405234,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8686.455756,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 10184.383852
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116150018048,
+          "minor_page_faults": 292340,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 27.019183,
+          "system_cpu_seconds": 11.412232
+        }
+      },
+      {
+        "index": 4,
+        "binary": "new",
+        "warmup": false,
+        "window_ms": 21478.429757,
+        "cold_cohort_ms": 15379.302109,
+        "warm_cohort_ms": 6095.55877,
+        "prompt_tokens_per_second": 191.07542061646623,
+        "total_process_ms": 37763.565255,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8754.342203,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 9813.073882
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116147523584,
+          "minor_page_faults": 292348,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 26.620027,
+          "system_cpu_seconds": 11.127757
+        }
+      },
+      {
+        "index": 5,
+        "binary": "old",
+        "warmup": false,
+        "window_ms": 33419.32113,
+        "cold_cohort_ms": 27312.059183,
+        "warm_cohort_ms": 6103.768154,
+        "prompt_tokens_per_second": 122.80321266956868,
+        "total_process_ms": 52558.854285,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9154.980695,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 21362.394714
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116140658688,
+          "minor_page_faults": 28292462,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 27.584762,
+          "system_cpu_seconds": 24.95788
+        }
+      },
+      {
+        "index": 6,
+        "binary": "old",
+        "warmup": false,
+        "window_ms": 34073.892519,
+        "cold_cohort_ms": 27966.652495,
+        "warm_cohort_ms": 6103.710286,
+        "prompt_tokens_per_second": 120.44412001685929,
+        "total_process_ms": 53225.769702,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 9145.813836,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 22050.497972
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116140707840,
+          "minor_page_faults": 28292498,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 27.721537,
+          "system_cpu_seconds": 25.485897
+        }
+      },
+      {
+        "index": 7,
+        "binary": "new",
+        "warmup": false,
+        "window_ms": 22164.361413,
+        "cold_cohort_ms": 16060.654693,
+        "warm_cohort_ms": 6099.744762,
+        "prompt_tokens_per_second": 185.16211333717436,
+        "total_process_ms": 38927.167426,
+        "tokens_text_positions_exact": true,
+        "batch": {
+          "completed": 4,
+          "steps": 2,
+          "group_calls": 2,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 17538,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 91153642292,
+          "shared_host_upper": 204607494601,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204651623513,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204651623513,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 233528712192,
+          "upload_ms": 8725.666214,
+          "ram_miss_bytes": 114913489920,
+          "source_read_bytes": 114913489920,
+          "source_read_ms": 10549.45279
+        },
+        "compute": {
+          "fused_kernel_launches": 1684,
+          "joint_fused_kernel_launches": 1684,
+          "avoided_fused_launches": 1684,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 332
+        },
+        "rusage": {
+          "max_rss_bytes": 116146196480,
+          "minor_page_faults": 292341,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "user_cpu_seconds": 27.048234,
+          "system_cpu_seconds": 11.855664
+        }
+      }
+    ],
+    "reason_retained": "Original timed run2 reported48 filesystem-input blocks. Its all-zero input guard failed, so it is not the accepted OS-warm series. The same protocol, warmups, order, workload and thresholds were repeated without edits to implementation or criteria."
+  },
+  "correctness": {
+    "total_new_exact_full_vocabulary_heads": 132,
+    "native_normal_asan": {
+      "normal": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 12,
+          "group_calls": 6,
+          "single_forwards": 10,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 200,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642943,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534607,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765534607,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "pool": {
+          "retained_host_payload": 19117712,
+          "peak_host_payload": 19117712,
+          "retained_pinned_payload": 37773312,
+          "peak_pinned_payload": 37773312,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "asan": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 12,
+          "group_calls": 6,
+          "single_forwards": 10,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 200,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642943,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534607,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765534607,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "pool": {
+          "retained_host_payload": 19117712,
+          "peak_host_payload": 19117712,
+          "retained_pinned_payload": 37773312,
+          "peak_pinned_payload": 37773312,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      }
+    },
+    "all_four_serving": {
+      "normal-native": {
+        "full_heads": 13,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      },
+      "normal-dense": {
+        "full_heads": 12,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      },
+      "normal-flash": {
+        "full_heads": 9,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      },
+      "normal-glm": {
+        "full_heads": 8,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      },
+      "asan-native": {
+        "full_heads": 13,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      },
+      "asan-dense": {
+        "full_heads": 12,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      },
+      "asan-flash": {
+        "full_heads": 9,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      },
+      "asan-glm": {
+        "full_heads": 8,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true,
+        "real_arrivals_during_first_execution": true
+      }
+    },
+    "large_ram_control": {
+      "tokens_text_positions_exact": true,
+      "cohorts": [
+        {
+          "ids": [
+            0,
+            1
+          ],
+          "window_ms": 15395.985362
+        },
+        {
+          "ids": [
+            2,
+            3
+          ],
+          "window_ms": 6110.262636
+        }
+      ],
+      "warm_to_initial_throughput_ratio": 2.5196928968799237,
+      "full_expert_storage_bytes": 204527370240,
+      "batch": {
+        "completed": 4,
+        "steps": 2,
+        "group_calls": 2,
+        "single_forwards": 0,
+        "shared_layer_steps": 80,
+        "fallback_layer_steps": 0,
+        "shared_expert_borrows": 17538,
+        "busy_retries": 0,
+        "created": 2,
+        "reused": 2,
+        "retained_device_payload": 3525820470,
+        "peak_device_payload": 3525820470,
+        "peak_live": 2
+      },
+      "memory": {
+        "host_limit": 209715200000,
+        "device_limit": 91153642292,
+        "shared_host_upper": 204607494601,
+        "shared_device_upper": 44901975488,
+        "reserved_host": 204651623513,
+        "reserved_device": 48427795958,
+        "peak_reserved_host": 204651623513,
+        "peak_reserved_device": 48427795958,
+        "busy": 0,
+        "idle_retained": 1
+      },
+      "experts": {
+        "upload_bytes": 233528712192,
+        "upload_ms": 8769.490257,
+        "ram_miss_bytes": 114913489920,
+        "source_read_bytes": 114913489920,
+        "source_read_ms": 9863.451633
+      },
+      "compute": {
+        "fused_kernel_launches": 1684,
+        "joint_fused_kernel_launches": 1684,
+        "avoided_fused_launches": 1684,
+        "individual_fused_kernel_launches": 0,
+        "folded_ffn_calls": 332
+      },
+      "physical": {
+        "process_max_rss_bytes": 116151070720,
+        "max_sampled_process_device_bytes": 22550675456,
+        "samples": 126,
+        "max_sample_spacing_ms": 318.721172,
+        "gpu_peak_is_sampled_lower_bound": true,
+        "target_rusage": {
+          "user_cpu_seconds": 26.503857,
+          "system_cpu_seconds": 11.135679,
+          "minor_page_faults": 292341,
+          "major_page_faults": 0,
+          "filesystem_input_blocks": 0,
+          "filesystem_output_blocks": 4152
+        },
+        "max_sampled_anon_huge_page_bytes": 114913443840,
+        "max_sampled_anonymous_bytes": 115807465472
+      },
+      "independent_exact_full_heads": 4,
+      "kernel_thp_policy": "always [madvise] never"
+    },
+    "numerical_acceptance": "Exact complete F32 vocabulary bytes, recorded input IDs, greedy IDs, text and positions against immutable independent references; no tolerance or gold changes."
+  },
+  "validation": {
+    "baseline_make_test": {
+      "exit": 0,
+      "command": [
+        "make",
+        "-j4",
+        "test"
+      ]
+    },
+    "final_clean_cuda_mkl_build": {
+      "exit": 0,
+      "command": [
+        "make",
+        "-j4",
+        "BN_ENABLE_CUDA=1",
+        "BN_ENABLE_MKL_VML=1",
+        "MKL_VML_ROOT=/tmp/bitnet-goal-bf16-vml/mkl",
+        "bitnet",
+        "bench_native_forward"
+      ]
+    },
+    "zero_compiler_warnings": true,
+    "standard_suite": {
+      "exit": 0,
+      "command": [
+        "make",
+        "-j4",
+        "BN_ENABLE_CUDA=1",
+        "BN_ENABLE_MKL_VML=1",
+        "MKL_VML_ROOT=/tmp/bitnet-goal-bf16-vml/mkl",
+        "test"
+      ]
+    },
+    "full_cuda_and_diagnostic_isolation": {
+      "exit": 0
+    },
+    "fresh_host_asan_ubsan_objects": 158,
+    "platform_sanitizer_and_fallback": {
+      "platform-asan": {
+        "command": [
+          "clang-18",
+          "-O1",
+          "-g",
+          "-fsanitize=address,undefined",
+          "-fno-omit-frame-pointer",
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Wshadow",
+          "-D_GNU_SOURCE",
+          "-Iinclude",
+          "-o",
+          "/tmp/bitnet-goal-expert-ram-pages/platform-asan",
+          "test/test_platform.c",
+          "src/platform.c",
+          "-lm"
+        ],
+        "exit": 0
+      },
+      "platform-fallback": {
+        "command": [
+          "cc",
+          "-O2",
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Wshadow",
+          "-D_GNU_SOURCE",
+          "-U__linux__",
+          "-U__APPLE__",
+          "-Iinclude",
+          "-o",
+          "/tmp/bitnet-goal-expert-ram-pages/platform-fallback",
+          "test/test_platform.c",
+          "src/platform.c",
+          "-lm"
+        ],
+        "exit": 0
+      }
+    },
+    "platform_probe": {
+      "compile_command": [
+        "cc",
+        "-O2",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Wshadow",
+        "-D_GNU_SOURCE",
+        "-Iinclude",
+        "-o",
+        "/tmp/bitnet-goal-expert-ram-pages/page-probe",
+        "/tmp/bitnet-goal-expert-ram-pages/page-probe.c",
+        "src/platform.c",
+        "-lm"
+      ],
+      "runs": {
+        "0": {
+          "command": [
+            "/tmp/bitnet-goal-expert-ram-pages/page-probe",
+            "0"
+          ],
+          "exit": 0,
+          "stdout": "minor_faults=65591 maxrss_kib=260096\nAnonymous:        262248 kB\nAnonHugePages:         0 kB\n",
+          "stderr": ""
+        },
+        "1": {
+          "command": [
+            "/tmp/bitnet-goal-expert-ram-pages/page-probe",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": "minor_faults=695 maxrss_kib=262240\nAnonymous:        262248 kB\nAnonHugePages:    260096 kB\n",
+          "stderr": ""
+        }
+      }
+    },
+    "asan_backend_and_native_group": true,
+    "diff_check_required": true
+  },
+  "memory": {
+    "unchanged_ram_cache_mib": 195060,
+    "unchanged_managed_host_cap_mib": 200000,
+    "unchanged_gpu_cache_mib": 26008,
+    "diagnostic_managed_host_peak_bytes": 204651623513,
+    "diagnostic_os_reported_process_max_rss_bytes": 116151070720,
+    "diagnostic_sampled_anon_huge_page_bytes": 114913443840,
+    "diagnostic_max_sampled_process_device_bytes": 22550675456,
+    "physical_device_peak_is_sampled_lower_bound": true,
+    "no_physical_memory_cap_claim": true
+  },
+  "reproducibility": {
+    "paired_producer": "/tmp/bitnet-goal-expert-ram-pages/run-page-repeat.py",
+    "original_producer": "/tmp/bitnet-goal-expert-ram-pages/run-page-pairs.py",
+    "whole_model_producers": [
+      "/tmp/bitnet-goal-expert-ram-pages/run-whole-defaults.py",
+      "/tmp/bitnet-goal-expert-ram-pages/run-compat.py",
+      "/tmp/bitnet-goal-expert-ram-pages/ram-trace-control.py"
+    ],
+    "commands": "Each run directory retains exact argv, raw events, client timestamps, stderr counters and target wait4 resource counters.",
+    "environment": {
+      "CUDA_VISIBLE_DEVICES": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+      "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+      "BN_CUDA_DEVICE": "0",
+      "LD_LIBRARY_PATH": "unset for native",
+      "LD_PRELOAD": "unset for native; GLM compatibility uses the established exact13.10 pair"
+    },
+    "kernel_policy": "always [madvise] never",
+    "hint_is_best_effort": true
+  },
+  "limitations": [
+    "Single checkpoint/profile/GPU and three accepted pairs; CPU frequency/affinity are not locked and broad hardware benefit is not established.",
+    "Performance workload is two identical1026-token prefill cohorts with1output each, under195060MiB RAM cache; no decode or sustained offered-load SLO claim.",
+    "The OS filesystem cache is warm for accepted timed runs; application expert caches start empty for each process and retain data for the second cohort.",
+    "Managed payload reservations include the full slab and retained idle resources. Process RSS and sampled device memory are different metrics; allocator/driver/OS-cache overhead is not an exact physical cap.",
+    "Precise exposed transfer stalls, varied cold/warm expert working sets, broader four-family performance and native folded/small/decode joint execution remain open.",
+    "Modern full-model AVX2/AVX512/NEON and Metal qualification remain open; generic platform fallback tests are not backend qualification."
+  ],
+  "historical_exception": {
+    "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+    "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+    "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+    "changed": true
+  }
+}

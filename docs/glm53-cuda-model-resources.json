@@ -1,0 +1,92 @@
+{
+  "scope": "Complete immutable GLM main-model backend resource preparation and ownership",
+  "whole_goal_complete": false,
+  "execution_admitted": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-model-resources",
+  "sanitizer_harness_sha256": "fb2847f202d877549d7f0a3dea5855a7b4abc36d8571bc6d7c76598a0000c689",
+  "harness_correction": "Standalone host sanitizer harness needed backend_model.h; production sources unchanged; corrected harness rerun independently.",
+  "source_sha256": {
+    "include/backend_layout.h": "85028f9df424c6d25bf1a712631c72ccebaf3607116fbb577956b29605331f7a",
+    "src/backend_layout.c": "522ca607f83d457da5749976bccbf28201f8f4701669e33ee5459cfbea7bc27f",
+    "test/test_gpu_backend.c": "913b4c4bd632000c0dc3ce74e7217202b41cbccaf653405a31c57721346ea14b",
+    "test/glm_model_layout_checks.h": "607b174352aacbfdb91f10aeb0cbcd24bdae6670f55598ba93f117b50a5ec649",
+    "test/test_cuda_glm_model_resources.c": "0c465b63291aa0bc85fcc323322785015dbd595312e4882370cacadea2f408e4",
+    "Makefile": "ab5da258c613bd2ed2ba7c1849236eecc712ca751c65b310f81e0208e62f9216"
+  },
+  "validation": {
+    "standard-final-exit": {
+      "exit": 0
+    },
+    "clean-exit": {
+      "exit": 0
+    },
+    "standard-exit": {
+      "exit": 0
+    },
+    "benches-exit": {
+      "exit": 0
+    },
+    "synccheck-exit": {
+      "exit": 0
+    },
+    "sanitize-exit": {
+      "exit": 0
+    },
+    "model-exit": {
+      "exit": 0
+    },
+    "cuda-exit": {
+      "exit": 0
+    },
+    "build-exit": {
+      "exit": 0
+    },
+    "memcheck-exit": {
+      "exit": 0
+    },
+    "replay-build-exit": {
+      "exit": 0
+    }
+  },
+  "cpu": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "main_layers": 45,
+  "kda_layers": 34,
+  "mla_layers": 11,
+  "moe_layers": 42,
+  "dense_layers": 3,
+  "mhc_resources": 90,
+  "retained_tensor_payload_bytes": 9916407032,
+  "peak_preparation_tensor_payload_bytes": 9916407032,
+  "peak_host_tensor_staging_bytes": 108347392,
+  "test_gpu_budget_bytes": 12884901888,
+  "test_host_staging_budget_bytes": 268435456,
+  "one_byte_short_gpu_budget_rejected": true,
+  "ownership": [
+    "Backend owner holds all GPU layouts, copied anatomy and stable copied expert-map descriptors.",
+    "CPU file/repacked expert source storage remains borrowed from the immutable CPU model.",
+    "Preparation stages privately; allocation, metadata, budget or attach failure frees staging and leaves destination unchanged.",
+    "No request-local state, KV, expert cache or mutable execution workspace belongs to this container."
+  ],
+  "coverage": [
+    "Synthetic two-layer dense/MoE model: every GPU upload/decode failure, aggregate GPU/host budgets, NaN global norm, malformed late layer, insufficient map count, input metadata independence and foreign-owner publication conflict.",
+    "Actual checkpoint: all45 main layers, all3 expert quant profiles, separate rawQ8 vocabulary tables, BF16 decoded final norm weights, aggregate payload checked against separately qualified component constants.",
+    "Actual one-byte-short aggregate budget rolls back completely; full device leak/memory/synchronization checks pass.",
+    "Complete CPU/CUDA suites and host ASAN/UBSAN pass."
+  ],
+  "limitations": [
+    "Weight preparation only; whole-model session/executor, final contraction/head arithmetic and token generation remain unqualified.",
+    "Budget counters cover tensor payload and explicit temporary staging, excluding allocator/context overhead, persistent host metadata, CPU mappings/expert source storage and request allocations.",
+    "No GLM VRAM expert cache or total process RSS bound.",
+    "No full-model CPU/Metal, serving, prefill/decode performance or vLLM parity claim."
+  ]
+}

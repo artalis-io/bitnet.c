@@ -1,0 +1,119 @@
+{
+  "status": "SOURCE ORDER AUDITED; runtime composition and numerical qualification remain open",
+  "upstream_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+  "scope": "Ordinary text, carried-pre DeepSeek V4.1; no TP, multimodal, draft overrides or conversion passes",
+  "native_adapter_limitation": "The qualified native Engram component explicitly adapts Diffbot INT4 BF16 lookup to Exllama F16 math; source ordering does not establish equivalence to the original Diffbot full forward",
+  "source_sha256": {
+    "architecture/deepseek_v4.py": "c7e0199c9002e929903d25739bd9e1d3c4dbec2b1ac7a20fcd077b50f6795e83",
+    "architecture/deepseek_v41.py": "18e0dc275d300e68ee09e51d890a029907dfd32a2e1c13a53f1b2cc0a3a48aff",
+    "modules/transformer.py": "a9a0a83dca3068018997587f3e8a5c49f4a4ae6fbc0640ab88ef2a9537777263",
+    "modules/hyperconnections.py": "4d1d2af0f666e91c7059048d874923df8afe3beed0bbab4790455a71c4f484d7",
+    "modules/ple.py": "c22d60b3d7d6765e37685a6383b54a2233f6063d2500dcb638f3c83010e598fc",
+    "modules/rmsnorm.py": "2145364078c17de81291a9b786b6517a880d6af79bec9ce6ff2f7686a3b41273"
+  },
+  "evidence": [
+    {
+      "file": "architecture/deepseek_v4.py",
+      "symbol": "DeepseekV4Model.__init__",
+      "line": 142,
+      "end_line": 229,
+      "rule": "Embedding, ExpandStreams, per-layer pre-block then TransformerBlock, HyperHead, final norm, head"
+    },
+    {
+      "file": "architecture/deepseek_v41.py",
+      "symbol": "DeepseekV41Model.prepare_inputs",
+      "line": 204,
+      "end_line": 210,
+      "rule": "Reset hc_pre to None at each forward, including resumed forwards"
+    },
+    {
+      "file": "architecture/deepseek_v41.py",
+      "symbol": "DeepseekV41Model.make_pre_block",
+      "line": 169,
+      "end_line": 201,
+      "rule": "Engram is a pre-block module selected by engram_layer_ids"
+    },
+    {
+      "file": "modules/ple.py",
+      "symbol": "PLELayer.forward",
+      "line": 597,
+      "end_line": 654,
+      "rule": "Flush deferred HC residual before preparing IDs/history or evaluating Engram"
+    },
+    {
+      "file": "modules/transformer.py",
+      "symbol": "TransformerBlock.forward",
+      "line": 145,
+      "end_line": 252,
+      "rule": "Attention HC mix, F32-input norm to F16, attention, HC apply; then FFN equivalent"
+    },
+    {
+      "file": "modules/hyperconnections.py",
+      "symbol": "HyperConnection._mix_unfused",
+      "line": 208,
+      "end_line": 268,
+      "rule": "Carry consumes previous pre, publishes current pre; first site collapses stream zero; small R uses half fn"
+    },
+    {
+      "file": "modules/hyperconnections.py",
+      "symbol": "HyperConnection._carry",
+      "line": 270,
+      "end_line": 276,
+      "rule": "Fallback confirms previous-site carry, with stream-zero initial collapse"
+    },
+    {
+      "file": "modules/hyperconnections.py",
+      "symbol": "HyperConnection.apply_",
+      "line": 278,
+      "end_line": 309,
+      "rule": "Residual is post times branch plus transposed combination times streams; optional deferral must land before any reader"
+    },
+    {
+      "file": "modules/hyperconnections.py",
+      "symbol": "HyperHead.forward",
+      "line": 839,
+      "end_line": 867,
+      "rule": "Flush residual, then vendor matmul using final site's pre; no new HC site or mean collapse"
+    },
+    {
+      "file": "modules/rmsnorm.py",
+      "symbol": "RMSNorm.forward",
+      "line": 106,
+      "end_line": 175,
+      "rule": "Normalize the original F32 collapse and request F16 output; do not cast input first"
+    }
+  ],
+  "forward_order": [
+    "Stage the whole raw/mapped token window once; reset HC carry for this forward",
+    "Gather BF16 embedding and expand to F32 streams [R,4,D]",
+    "For each layer in checkpoint order: finish previous residual; run optional Engram on current streams",
+    "Mix attention HC: collapse with previous pre (stream zero initially), publish own pre/post/comb",
+    "Normalize F32 collapse with layer attention norm to F16; run attention producer/consumer",
+    "Apply attention branch with that site's post/comb to F32 streams",
+    "Mix FFN HC: collapse with attention pre, publish FFN pre/post/comb",
+    "Normalize F32 collapse with layer FFN norm to F16; run source learned-router FFN",
+    "Apply FFN branch with that site's post/comb to F32 streams; retain FFN pre for next layer",
+    "Finish final residual; HyperHead matmul collapses with final FFN pre",
+    "Normalize F32 final collapse to F16; project vocabulary logits",
+    "After successful whole-model completion, publish logits and commit host history/position"
+  ],
+  "composition_requirements": [
+    "Use one canonical request for all resident views and backend-owned immutable weights",
+    "Ping-pong two disjoint F32 pre buffers; do not clear carry between sites or at Engram layers",
+    "Preserve post/comb until the matching branch residual has consumed them",
+    "Consume Engram out as the next stream stack; Engram does not advance HC carry",
+    "Keep batch geometry: R<=32 changes HC fn precision; arbitrary row tiling is not equivalent",
+    "Budget HC scratch and final norm/head workspace in addition to all existing component quotas",
+    "Existing lower-level visibility commits are not whole-model commit or reversible snapshots",
+    "After partial execution failure, invalidate the request and require reset/replay; host abort alone cannot undo KV/index/SSM writes",
+    "Do not expose native full-forward admission until independent full-chain and generation gates pass"
+  ],
+  "qualification_required": [
+    "Independent original-source captures of actual connected activations, not synthetic branch substitutes",
+    "Every layer's Engram, HC pre/post/comb/collapse, normalized input, attention/FFN output and residual streams",
+    "R1/7/17/32/33/129/513 matched-shape short/long/chunked/resumed forward and decode",
+    "Final carried head collapse, normalization, logits and sampled token IDs",
+    "Two interleaved sessions, history reset, BUSY handling, late failures and reset/replay recovery",
+    "Allocation/copy/fence profile and aggregate bounded memory; no vLLM parity claim from operator timing"
+  ]
+}

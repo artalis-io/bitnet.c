@@ -1,0 +1,167 @@
+{
+  "scope": "Shared BnModel topology/source ownership and budgeted backend preparation, with a separately reproduced AVX512 softmax scratch-alignment fix found during full host sanitizer validation",
+  "whole_goal_complete": false,
+  "ordinary_generation_admitted": false,
+  "generation_dispatch_integrated": false,
+  "performance_parity_claimed": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-integration",
+  "source_sha256": {
+    "include/model.h": "f34cccdb2a7b61e8935155db125c7636de4232af44b2a67c9e86e63cb9bd72d4",
+    "include/model_internal.h": "676e2161b319f87224584a07f70e8eb527bdbc276eab2c1a8020d360174371f9",
+    "src/model.c": "13f91ea52abf6a06317009dde30e29fa0a01a44b79923336c0cabc59a443d334",
+    "src/model_backend.c": "e16f25ba405b57f6493e3d2592b5533ab26599cd81bdd0e97a00825b9cf6ef86",
+    "src/session.c": "f6336b5ebfb39f137733b6764aa0a37b8c45d22501545748e00df96e314c5e60",
+    "test/glm_anatomy_checks.h": "b99ac862145cda84ff736e0f4180138c9166186012684957ae61b2079525847f",
+    "test/test_cuda_glm_request.c": "8a181d689520e9d03e18583f94b186a36b5fb69597a4539226bb9e923e80fc35",
+    "include/model_arch.h": "217051d0da377a27a78d88372856fd25796da7c3a2412c4d2c299c171f399aeb",
+    "src/model_arch.c": "92f998a0af40265e208f0fe7a4a2a9178b029b0d6158fe240016b9df0bd40f41",
+    "src/model_gpu.c": "c87b0be7f1e3611ba96e54f6f049c125ef2a752fa8d76f0daf384f0ead00574d",
+    "src/transformer/math_scalar.c": "dcbc3c24dc7f8d6a38188057e71baac5f0afc281f01a76cd074b906b078a3a93",
+    "test/test_transformer.c": "fcbf052eb850666924bbd1c83cf2919757a71414ee613eb5d7e4730d2d844623"
+  },
+  "validation": {
+    "baseline": {
+      "exit": 0
+    },
+    "clean": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "chunked-native": {
+      "exit": 0
+    },
+    "long-native": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "sanitize-transformer-build": {
+      "exit": 0
+    },
+    "sanitize-transformer": {
+      "exit": 0
+    },
+    "sanitize-native-build": {
+      "exit": 0
+    },
+    "sanitize-native": {
+      "exit": 0
+    },
+    "fixture-standard": {
+      "exit": 0
+    }
+  },
+  "independent_comparison": {
+    "chunked": {
+      "schedule": [
+        3,
+        6
+      ],
+      "reference": "/tmp/bitnet-goal-glm-chunked/chunked-reference",
+      "frames": 3,
+      "exact_files": 843,
+      "exact_typed_elements": 125862696,
+      "greedy": [
+        154827,
+        369,
+        279
+      ]
+    },
+    "long": {
+      "schedule": [
+        4097,
+        1,
+        3
+      ],
+      "reference": "/tmp/bitnet-goal-glm-long/long-reference",
+      "frames": 4,
+      "exact_files": 1256,
+      "exact_typed_elements": 4225638922,
+      "greedy": [
+        8004,
+        36482,
+        50,
+        197
+      ]
+    }
+  },
+  "protected_user_binaries": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "qualified_native_binary_sha256": "cb6d756090cf6442d3a382a0a2d54c43eca0963232e99e37d59dc2aab0af46bf",
+  "fixture_leak_cleanup": {
+    "pre_fix_bytes": 2201,
+    "pre_fix_allocations": 43,
+    "preserved_log": "clang-fixture-leaks-sanitize-transformer.log",
+    "fix": "Free test-owned runtime policy snapshots at teardown and before memset, detach and free the mock model backend/container. No production policy or numerical behavior changes.",
+    "verification": "Full Clang ASAN/UBSAN transformer suite with leak detection enabled plus final standard suite."
+  },
+  "sanitizer_toolchain": {
+    "compiler": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "isa_macros": {
+      "__AVX512F__": true,
+      "__AVX512DQ__": true,
+      "__AVX2__": true,
+      "__FMA__": true
+    },
+    "cxx_library": "/usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so",
+    "no_sanitizer_checks_disabled": true,
+    "gcc_asan_failures_preserved": [
+      "before-alignment-sanitize-transformer.log",
+      "gcc-after-alignment-sanitize-transformer.log",
+      "sanitize-context-instruction.log"
+    ],
+    "reason": "GCC13 ASAN O1 fake-stack alignment faults reproduced in both AVX512 scratch and ordinary aggregate initialization. Full suite is independently instrumented with Clang18, retaining AVX512 and leak/UB checks."
+  },
+  "avx512_tail_regression": {
+    "minimal_pre_fix_exit": 1,
+    "minimal_post_fix_exit": 0,
+    "pre_fix_evidence": [
+      "softmax-tail-before.log",
+      "sanitize-softmax-gdb.log",
+      "sanitize-softmax-alignment.log"
+    ],
+    "observed_fault": "GCC 13 ASAN -O1 native/256-preferred build issued aligned 64-byte vmovaps from a 32-byte-aligned fake-stack tail buffer. Independent softmax-only reproducer failed before the change and passed after.",
+    "fix": "C11 _Alignas(64) for internal AVX512 tail scratch. External inputs remain unaligned; arithmetic unchanged.",
+    "test": "Lengths 1..79 cover all vector tails and 64-element normalization boundaries against scalar, with external buffer guards.",
+    "optimized_bitwise_comparison": {
+      "before": {
+        "bytes": 132612,
+        "sha256": "15550f6364429f63415778c8ac672b177573e5db715a51848fee8344bc43b1d6"
+      },
+      "after": {
+        "bytes": 132612,
+        "sha256": "15550f6364429f63415778c8ac672b177573e5db715a51848fee8344bc43b1d6"
+      }
+    }
+  },
+  "ownership": {
+    "BnModel": "Owns immutable architecture-planned anatomy and per-layer quantized expert source descriptors. Minimal shared config is mapped by model_arch. GGUF directory/payload mappings remain borrowed and must outlive model/requests; source I/O descriptor arrays are owned by existing BnModelIO. No legacy CPU layer weights are fabricated.",
+    "BnBackendModel": "Owns device weights/packed resources. New model preparation wrapper consumes shared anatomy/maps/file through the existing transactional GLM binder with explicit device and host staging budgets. Expert sources/cache and per-request memory are excluded from these backend preparation budgets.",
+    "BnSession": "Backend-only sessions allocate host logits/history. Legacy CPU session creation and legacy GPU weight upload reject topology-only models. The qualified private request executor still owns its mutable state in backend session resources."
+  },
+  "corrected_initial_validation_failure": {
+    "check": "test_backend_matrix",
+    "reason": "Direct MoE config writes in model.c violated architecture ownership.",
+    "resolution": "Moved shared admission/source metadata mapping into model_arch helper. Boundary checks unchanged; revised full suite passes.",
+    "preserved_logs": "initial-standard.log and initial-build-*.log"
+  },
+  "limits": [
+    "The ordinary loader guard remains; CLI and shared BF16 position/capacity/restart/forward dispatch have not yet admitted GLM.",
+    "Qualified fused-recurrent KDA and deterministic chronological sparse selection profiles remain explicit; default HF/vLLM generation parity not established.",
+    "No natural-prompt coherence or performance parity claim.",
+    "Actual CUDA host ASAN/UBSAN instruments the changed owner/lifecycle sources and existing request/layout paths; device kernels were not reinstrumented in this ownership stage. Previous long-stage filtered device checks are separate evidence."
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "scope": "Experimental GGUF batch product interface; partial independent qualification, four-family release remains incomplete",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "evidence_root": "/tmp/bitnet-goal-gguf-product-batch",
+  "entry_point": "bitnet --cuda-batch MODEL.gguf --profile dense-bf16|flash-bf16|glm-recurrent (--batch-prompts FILE | --serve-stdio)",
+  "input": "JSON array of1..64 nonempty raw UTF8 prompts; FILE=- reads stdin",
+  "output": "Counted NDJSON admitted/token/completed/failed events; length-bounded greedy, prediction-first, final predicted token is not forwarded",
+  "scheduling": "Shared BnGenerateBatch admission/chunk planning/publication/failure and refill logic; maximum16 live requests",
+  "profiles": {
+    "dense-bf16": {
+      "model": "Qwen3.8 27B",
+      "checkpoint": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "execution": "Packed CUDA execution with the common GGUF managed-payload ledger and variable-capacity idle pool; adequate reuse and fenced KV growth/idle reclamation preserve live leases.",
+      "qualification": "Two queued canonical129-token requests with64 outputs each:128 complete F32 heads exactly reproduce independent BF16 source expansion; one creation and one reuse; repeated with frontend/tokenizer ASAN/UBSAN instrumentation",
+      "numerical_policy": "bench/policies/qwen38-cuda-single129.json",
+      "limits": "Aggregate payload quotas include shared model, packed coordinator and public/private request storage; the KV quota remains a subset bound. Idle storage counts. Opaque bookkeeping, load peaks and physical RSS/VRAM are outside this scope.",
+      "current_qualification": "1152 normal and1152 ASAN complete full heads exact, plus8 under CUDA memcheck. Includes four distinct live raw-text histories, eight-request cohort replacement, serial reuse, device-budget backpressure, exact quote checks and failed prepare/restart/resize disposal."
+    },
+    "flash-bf16": {
+      "model": "Qwen3.8 Flash Next",
+      "checkpoint": "/data/models/gguf/qwen3_8/flash_next/q4_k_xl/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+      "execution": "Shared raw expert uploads, joint CUDA FFN kernels and model-owned expert-cache union leases; request-private arithmetic/routing/KV/recurrent/PLE state. Healthy request buffers are retained in a budgeted idle pool and reused after restart.",
+      "qualification": "96 normal and69 ASAN/UBSAN complete F32 product heads exactly reproduce independent BF16 source expansion, including16 live requests, replacement, reversed order,1025-token prefill and129x7+122 chunked prefill followed by decode. Cached fallback reproduces4 heads. Lifecycle/transition tests reproduce7 heads per release/ASAN/memcheck variant.",
+      "shared_bank_evidence": "docs/flash-cuda-shared-banks.json",
+      "joint_kernel_evidence": "docs/cuda-joint-expert-kernels.json",
+      "cache_cohort_evidence": "docs/cuda-joint-expert-cache.json",
+      "current_cache_qualification": "185 normal/118 ASAN complete product heads exact, plus80 traced cached heads and20 matched uncached-control heads. Includes128MiB/4GiB managed cache budgets,16 live requests, replacement, warm reuse, mixed129x7+122 chunked prefill/decode and cached failure recovery.",
+      "serving_memory_evidence": "docs/cuda-serving-memory.json"
+    },
+    "glm-recurrent": {
+      "model": "GLM5.3 Flash",
+      "checkpoint": "/data/models/gguf/glm5_3_flash/ud_q4_k_xl/GLM-5.3-Flash-UD-Q4_K_XL-00001-of-00006.gguf",
+      "execution": "Shared raw expert uploads and joint CUDA FFN kernels with request-private arithmetic/routing/KV/recurrent state; healthy request buffers are retained in a budgeted idle pool and reused after restart.",
+      "qualification": "Captured cuBLAS13.10.0 profile:80 normal and68 ASAN/UBSAN product full heads exactly reproduce original BF16 references, plus12 product heads under CUDA memcheck. Covers replacement, reversed order,16 live requests, and2049-token chunked1024+1024+1 prefill followed by decode.",
+      "diagnosis": "The earlier0/6 comparison used historicalcuBLAS13.1.1 references against the current13.10.0 native binary. All8 observed MLA tensors,562 full-model fields and2 diagnostic heads match the unchanged original producer under matching13.10.0. Historical13.1 references remain unchanged; this does not establish cross-version bit identity.",
+      "library_profile_evidence": "docs/glm53-cuda-library-profile.json",
+      "shared_bank_evidence": "docs/glm53-cuda-shared-banks.json",
+      "current_regression_evidence": "docs/flash-cuda-shared-banks.json",
+      "joint_kernel_evidence": "docs/cuda-joint-expert-kernels.json",
+      "serving_memory_evidence": "docs/cuda-serving-memory.json"
+    }
+  },
+  "validation": {
+    "protected_clean_build": true,
+    "zero_compiler_warnings": true,
+    "standard_suite": true,
+    "full_cuda_suite_and_diagnostic_isolation": true,
+    "tokenizer_and_options_asan_ubsan": true,
+    "native_product_regression": {
+      "completed": 4,
+      "full_f32_heads": 22,
+      "metrics": {
+        "completed": 4,
+        "steps": 12,
+        "group_calls": 6,
+        "single_forwards": 10,
+        "shared_layer_steps": 40,
+        "fallback_layer_steps": 200,
+        "shared_expert_borrows": 9360,
+        "busy_retries": 0,
+        "created": 2,
+        "reused": 2,
+        "retained_device_payload": 4786680158,
+        "peak_device_payload": 4786680158
+      }
+    },
+    "qwen_legacy_tokens": "192/192 exact"
+  },
+  "memory": "All three GGUF profiles and the separate native DeepSeek adapter use the common managed HOST/DEVICE ledger. Per-request/native raw-pool/dense KV subset caps compose with aggregate admission. Idle storage stays charged. Native exact-shape and dense adequate-shape reuse retain their original numerical rules. Load/setup and physical RSS/VRAM bounds are not established.",
+  "fallbacks_are_reported": true,
+  "unsupported": "Profile/model-layout mismatch, unavailable CUDA/MKL and unsupported backend weight formats reject explicitly; no implicit CPU fallback",
+  "limitations": [
+    "GLM numerical qualification is specific to the capturedcuBLAS13.10.0 pair and declared chronological sparse profile; historical13.1 values are retained separately",
+    "Flash/GLM use joint cohort kernels with private arithmetic buckets, without concatenated-row GEMM; healthy GPU request buffers are now pooled under declared managed payload caps",
+    "Bounded burst input only; external arrival/cancellation transport and EOS stop are not implemented",
+    "No new performance parity or offload efficiency claim",
+    "CPU AVX2/AVX512/NEON and Metal qualification remain pending",
+    "The first Flash comparison used an overlong text fixture; its failed result is retained separately and the corrected case uses independently round-tripped reference IDs"
+  ],
+  "next_action": "Extend sustained and offload qualification to remaining profiles and diverse working sets; measure transfer stalls/setup/physical peaks; qualify CPU/Metal and capability combinations.",
+  "current_serving_memory_evidence": "docs/cuda-serving-memory.json",
+  "current_dense_memory_evidence": "docs/dense-cuda-serving-memory.json",
+  "current_native_memory_evidence": "docs/native-cuda-serving-memory.json",
+  "external_stdio_followup": {
+    "documentation": "docs/external-stdio-serving.json",
+    "evidence_root": "/tmp/bitnet-goal-external-serving",
+    "release_ready": false
+  },
+  "current_performance_evidence": "docs/stdio-serving-performance.json"
+}

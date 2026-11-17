@@ -1,0 +1,1589 @@
+{
+  "version": 1,
+  "goal_status": "active_incomplete",
+  "scope": "Implemented resumable explicit native text request orchestration, with source-exact caller-serialized interleaving of two active sessions on one shared model. Not a production serving scheduler or multi-request GPU batch.",
+  "api": {
+    "header": "include/generate.h",
+    "implementation": "src/generate_native_text.h",
+    "type": "BnGenerateNativeTextRequest",
+    "functions": [
+      "bn_generate_native_text_request_init",
+      "bn_generate_native_text_request_step",
+      "bn_generate_native_text_request_cancel",
+      "bn_generate_native_text_request_free"
+    ],
+    "semantics": "Caller-owned zeroed struct, no copying, disjoint per-request workspace and independent prepared session. Init encodes once with no forward. Each step attempts at most one backend forward; prefill commits at most the configured chunk, decode at most one ID. BUSY yields with staged input/admission/output state preserved. Both committed and prediction-first contracts supported.",
+    "terminal": "DONE flushes once; subsequent terminal steps do nothing. ERROR/CANCELLED do not flush. Cancellation/free do no backend cleanup: caller resets/reprepares or frees the session before reuse, reclaiming any staged/partially executed backend work through existing ownership. Reentry is rejected; caller serializes all backend access.",
+    "allocation": "No orchestration allocations. Inline request state and caller workspace; backend placement allocations and user callbacks retain their existing separate budgets.",
+    "compatibility": "Both existing blocking APIs now drive the same request state machine and retry BUSY as before. Last prediction remains unforwarded; committed path forwards before publication. Prefill never admits GPU expert entries. No kernel, model architecture, quantization, placement policy or default CLI changes."
+  },
+  "baseline": {
+    "exit": 0,
+    "zero_warnings": true,
+    "prior": {
+      "Makefile": "4625f316c3f1f5eb7e1d601afc82a257912f74297882493a0a68db9dd814fb70",
+      "test/test_generate_native_text.c": "cea6a4d2e770ee71e23469c2284555c7c1cc0177286e3fef4f2c0850a6b26d35",
+      "src/generate_native_text.h": "2024c404848a45c4140e9524448a56961e4243afe0a848a337e9bfa27f480415",
+      "include/generate.h": "a41e72675ffa79b71121fab476e90c869c361ecbc05635ec64a9c1633f0ef5b9"
+    }
+  },
+  "changes": {
+    "test/test_generate_native_text.c": {
+      "before": "cea6a4d2e770ee71e23469c2284555c7c1cc0177286e3fef4f2c0850a6b26d35",
+      "after": "7a56dddfaac7e940cc8679c6e0a3e5f61d821e0d6ef8de2412bf1bb21a0c7d29"
+    },
+    "src/generate_native_text.h": {
+      "before": "2024c404848a45c4140e9524448a56961e4243afe0a848a337e9bfa27f480415",
+      "after": "6f452d12f65895311f11f4663aa90335d904dd67afdb11ad5a24f720b54b8aab"
+    },
+    "include/generate.h": {
+      "before": "a41e72675ffa79b71121fab476e90c869c361ecbc05635ec64a9c1633f0ef5b9",
+      "after": "fd0c5388616bc91098e963ca3c810ac3ee923c6f18d3b451fca1f690b3b8e0fc"
+    }
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "qualification": {
+    "checks": {
+      "unit": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./test_generate_native_text"
+        ]
+      },
+      "asan-unit": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-step/asan-unit"
+        ]
+      },
+      "single-long": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024"
+        ]
+      },
+      "single-short": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024"
+        ]
+      },
+      "single512": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-cli/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024"
+        ]
+      },
+      "mixed-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired"
+        ]
+      },
+      "mixed-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired"
+        ]
+      },
+      "asan-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-step/asan-bench",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired"
+        ]
+      },
+      "asan-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-step/asan-bench",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "4",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired"
+        ]
+      },
+      "interleave-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-step/interleave-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired"
+        ]
+      },
+      "interleave-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-step/interleave-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired"
+        ]
+      },
+      "asan-interleave-ab": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-step/asan-interleave",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired"
+        ]
+      },
+      "asan-interleave-ba-predict": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/tmp/bitnet-goal-native-step/asan-interleave",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired"
+        ]
+      },
+      "memcheck": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/usr/local/cuda/bin/compute-sanitizer",
+          "--tool",
+          "memcheck",
+          "--error-exitcode",
+          "86",
+          "/tmp/bitnet-goal-native-step/interleave-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "1024",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-prefill1026/paired"
+        ]
+      },
+      "initcheck": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "/usr/local/cuda/bin/compute-sanitizer",
+          "--tool",
+          "initcheck",
+          "--error-exitcode",
+          "86",
+          "/tmp/bitnet-goal-native-step/interleave-probe",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-prefill1026/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "2",
+          "0",
+          "--predict-text",
+          "--ram-admit-misses",
+          "--ram-cache-experts",
+          "1024",
+          "--admit-decode",
+          "--decode-cache-experts",
+          "2048",
+          "--request-reference",
+          "/tmp/bitnet-goal-native-long2050/batch2048/paired"
+        ]
+      },
+      "native-legacy": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "./bench_native_forward",
+          "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+          "/tmp/bitnet-goal-native-forward-resume/paired",
+          "/tmp/bitnet-goal-native-vocab/reference/actual.json",
+          "32",
+          "1",
+          "0"
+        ]
+      },
+      "qwen27-compat": {
+        "exit": 0,
+        "expected": 0,
+        "command": [
+          "bash",
+          "test/compare_llama.sh",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--cuda",
+          "--llama-cuda",
+          "--strict",
+          "-n",
+          "24",
+          "-t",
+          "8",
+          "--maxseq",
+          "512"
+        ]
+      }
+    },
+    "goal_status": "active",
+    "source_files": 885,
+    "reference_files": 51340,
+    "scope": "Resumable public request API, blocking compatibility, independent-session real-weight interleaving, BUSY/cancel/error units, ASAN host instrumentation and GPU memcheck/initcheck; no production scheduler or throughput claim"
+  },
+  "public_api_source_exact_requests": {
+    "single-long": 2,
+    "single-short": 2,
+    "single512": 2,
+    "mixed-ab": 4,
+    "mixed-ba-predict": 4,
+    "asan-ab": 4,
+    "asan-ba-predict": 4,
+    "interleave-ab": 4,
+    "interleave-ba-predict": 4,
+    "asan-interleave-ab": 4,
+    "asan-interleave-ba-predict": 4,
+    "memcheck": 4,
+    "initcheck": 4
+  },
+  "public_api_source_exact_total": 46,
+  "independent_session_schedules": {
+    "interleave-ab": {
+      "requests": 4,
+      "steps": 26,
+      "busy_returns": 0,
+      "prefill_steps_after_peer_decode": 0,
+      "step_trace": [
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 0,
+          "position": 1031,
+          "published": 5
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 0,
+          "position": 2055,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 0,
+          "position": 1031,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 0,
+          "position": 2055,
+          "published": 5
+        }
+      ]
+    },
+    "interleave-ba-predict": {
+      "requests": 4,
+      "steps": 26,
+      "busy_returns": 0,
+      "prefill_steps_after_peer_decode": 2,
+      "step_trace": [
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 0,
+          "position": 1030,
+          "published": 5
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 0,
+          "position": 2054,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 0,
+          "position": 1030,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 0,
+          "position": 2054,
+          "published": 5
+        }
+      ]
+    },
+    "asan-interleave-ab": {
+      "requests": 4,
+      "steps": 26,
+      "busy_returns": 0,
+      "prefill_steps_after_peer_decode": 0,
+      "step_trace": [
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 0,
+          "position": 1031,
+          "published": 5
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 0,
+          "position": 2055,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 0,
+          "position": 1031,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 0,
+          "position": 2055,
+          "published": 5
+        }
+      ]
+    },
+    "asan-interleave-ba-predict": {
+      "requests": 4,
+      "steps": 26,
+      "busy_returns": 0,
+      "prefill_steps_after_peer_decode": 2,
+      "step_trace": [
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 0,
+          "position": 1030,
+          "published": 5
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 0,
+          "position": 2054,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 0,
+          "position": 1030,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 0,
+          "position": 2054,
+          "published": 5
+        }
+      ]
+    },
+    "memcheck": {
+      "requests": 4,
+      "steps": 26,
+      "busy_returns": 0,
+      "prefill_steps_after_peer_decode": 0,
+      "step_trace": [
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 0,
+          "position": 1031,
+          "published": 5
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 0,
+          "position": 2055,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 0,
+          "position": 1031,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 0,
+          "position": 2055,
+          "published": 5
+        }
+      ]
+    },
+    "initcheck": {
+      "requests": 4,
+      "steps": 26,
+      "busy_returns": 0,
+      "prefill_steps_after_peer_decode": 2,
+      "step_trace": [
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 0,
+          "request": 0,
+          "status": 0,
+          "position": 1030,
+          "published": 5
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 0,
+          "request": 1,
+          "status": 0,
+          "position": 2054,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1026,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2048,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1027,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2050,
+          "published": 0
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1028,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2051,
+          "published": 1
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1029,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2052,
+          "published": 2
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 1,
+          "position": 1030,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2053,
+          "published": 3
+        },
+        {
+          "cycle": 1,
+          "request": 0,
+          "status": 0,
+          "position": 1030,
+          "published": 5
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 1,
+          "position": 2054,
+          "published": 4
+        },
+        {
+          "cycle": 1,
+          "request": 1,
+          "status": 0,
+          "position": 2054,
+          "published": 5
+        }
+      ]
+    }
+  },
+  "synthetic": {
+    "source_success_cases": 672,
+    "additional": "Two workers sharing immutable tokenizer handles; shared-model two-session round robin with independent prompts, UTF8 state, skip/stop/batch policies and BUSY; bounded one-attempt steps, no restaging/republishing, terminal idempotence, callback reentry rejection, alias/copy/invalid mode rejection, explicit and free cancellation with staged decode, error/no-flush behavior, outside session-position mutation rejection.",
+    "heap": "Clang18 ASAN/UBSAN control linked with malloc/calloc/realloc/free wrappers; generation invocations deny and count heap operations. All672 blocking/resumable success cases report zero generation heap calls. Setup allocations remain outside these regions."
+  },
+  "sources": {
+    "A": "/tmp/bitnet-goal-native-long2050/batch2048/paired",
+    "B": "/tmp/bitnet-goal-native-prefill1026/paired",
+    "old512": "/tmp/bitnet-goal-native-cli/paired",
+    "source_files": 885,
+    "reference_files": 51340,
+    "checks": "Actual encoded/forward IDs, every published last F32 vocabulary word, greedy IDs, counted UTF8 chunks/order, full output bytes and final history positions match original preserved references. Requests retain shape-matched2048+2 or1026 prefill despite shared maximum2048/2304 preparation.",
+    "profile": "Explicit Diffbot INT4 BF16 lookup to Exllama F16 Engram adapter; not unmodified Diffbot whole-runtime equivalence."
+  },
+  "tools": {
+    "asan": "New generation implementation/object and synthetic request tests instrumented; real-model harness plus retained tokenizer/JSON/bridge/host-cache ASAN objects. Other unchanged runtime/GPU objects normal; not a full-runtime ASAN claim.",
+    "cuda": "Interleaved two-session memcheck and initcheck, four requests each, zero errors; no racecheck claim.",
+    "qwen27": "Fresh strict192/192 tokens",
+    "references": "All frozen sources/current products/user-owned probes/reference content SHA checked; only three intentional source changes and actual rebuilt compiler outputs repinned. No numerical oracle edits.",
+    "preliminary_issue": "Standalone interleave harness initially produced two shadow warnings from inlined comparator local names. Archived prequalification logs; renamed harness locals, rebuilt all probes zero warnings before freeze. No runtime numerical change or oracle repin."
+  },
+  "limits": [
+    "Step bounds the number of forward attempts, not wall time. A large prefill chunk still occupies the backend until that attempt returns; no kernel preemption or per-call latency bound is promised.",
+    "Interleaving is caller-serialized, each forward still belongs to one session. No multi-request matrix batching, overlapping GPU execution, dynamic serving admission, network server or throughput/tail latency parity claim.",
+    "The standalone qualification harness runs fixed two-session cohorts; it is an artifact under /tmp, not a new benchmark CLI mode or production scheduler. Public resumable API and orchestration tests are in the repository.",
+    "Real weights cover two related multilingual prompts and five generated tokens. Interleave schedules are AB committed and BA prediction-first (also under ASAN/GPU tools); this is not the full order-by-mode cross product or broad model/domain/long-decode coverage.",
+    "BUSY/cancel/failure behavior is exhaustively exercised by orchestration stubs; real GPU interleave traces separately report whether BUSY actually occurred. Real GPU cancellation during a partial BUSY forward is not qualified here.",
+    "No new performance capture. Prior fixed/sequential cache measurements belong to their recorded runtime hashes and cannot establish current vLLM parity.",
+    "AVX2/AVX512 standard and CUDA compatibility suites passed on this host; no fresh ARM/Metal execution claim. Full modern-model/backends/offload/serving objective remains incomplete."
+  ],
+  "next": "Integrate a bounded scheduler around independent sessions with admission/KV accounting, resumable source checks, cancellation cleanup and fairness. Then implement actual multi-request grouped/tiled GPU work with per-request attention/KV positions and source-matched references. Qualify concurrency throughput and tails and matched fully resident vLLM baselines.",
+  "artifacts": "/tmp/bitnet-goal-native-step"
+}

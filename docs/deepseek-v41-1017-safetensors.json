@@ -1,0 +1,72 @@
+{
+  "scope": "Native C11 Safetensors storage reader qualified for exact DeepSeek V4.1 Flash1017 EXL3 asset. This does not admit the model for inference or implement EXL3 numerical execution.",
+  "whole_goal_complete": false,
+  "new_module": [
+    "include/safetensors.h",
+    "src/safetensors.c",
+    "test/test_safetensors.c"
+  ],
+  "api": "Caller-owned opaque init_file/init_buffer/free handle, immutable metadata sorted by UTF-8 names, metadata lookup, checked byte-range read. Native file reads use pread; buffer/WASM branch borrows memory. No data conversion or global mutable state.",
+  "validation": {
+    "baseline_standard_exit": 0,
+    "clean_product_zero_warnings": true,
+    "standard_suite_exit": 0,
+    "focused_werror": true,
+    "mutations": 10000,
+    "all_truncations": true,
+    "unicode_duplicate_overflow_gap_overlap_and_ownership_checks": true,
+    "short_io_failure": true,
+    "clang18_asan_ubsan_synthetic_and_all48real_shards": true,
+    "checkpoint": {
+      "exit": 0,
+      "scope": "Native C metadata comparison across all48shards and bounded native pread byte comparisons against Python os.pread. Tensor bodies not fully decoded or hashed; no model-execution claim.",
+      "shards": 48,
+      "tensors": 190549,
+      "sampled_reads": 558,
+      "sampled_read_bytes": 16084,
+      "maximum_absolute_sample_offset": 55455924744,
+      "open_all_shards_process_rss": "304520 kB",
+      "reader_source_sha256": "0e23aec31ac6ed41c840272a394e68a079dc16e9f6bfe2d2c048d7d5b7c7e9e7",
+      "header_sha256": "22be622a6f23be7fba397be30e75c408643ddc77af28aa9064a7a93574546455"
+    },
+    "native_metadata_probe": {
+      "shards": 48,
+      "tensors": 190549,
+      "bytes": 331766748264,
+      "rss_bytes": 87257088
+    },
+    "upstream_rust_conformance": {
+      "exit": 0,
+      "cases": 5000,
+      "upstream_safetensors_version": "0.8.0",
+      "scope": "Randomized dtype/shape/name/JSON-order/padding/packed/empty tensor files; all metadata and complete raw tensor bytes agree with upstream Rust deserialize. Explicit C API limits NULstrings/rank32/unknownfields are excluded."
+    },
+    "protected_user_probes": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "storage_types": "22 byte and packed types, including BF16, F8_E4M3, F8_E8M0, I16 trellis and I32 scalars. These are storage tags; quant numerical behavior remains owned by BnQuantFormatOps.",
+  "limits": [
+    "100000000byte JSON header",
+    "1048576tensors and metadata entries each",
+    "rank at most32",
+    "embedded NUL strings and unknown tensor fields/types reject explicitly",
+    "Complete contiguous payload coverage required, including byte alignment for sub-byte types",
+    "Files/buffers must remain immutable while borrowed; I/O errors can partially fill a destination and return failure"
+  ],
+  "actual_asset": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+  "references": [
+    "https://github.com/safetensors/safetensors",
+    "https://raw.githubusercontent.com/huggingface/safetensors/main/safetensors/src/tensor.rs"
+  ],
+  "artifacts": "/tmp/bitnet-goal-safetensors",
+  "source_hashes": {
+    "include/safetensors.h": "22be622a6f23be7fba397be30e75c408643ddc77af28aa9064a7a93574546455",
+    "src/safetensors.c": "0e23aec31ac6ed41c840272a394e68a079dc16e9f6bfe2d2c048d7d5b7c7e9e7",
+    "test/test_safetensors.c": "6599b53b305b6e6265a40d8c57f0ab9e366dfe5e20d1faa753224cdbca008516"
+  },
+  "next": "Bind the multi-shard index and EXL3 component representation, qualify canonical MUL1 quant math against pinned upstream, then integrate exact40-layer architecture/Engram/routing semantics and bounded expert placement before model admission. Existing Flash and remaining CPU/Metal/performance scope stays open."
+}

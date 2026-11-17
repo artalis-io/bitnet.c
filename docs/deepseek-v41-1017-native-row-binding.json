@@ -1,0 +1,58 @@
+{
+  "milestone": "Native model row sources and backend caches bound to canonical Trellis request",
+  "status": "qualified component; full model and original goal remain incomplete",
+  "parent": "docs/deepseek-v41-1017-native-row-stage.json",
+  "ownership": {
+    "model": "Immutable row-source array bound by architecture tensor IDs after anatomy/numerics and before backend creation. Borrowed storage index remains model-owned.",
+    "backend_model": "One owned CPU container holds independently bounded mutable table caches; freed before model row sources. Shared operations require caller serialization.",
+    "session": "Row staging metadata embedded in existing TrellisRequest; request owns device buffers and pinned upload pool. Teardown destroys GPU request before metadata.",
+    "result": "Canonical request, session identity, monotonic session request generation, per-bank epoch and exact resident view. Generation persists reset and rejects request-address reuse."
+  },
+  "budget_scope": "Cache host bound includes container plus per-table caps. Session row host/pinned/device budgets are additional component budgets, excluding allocator/context/index/source metadata and other native request components.",
+  "behavior": [
+    "Atomic source publication and cache attachment; invalid setup does not publish partial state.",
+    "No live request geometry upgrade; matching setup is idempotent.",
+    "Busy preserves outputs without source/cache work. Storage/domain rejection preserves prior live results. Backend failure tears down the entire native request.",
+    "Raw row IDs only. No tokenizer/hash mapping, token history, KV or position commit."
+  ],
+  "qualification_artifacts": "/tmp/bitnet-goal-native-row-binding",
+  "not_claimed": [
+    "Full Engram/PLE/HCA forward or CLI admission",
+    "Independent qualification of the required BF16 to F16 projection precision adapter",
+    "Combined attention producer plus row staging numerical execution",
+    "Prefill/decode vLLM parity, global serving admission, async storage or a new CUDA kernel",
+    "New ARM, Metal or WASM execution coverage"
+  ],
+  "validation": {
+    "clean_build": "zero warnings",
+    "standard_suite": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "frozen_sources": 814,
+    "checks": {
+      "row-binding-unit": 0,
+      "asan-row-binding-unit": 0,
+      "normal-probe": 0,
+      "asan-probe": 0,
+      "memcheck-probe": 0,
+      "initcheck-probe": 0,
+      "bounded-row-race": 0,
+      "qwen27-compat": 0
+    },
+    "native_checkpoint": {
+      "calls": 72,
+      "exact_bf16_bytes": 4202496,
+      "tables": 2,
+      "cache_host_bound": 525360,
+      "cache_host_allocated": 525296,
+      "session_row_host": 600,
+      "session_row_pinned": 65536,
+      "session_row_device": 167936
+    },
+    "qwen27": "Strict independent llama.cpp sampled token IDs: 192/192, first token 8/8, count mismatches 0/8.",
+    "sanitizer_scope": "ASAN/UBSAN cover new C source/model/cache/session orchestration and probe; legacy moe_cpu_kernels.o and CUDA translation units are normal build. Real native request pipeline passed CUDA memcheck with full leak check and initcheck. Unchanged row kernel tested with bounded racecheck; no whole-core racecheck.",
+    "reference": "Unmodified original Triton-captured BF16 row values for real checkpoint layer 1 and layer 14; hashes checked before and after all qualification runs.",
+    "reference_checked_submits_per_probe": 72,
+    "unconsumed_submits_finished_by_session_teardown_per_probe": 2,
+    "fresh_trace": "No fresh timing or whole-model performance qualification in this milestone; previous staging-controller trace remains separate evidence."
+  }
+}

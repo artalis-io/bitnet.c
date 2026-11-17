@@ -4,6 +4,13 @@
 #include <stdlib.h>
 
 struct BnBackendSession {
+    const void *execution_owner;
+    void *execution_resources;
+    void (*execution_release)(void *);
+    const void *gpu_resources_owner;
+    void *gpu_resources;
+    void (*gpu_resources_release)(void *);
+    int gpu_decode_ssm_pending;
     void *gpu_graph;
     BnGPUValueGraph gpu_value_graph;
     void *gpu_lowering_values;
@@ -14,6 +21,72 @@ struct BnBackendSession {
 
 BnBackendSession *bn_backend_session_create(void) {
     return (BnBackendSession *)calloc(1, sizeof(BnBackendSession));
+}
+
+int bn_backend_session_attach_gpu_resources(BnBackendSession *backend,
+    const void *owner, void *resources, void (*release)(void *)) {
+    if (!backend || !owner || !resources || !release || backend->gpu_resources)
+        return -1;
+    backend->gpu_resources_owner = owner;
+    backend->gpu_resources = resources;
+    backend->gpu_resources_release = release;
+    return 0;
+}
+
+void *bn_backend_session_gpu_resources(const BnBackendSession *backend,
+    const void *owner) {
+    return backend && owner && backend->gpu_resources_owner == owner
+        ? backend->gpu_resources : NULL;
+}
+
+int bn_backend_session_has_gpu_resources(const BnBackendSession *backend) {
+    return backend && backend->gpu_resources != NULL;
+}
+
+int bn_backend_session_has_execution_resources(const BnBackendSession *backend) {
+    return backend && backend->execution_resources != NULL;
+}
+
+int bn_backend_session_attach_execution_resources(BnBackendSession *backend,
+    const void *owner, void *resources, void (*release)(void *)) {
+    if (!backend || !owner || !resources || !release || backend->execution_resources)
+        return -1;
+    backend->execution_owner = owner;
+    backend->execution_resources = resources;
+    backend->execution_release = release;
+    return 0;
+}
+
+void *bn_backend_session_execution_resources(const BnBackendSession *backend,
+    const void *owner) {
+    return backend && owner && backend->execution_owner == owner
+        ? backend->execution_resources : NULL;
+}
+
+void bn_backend_session_release_gpu_resources(BnBackendSession *backend) {
+    if (!backend) return;
+    void *resources = backend->gpu_resources;
+    void (*release)(void *) = backend->gpu_resources_release;
+    void *execution = backend->execution_resources;
+    void (*execution_release)(void *) = backend->execution_release;
+    /* Detach both before callbacks. GPU cleanup fences work before host free. */
+    backend->gpu_resources_owner = NULL;
+    backend->gpu_resources = NULL;
+    backend->gpu_resources_release = NULL;
+    backend->execution_owner = NULL;
+    backend->execution_resources = NULL;
+    backend->execution_release = NULL;
+    if (resources) release(resources);
+    if (execution) execution_release(execution);
+}
+
+int bn_backend_session_gpu_decode_ssm_pending(const BnBackendSession *backend) {
+    return backend && backend->gpu_decode_ssm_pending;
+}
+
+void bn_backend_session_set_gpu_decode_ssm_pending(BnBackendSession *backend,
+                                                   int pending) {
+    if (backend) backend->gpu_decode_ssm_pending = pending != 0;
 }
 
 void bn_backend_session_release_gpu_graph(BnBackendSession *backend) {
@@ -28,6 +101,7 @@ void bn_backend_session_release_gpu_graph(BnBackendSession *backend) {
 
 void bn_backend_session_free(BnBackendSession *backend) {
     if (!backend) return;
+    bn_backend_session_release_gpu_resources(backend);
     bn_backend_session_release_gpu_graph(backend);
     bn_gpu_value_graph_free(&backend->gpu_value_graph);
     free(backend->gpu_lowering_values);

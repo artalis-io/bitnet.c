@@ -1,0 +1,330 @@
+{
+  "scope": "Fixed wall-clock offered arrivals on one serialized worker; not a network/server transport benchmark or full-goal completion",
+  "offered_ms": [
+    100.0,
+    100.0,
+    100.0,
+    100.0,
+    1100.0,
+    1100.0,
+    1100.0,
+    1100.0,
+    4100.0,
+    4100.0,
+    4100.0,
+    4100.0
+  ],
+  "native_runs": [
+    {
+      "elapsed_ms": 8303.261832,
+      "output_tokens_per_second": 92.49377118763127,
+      "ttft_p50_ms": 733.342756,
+      "ttft_p95_ms": 1840.812895,
+      "ttft_p99_ms": 1840.812895,
+      "itl_p50_ms": 58.596959999999854,
+      "itl_p95_ms": 72.08902099999978,
+      "itl_p99_ms": 73.07897299999968,
+      "completion_p95_ms": 4348.373044,
+      "mean_decode_step_ms": 46.196008727272726,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 71,
+          "mean_ms": 37.43814954929577
+        },
+        "8": {
+          "steps": 50,
+          "mean_ms": 58.63216876
+        }
+      },
+      "worker_enqueue_delay_max_ms": 55.01454999999987,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 18,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 8345.94307,
+      "output_tokens_per_second": 92.02075709821492,
+      "ttft_p50_ms": 739.215777,
+      "ttft_p95_ms": 1862.176249,
+      "ttft_p99_ms": 1862.176249,
+      "itl_p50_ms": 58.72393499999998,
+      "itl_p95_ms": 72.2238669999997,
+      "itl_p99_ms": 73.12205900000026,
+      "completion_p95_ms": 4363.026919,
+      "mean_decode_step_ms": 46.442560768595044,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 71,
+          "mean_ms": 37.774089732394366
+        },
+        "8": {
+          "steps": 50,
+          "mean_ms": 58.75178964
+        }
+      },
+      "worker_enqueue_delay_max_ms": 37.416469000000006,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 18,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 8323.161001,
+      "output_tokens_per_second": 92.27263534944564,
+      "ttft_p50_ms": 743.411718,
+      "ttft_p95_ms": 1829.3616540000003,
+      "ttft_p99_ms": 1829.3616540000003,
+      "itl_p50_ms": 58.835185000000365,
+      "itl_p95_ms": 72.27062799999999,
+      "itl_p99_ms": 73.18974299999991,
+      "completion_p95_ms": 4397.009891,
+      "mean_decode_step_ms": 46.76543987603306,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 70,
+          "mean_ms": 37.95620018571429
+        },
+        "8": {
+          "steps": 51,
+          "mean_ms": 58.85655317647059
+        }
+      },
+      "worker_enqueue_delay_max_ms": 43.91591700000026,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 17,
+        "decode": 121
+      }
+    }
+  ],
+  "reference_runs": [
+    {
+      "elapsed_ms": 9510.257099056616,
+      "output_tokens_per_second": 80.75491461489331,
+      "ttft_p50_ms": 1502.872665040195,
+      "ttft_p95_ms": 3076.6353769926354,
+      "ttft_p99_ms": 3076.6353769926354,
+      "itl_p50_ms": 62.72867205552757,
+      "itl_p95_ms": 65.89714298024774,
+      "itl_p99_ms": 69.11163299810141,
+      "completion_p95_ms": 5527.40150897298,
+      "mean_decode_step_ms": 49.71884917717981,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 63,
+          "mean_ms": 37.0177691580639
+        },
+        "8": {
+          "steps": 58,
+          "mean_ms": 63.51484988759882
+        }
+      },
+      "worker_enqueue_delay_max_ms": 337.7108500339091,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 10,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 9604.727286961861,
+      "output_tokens_per_second": 79.96062533108439,
+      "ttft_p50_ms": 1525.8665890200064,
+      "ttft_p95_ms": 3156.360010942444,
+      "ttft_p99_ms": 3156.360010942444,
+      "itl_p50_ms": 63.367898925207555,
+      "itl_p95_ms": 67.31053104158491,
+      "itl_p99_ms": 69.56110009923577,
+      "completion_p95_ms": 5588.719296944328,
+      "mean_decode_step_ms": 50.12822349282551,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 63,
+          "mean_ms": 37.25331423560246
+        },
+        "8": {
+          "steps": 58,
+          "mean_ms": 64.11303872049882
+        }
+      },
+      "worker_enqueue_delay_max_ms": 355.7544719427824,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 10,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 9714.484315016307,
+      "output_tokens_per_second": 79.05720726861978,
+      "ttft_p50_ms": 1536.0060670413077,
+      "ttft_p95_ms": 3235.6068530119956,
+      "ttft_p99_ms": 3235.6068530119956,
+      "itl_p50_ms": 64.57664503250271,
+      "itl_p95_ms": 67.21979205030948,
+      "itl_p99_ms": 70.31376904342324,
+      "completion_p95_ms": 5651.433784957044,
+      "mean_decode_step_ms": 50.804348271878915,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 63,
+          "mean_ms": 37.734953268978096
+        },
+        "8": {
+          "steps": 58,
+          "mean_ms": 65.00041525778842
+        }
+      },
+      "worker_enqueue_delay_max_ms": 366.48645401000977,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 10,
+        "decode": 121
+      }
+    }
+  ],
+  "native_medians": {
+    "elapsed_ms": 8323.161001,
+    "output_tokens_per_second": 92.27263534944564,
+    "ttft_p50_ms": 739.215777,
+    "ttft_p95_ms": 1840.812895,
+    "ttft_p99_ms": 1840.812895,
+    "itl_p50_ms": 58.72393499999998,
+    "itl_p95_ms": 72.2238669999997,
+    "itl_p99_ms": 73.12205900000026,
+    "completion_p95_ms": 4363.026919,
+    "mean_decode_step_ms": 46.442560768595044,
+    "worker_enqueue_delay_max_ms": 43.91591700000026,
+    "decode_by_cohort": {
+      "4": {
+        "steps_each_run": [
+          71,
+          71,
+          70
+        ],
+        "mean_ms": 37.774089732394366
+      },
+      "8": {
+        "steps_each_run": [
+          50,
+          50,
+          51
+        ],
+        "mean_ms": 58.75178964
+      }
+    }
+  },
+  "reference_medians": {
+    "elapsed_ms": 9604.727286961861,
+    "output_tokens_per_second": 79.96062533108439,
+    "ttft_p50_ms": 1525.8665890200064,
+    "ttft_p95_ms": 3156.360010942444,
+    "ttft_p99_ms": 3156.360010942444,
+    "itl_p50_ms": 63.367898925207555,
+    "itl_p95_ms": 67.21979205030948,
+    "itl_p99_ms": 69.56110009923577,
+    "completion_p95_ms": 5588.719296944328,
+    "mean_decode_step_ms": 50.12822349282551,
+    "worker_enqueue_delay_max_ms": 355.7544719427824,
+    "decode_by_cohort": {
+      "4": {
+        "steps_each_run": [
+          63,
+          63,
+          63
+        ],
+        "mean_ms": 37.25331423560246
+      },
+      "8": {
+        "steps_each_run": [
+          58,
+          58,
+          58
+        ],
+        "mean_ms": 64.11303872049882
+      }
+    }
+  },
+  "comparison": {
+    "throughput_ratio": 1.1539759096102893,
+    "decode_mean_ratio": 0.92647529739892,
+    "decode_by_cohort_ratio": {
+      "4": 1.0139793064718576,
+      "8": 0.9163781784876673
+    },
+    "itl_p99_ratio": 1.0511918140409573
+  },
+  "cross_scheduler_tokens_identical": [
+    false,
+    false,
+    false
+  ],
+  "correctness": {
+    "method": "Independent original compute controls for both actual native schedules; 143-cohort runtime diagnostic full heads exact, 144-cohort packed replay full heads exact. All three native timing geometries and token streams independently match.",
+    "schedules": [
+      {
+        "matrices": 143,
+        "heads": 844,
+        "bf16_words": 209582080,
+        "reference": "test/bf16_cuda_decode_aware143_reference.json"
+      },
+      {
+        "matrices": 144,
+        "heads": 848,
+        "bf16_words": 210575360,
+        "reference": "test/bf16_cuda_decode_aware144_reference.json"
+      }
+    ]
+  },
+  "measurement": {
+    "tails": "Nearest rank over 12 TTFT and 756 ITL values per run, then three-run median; TTFT starts at offered deadline, not deferred enqueue",
+    "native": "Buffers CPU row metadata; no full-head writes in timing. Includes polling, enqueue/admission, execution, sampling/publication and pool returns; excludes final teardown.",
+    "reference": "One warmup followed by three timed original-runtime loops; CPU geometry observer included; no GPU tensor or norm/GDN observation in timing.",
+    "comparison": "Scheduling differs under the same offered deadlines; phase counts and per-cohort counts are reported. No pure-prefill throughput claim for wall-clock phases.",
+    "numerics": "Free wall-clock scheduler outputs differ across engines. Native compute is independently bit-exact under its own actual schedule; cross-scheduler bit equality is not claimed."
+  },
+  "full_goal_complete": false,
+  "tail_within_5_percent": false,
+  "overall_serving_parity_qualified": false,
+  "open_issue": "p99 inter-token latency narrowly exceeds 5% margin; twelve-request test is not sustained-load qualification",
+  "scheduling_policy": {
+    "mixed_token_budget": 8,
+    "prefill_only_token_budget": 256,
+    "max_chunk": 64,
+    "max_prefills": 4,
+    "reference_policy": "decode-aware",
+    "reference_uncap_prefill_only": true
+  },
+  "source_sha256": {
+    "src/generate_batch_plan.c": "b14e844026e589602367e7f2550066f7b94a6739182327daccdca8263a27e182",
+    "include/generate_batch_plan.h": "fa6fccbdbb6532c3ae897bfff16a10da7a5116f8c96e47ca50e278fb34e3afc9",
+    "src/generate_batch.c": "62812ccfb73b53ba5e884a4a0d8dca464533c7a7dd1676a743238037c2778967",
+    "include/generate_batch.h": "e3a22580a8635156e104cfb974892adf28b8596e616422a74ed7b91ccc9f8268",
+    "test/test_generate_batch.c": "0db35315b76ee647a255ed6294ff68894c6cf5f5d32821d8e607ce869544d8e1",
+    "test/test_generate_batch_plan.c": "99467ed1fff8b1cba08de8deac446c5ba9ce75a812bdf49651af43cb717088bd",
+    "bench/bench_bf16_arrivals.c": "0f73b329372ce6a84798295be4d78cdaf37c42cc79643673878b99a56bad4d84",
+    "bench/prepare_bf16_arrivals.py": "3c9ca8195fc9992ff355627b36669953dcbbe86d02a0c0c16c023a0083d1689d",
+    "bench/verify_bf16_wall_clock.py": "2ab234b53f13c5bc21e455c36134628c2a786acddb7128d236bb1b73c877792a",
+    "test/test_bf16_arrival_workload.py": "8ea9c11813da9e6326f4f8a97668bec64500d78ae8725d41d8c3522ae9f41c7e",
+    "test/test_bf16_wall_clock_verifier.py": "c985078dff6671ff7198f6eef3ddc74be2323d952b7a68bab5884ec2a5a73577",
+    "bench/policies/qwen38-cuda-decode-aware8-noncp.json": "491ccde5754c8ef347412feb0c873d440949523c9db9ae4d84406158f44e52f0",
+    "test/bf16_cuda_decode_aware143_reference.json": "ed2a0b8f5f87d9031fb20aec556b67ad34fe8a0f60a473fb68e3c94dbc7fd9ae",
+    "test/bf16_cuda_decode_aware144_reference.json": "c756cdbb89d9b8c9908dccac9557f4d6f9a98f8e050f8fb0d8e7b835440a7865"
+  },
+  "policy_sha256": "491ccde5754c8ef347412feb0c873d440949523c9db9ae4d84406158f44e52f0",
+  "qualification": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "evidence_directory": "/tmp/bitnet-goal-mixed-budget"
+}

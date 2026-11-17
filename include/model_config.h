@@ -12,6 +12,20 @@ typedef enum {
     BN_MODEL_ACTIVATION_GELU = 2,
 } BnModelActivation;
 
+typedef enum {
+    BN_SSM_QK_NORM_CLAMPED_L2 = 0,
+    BN_SSM_QK_NORM_RMS_SCALED = 1,
+    BN_SSM_QK_NORM_L2_SUM_EPS = 2,
+} BnSSMQKNormMode;
+
+/* Explicit preparation contract; zero keeps existing F32 execution. */
+typedef enum {
+    BN_MODEL_BF16_LAYOUT_NONE = 0,
+    BN_MODEL_BF16_LAYOUT_HYBRID_OFFSET_NORM,
+    BN_MODEL_BF16_LAYOUT_FLASH_HC,
+    BN_MODEL_BF16_LAYOUT_GLM_MHC,
+} BnModelBF16LayoutKind;
+
 typedef struct {
     int dim, hidden_dim, n_layers, n_heads, n_kv_heads;
     int vocab_size, seq_len;
@@ -19,6 +33,8 @@ typedef struct {
     float rope_theta_swa;
     int head_size, kv_dim, kv_mul;  // derived
     int has_ffn_gate, act_type;     // BnModelActivation
+    BnModelBF16LayoutKind bf16_layout; // architecture-owned preparation semantics
+    BnSSMQKNormMode ssm_qk_norm; // architecture-owned GDN normalization
     uint32_t policy_flags;          // BnModelArchOps behavior policies for planner/backend constraints
     int qk_norm_per_head;           // 1 = per-head separate norms [dim], 0 = shared [head_size]
     int flash_attn;                 // use flash attention (online softmax)

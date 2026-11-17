@@ -1,0 +1,805 @@
+{
+  "exit": 0,
+  "runs": [
+    {
+      "expert": "l0-e0",
+      "tokens": 1,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 5120,
+      "intermediate_f16_words_per_repeat": 6912,
+      "mismatches": 0
+    },
+    {
+      "expert": "l0-e0",
+      "tokens": 1,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 5120,
+      "intermediate_f16_words_per_repeat": 6912,
+      "mismatches": 0
+    },
+    {
+      "expert": "l0-e0",
+      "tokens": 7,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 35840,
+      "intermediate_f16_words_per_repeat": 48384,
+      "mismatches": 0
+    },
+    {
+      "expert": "l0-e0",
+      "tokens": 7,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 35840,
+      "intermediate_f16_words_per_repeat": 48384,
+      "mismatches": 0
+    },
+    {
+      "expert": "l0-e0",
+      "tokens": 64,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 327680,
+      "intermediate_f16_words_per_repeat": 442368,
+      "mismatches": 0
+    },
+    {
+      "expert": "l0-e0",
+      "tokens": 64,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 327680,
+      "intermediate_f16_words_per_repeat": 442368,
+      "mismatches": 0
+    },
+    {
+      "expert": "l0-e0",
+      "tokens": 256,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 1310720,
+      "intermediate_f16_words_per_repeat": 1769472,
+      "mismatches": 0
+    },
+    {
+      "expert": "l0-e0",
+      "tokens": 256,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 1310720,
+      "intermediate_f16_words_per_repeat": 1769472,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 1,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 5120,
+      "intermediate_f16_words_per_repeat": 6912,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 1,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 5120,
+      "intermediate_f16_words_per_repeat": 6912,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 7,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 35840,
+      "intermediate_f16_words_per_repeat": 48384,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 7,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 35840,
+      "intermediate_f16_words_per_repeat": 48384,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 64,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 327680,
+      "intermediate_f16_words_per_repeat": 442368,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 64,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 327680,
+      "intermediate_f16_words_per_repeat": 442368,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 256,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 1310720,
+      "intermediate_f16_words_per_repeat": 1769472,
+      "mismatches": 0
+    },
+    {
+      "expert": "l39-e383",
+      "tokens": 256,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 1310720,
+      "intermediate_f16_words_per_repeat": 1769472,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 1,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 256,
+      "intermediate_f16_words_per_repeat": 1152,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 1,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 256,
+      "intermediate_f16_words_per_repeat": 1152,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 7,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 1792,
+      "intermediate_f16_words_per_repeat": 8064,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 7,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 1792,
+      "intermediate_f16_words_per_repeat": 8064,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 64,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 16384,
+      "intermediate_f16_words_per_repeat": 73728,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 64,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 16384,
+      "intermediate_f16_words_per_repeat": 73728,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 256,
+      "limit": 0,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 65536,
+      "intermediate_f16_words_per_repeat": 294912,
+      "mismatches": 0
+    },
+    {
+      "expert": "synthetic",
+      "tokens": 256,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 65536,
+      "intermediate_f16_words_per_repeat": 294912,
+      "mismatches": 0
+    }
+  ],
+  "output_f32_words_exact": 20656128,
+  "intermediate_f16_words_exact": 29472768,
+  "focused_checks": {
+    "probe-build": 0,
+    "profile-probe-build": 0,
+    "native-l0-e0.m1.c0": 0,
+    "native-l0-e0.m1.c10": 0,
+    "native-l0-e0.m7.c0": 0,
+    "native-l0-e0.m7.c10": 0,
+    "native-l0-e0.m64.c0": 0,
+    "native-l0-e0.m64.c10": 0,
+    "native-l0-e0.m256.c0": 0,
+    "native-l0-e0.m256.c10": 0,
+    "native-l39-e383.m1.c0": 0,
+    "native-l39-e383.m1.c10": 0,
+    "native-l39-e383.m7.c0": 0,
+    "native-l39-e383.m7.c10": 0,
+    "native-l39-e383.m64.c0": 0,
+    "native-l39-e383.m64.c10": 0,
+    "native-l39-e383.m256.c0": 0,
+    "native-l39-e383.m256.c10": 0,
+    "native-synthetic.m1.c0": 0,
+    "native-synthetic.m1.c10": 0,
+    "native-synthetic.m7.c0": 0,
+    "native-synthetic.m7.c10": 0,
+    "native-synthetic.m64.c0": 0,
+    "native-synthetic.m64.c10": 0,
+    "native-synthetic.m256.c0": 0,
+    "native-synthetic.m256.c10": 0,
+    "memcheck-synthetic": 0,
+    "memcheck-actual": 0,
+    "racecheck-synthetic": 0,
+    "nsys-ffn": 0,
+    "nsys-export": 0
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "capture": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "runs": [
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 1,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "2c3f528dee938996876874fb8bac53cbf59ef623535bf4a89dff321139ef1913",
+          "up": "b4135f3340c85d3cd2b11ae6b95a988c8c4c5e19faaf1cada186555998dba369",
+          "act": "6fbe1975caf3e3007d09fac3f62d40b68b598edeb1542e2b1d9d3d3ce303eaf4",
+          "out": "efb070e1f720feae4d21c63606d08bf90274a545ec1e0b925b8f72f6a7804b8d"
+        },
+        "output_fnv64": "0xd1e08a30a96fc05c"
+      },
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 1,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "2c3f528dee938996876874fb8bac53cbf59ef623535bf4a89dff321139ef1913",
+          "up": "b4135f3340c85d3cd2b11ae6b95a988c8c4c5e19faaf1cada186555998dba369",
+          "act": "6fbe1975caf3e3007d09fac3f62d40b68b598edeb1542e2b1d9d3d3ce303eaf4",
+          "out": "efb070e1f720feae4d21c63606d08bf90274a545ec1e0b925b8f72f6a7804b8d"
+        },
+        "output_fnv64": "0xd1e08a30a96fc05c"
+      },
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 7,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "1ca269cbd744c5a5fe352b10f2ce1e157079668d99fa0fc487f743cf542b00b3",
+          "up": "55a23f11cc948aa55321645df550a0715d5f15df9bb802badc65d81c4cfb167b",
+          "act": "06c37efd097b30da5e8db3a19be39532e1567d6c13eb80e0b6eb844968e78579",
+          "out": "68424335c7558a1322fba32b75bfb40cd72127088e02a79fc06eef7a5d5cf384"
+        },
+        "output_fnv64": "0x435e4b5b8086917c"
+      },
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 7,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "1ca269cbd744c5a5fe352b10f2ce1e157079668d99fa0fc487f743cf542b00b3",
+          "up": "55a23f11cc948aa55321645df550a0715d5f15df9bb802badc65d81c4cfb167b",
+          "act": "06c37efd097b30da5e8db3a19be39532e1567d6c13eb80e0b6eb844968e78579",
+          "out": "68424335c7558a1322fba32b75bfb40cd72127088e02a79fc06eef7a5d5cf384"
+        },
+        "output_fnv64": "0x435e4b5b8086917c"
+      },
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 64,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "f9f7baf63396cffad1e1bbed9a0c957dece295e19a2b4bc6568c385492d7aa2b",
+          "up": "9a4af09528a8425a54ba2964f29ac3c9b9f8ffccaf2785af066b179e04b9f3d3",
+          "act": "1da39ba71fc5c3082db455b57ff2ae6adc1891582571096d469235ed51196189",
+          "out": "abfcc4403ed563405ad04ecd49d2f5646befb1710cd65d1bf21912f0a966624c"
+        },
+        "output_fnv64": "0x6e04db1379f7c70a"
+      },
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 64,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "f9f7baf63396cffad1e1bbed9a0c957dece295e19a2b4bc6568c385492d7aa2b",
+          "up": "9a4af09528a8425a54ba2964f29ac3c9b9f8ffccaf2785af066b179e04b9f3d3",
+          "act": "1da39ba71fc5c3082db455b57ff2ae6adc1891582571096d469235ed51196189",
+          "out": "abfcc4403ed563405ad04ecd49d2f5646befb1710cd65d1bf21912f0a966624c"
+        },
+        "output_fnv64": "0x6e04db1379f7c70a"
+      },
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 256,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "53108ab4ec4b4757e27edc5ee8e5ad6aaae189f22d0b532f2f5c7ce00ef07ddc",
+          "up": "8ce5717eccdaae897b1674e2257b4d1300a9e0b63307b9255a25afd079c65764",
+          "act": "727b2b660f33ea9ecb51de84104dead4a2e51577a1ced3d293de41ac87cd5cb3",
+          "out": "b9d2f3212236e6d81e7824dca81987d568d78213bf2dd83c234d14a7f3daf787"
+        },
+        "output_fnv64": "0x7f0161b613b0ef94"
+      },
+      {
+        "name": "l0-e0",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 256,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "53108ab4ec4b4757e27edc5ee8e5ad6aaae189f22d0b532f2f5c7ce00ef07ddc",
+          "up": "8ce5717eccdaae897b1674e2257b4d1300a9e0b63307b9255a25afd079c65764",
+          "act": "727b2b660f33ea9ecb51de84104dead4a2e51577a1ced3d293de41ac87cd5cb3",
+          "out": "b9d2f3212236e6d81e7824dca81987d568d78213bf2dd83c234d14a7f3daf787"
+        },
+        "output_fnv64": "0x7f0161b613b0ef94"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 1,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "b7d6fa257dad14bf3a394e4f51563546484102a9e281021f86328f0cbf3a7318",
+          "up": "42afeb811898a09a1dbbd4f79ffaaac7966b54dbd1af2572ed7a7cca33540746",
+          "act": "d01095cf387e64788cdce3ae7fe063d4c62288b791319c9f0c05964f1d88a056",
+          "out": "b6a58a7c0ca89605a91eeceb51e0af053ed9fae17412fd2be71a88e2224c4670"
+        },
+        "output_fnv64": "0xd22ded94a378917a"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 1,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "b7d6fa257dad14bf3a394e4f51563546484102a9e281021f86328f0cbf3a7318",
+          "up": "42afeb811898a09a1dbbd4f79ffaaac7966b54dbd1af2572ed7a7cca33540746",
+          "act": "d01095cf387e64788cdce3ae7fe063d4c62288b791319c9f0c05964f1d88a056",
+          "out": "b6a58a7c0ca89605a91eeceb51e0af053ed9fae17412fd2be71a88e2224c4670"
+        },
+        "output_fnv64": "0xd22ded94a378917a"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 7,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "a47413583ddab1820fbe62a439e1e07292ee19518cc4aa6067a04469d143dd8e",
+          "up": "8c7b485af20d7af30a1a6021ec5d0faa4e8dc412727df1e677f2b3b406af9036",
+          "act": "55dce742fe1dccc40e05a9801dad229556a38694831f5ac6c05abc185c133bcc",
+          "out": "e244dec5c47eef9107c76b54ee06abf01e8a2d18c662f8ec87695779a035cc41"
+        },
+        "output_fnv64": "0xd637619ffaf125f2"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 7,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "a47413583ddab1820fbe62a439e1e07292ee19518cc4aa6067a04469d143dd8e",
+          "up": "8c7b485af20d7af30a1a6021ec5d0faa4e8dc412727df1e677f2b3b406af9036",
+          "act": "bd6751a6c45dec4bf35967f86673ca42a1a9cd6c7324a69af444f8c5676058b4",
+          "out": "e14ef5a7200ee4715e8161c2e0f42ee7f1654abac48337d25ac976b274d68303"
+        },
+        "output_fnv64": "0xd85034e5c3a56f80"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 64,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "00ea80920f872fbba7e6071e9207cceab5e4f005f6a5962394760c113e8ebee7",
+          "up": "17610e336bc8065a5fbab3b85d18f47ba4df3da0de95c8c155722af1cd5cb955",
+          "act": "d9d03bb0b375f32893c8b1f0a39f4a2606a4b25df297593b957fc3f75bb41696",
+          "out": "867ab1420174998894539120f66a9bd4b0bed67a367ff56b08f5d1e42c8b88c8"
+        },
+        "output_fnv64": "0xd921edf15f0039e5"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 64,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "00ea80920f872fbba7e6071e9207cceab5e4f005f6a5962394760c113e8ebee7",
+          "up": "17610e336bc8065a5fbab3b85d18f47ba4df3da0de95c8c155722af1cd5cb955",
+          "act": "cc6244a6969ec76e4bf30026ec3a00e403be0cdf980a7fe454ffeff25625d0f0",
+          "out": "c1395780fa6a5019f573f781fb6ba37c16ee7fa4e0738658dd51fcca5523652a"
+        },
+        "output_fnv64": "0xb6f4118fb0b0fe6c"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 256,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "967ea3e432c06b774edec264158c637b81e2b3dcedaa4c4bba8b225ea44d9f23",
+          "up": "61fafba27162b7a8adb7b78f2785fc10ae1d25aa7e61ac6850ef365915ab615c",
+          "act": "59bc1f60219d9fd33c23866b096a43e6c314e713ba2cb49ffc52392b09ec5fb5",
+          "out": "0fddb5ef5bb1eb50658fae16a32670cbbd4c5acce2553b1fb561f3868c085e96"
+        },
+        "output_fnv64": "0x79c8a080d506ce4d"
+      },
+      {
+        "name": "l39-e383",
+        "dim": 5120,
+        "hidden": 2304,
+        "tokens": 256,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "967ea3e432c06b774edec264158c637b81e2b3dcedaa4c4bba8b225ea44d9f23",
+          "up": "61fafba27162b7a8adb7b78f2785fc10ae1d25aa7e61ac6850ef365915ab615c",
+          "act": "83359de8cfa67a9c5023a1a0e5df636321cf304adb2769e21970cb664333ac64",
+          "out": "dc0c788c1d87cf545c9dc8bc41ab43696585de035128af38235c48841d7990eb"
+        },
+        "output_fnv64": "0xdbb6f18487f612aa"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 1,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "199e2f67a48df1992760d49226a0c16e4830af0f6ad69dc719b3f03bfbc7d90a",
+          "up": "82e4fd6fbf87bc3a322c8ff430c1ad5243a909beff7ed80fc12eed49a9af0d3f",
+          "act": "9a9c1799046599086a55c4c0538329f8ca23e38b14c7eb9cb165acdb53afd78f",
+          "out": "2ad62b6ff1efc31689f480d5af6f63e43908f144fa1aeade71969faa7edbe957"
+        },
+        "output_fnv64": "0x332367c3a81e8153"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 1,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "199e2f67a48df1992760d49226a0c16e4830af0f6ad69dc719b3f03bfbc7d90a",
+          "up": "82e4fd6fbf87bc3a322c8ff430c1ad5243a909beff7ed80fc12eed49a9af0d3f",
+          "act": "60ca4942d1287b906114bab035459e7554ed57e33001f4a5f15408cba515c970",
+          "out": "812b30e28b3de28cd9a3ed191864903a380a3dcc9523f3ffc8bebbe035a81154"
+        },
+        "output_fnv64": "0x2cf1aff737b77535"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 7,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "c4a323efb5e9423026cd1770ea5370103f9f321c4c58b27ffe78d170be1ab180",
+          "up": "71ad92baf7f9e68a2eab4f25c23ab4c01750535a700bf89342ebbc39395adca3",
+          "act": "abeba6c039e564f559b45aaed4c164e1122257b5edd477196de03a09abeae68a",
+          "out": "7fc0ce7b98dbf462122a04ba593cb03474ddeb9fe72943c61f13c6e5e6d77884"
+        },
+        "output_fnv64": "0x493df811fe49665"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 7,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "c4a323efb5e9423026cd1770ea5370103f9f321c4c58b27ffe78d170be1ab180",
+          "up": "71ad92baf7f9e68a2eab4f25c23ab4c01750535a700bf89342ebbc39395adca3",
+          "act": "ac950ebe03e9ced62d95cd85035aaaa665e9dae1b4990520fb7df45e11645b33",
+          "out": "c82a20981318f77f440c3f16cb25f71caea57d3b606bbcc6688e5644e83434fa"
+        },
+        "output_fnv64": "0x3d1efce64aaf2d28"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 64,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "90e9c1cf4df9951012a247b71aa37938dbc74a41e5b5f566824f1bc8aaa7f8ea",
+          "up": "00d11045aebb9731cb19fe4d9f194bfcb8561ad315525a920b4926ae8764fa16",
+          "act": "9aebc98190e8c6122b0573d6a931a73e84d0c857fabbd0a2ef7f1d20877b7b81",
+          "out": "8a0ad38c92d055c1d78225a1258ad3465db318941f3b11ec7194d35acfcc2621"
+        },
+        "output_fnv64": "0x73d542bf26b4d530"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 64,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "90e9c1cf4df9951012a247b71aa37938dbc74a41e5b5f566824f1bc8aaa7f8ea",
+          "up": "00d11045aebb9731cb19fe4d9f194bfcb8561ad315525a920b4926ae8764fa16",
+          "act": "0092e3cb9b8241e6d5cc065223da6e950b7268dceddf71048d81b74a9ae87af4",
+          "out": "c94b5d4c5d52840bc131279f670027062b5dbc9e3f255d2453d3035c8398bec8"
+        },
+        "output_fnv64": "0x1b92ceebb297536c"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 256,
+        "limit": 0,
+        "exit": 0,
+        "sha256": {
+          "gate": "dd63e054af10cf73097ca66152c50878960025d49fbf62c61e6adb5c557c59d4",
+          "up": "39fa9f66c5b0b9134186db17748a2bd65f5610c1b4219b31cd32c63542c4cc03",
+          "act": "8f16a543dafa2bf5ae8f4de27d942f5ebbdc932414d14f89a9ab82857971631d",
+          "out": "ebaa871b00e3d0971ca1fc0f8b09d62f3b4ab34b514e18f2281ddc1f43ba67c9"
+        },
+        "output_fnv64": "0xd7080d3c3805deed"
+      },
+      {
+        "name": "synthetic",
+        "dim": 256,
+        "hidden": 384,
+        "tokens": 256,
+        "limit": 10,
+        "exit": 0,
+        "sha256": {
+          "gate": "dd63e054af10cf73097ca66152c50878960025d49fbf62c61e6adb5c557c59d4",
+          "up": "39fa9f66c5b0b9134186db17748a2bd65f5610c1b4219b31cd32c63542c4cc03",
+          "act": "ae5634f32cc919d8fc188c85e0c4d1648810f0aab6d19fd53de3c9650073b7db",
+          "out": "8f9e0381bee137c65045f02d33370e6feddd85e6dce2ec96f864e7bff08bed06"
+        },
+        "output_fnv64": "0x5b8ad84036cacb9f"
+      }
+    ],
+    "scope": "Original reconstruction, FP16/F32 Hadamard and FP16 activation kernels; original cuBLAS fallback calls, explicit DQ expert profile; no routing/reduction."
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "a13e89b0553031a534df400b10068a5662172ab8c2fb960b841c405f2626c429",
+    "src/gpu_cuda_exl3.cuh": "ef7dc278c6609ec69bc1bf82de1d85c348851f9bbe0997b5b295b504a92d1dcb",
+    "src/gpu_cuda.cu": "011dbe5ff5deea3dd348c7377c280ecc1b321c5c12ebbc3519fb7b4715d5b9c0",
+    "test/test_cuda_backend.c": "e72f1e0b91575d996a57a51d2419451bc4fdbbcb1f422f0ce5802ca7aae1a80c",
+    "test/cuda_exl3_ffn_checks.h": "999280337d9fb190b51c314c26d3beec12f3e92f01f9045f93e6d225ba754f22",
+    "test/cuda_exl3_checks.h": "c99827337b4749a1d7c6791fbca4930cf15c4ab6b89b034afbe7005cfa4d3a44",
+    "Makefile": "1db63b5cd12255cb1a8dfd1bc22b02c50f853701bf721486c0fd74339c332665"
+  },
+  "artifact_directory": "/tmp/bitnet-goal-exl3-ffn",
+  "profile": {
+    "scope": "One warmed expert39/383 FFN, tokens256 dim5120 hidden2304 limit10. Kernel timing is diagnostic, not wall latency or throughput.",
+    "api": [
+      {
+        "name": "cuKernelGetName",
+        "calls": 10
+      },
+      {
+        "name": "cuKernelSetAttribute",
+        "calls": 3
+      },
+      {
+        "name": "cuLaunchKernelEx",
+        "calls": 3
+      },
+      {
+        "name": "cuStreamGetGreenCtx",
+        "calls": 6
+      },
+      {
+        "name": "cudaLaunchKernelExC_v11060",
+        "calls": 2
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "calls": 10
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "calls": 1
+      }
+    ],
+    "kernels": [
+      {
+        "name": "bn_cuda_exl3::decode(__half *, const unsigned int *, int)",
+        "calls": 3,
+        "gpu_ns": 82783
+      },
+      {
+        "name": "bn_cuda_exl3::had_post_f32(float *, const float *, const __half *, int)",
+        "calls": 1,
+        "gpu_ns": 7040
+      },
+      {
+        "name": "bn_cuda_exl3::silu_mul(__half *, const __half *, const __half *, unsigned long, float)",
+        "calls": 1,
+        "gpu_ns": 1440
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_128x128x64_3_64x32x64_tmaAB_alignCD4_splitK_NNNN",
+        "calls": 2,
+        "gpu_ns": 54592
+      },
+      {
+        "name": "nvjet_sm120_hss_mma_128x64x64_4_64x32x64_tmaAB_alignCD4_bz_NNNN",
+        "calls": 1,
+        "gpu_ns": 35104
+      },
+      {
+        "name": "void bn_cuda_exl3::had<(bool)0>(__half *, const __half *, const __half *, int)",
+        "calls": 2,
+        "gpu_ns": 6976
+      },
+      {
+        "name": "void bn_cuda_exl3::had<(bool)1>(__half *, const __half *, const __half *, int)",
+        "calls": 3,
+        "gpu_ns": 15744
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "calls": 2,
+        "gpu_ns": 9824
+      }
+    ],
+    "kernel_calls": 15,
+    "gpu_kernel_time_sum_ns": 213503,
+    "device_memory_events_in_runtime_span": 0,
+    "memory_events_outside_runtime_span": 63,
+    "memory_note": "Nsight memory usage includes lifecycle activity outside profiler range; explicitly restricted here to captured runtime span.",
+    "host_copy_and_allocation_api_calls": 0,
+    "synchronization_note": "One explicit stream synchronize in harness before profiler stop; no synchronization inside native FFN.",
+    "application_result": {
+      "expert": "l39-e383",
+      "tokens": 256,
+      "limit": 10,
+      "repeats": 3,
+      "output_f32_words_per_repeat": 1310720,
+      "intermediate_f16_words_per_repeat": 1769472,
+      "mismatches": 0
+    },
+    "sqlite_sha256": "b5f7e1b1007c1197926c266959d6bb4443efe0ca926018f3a04e5a768f161455",
+    "caller_scratch_payload_bytes": {
+      "one_reused_decoded_matrix": 23592960,
+      "shared_xh_capacity": 2621440,
+      "shared_gate_up_gemm": 1179648,
+      "down_f32_gemm": 5242880,
+      "dedicated_cublas": 16777216
+    },
+    "caller_scratch_payload_note": "47.125MiB in the sampled FFN, excluding packed inputs/scales, source activations, retained intermediate/final outputs, host storage, canaries, context/library metadata. Three projections reuse one decoded matrix allocation."
+  },
+  "reference_stats": [
+    {
+      "expert": "l0-e0",
+      "m256_activation_words_changed_by_clip10": 0,
+      "output_f32_nonfinite": 0,
+      "max_abs_output": 22.71784019470215
+    },
+    {
+      "expert": "l39-e383",
+      "m256_activation_words_changed_by_clip10": 20,
+      "output_f32_nonfinite": 0,
+      "max_abs_output": 30.668903350830078
+    },
+    {
+      "expert": "synthetic",
+      "m256_activation_words_changed_by_clip10": 49877,
+      "output_f32_nonfinite": 0,
+      "max_abs_output": 7830.322265625
+    }
+  ],
+  "scope": "Explicit device-resident EXL3 MUL1 DQ expert FFN: F16 gate/up, F16 SiLU and asymmetric post-activation clipping/product, F16 down input, F32 down output and Hadamard/post-scale. Two actual checkpoint experts and synthetic fixtures with deterministic test activations; no model inference or routing claim.",
+  "reference_scope": "Original unmodified upstream reconstruction/Hadamard/activation kernel bodies or included original headers at bd1f519172406a9560bd5c90e61000691bb69a07, cuBLAS fallback call with original COMPUTE_32F DEFAULT_MATH arguments and 16MiB workspace. Explicit DQ profile for M1/7/64/256; not original low-token packed decode policy or M>=384 custom GEMM.",
+  "actual_checkpoint_output_f32_words_exact": 20152320,
+  "actual_checkpoint_intermediate_f16_words_exact": 27205632,
+  "checkpoint_semantics": {
+    "hidden_act": "silu",
+    "swiglu_limit": 10.0,
+    "gate_up_dtype": "F16",
+    "down_output_dtype": "F32",
+    "source": "Local checkpoint config.json plus pinned architecture/deepseek_v4.py BlockSparseMLP construction and run_single_expert_dq."
+  },
+  "reference_artifact_sha256": {
+    "reference.cu": "c1a80475ef231b4daebcd4bae0988abfdf751cac651986c4b19bd173dc21f83a",
+    "original-had-kernels.cuh": "082041c4bb7da686ee8017d5b7714f9759749da11e5821d020097d0cfeb60c92",
+    "original-reconstruct.cuh": "80e2543ba1d3b661dc90c6f381d624b2a3d73dd4e660ed7f3c4716967d34a037",
+    "capture.py": "7167d070fc82b7ddb3086f1084570cf528fa537133f8cc6bbcd2ce4973406c69",
+    "capture.json": "330dd91e5a667d579bb718dd1b98eff36b22c40b42b64b68cf233b416caa5c65",
+    "inputs.json": "0be5ae69264c4db38fe7935bfbda956f0797517d96e7e7d14149e570d0f8d921"
+  },
+  "upstream_source_sha256": {
+    "architecture/deepseek_v4.py": "c7e0199c9002e929903d25739bd9e1d3c4dbec2b1ac7a20fcd077b50f6795e83",
+    "exllamav3_ext/libtorch/blocksparse_mlp.cpp": "e5941bede3b1a9fd6e711104c28ef3a9526e913db3823db5ce937c767d3c9044",
+    "exllamav3_ext/activation_kernels.cuh": "5a282a40b3f7bfc9a811a5a76797e42f3ebab808740c28cd5b646ca92064cb35",
+    "exllamav3_ext/quant/hadamard_inner.cuh": "8d8e437aced88735e919563301ffac0e4a2aac28cc542ed3f738e1216ea0c36b",
+    "exllamav3_ext/hgemm.cu": "e46ecb86092ce59af75edf5a8dcfcf944472d488f4e6f242017d8031ff09d697"
+  },
+  "limitations": [
+    "Primitive execution only: no expert routing, weighted top-k reduction, shared expert composition, native checkpoint admission, or full DeepSeek forward/generation.",
+    "Original packed decode kernel, adaptive FP16 partial GEMM, fused original-basis weight reconstruction, and larger-batch original policy remain unqualified.",
+    "Exact reference equivalence is scoped to this SM120 CUDA/cuBLAS stack and explicit DQ profile; DEFAULT_MATH may use vendor reduced-precision internal reductions.",
+    "No vLLM parity, unprofiled throughput/latency, or full model RAM/VRAM placement claim.",
+    "Native code supports explicit sequential scratch reuse; current tests do not establish inter-request concurrent execution on the same request.",
+    "No CPU SIMD kernel changed, and no additional NEON/Metal/WASM execution qualification was performed."
+  ],
+  "all_reference_outputs_finite": true,
+  "binary_sha256": {
+    "bitnet": "763512169c5c0755fa0d17ce470936645a2fdd86d13361499fd256a8fd1fb79c",
+    "test_cuda_backend": "94d346a4f0d6f64b14514ca4deb0c5e85e6b808be154c0f4ea44798a4f73465b",
+    "/tmp/bitnet-goal-exl3-ffn/checkpoint-probe": "70f5aa0a2ee087727c3131665d38ca99f725eb27e0ae7eb8d47774b47acb9a61"
+  }
+}

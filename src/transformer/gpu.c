@@ -1,4 +1,5 @@
 #include "gpu_internal.h"
+#include "transformer_internal.h"
 #include "gpu_policy.h"
 #include "transformer_kv_internal.h"
 #include "transformer_logits_internal.h"
@@ -272,7 +273,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         if (l == c->ple_layer && c->ple_head_count > 0 &&
             bn_transformer_gpu_fallback_positional_layer_embedding(
                 &emit, gpu, m, sess, lw, pos,
-                bn_transformer_gpu_reference_recurrent_exact_enabled(
+                bn_transformer_gpu_ple_host_reference_enabled(
                     gpu, c)) != 0)
             return bn_transformer_gpu_reject_forward(
                 &emit, "gpu positional layer embedding fallback failed");
@@ -1671,14 +1672,18 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
 float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess,
                                   int token, int pos) {
-    return bn_transformer_gpu_forward_impl(m, sess, token, pos, 1,
-                                           NULL, NULL, 0, 1.0f);
+    float *result = bn_transformer_gpu_forward_impl(m, sess, token, pos, 1,
+                                                    NULL, NULL, 0, 1.0f);
+    if (result) bn_transformer_gpu_mark_decode_ssm_pending(m, sess);
+    return result;
 }
 
 float *bn_transformer_gpu_forward_no_logits(BnModel *m, BnSession *sess,
                                             int token, int pos) {
-    return bn_transformer_gpu_forward_impl(m, sess, token, pos, 0,
-                                           NULL, NULL, 0, 1.0f);
+    float *result = bn_transformer_gpu_forward_impl(m, sess, token, pos, 0,
+                                                    NULL, NULL, 0, 1.0f);
+    if (result) bn_transformer_gpu_mark_decode_ssm_pending(m, sess);
+    return result;
 }
 
 int bn_transformer_gpu_forward_argmax(BnModel *m, BnSession *sess,
@@ -1691,5 +1696,6 @@ int bn_transformer_gpu_forward_argmax(BnModel *m, BnSession *sess,
     float *state = bn_transformer_gpu_forward_impl(
         m, sess, token, pos, 0, out_token, penalty_tokens,
         n_penalty_tokens, repeat_penalty);
+    if (state) bn_transformer_gpu_mark_decode_ssm_pending(m, sess);
     return state ? 0 : -1;
 }

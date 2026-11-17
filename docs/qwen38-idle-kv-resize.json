@@ -1,0 +1,537 @@
+{
+  "scope": "Matched controlled-step48-request before/after KV admission; not a new vLLM comparison, wall-clock offered-load or total-VRAM qualification",
+  "modes": {
+    "fixed": {
+      "runs": [
+        {
+          "elapsed_ms": 43790.859654,
+          "tokens_per_second": 70.151626,
+          "itl_p95_ms": 68.89311899999666,
+          "itl_p99_ms": 69.66374599999835,
+          "itl_p999_ms": 100.05536500000005,
+          "itl_max_ms": 100.05536500000005,
+          "intervals_over100_ms": 4,
+          "retained_kv_bytes": 4294967296,
+          "peak_kv_bytes": 4294967296
+        },
+        {
+          "elapsed_ms": 44458.460511,
+          "tokens_per_second": 69.098209,
+          "itl_p95_ms": 69.61977900000056,
+          "itl_p99_ms": 70.49856200000067,
+          "itl_p999_ms": 95.68557800000008,
+          "itl_max_ms": 95.68557800000008,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 4294967296,
+          "peak_kv_bytes": 4294967296
+        },
+        {
+          "elapsed_ms": 44546.089428,
+          "tokens_per_second": 68.962282,
+          "itl_p95_ms": 69.76066499999979,
+          "itl_p99_ms": 70.62425400000029,
+          "itl_p999_ms": 95.80609199999992,
+          "itl_max_ms": 95.80609199999992,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 4294967296,
+          "peak_kv_bytes": 4294967296
+        }
+      ],
+      "medians": {
+        "elapsed_ms": 44458.460511,
+        "tokens_per_second": 69.098209,
+        "itl_p95_ms": 69.61977900000056,
+        "itl_p99_ms": 70.49856200000067,
+        "itl_p999_ms": 95.80609199999992,
+        "itl_max_ms": 95.80609199999992,
+        "intervals_over100_ms": 0,
+        "retained_kv_bytes": 4294967296,
+        "peak_kv_bytes": 4294967296
+      }
+    },
+    "sized": {
+      "runs": [
+        {
+          "elapsed_ms": 44183.581415,
+          "tokens_per_second": 69.528089,
+          "itl_p95_ms": 69.24679000000106,
+          "itl_p99_ms": 70.30188199999975,
+          "itl_p999_ms": 91.9564600000001,
+          "itl_max_ms": 91.9564600000001,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 536870912,
+          "peak_kv_bytes": 536870912,
+          "memory_validation": {
+            "capacity_pool_valid": true,
+            "created": 8,
+            "reused": 40,
+            "evicted": 0,
+            "resized": 12,
+            "retained_kv_bytes": 536870912,
+            "peak_kv_bytes": 536870912
+          }
+        },
+        {
+          "elapsed_ms": 44344.004472,
+          "tokens_per_second": 69.276558,
+          "itl_p95_ms": 69.45878300000186,
+          "itl_p99_ms": 70.5591740000018,
+          "itl_p999_ms": 92.00725699999998,
+          "itl_max_ms": 92.00725699999998,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 536870912,
+          "peak_kv_bytes": 536870912,
+          "memory_validation": {
+            "capacity_pool_valid": true,
+            "created": 8,
+            "reused": 40,
+            "evicted": 0,
+            "resized": 12,
+            "retained_kv_bytes": 536870912,
+            "peak_kv_bytes": 536870912
+          }
+        },
+        {
+          "elapsed_ms": 44579.923036,
+          "tokens_per_second": 68.909944,
+          "itl_p95_ms": 69.7999149999996,
+          "itl_p99_ms": 70.85670000000027,
+          "itl_p999_ms": 92.47733600000004,
+          "itl_max_ms": 92.47733600000004,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 536870912,
+          "peak_kv_bytes": 536870912,
+          "memory_validation": {
+            "capacity_pool_valid": true,
+            "created": 8,
+            "reused": 40,
+            "evicted": 0,
+            "resized": 12,
+            "retained_kv_bytes": 536870912,
+            "peak_kv_bytes": 536870912
+          }
+        }
+      ],
+      "medians": {
+        "elapsed_ms": 44344.004472,
+        "tokens_per_second": 69.276558,
+        "itl_p95_ms": 69.45878300000186,
+        "itl_p99_ms": 70.5591740000018,
+        "itl_p999_ms": 92.00725699999998,
+        "itl_max_ms": 92.00725699999998,
+        "intervals_over100_ms": 0,
+        "retained_kv_bytes": 536870912,
+        "peak_kv_bytes": 536870912
+      }
+    }
+  },
+  "full_goal_complete": false,
+  "comparison": {
+    "throughput_ratio": 1.0025810943956592,
+    "p99_ratio": 1.0008597622175772,
+    "p999_ratio": 0.9603487114368474,
+    "kv_ratio": 0.125
+  },
+  "schema": 1,
+  "stage": "idle_kv_resize",
+  "device": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "source_sha256": {
+    "include/gpu_backend.h": "e9d312dd6bcb42cb354d06e6c42aaa3008b51f3ffe392979e2274d5454632d1a",
+    "src/gpu_cuda_gdn.cuh": "0414e1388714a209f427f8fb3ffa93d87c6a4185fe94772e6d559ac5b6287954",
+    "src/gpu_cuda.cu": "de64cf67a7d360e8e7b82fb61aa3cc1b78c6f4b9c58407e61a5c2c98ac19989f",
+    "src/transformer/bf16.c": "c458581760dbfddccc64db8131421051863ecd462238e6e5daab6310c018b4b0",
+    "src/transformer/bf16_pool.c": "0503b6798e2554b7e76a268259177ac2ff14d54189f1fef116bbef4cacc3238b",
+    "src/transformer/bf16_internal.h": "4fbf1ae7dad1bba8b7d9351ce656706be378f91f2217c41c8ce54d4ae95b14c6",
+    "test/test_cuda_backend.c": "8c64899a7bc7baa6314eb52451957ab4833312c7a30e9925b8521d41bd995bc3",
+    "test/test_bf16_pool.c": "9fe69044cebccd13472b5a61d36b7a1de850c7de08548e72ce21fdf7b06d8365",
+    "test/test_bf16_runtime.c": "e47729d00615d7d33573baeb6974bf3adf24f8a300eb67513cd7c89c055f419c",
+    "bench/bench_bf16_arrivals.c": "c48cbfaf9f2bb3685b1649e196d311b161a39a0ed218a47914e50270cf1e95c4",
+    "bench/verify_bf16_capacity_pool.py": "f76dcad917dbc78dfb8b261baa68da4d89f5278cd0416ba6cb4b6457e7e398cf",
+    "test/test_bf16_capacity_pool.py": "0632ab2632e198ef3d5d37fd725f5995656d7a47b8bf7ebbf2ee6c5e8a5f4c0b"
+  },
+  "previous_stage": "qwen38-request-capacity-admission.json",
+  "backend_contract": {
+    "serialized_setup_only": true,
+    "idle_session_only": true,
+    "preserves_kv_contents": false,
+    "invalidates_old_full_views_and_slices": true,
+    "free_before_allocate": true,
+    "poisons_request_on_partial_failure": true
+  },
+  "validation": {
+    "clean_build_zero_warnings": true,
+    "standard_suite": true,
+    "cuda_suite_and_diagnostics": true,
+    "resize_memcheck_errors": 0,
+    "resize_synccheck_errors": 0,
+    "pool_asan_ubsan": true,
+    "real_model_prefix_heads_exact": 26,
+    "real_model_partial_resize_cleanup": true,
+    "independent_controls": [
+      {
+        "case": "fixed12",
+        "heads": 784
+      },
+      {
+        "case": "sized12",
+        "heads": 784
+      },
+      {
+        "case": "sized48",
+        "heads": 4132,
+        "bf16_words": 1026058240
+      }
+    ],
+    "sized48_memory": {
+      "capacity_pool_valid": true,
+      "created": 8,
+      "reused": 40,
+      "evicted": 0,
+      "resized": 12,
+      "retained_kv_bytes": 536870912,
+      "peak_kv_bytes": 536870912
+    }
+  },
+  "admission_profile_before": {
+    "fixed": [
+      {
+        "call": 66,
+        "host_gap_ms": 2.970438,
+        "apis": [
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 384,
+            "inclusive_ms": 1.201624
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 15,
+            "inclusive_ms": 0.108726
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 14,
+            "inclusive_ms": 0.005358
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.00031
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      },
+      {
+        "call": 214,
+        "host_gap_ms": 3.045343,
+        "apis": [
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 384,
+            "inclusive_ms": 1.236257
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 15,
+            "inclusive_ms": 0.114432
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 14,
+            "inclusive_ms": 0.006419
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.000411
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      }
+    ],
+    "sized": [
+      {
+        "call": 66,
+        "host_gap_ms": 55.516869,
+        "apis": [
+          {
+            "api": "cudaMalloc_v3020",
+            "calls": 1044,
+            "inclusive_ms": 27.841756
+          },
+          {
+            "api": "cudaFree_v3020",
+            "calls": 1068,
+            "inclusive_ms": 23.249313
+          },
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 388,
+            "inclusive_ms": 1.117625
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 19,
+            "inclusive_ms": 0.162976
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 34,
+            "inclusive_ms": 0.039828
+          },
+          {
+            "api": "cudaEventDestroy_v3020",
+            "calls": 72,
+            "inclusive_ms": 0.02684
+          },
+          {
+            "api": "cudaDeviceSynchronize_v3020",
+            "calls": 16,
+            "inclusive_ms": 0.025617
+          },
+          {
+            "api": "cudaStreamCreateWithFlags_v5000",
+            "calls": 4,
+            "inclusive_ms": 0.024287
+          },
+          {
+            "api": "cudaEventCreateWithFlags_v3020",
+            "calls": 72,
+            "inclusive_ms": 0.023792
+          },
+          {
+            "api": "cudaStreamDestroy_v5050",
+            "calls": 4,
+            "inclusive_ms": 0.018398
+          },
+          {
+            "api": "cuStreamGetGreenCtx",
+            "calls": 4,
+            "inclusive_ms": 0.001802
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.000451
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      },
+      {
+        "call": 214,
+        "host_gap_ms": 47.159458,
+        "apis": [
+          {
+            "api": "cudaMalloc_v3020",
+            "calls": 1044,
+            "inclusive_ms": 22.924859
+          },
+          {
+            "api": "cudaFree_v3020",
+            "calls": 1068,
+            "inclusive_ms": 20.612306
+          },
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 388,
+            "inclusive_ms": 0.953351
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 19,
+            "inclusive_ms": 0.147393
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 34,
+            "inclusive_ms": 0.033231
+          },
+          {
+            "api": "cudaEventDestroy_v3020",
+            "calls": 72,
+            "inclusive_ms": 0.031246
+          },
+          {
+            "api": "cudaEventCreateWithFlags_v3020",
+            "calls": 72,
+            "inclusive_ms": 0.022227
+          },
+          {
+            "api": "cudaDeviceSynchronize_v3020",
+            "calls": 16,
+            "inclusive_ms": 0.022115
+          },
+          {
+            "api": "cudaStreamCreateWithFlags_v5000",
+            "calls": 4,
+            "inclusive_ms": 0.021021
+          },
+          {
+            "api": "cudaStreamDestroy_v5050",
+            "calls": 4,
+            "inclusive_ms": 0.016766
+          },
+          {
+            "api": "cuStreamGetGreenCtx",
+            "calls": 4,
+            "inclusive_ms": 0.001383
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.000391
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      }
+    ]
+  },
+  "admission_profile_after": {
+    "fixed": [
+      {
+        "call": 66,
+        "host_gap_ms": 2.888213,
+        "apis": [
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 384,
+            "inclusive_ms": 1.188703
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 15,
+            "inclusive_ms": 0.104119
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 14,
+            "inclusive_ms": 0.005352
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.000361
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      },
+      {
+        "call": 214,
+        "host_gap_ms": 2.920152,
+        "apis": [
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 384,
+            "inclusive_ms": 1.176719
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 15,
+            "inclusive_ms": 0.111091
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 14,
+            "inclusive_ms": 0.006501
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.000601
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      }
+    ],
+    "sized": [
+      {
+        "call": 66,
+        "host_gap_ms": 12.053708,
+        "apis": [
+          {
+            "api": "cudaMalloc_v3020",
+            "calls": 128,
+            "inclusive_ms": 6.691576
+          },
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 384,
+            "inclusive_ms": 1.350726
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 143,
+            "inclusive_ms": 0.915249
+          },
+          {
+            "api": "cudaFree_v3020",
+            "calls": 128,
+            "inclusive_ms": 0.831742
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 142,
+            "inclusive_ms": 0.073795
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.00048
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      },
+      {
+        "call": 214,
+        "host_gap_ms": 10.294521,
+        "apis": [
+          {
+            "api": "cudaMalloc_v3020",
+            "calls": 128,
+            "inclusive_ms": 6.04948
+          },
+          {
+            "api": "cudaMemsetAsync_v3020",
+            "calls": 384,
+            "inclusive_ms": 1.196172
+          },
+          {
+            "api": "cudaMemcpyAsync_v3020",
+            "calls": 143,
+            "inclusive_ms": 0.853322
+          },
+          {
+            "api": "cudaFree_v3020",
+            "calls": 128,
+            "inclusive_ms": 0.429334
+          },
+          {
+            "api": "cudaStreamSynchronize_v3020",
+            "calls": 142,
+            "inclusive_ms": 0.059586
+          },
+          {
+            "api": "cuKernelGetName",
+            "calls": 1,
+            "inclusive_ms": 0.000491
+          }
+        ],
+        "window": "Final prior-step logits DtoH completion fence through current embedding launch, main thread; includes CPU sampling and admission, not an isolated transfer stall"
+      }
+    ]
+  },
+  "evidence_directory": "/tmp/bitnet-goal-idle-kv",
+  "limits": [
+    "KV payload budget only; no total backend memory guarantee",
+    "Controlled finite 572-step replay, not sustained or network serving",
+    "No new vLLM performance comparison",
+    "Opt-in sized KV admission; active prefixes are never resized",
+    "Profiler overhead; host windows include sampling and admission, not isolated transfer stalls"
+  ],
+  "profile_database_sha256": {
+    "sized.sqlite": "2075381fe943ce5ed3524d07b618e196466d461c1a8877baff95a6348211a05e",
+    "fixed.sqlite": "ce6b3f16deb700a6f32a6b660108fe36c6d79fec50e168fd9543770a4536f098",
+    "after/sized.sqlite": "a4e9fc6a4107fbeda23c2dca40b46e589b28d4afa5463c5b7fd86c7a43d5c314",
+    "after/fixed.sqlite": "eace957db5951286d927500f6bf9b1dfbf3115e69b7d80fef5c656fe3ab484fb"
+  }
+}

@@ -1,0 +1,1139 @@
+{
+  "cases": [
+    {
+      "dim": 1,
+      "tokens": 1,
+      "kernel": 2,
+      "seed": 0,
+      "out": 649935649941364018,
+      "history": 764918177950450554
+    },
+    {
+      "dim": 1,
+      "tokens": 1,
+      "kernel": 2,
+      "seed": 1,
+      "out": 564789469469545203,
+      "history": 759851628368600391
+    },
+    {
+      "dim": 1,
+      "tokens": 1,
+      "kernel": 3,
+      "seed": 0,
+      "out": 649935649941364018,
+      "history": 7603800355428629068
+    },
+    {
+      "dim": 1,
+      "tokens": 1,
+      "kernel": 3,
+      "seed": 1,
+      "out": 563945044539268380,
+      "history": 1043322280894060403
+    },
+    {
+      "dim": 1,
+      "tokens": 1,
+      "kernel": 4,
+      "seed": 0,
+      "out": 572530031330636843,
+      "history": 3246248499352668340
+    },
+    {
+      "dim": 1,
+      "tokens": 1,
+      "kernel": 4,
+      "seed": 1,
+      "out": 609825465752174188,
+      "history": 1456812595907694117
+    },
+    {
+      "dim": 31,
+      "tokens": 5,
+      "kernel": 2,
+      "seed": 0,
+      "out": 6159537288940267033,
+      "history": 9669990212976880704
+    },
+    {
+      "dim": 31,
+      "tokens": 5,
+      "kernel": 2,
+      "seed": 1,
+      "out": 387016658257668265,
+      "history": 17025537982312998386
+    },
+    {
+      "dim": 31,
+      "tokens": 5,
+      "kernel": 3,
+      "seed": 0,
+      "out": 15218176993299911671,
+      "history": 13488730684129220143
+    },
+    {
+      "dim": 31,
+      "tokens": 5,
+      "kernel": 3,
+      "seed": 1,
+      "out": 7834161098645618008,
+      "history": 4877376125649284903
+    },
+    {
+      "dim": 31,
+      "tokens": 5,
+      "kernel": 4,
+      "seed": 0,
+      "out": 16051240675255699399,
+      "history": 16514197466791345989
+    },
+    {
+      "dim": 31,
+      "tokens": 5,
+      "kernel": 4,
+      "seed": 1,
+      "out": 166397683706137916,
+      "history": 18086899093685372619
+    },
+    {
+      "dim": 257,
+      "tokens": 17,
+      "kernel": 2,
+      "seed": 0,
+      "out": 14732254873159519494,
+      "history": 11811744987396057847
+    },
+    {
+      "dim": 257,
+      "tokens": 17,
+      "kernel": 2,
+      "seed": 1,
+      "out": 2890759691445221191,
+      "history": 7549266081146941340
+    },
+    {
+      "dim": 257,
+      "tokens": 17,
+      "kernel": 3,
+      "seed": 0,
+      "out": 17113043302614693136,
+      "history": 1194043666439070761
+    },
+    {
+      "dim": 257,
+      "tokens": 17,
+      "kernel": 3,
+      "seed": 1,
+      "out": 17152839581055781037,
+      "history": 8696982822990016968
+    },
+    {
+      "dim": 257,
+      "tokens": 17,
+      "kernel": 4,
+      "seed": 0,
+      "out": 4996593641004414001,
+      "history": 12155914839241532907
+    },
+    {
+      "dim": 257,
+      "tokens": 17,
+      "kernel": 4,
+      "seed": 1,
+      "out": 13708738422949160600,
+      "history": 10643206899352442489
+    },
+    {
+      "dim": 768,
+      "tokens": 65,
+      "kernel": 2,
+      "seed": 0,
+      "out": 1238457422548107358,
+      "history": 17337941166441758983
+    },
+    {
+      "dim": 768,
+      "tokens": 65,
+      "kernel": 2,
+      "seed": 1,
+      "out": 4945570015690330521,
+      "history": 2540732412162985447
+    },
+    {
+      "dim": 768,
+      "tokens": 65,
+      "kernel": 3,
+      "seed": 0,
+      "out": 12956019806743017031,
+      "history": 3292374780084756781
+    },
+    {
+      "dim": 768,
+      "tokens": 65,
+      "kernel": 3,
+      "seed": 1,
+      "out": 6996481240769579806,
+      "history": 17322326898891936038
+    },
+    {
+      "dim": 768,
+      "tokens": 65,
+      "kernel": 4,
+      "seed": 0,
+      "out": 10399791391343142388,
+      "history": 13125208885832925604
+    },
+    {
+      "dim": 768,
+      "tokens": 65,
+      "kernel": 4,
+      "seed": 1,
+      "out": 3930681664465381596,
+      "history": 17443209213195353041
+    },
+    {
+      "dim": 24576,
+      "tokens": 17,
+      "kernel": 2,
+      "seed": 0,
+      "out": 15334102671799124695,
+      "history": 13793565315532943501
+    },
+    {
+      "dim": 24576,
+      "tokens": 17,
+      "kernel": 2,
+      "seed": 1,
+      "out": 12674278993585485627,
+      "history": 15345710499389914312
+    },
+    {
+      "dim": 24576,
+      "tokens": 17,
+      "kernel": 3,
+      "seed": 0,
+      "out": 8667259797238499140,
+      "history": 13801436012174625038
+    },
+    {
+      "dim": 24576,
+      "tokens": 17,
+      "kernel": 3,
+      "seed": 1,
+      "out": 11140488475168628694,
+      "history": 5809136650491134804
+    },
+    {
+      "dim": 24576,
+      "tokens": 17,
+      "kernel": 4,
+      "seed": 0,
+      "out": 1624891708385879734,
+      "history": 1486273107487734293
+    },
+    {
+      "dim": 24576,
+      "tokens": 17,
+      "kernel": 4,
+      "seed": 1,
+      "out": 489777105211701614,
+      "history": 12002767711273259868
+    }
+  ],
+  "torch": "2.14.0+cu130",
+  "operator_sha256": "52f56188b2a08f1214dbe70e04235fb1260f94ffaaae2b5ab8f72f281643fad2",
+  "header_sha256": "71472891bb6363524f8cc437f8bb746577039189d457a3643bac642b8ac68ecb",
+  "generator_sha256": "6f640020d6764b6f01c7651e2b83b637fbfcf3f688846d4f27022fd4adef4907",
+  "output_history_words": 9423054,
+  "launches": 714,
+  "device": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "native_api": "causal_conv_f32_weight_bf16_resident",
+  "profile": "BF16 activation/history, F32 weights, ordered F32 FMA, F32 SiLU, BF16 output",
+  "source_sha256": {
+    "include/gpu_backend.h": "659ca2f004343b268b47309b4d23dee106d033001574ca47f92ea1917887a76f",
+    "src/gpu_cuda.cu": "34127e4f5108b4e1619dd6ddb24b6e81a03380c82e52e6e5cc6b061dae2b64ad",
+    "src/gpu_cuda_gdn.cuh": "54560b3acf3e59d4d5b08eae76aa6ae49994d461f5bc961e485d371faca42115",
+    "test/test_cuda_backend.c": "ecf51ac4de73f9d24a908e1f3d2c43235751bc222564541be9749c031505ef80",
+    "test/cuda_f32_weight_conv_reference.h": "71472891bb6363524f8cc437f8bb746577039189d457a3643bac642b8ac68ecb",
+    "test/reference_cuda_f32_weight_conv.py": "6f640020d6764b6f01c7651e2b83b637fbfcf3f688846d4f27022fd4adef4907",
+    "Makefile": "e40b49d96f1ab0a95b87a9c5365a15264094bd039dfb35f3ddd2c115c06557ae"
+  },
+  "verification": {
+    "baseline_standard": true,
+    "protected_clean": true,
+    "zero_build_warnings": true,
+    "standard": true,
+    "full_cuda": true,
+    "cuda_diagnostics": true,
+    "memcheck_errors": 0,
+    "independent_reference_repeat_exact": true,
+    "repeat_files": 61,
+    "source_freeze": true
+  },
+  "limitations": [
+    "Resident convolution only; no GLM model registration or whole-model qualification.",
+    "Complete BF16 KDA chain and CPU rounding differences remain open.",
+    "Qualified on designated SM120 CUDA device; no performance-parity claim."
+  ],
+  "full_chain_cpu_baseline": [
+    {
+      "summary": {
+        "case": 0,
+        "conv_max": 1.1920928955078125e-07,
+        "conv_bad": 0,
+        "state_max": 5.960464477539063e-08,
+        "core_bad": 0,
+        "out_max": 1.1920928955078125e-07,
+        "out_bad": 0
+      },
+      "rows": [
+        {
+          "token": 0,
+          "conv_error": 5.960464477539063e-08,
+          "conv_bad": 0,
+          "state_error": 1.862645149230957e-09,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 1,
+          "conv_error": 5.960464477539063e-08,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 2,
+          "conv_error": 5.960464477539063e-08,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 3,
+          "conv_error": 5.960464477539063e-08,
+          "conv_bad": 0,
+          "state_error": 7.450580596923828e-09,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 4,
+          "conv_error": 2.9802322387695312e-08,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 5,
+          "conv_error": 2.9802322387695312e-08,
+          "conv_bad": 0,
+          "state_error": 5.029141902923584e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 6,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 7,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 7.450580596923828e-09,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 8,
+          "conv_error": 2.9802322387695312e-08,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        }
+      ]
+    },
+    {
+      "summary": {
+        "case": 1,
+        "conv_max": 4.76837158203125e-07,
+        "conv_bad": 4,
+        "state_max": 0.000498645007610321,
+        "core_bad": 66,
+        "out_max": 0.001928478479385376,
+        "out_bad": 62
+      },
+      "rows": [
+        {
+          "token": 0,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 1,
+          "out_error": 0.00020549260079860687,
+          "out_bad": 1
+        },
+        {
+          "token": 1,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 8.940696716308594e-08,
+          "core_bad": 0,
+          "out_error": 4.76837158203125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 2,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 1,
+          "state_error": 0.0002480633556842804,
+          "core_bad": 21,
+          "out_error": 0.00044120848178863525,
+          "out_bad": 19
+        },
+        {
+          "token": 3,
+          "conv_error": 4.76837158203125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9053539037704468e-05,
+          "core_bad": 1,
+          "out_error": 8.039933163672686e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 4,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 2,
+          "state_error": 0.000498645007610321,
+          "core_bad": 20,
+          "out_error": 0.001928478479385376,
+          "out_bad": 19
+        },
+        {
+          "token": 5,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 5.2611343562603e-05,
+          "core_bad": 3,
+          "out_error": 0.000720098614692688,
+          "out_bad": 3
+        },
+        {
+          "token": 6,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 4.292000085115433e-06,
+          "core_bad": 3,
+          "out_error": 1.500011421740055e-05,
+          "out_bad": 3
+        },
+        {
+          "token": 7,
+          "conv_error": 4.76837158203125e-07,
+          "conv_bad": 0,
+          "state_error": 1.5231780707836151e-06,
+          "core_bad": 1,
+          "out_error": 7.152557373046875e-07,
+          "out_bad": 2
+        },
+        {
+          "token": 8,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.7881393432617188e-07,
+          "core_bad": 0,
+          "out_error": 7.152557373046875e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 9,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.1920928955078125e-07,
+          "core_bad": 2,
+          "out_error": 1.407763920724392e-05,
+          "out_bad": 2
+        },
+        {
+          "token": 10,
+          "conv_error": 4.76837158203125e-07,
+          "conv_bad": 0,
+          "state_error": 1.1920928955078125e-07,
+          "core_bad": 0,
+          "out_error": 3.5762786865234375e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 11,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.7881393432617188e-07,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 12,
+          "conv_error": 3.5762786865234375e-07,
+          "conv_bad": 0,
+          "state_error": 8.940696716308594e-08,
+          "core_bad": 2,
+          "out_error": 7.728859782218933e-05,
+          "out_bad": 2
+        },
+        {
+          "token": 13,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 8.940696716308594e-08,
+          "core_bad": 2,
+          "out_error": 2.9582995921373367e-05,
+          "out_bad": 2
+        },
+        {
+          "token": 14,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.1920928955078125e-07,
+          "core_bad": 2,
+          "out_error": 3.7453602999448776e-05,
+          "out_bad": 2
+        },
+        {
+          "token": 15,
+          "conv_error": 3.5762786865234375e-07,
+          "conv_bad": 1,
+          "state_error": 4.694890230894089e-05,
+          "core_bad": 8,
+          "out_error": 0.00034993886947631836,
+          "out_bad": 7
+        },
+        {
+          "token": 16,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 6.966292858123779e-07,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        }
+      ]
+    },
+    {
+      "summary": {
+        "case": 2,
+        "conv_max": 2.384185791015625e-07,
+        "conv_bad": 0,
+        "state_max": 1.7881393432617188e-07,
+        "core_bad": 3,
+        "out_max": 0.0014288872480392456,
+        "out_bad": 3
+      },
+      "rows": [
+        {
+          "token": 0,
+          "conv_error": 5.960464477539063e-08,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 1,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 4.470348358154297e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 2,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 3,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 4,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 5,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 6,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 7,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 8,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 4.76837158203125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 9,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 10,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 11,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 12,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.7881393432617188e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 13,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 14,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 15,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 16,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 17,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 4.470348358154297e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 18,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 19,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 4.470348358154297e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 20,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 21,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 1,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 1
+        },
+        {
+          "token": 22,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 23,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 24,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 25,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 26,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 1,
+          "out_error": 0.0014288872480392456,
+          "out_bad": 1
+        },
+        {
+          "token": 27,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 28,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 1,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 1
+        },
+        {
+          "token": 29,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.862645149230957e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 30,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 31,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 3.5762786865234375e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 32,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 33,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 34,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 35,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 36,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 37,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 8.940696716308594e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 38,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 39,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 40,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 41,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 42,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 43,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 3.5762786865234375e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 44,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 45,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 8.940696716308594e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 46,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 8.940696716308594e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 47,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 48,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 4.470348358154297e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 49,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 50,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.2351741790771484e-08,
+          "core_bad": 0,
+          "out_error": 8.940696716308594e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 51,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 52,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 53,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 54,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 55,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.4901161193847656e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 56,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 57,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 1.1920928955078125e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 58,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 1.7881393432617188e-07,
+          "core_bad": 0,
+          "out_error": 1.7881393432617188e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 59,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 2.384185791015625e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 60,
+          "conv_error": 2.384185791015625e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 61,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 1.1175870895385742e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 62,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 1.7881393432617188e-07,
+          "out_bad": 0
+        },
+        {
+          "token": 63,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 2.9802322387695312e-08,
+          "core_bad": 0,
+          "out_error": 5.960464477539063e-08,
+          "out_bad": 0
+        },
+        {
+          "token": 64,
+          "conv_error": 1.1920928955078125e-07,
+          "conv_bad": 0,
+          "state_error": 5.960464477539063e-08,
+          "core_bad": 0,
+          "out_error": 2.9802322387695312e-08,
+          "out_bad": 0
+        }
+      ]
+    }
+  ]
+}

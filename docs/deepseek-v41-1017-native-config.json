@@ -1,0 +1,127 @@
+{
+  "milestone": "Config-driven native expert-storage loading",
+  "status": "Qualified component; whole modern inference and vLLM parity objective remains active",
+  "implementation": {
+    "json": "New bounded owned immutable JSON reader; rejects duplicate decoded keys, invalid UTF-8/surrogates, NUL strings, malformed syntax/trailing input and resource limits. Retains numeric lexemes without floating conversion.",
+    "bounds": {
+      "input_bytes": 16777216,
+      "nodes": 65536,
+      "nesting_depth": 64
+    },
+    "architecture": "Architecture-owned validation of DeepSeek V4.1 main expert dimensions, active count, EXL3 3-bit MUL1 and every main layer bit width. MTP metadata retained but main catalog excludes MTP.",
+    "model": "bn_model_load_trellis_config parses and owns config, validates profile, and atomically binds model-owned catalog against borrowed native index. Caller buffer can be discarded after return. Backend resources release before catalog/config.",
+    "scope": "Expert storage only. Legacy BnConfig/weights and executor admission are not populated; full native topology and generation remain pending. All other config fields remain in the owned document for future topology validation."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "json-probe-build": 0,
+      "asan-json-probe-build": 0,
+      "json-differential": 0,
+      "asan-json-unit-build": 0,
+      "asan-json-unit": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "catalog-build": 0,
+      "catalog": 0,
+      "asan-catalog-build": 0,
+      "asan-catalog": 0,
+      "ffn-build": 0,
+      "asan-ffn-build": 0,
+      "ffn-l0-e0-m1": 0,
+      "ffn-l0-e0-m7": 0,
+      "ffn-l0-e0-m64": 0,
+      "ffn-l0-e0-m256": 0,
+      "ffn-l39-e383-m1": 0,
+      "ffn-l39-e383-m7": 0,
+      "ffn-l39-e383-m64": 0,
+      "ffn-l39-e383-m256": 0,
+      "asan-ffn": 0,
+      "memcheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "json_differential": {
+      "cases": 6010,
+      "accepted": 3707,
+      "rejected": 2303,
+      "mismatches": 0,
+      "framed_corpus_sha256": "5af2e74529ef1cdbea30d770aa2116271991f6e2f16ce91d8adaad41b30791f0",
+      "reference": "Python standard json with duplicate, UTF-8, NUL/surrogate and non-JSON constant rejection; numbers remain syntax-only (overflow exponents allowed)"
+    },
+    "actual_config_profile": {
+      "config_layers": 40,
+      "config_experts": 384,
+      "config_active_experts": 6,
+      "config_dim": 5120,
+      "config_hidden": 2304,
+      "config_nextn": 3
+    },
+    "profile_matches_independent_python": true,
+    "actual_catalog": {
+      "bound_projections": 46080,
+      "bound_experts": 15360,
+      "logical_bundle_bytes": 204527370240,
+      "marker_read_bytes": 184320,
+      "expert_body_reads_during_binding": 0
+    },
+    "actual_ffn_cases": 8,
+    "totals": {
+      "reference_f32_words": 23511040,
+      "reference_f16_words": 18137088,
+      "peer_zero_values": 3358720
+    },
+    "mismatches": 0,
+    "traced_compressed_payload_peak_bytes": 13315584,
+    "traced_weight_allocations": 9,
+    "traced_weight_frees": 9,
+    "traced_heap_allocations": 39,
+    "traced_heap_frees": 39,
+    "atomic_errors": "Wrong schema/types/counts/quant profile, mixed main layer bit widths, config/source shape mismatch, duplicate load, missing fields, invalid JSON and late marker failure covered under ASAN/UBSAN.",
+    "ownership": "Synthetic test discards input and reads retained nested numeric/string fields; configured model backend teardown sees live catalog/config. Actual probe unmaps config immediately after load."
+  },
+  "limitations": [
+    "No full native topology, router, forward pass or generation admission.",
+    "Actual FFN inputs remain deterministic fixtures, not full-model hidden states.",
+    "Compressed GPU payload peak excludes context/library, request tensors/workspace, and host catalog/cache/staging.",
+    "Process RSS is diagnostic and includes index/runtime metadata; OS storage coldness was not controlled.",
+    "WASM script source list gained JSON dependency but WASM and NEON were not validated in this step.",
+    "No prefill/decode performance or vLLM parity claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-native-config/qualification.json",
+    "profile": "/tmp/bitnet-goal-native-config/profile-analysis.json",
+    "trace": "/tmp/bitnet-goal-native-config/lifetime.nsys-rep",
+    "continuation": "/tmp/bitnet-goal-native-config/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/json.h": "5bd8653343a2dd2af9069db20a46aab6a9128abdd3f6034a4a247ad1201095a1",
+    "src/json.c": "b85d0c25a07563857bd417e2357cff1a2f48a0866985fb29dc4c8a260464d1af",
+    "test/test_json.c": "d73e1eb99263eade3255de029779384bab1b8c9b0f459c047c7e92ef7e9e20d4",
+    "include/model_arch.h": "50d56d53cbc89fd4470dcc9418d8566c657618d6c5263d4986f007c4b9098817",
+    "src/model_arch.c": "8acf043c54a6ea4c62ea94cd57605e6d1e3b6edc45f896d0b128e7cfd024e4cf",
+    "include/model_anatomy.h": "e6d308d0c8b111614999f308ada7c7112389e7d0563ad508c535486fc090f6e3",
+    "AGENTS.md": "29a9b6bc8fd54436675832703e04d9b74d9371c733672bf4a5d0ab91e4fcd0ea",
+    "CLAUDE.md": "a803b835710ca8bc5a63940c00c8f059e8a0c176eb77a80eac0c8faf16bc311e",
+    "wasm/build.sh": "8ea25e5788437ce6973379705ee191551f9961d73a0ddfe81bfb862adcfe481f",
+    "include/model.h": "fd127411e3b40182d66c7cc7f88549d90d961edc66a842d6f5e8539e6ffb4f8a",
+    "include/model_internal.h": "a9e0d457e84cf4be235e9a0280ceb36c2e472205d6ccbf28670d712aeb16ad4b",
+    "include/moe.h": "ffc9ab8a02bd0b757ed33cd1f4c622640a1bb96f5f0e26cb24412b434a4dfb62",
+    "include/moe_types.h": "c4b86e8de91a444ae9294e022818d94b474cd22484d82945d597bb1687265a12",
+    "src/model.c": "0f107142c7c1b65d5337b9d3551ad0da1b98262a9ff661d445ef5bcbbafafac3",
+    "src/model_moe.c": "e178952a8eb38696b9e0ee9ca1111e0ef1aa1f405494bebd3f3de7bbf2eb0328",
+    "test/test_moe.c": "3b5f050f2861f657b78e44f33388cdb808264c504ea3060a43fc625410897169",
+    "Makefile": "b02a3154517c16e7b18c6a280708a897eb5a3c19d2db760a33d809495b756d37"
+  }
+}

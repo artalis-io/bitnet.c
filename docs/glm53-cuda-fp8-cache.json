@@ -1,0 +1,120 @@
+{
+  "checkpoint": "GLM-5.3 Flash CUDA SM120 FP8 paged indexer cache",
+  "whole_goal_complete": false,
+  "artifact_root": "/tmp/bitnet-goal-glm-cuda-fp8-cache",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "stages": {
+    "chain-development": 0,
+    "cache-memcheck": 0,
+    "clean": 0,
+    "standard": 0,
+    "benches": 0,
+    "cache-synccheck": 0,
+    "cuda": 0,
+    "chain-memcheck": 0,
+    "chain-final": 0,
+    "dense-regression": 0,
+    "cache-final": 0,
+    "trace-build": 0,
+    "cache-direct": 0,
+    "build": 0,
+    "moe-regression": 0,
+    "reference-repeat": 0,
+    "chain-reference-repeat": 0,
+    "nsys": 0,
+    "nsys-export": 0,
+    "replay-build": 0,
+    "chain-synccheck": 0
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "e1cc00ce5070cc5160e8edc0677db9d600e4c8d53b26cfae986bfa6f179b6c16",
+    "src/gpu_cuda.cu": "c79d8ae1afae0cfed506da2b5c077c6bfc4cf45d644d0602733ad9c74795c0fb",
+    "src/gpu_cuda_glm_indexer.cuh": "a5919d396f615fa912dbcc833a496bf595a7979098bafe4044ff1e7712fcc177",
+    "src/transformer/bf16.c": "3f164120c9452760958c1fb79029b230251a0892b0135a4d8ae9fc8bbb418559",
+    "src/transformer/bf16_internal.h": "a7cfb8722078f67dbc09777c8c041b7abaaa1f92a0c6a4c65600e7eb6f146f31",
+    "test/glm_indexer_layout_checks.h": "8837543904cf160d08bad7a20823380e19482c0b0805c1deb2e22b8b548f2bfd",
+    "test/test_cuda_glm_fp8_cache.c": "82ef6c5e2b52b49e197320c06bea4918a3e5ff02b7bf1eabce423932bd0bd752",
+    "test/cuda_glm_fp8_cache_reference.h": "e6430ab1151b8feaba660a044f5aefc5aa240d2dd4ac3d07b0ea57687c7d8c2f",
+    "test/reference_cuda_glm_fp8_cache.py": "1f8519c9fbc07c6b8db6ad71ad8a174c744ec4a2d0d9cf66a26ea76289632823",
+    "test/test_cuda_glm_indexer_cache.c": "9313a423b0b932b5f42dde4a83392e642d6019134483f55c6b7cb0b4bdc68cdf",
+    "test/reference_glm_indexer_cache.py": "a9a341ff24d84612561f5f6326342639da4f659e9ac9337cbe08a1ccd3717136",
+    "Makefile": "6b627054c173e76bb4bb8f87eb87d0cdea00c80f4177708c5771a1a003ee2b7c"
+  },
+  "preserved_user_binary_sha256": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "reference_repeat": "All reference files byte-identical across independent captures",
+  "exact_elements": {
+    "cache": 52953486,
+    "actual_preindexer_cache_chain": 24393382,
+    "moe_regression": 527733360,
+    "dense_regression": 221074320
+  },
+  "sanitizers": {
+    "host": "ASAN/UBSAN layout/preflight/failure mocks passed",
+    "device": "memcheck and synccheck zero errors on direct cache and actual chain"
+  },
+  "trace": {
+    "kernels": {
+      "Kernel2": 1,
+      "cache_append_kernel": 1,
+      "cache_gather_kernel": 1,
+      "cast_bf16_f32": 1,
+      "cuda_bf16_q8_mma_kernel": 3,
+      "fwht_kernel": 1,
+      "layernorm_kernel": 1,
+      "pool_kernel": 1,
+      "quantize_bf16_q8_batch_kernel": 3,
+      "splitKreduce_kernel": 1,
+      "tail_kernel": 1,
+      "weight_scale_kernel": 1
+    },
+    "kernel_count": 16,
+    "runtime_calls": {
+      "cuKernelGetFunction": 1,
+      "cuKernelGetName": 14,
+      "cuLaunchKernel": 1,
+      "cuStreamGetGreenCtx": 2,
+      "cudaLaunchKernelExC_v11060": 1,
+      "cudaLaunchKernel_v7000": 14,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "memcpy_activity_table_present": false,
+    "synchronization_records": [
+      [
+        26380343,
+        26685059,
+        0,
+        1,
+        0,
+        14,
+        1835,
+        315586563276800,
+        null,
+        3,
+        4294967295,
+        0
+      ],
+      [
+        26689376,
+        26693622,
+        0,
+        1,
+        0,
+        4294967295,
+        1836,
+        315586563276800,
+        null,
+        4,
+        4294967295,
+        0
+      ]
+    ],
+    "scope": "Warmed 129-token pre-indexer/cache submission at position 3; one caller final stream fence; status read and all staging outside capture. CUPTI additionally records a context synchronization without a matching runtime API call. No inference throughput claim.",
+    "trace_total_exact_elements_including_uncaptured_warmup": 1205954
+  },
+  "remaining": "Signed FP8 score, causal masking, pool selection/expansion, MLA, full-model generation, RAM/VRAM expert integration, other backends and named models, matched vLLM throughput and serving qualification remain."
+}

@@ -7,6 +7,8 @@
 #include "transformer_plan_internal.h"
 #include "transformer_prefill_internal.h"
 #include "transformer/gpu_internal.h"
+#include "transformer/bf16_internal.h"
+#include "session_internal.h"
 #include "gpu_backend.h"
 
 #include <stdlib.h>
@@ -113,6 +115,10 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
                 const BnStopStrings *stop,
                 BnAllocator *alloc) {
     if (!pos || !s) return -2;
+    if (s->backend_only && (!bn_session_matches_model(s, model) ||
+        !bn_transformer_bf16_model_active(model) ||
+        bn_transformer_bf16_position(bn_session_backend(s)) < 0 ||
+        *pos != bn_transformer_bf16_position(bn_session_backend(s)))) return -2;
     (void)alloc;
 
     int loop_buf[LOOP_BUF_SIZE];
@@ -228,8 +234,8 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
             (*pos)++;
         } else {
             logits = bn_transformer_forward(model, s, next, *pos);
-            (*pos)++;
             if (!logits) return -2;
+            (*pos)++;
         }
     }
 
@@ -246,6 +252,9 @@ int bn_generate_speculative(
     bn_token_callback cb, void *user_data,
     BnAllocator *alloc)
 {
+    if ((ts && ts->backend_only) || (ds && ds->backend_only) ||
+        bn_transformer_bf16_model_active(target) || bn_transformer_bf16_model_active(draft))
+        return -2;
     alloc = resolve_alloc(alloc);
 
     int gen_count = 0;
@@ -368,21 +377,51 @@ done:
     return gen_count;
 }
 
-float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
+/* Typed requests own their KV/SSM state. Never enter legacy mirror uploads.
+ * Validate the complete prompt before any chunk changes request state. */
+static int generate_bf16_prefill(BnModel *model, BnSession *s,
+    const int *tokens, int nt, int pos, int no_prefill, int want_logits) {
+    if (!model || !s || !bn_session_matches_model(s, model) ||
+        nt < 0 || (nt && !tokens) || (want_logits && !nt)) return -1;
+    BnBackendSession *backend = bn_session_backend(s);
+    int limit = bn_transformer_bf16_max_tokens(backend);
+    int capacity = bn_transformer_bf16_capacity(backend);
+    if (limit <= 0 || pos < 0 || bn_transformer_bf16_position(backend) != pos ||
+        pos > capacity || nt > capacity - pos) return -1;
+    for (int i = 0; i < nt; ++i)
+        if (tokens[i] < 0 || tokens[i] >= model->config.vocab_size) return -1;
+    if (no_prefill) limit = 1;
+    for (int offset = 0; offset < nt;) {
+        int chunk = nt - offset;
+        if (chunk > limit) chunk = limit;
+        if (no_prefill) {
+            if (want_logits && offset + chunk == nt) {
+                if (!bn_transformer_forward(model, s, tokens[offset], pos + offset)) return -1;
+            } else if (bn_transformer_forward_no_logits(model, s,
+                    tokens[offset], pos + offset)) return -1;
+        } else if (want_logits && offset + chunk == nt) {
+            if (!bn_transformer_prefill(model, s, tokens + offset, chunk, pos + offset)) return -1;
+        } else if (bn_transformer_prefill_no_logits(model, s,
+                tokens + offset, chunk, pos + offset)) return -1;
+        offset += chunk;
+    }
+    return 0;
+}
+
+static float *generate_prefill_impl(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                   int pos0, int no_prefill) {
+    if (bn_transformer_bf16_model_active(model))
+        return generate_bf16_prefill(model, s, tokens, n_tokens, pos0, no_prefill, 1) == 0
+            ? s->state.logits : NULL;
+    if (s && s->backend_only) return NULL;
     float *logits = NULL;
     int gpu_attached = bn_model_gpu(model) != NULL;
     int parity_cpu =
         bn_transformer_cpu_prefill_decode_for_parity_enabled(
             &model->config, gpu_attached);
-    int gpu_batch_prefill = 0;
-    if (model) {
-        BnGPUBackend *gpu = bn_model_gpu(model);
-        gpu_batch_prefill =
-            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config) ||
-            bn_transformer_gpu_cpu_batch_prefill_fallback_enabled(
-                gpu, &model->config);
-    }
+    int gpu_batch_prefill = model &&
+        bn_transformer_prefill_gpu_batch_available(
+            bn_model_gpu(model), &model->config);
     BnTransformerPrefillEntryPolicy entry_policy =
         bn_transformer_prefill_entry_policy(
             no_prefill, parity_cpu, n_tokens, gpu_attached,
@@ -445,18 +484,18 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
     return logits;
 }
 
-int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
+static int generate_prefill_no_logits_impl(BnModel *model, BnSession *s, const int *tokens,
                          int n_tokens, int pos0, int no_prefill) {
+    if (bn_transformer_bf16_model_active(model))
+        return generate_bf16_prefill(model, s, tokens, n_tokens, pos0, no_prefill, 0);
+    if (s && s->backend_only) return -1;
     int gpu_attached = bn_model_gpu(model) != NULL;
     int parity_cpu =
         bn_transformer_cpu_prefill_decode_for_parity_enabled(
             &model->config, gpu_attached);
-    int gpu_batch_prefill = 0;
-    if (model) {
-        BnGPUBackend *gpu = bn_model_gpu(model);
-        gpu_batch_prefill =
-            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
-    }
+    int gpu_batch_prefill = model &&
+        bn_transformer_prefill_gpu_batch_available(
+            bn_model_gpu(model), &model->config);
     BnTransformerPrefillEntryPolicy entry_policy =
         bn_transformer_prefill_entry_policy(
             no_prefill, parity_cpu, n_tokens, gpu_attached,
@@ -494,6 +533,28 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
             return -1;
     }
     return 0;
+}
+
+/* Cache policy follows prompt ingestion even when execution falls back to
+ * tokenwise forward. Save/restore makes nested prefill and errors safe. */
+float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
+                  int pos0, int no_prefill) {
+    if (!s) return NULL;
+    int saved = s->moe_cache_prefill;
+    s->moe_cache_prefill = 1;
+    float *result = generate_prefill_impl(model, s, tokens, n_tokens, pos0, no_prefill);
+    s->moe_cache_prefill = saved;
+    return result;
+}
+
+int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
+                         int n_tokens, int pos0, int no_prefill) {
+    if (!s) return -1;
+    int saved = s->moe_cache_prefill;
+    s->moe_cache_prefill = 1;
+    int result = generate_prefill_no_logits_impl(model, s, tokens, n_tokens, pos0, no_prefill);
+    s->moe_cache_prefill = saved;
+    return result;
 }
 
 int bn_count_tokens(const BnTokenizer *tok, const char *text,
@@ -793,3 +854,6 @@ void bn_logprobs_compute(const float *logits, int vocab_size,
         }
     }
 }
+
+#include "generate_native_text.h"
+#include "generate_native_schedule.h"

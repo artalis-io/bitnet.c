@@ -1,0 +1,384 @@
+{
+  "status": "Qualified opt-in pipelined CPU fill and pinned expert H2D; full goal active and incomplete",
+  "parent": "docs/native-pinned-expert-upload.json",
+  "runtime_changes": true,
+  "source_changes": {
+    "test/native_trellis_store_checks.h": {
+      "before": "dacdccaf033de0c2065253ce4af74dddfc21050efbd9924fb5d539a4e69203c2",
+      "after": "ecae70a1460d36d6427b0c66ba5aa2a29d090791e9005f492061d049a23bf2fe"
+    },
+    "test/cuda_exl3_ffn_checks.h": {
+      "before": "d087645e1ba4fb76a9c02cd426bb76cd421f80ab85f0d01fa0b41ec849cf9a6f",
+      "after": "129bbe7aa2f438e5acb27cfc683508e61251f65bce6df756f945331d03aba9a6"
+    },
+    "src/gpu_moe_bridge.c": {
+      "before": "a517aeb4c1ff087663fe191a3bd98756aa98608d71ed96efc7cf161941fbacaf",
+      "after": "95e38d3a17452e8c6b389e129609f0611ce9f305ff941015a616c0e4c78088fc"
+    },
+    "src/gpu_cuda_exl3.cuh": {
+      "before": "33f76b6ee1d660082813ac9818567ddada9e1ea681415946f074745d277d24ef",
+      "after": "b68310fad56ce4009ba2dfba5bf1a524bb9baccff437912e9ed3ce38e45a4ff7"
+    },
+    "include/gpu_backend.h": {
+      "before": "db0987cb3ec778397df75085cb919d3647608862e9473e4ab980169f5dfe7a58",
+      "after": "e99a1e37ab05d2b990858f01c4f73466d5ae7d3dfe30510b8f35230a35eb1a72"
+    }
+  },
+  "behavior": {
+    "api": "BnGPUTrellisUploadItem.source optionally borrows ordinary CPU bytes until batch returns; NULL uses bytes already at its pinned offset.",
+    "validation": "Validate every descriptor before any allocation or CPU copy. Pinned ranges must be disjoint. Reject external source spans overlapping ANY part of the staging allocation and reject pointer/span overflow. Existing destination handles remain exclusive and context/layout checked.",
+    "execution": "For each projection, memcpy a borrowed source into its own pinned offset then immediately enqueue H2D. The next CPU fill may overlap preceding DMA. One final stream completion before publication. Source lease held through return; no source pointers retained.",
+    "failure": "Same private-new-handle cleanup, retained-buffer poison/abort, DMA draining and no-publication contract as parent. Source pointers and item descriptors stay unchanged on rejection.",
+    "ownership": "Same serialized model/backend-owned pinned bundle and upload stream; no new pinned or device allocation, no pinning the RAM cache, no mutable CPU model state.",
+    "compatibility": "Zero pinned budget remains ordinary staging. No default enablement, kernel, arithmetic, routing, grouping, head geometry or consumer-readiness change.",
+    "timing": "Main forward elapsed includes CPU copies and completed CPU-logit publication. upload_time_ms now includes the moved CPU copies inside the backend callback; unlike the parent callback counter, it no longer excludes them. Compare main elapsed across versions."
+  },
+  "workload": {
+    "model": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "profile": "Explicit Diffbot INT4 BF16 row lookup to Exllama F16 Engram adapter; not original Diffbot full-runtime equivalence",
+    "fixture": "Fresh513 + resumed513 + five self-fed source greedy tokens; context1031/maxseq1280/f16acc0",
+    "budgets": {
+      "ram": 13635158016,
+      "decode_vram": 639148032,
+      "temporary_vram": 639148032,
+      "total_staging": 13315584,
+      "pinned_staging_overlapping_total": 13315584
+    },
+    "measurement": "Unobserved monotonic stage-to-completed-CPU-logit time; setup/verification excluded. Page cache/disk warmth, CPU placement and clocks uncontrolled; fixed replay, not arrivals or vLLM parity."
+  },
+  "result": {
+    "pageable_decode_median_ms": 154.365684,
+    "pipelined_decode_median_ms": 155.70410900000002,
+    "samples_each": 10,
+    "latency_change_fraction": 0.008670482747966446,
+    "throughput_ratio": 0.9914040483029255,
+    "pageable_samples_ms": [
+      155.258774,
+      154.431279,
+      156.20561,
+      154.328512,
+      154.402856,
+      153.897984,
+      154.054043,
+      153.19457,
+      153.12902,
+      155.012908
+    ],
+    "pipelined_samples_ms": [
+      156.219493,
+      155.420651,
+      155.392849,
+      158.105925,
+      155.371807,
+      155.987567,
+      158.168451,
+      155.408593,
+      155.335932,
+      157.064473
+    ],
+    "historical_pinned_serial_fill_median_ms": 159.5359925,
+    "historical_comparison_uncontrolled": true,
+    "prefill_bypass": {
+      "plain-window32": {
+        "samples": 4,
+        "tokens": 2052,
+        "elapsed_ms": 25984.230972,
+        "tokens_per_second": 78.97097290318837,
+        "chunk_ms": [
+          6799.728675,
+          6185.841483,
+          6807.665935,
+          6190.994879
+        ]
+      },
+      "pinned-bypass": {
+        "samples": 4,
+        "tokens": 2052,
+        "elapsed_ms": 21136.314781,
+        "tokens_per_second": 97.08409537146929,
+        "chunk_ms": [
+          5526.94793,
+          5035.168008,
+          5533.299256,
+          5040.899587
+        ]
+      }
+    },
+    "matched_counters": [
+      "run",
+      "frame",
+      "rows",
+      "position",
+      "decode_hits",
+      "decode_misses",
+      "ram_hits",
+      "ram_misses",
+      "expert_uploads",
+      "expert_upload_bytes",
+      "expert_read_bytes",
+      "buffer_creates",
+      "buffer_refills"
+    ],
+    "warm_ram_hits": 240,
+    "warm_vram_hits": 0,
+    "warm_source_reader_bytes": 0,
+    "warm_h2d_bytes": 3195740160,
+    "warm_projection_refills": 720,
+    "warm_triplet_completions": 240
+  },
+  "memory": {
+    "pinned_host_allocations_unchanged": {
+      "before": [
+        {
+          "operation": 0,
+          "calls": 9,
+          "bytes": 25923072
+        },
+        {
+          "operation": 1,
+          "calls": 9,
+          "bytes": 25923072
+        }
+      ],
+      "after": [
+        {
+          "operation": 0,
+          "calls": 9,
+          "bytes": 25923072
+        },
+        {
+          "operation": 1,
+          "calls": 9,
+          "bytes": 25923072
+        }
+      ]
+    },
+    "pinned_staging_overlaps_total": true,
+    "temporary_allocated_overlaps_quota": true,
+    "device_peak_bytes": 19402373481,
+    "device_final_bytes": 0,
+    "notes": "Tracked device payload excludes driver/context/rounding; host pinned bundle is not added to device totals."
+  },
+  "validation": {
+    "qualification": {
+      "checks": {
+        "plain-window32": 0,
+        "small-vram": 0,
+        "pinned-bypass": 0,
+        "pinned-small-vram": 0,
+        "pinned-phase": 0,
+        "all-logits-pinned": 0,
+        "asan-pinned": 0,
+        "memcheck-pinned": 0,
+        "initcheck-pinned": 0,
+        "busy": 0,
+        "asan-busy": 0,
+        "qwen27-compat": 0
+      },
+      "frozen_sources": 854,
+      "reference_files": 25089,
+      "goal_status": "active",
+      "scope": "Borrowed CPU projection copies interleaved with H2D inside the same bounded pinned triplet; disjoint staging and alias validation, synchronous final publication. Source-exact forward, matched default controls and preserved compatibility. No inter-expert I/O/compute overlap, serving admission or vLLM parity claim."
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      },
+      "test_fixture_shadow_warning_fixed": true,
+      "final_cuda_rebuilt": true
+    },
+    "main_source_exact": {
+      "forwards": 182,
+      "checks": 364,
+      "bytes": 1200235520,
+      "self_fed_tokens": 130
+    },
+    "trace_source_exact_forwards": 14,
+    "trace_source_exact_checks": 28,
+    "synthetic": "Borrowed RAM sources vs already staged bypass, exact data, pinned victim isolation, poison abort, each allocation failure, retry and teardown; CUDA overlapping ranges, staging aliases and overflowing source spans reject before mutation, mixed staged/borrowed and borrowed create/refill feed unchanged frozen FFN references.",
+    "asan_ubsan": "Passed on C bridge/benchmark/probes; CUDA translation units and legacy moe_cpu_kernels object use normal builds. CUDA device memory checked separately by memcheck/initcheck.",
+    "cuda_memcheck": "0 errors and 0 leaked allocations",
+    "cuda_initcheck": "0 errors",
+    "busy": "Four forced retries; CPU logits/position/output ticket/pending history preserved; index queries106/scores132/topks132 unchanged",
+    "qwen27": "Fresh strict compatibility passed"
+  },
+  "trace": {
+    "scope": "Supplementary Nsight trace only; separate from uninstrumented performance samples",
+    "roi": "Embedding CUDA dispatch through the start of the external half-logit verification transfer; includes original final-logit publication and synchronization, excludes setup/reset, initial embedding upload, external verification",
+    "warm_stream_synchronizations": 413,
+    "warm_memcpy_async": 978,
+    "warm_malloc_free": 0,
+    "all_frame_h2d_bytes_match_parent": true,
+    "all_frame_kernel_launch_counts_match_parent": true,
+    "pipeline": {
+      "scope": "Supplementary CUDA trace, not uninstrumented performance. Host gap is the interval after prior enqueue returns and before next enqueue starts; current loop performs the next CPU memcpy inside this interval. Gap also includes loop overhead; it is not a direct CPU memcpy duration.",
+      "frames": [
+        {
+          "frame": "greedy-0",
+          "weight_dma_ms": 59.329339,
+          "weight_bytes": 4438528,
+          "weight_copies": 720,
+          "host_fill_gap_intervals": 480,
+          "intervals_overlapping_prior_triplet_dma": 480,
+          "fully_covered_intervals": 0,
+          "host_gap_ms": 89.184565,
+          "overlapping_dma_ms": 40.214182
+        },
+        {
+          "frame": "greedy-1",
+          "weight_dma_ms": 59.036473,
+          "weight_bytes": 4438528,
+          "weight_copies": 720,
+          "host_fill_gap_intervals": 480,
+          "intervals_overlapping_prior_triplet_dma": 480,
+          "fully_covered_intervals": 0,
+          "host_gap_ms": 86.420882,
+          "overlapping_dma_ms": 40.073716
+        },
+        {
+          "frame": "greedy-2",
+          "weight_dma_ms": 59.056059,
+          "weight_bytes": 4438528,
+          "weight_copies": 720,
+          "host_fill_gap_intervals": 480,
+          "intervals_overlapping_prior_triplet_dma": 480,
+          "fully_covered_intervals": 0,
+          "host_gap_ms": 86.515162,
+          "overlapping_dma_ms": 40.075482
+        },
+        {
+          "frame": "greedy-3",
+          "weight_dma_ms": 59.117563,
+          "weight_bytes": 4438528,
+          "weight_copies": 720,
+          "host_fill_gap_intervals": 480,
+          "intervals_overlapping_prior_triplet_dma": 480,
+          "fully_covered_intervals": 0,
+          "host_gap_ms": 87.412837,
+          "overlapping_dma_ms": 40.13424
+        },
+        {
+          "frame": "greedy-4",
+          "weight_dma_ms": 59.012086,
+          "weight_bytes": 4438528,
+          "weight_copies": 720,
+          "host_fill_gap_intervals": 480,
+          "intervals_overlapping_prior_triplet_dma": 480,
+          "fully_covered_intervals": 0,
+          "host_gap_ms": 86.439567,
+          "overlapping_dma_ms": 40.072629
+        }
+      ],
+      "prior_serial_fill_dma": [
+        {
+          "frame": "greedy-0",
+          "weight_copies": 720,
+          "weight_dma_ms": 56.757341
+        },
+        {
+          "frame": "greedy-1",
+          "weight_copies": 720,
+          "weight_dma_ms": 58.874474
+        },
+        {
+          "frame": "greedy-2",
+          "weight_copies": 720,
+          "weight_dma_ms": 56.535139
+        },
+        {
+          "frame": "greedy-3",
+          "weight_copies": 720,
+          "weight_dma_ms": 56.623588
+        },
+        {
+          "frame": "greedy-4",
+          "weight_copies": 720,
+          "weight_dma_ms": 57.699014
+        }
+      ],
+      "pinned_host_allocations_unchanged": {
+        "before": [
+          {
+            "operation": 0,
+            "calls": 9,
+            "bytes": 25923072
+          },
+          {
+            "operation": 1,
+            "calls": 9,
+            "bytes": 25923072
+          }
+        ],
+        "after": [
+          {
+            "operation": 0,
+            "calls": 9,
+            "bytes": 25923072
+          },
+          {
+            "operation": 1,
+            "calls": 9,
+            "bytes": 25923072
+          }
+        ]
+      }
+    },
+    "notes": "Overlap interval is a host-gap proxy containing CPU fill plus loop overhead, not a direct CPU memcpy duration. Trace timing excluded from performance samples; no inter-expert I/O or transfer/compute overlap."
+  },
+  "artifacts": {
+    "qualification.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/qualification.json",
+      "sha256": "e1caedb76bd90abcb16ac7505f7a591febda5f7313d11fc781471a54a6ed4d19"
+    },
+    "records.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/records.json",
+      "sha256": "dcdcf76ce10435c53ca632d1a3c34178485cdd6b32cef43b4f05d03fec20abf4"
+    },
+    "frozen-source.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/frozen-source.json",
+      "sha256": "48a1fb5aab6b71cafd5a0d614b09d3bfebaf279b5780b47de7d34ec96d1a8c41"
+    },
+    "reference-audit.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/reference-audit.json",
+      "sha256": "d1168ba03040edfedbde6709ddfef872a7db3d36cf912df06eaabe10b58be0c7"
+    },
+    "intentional-source-changes.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/intentional-source-changes.json",
+      "sha256": "108fdf4a70c59f70de0809d329610dd46af1a9d1fae1791f9a94f3971d9f5590"
+    },
+    "rebuilt-artifacts.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/rebuilt-artifacts.json",
+      "sha256": "2bb7c552b52d2af835bbccc813006548a6c0536e4c9944e6acd4c9eae4c4a30f"
+    },
+    "native-phase-trace.nsys-rep": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/native-phase-trace.nsys-rep",
+      "sha256": "fe353dff9a1e14deb237a493b7105241ace5f976ed79d20713b17e740e25a0ec"
+    },
+    "native-phase-trace.sqlite": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/native-phase-trace.sqlite",
+      "sha256": "94472f46ddf79bef7de04aee9caaf3bfe72f70d31a70b6055817fdf2567e172a"
+    },
+    "trace-analysis.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/trace-analysis.json",
+      "sha256": "8a9cc72ec0dc251f1ca40a40d5ff9fd1c43745275e1b6ab0b8b5cf0ad5e6c439"
+    },
+    "pipeline-analysis.json": {
+      "path": "/tmp/bitnet-goal-native-pipelined-upload/pipeline-analysis.json",
+      "sha256": "19a8118f4460288cd92e2a3df4baeae0992f36025e98b02c26ffffd43821b1a3"
+    }
+  },
+  "remaining": [
+    "Controlled clocks/NUMA/disk behavior, source I/O and inter-expert/compute overlap, production placement policy",
+    "Native text encoder/stream decoder/model/CLI admission, CPU/ARM qualification and larger candidate contexts",
+    "Matched resident vLLM within5% prefill/decode, continuous batching/KV scheduling/concurrent throughput/tail latency",
+    "Full named model/backend acceptance; Metal secondary"
+  ],
+  "goal_complete": false
+}

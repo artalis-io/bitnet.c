@@ -1,0 +1,231 @@
+{
+  "status": "Native backend-only session host storage, identity, reset and owned-request lifecycle qualified; reusable production MoE executor remains pending; whole goal active",
+  "problem": "Native checkpoint models intentionally leave legacy BnConfig dimensions empty. Backend-only session creation used legacy vocabulary/context, so actual native models could not create sessions. A valid-looking legacy configuration could also bypass missing native anatomy.",
+  "implementation": {
+    "factory": "bn_session_create_backend derives host vocabulary/context from prepared, source-valid native anatomy. Legacy models retain existing dimensions. Creation allocates logits/history only, without CPU activations, KV, SSM or MoE mirrors.",
+    "identity": "The existing backend state records native anatomy identity and exact host extents in addition to model identity. Matching rejects anatomy replacement, extent changes, shallow model copies and revoked source indices. Native presence without valid prepared anatomy never falls back to legacy dimensions.",
+    "reset": "Backend resource cleanup finishes before host history is cleared. Native history clearing uses its actual creation capacity, even when legacy context is empty or different. Reset of an invalid/foreign model leaves the session and owned resources untouched.",
+    "ownership": "Use the existing BnBackendSession GPU resource container. Cleanup callbacks carry request/destroy-function context and never need model weights or native anatomy. Real probes alternate requests between two host sessions; reset/free destroys every attached request exactly once.",
+    "immutability": "No legacy BnConfig projection or mutation is introduced. Actual-model runs verify the configuration remains byte-identical, including zero legacy vocabulary/context.",
+    "files": [
+      "src/session.c",
+      "include/session.h",
+      "include/session_internal.h",
+      "test/test_session.c",
+      "test/test_moe.c",
+      "test/native_session_checks.h",
+      "Makefile"
+    ]
+  },
+  "validation": {
+    "synthetic": "Native sparse-checkpoint fixture verifies prepared dimensions, valid-looking legacy traps, no CPU fallback, separate buffers, last logit/history access, full native history clearing, release-before-clear ordering, anatomy/extent/model identity rejection, source revocation, unchanged second session and source-independent host cleanup.",
+    "real": "Actual native checkpoint anatomy/core/parameters/routers and one bounded expert store; two backend-only sessions with vocabulary129280/context1048576 own resident requests running the preserved complete learned-router MoE component chain including GPU final addition. Outputs remain byte-identical; opposite-session buffers and model configuration remain unchanged.",
+    "normal_composition_cases": 40,
+    "asan_composition_cases": 20,
+    "memcheck_composition_cases": 2,
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-session-unit-build": 0,
+      "asan-session-unit": 0,
+      "asan-moe-unit-build": 0,
+      "asan-moe-unit": 0,
+      "prefill-window1": 0,
+      "decode-window1": 0,
+      "prefill-window5": 0,
+      "decode-window5": 0,
+      "asan-prefill": 0,
+      "asan-decode": 0,
+      "memcheck-prefill": 0,
+      "memcheck-decode": 0
+    },
+    "records": {
+      "prefill-window1": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 10,
+          "released": 10,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      },
+      "decode-window1": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 1203,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 10,
+          "released": 10,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      },
+      "prefill-window5": {
+        "cases": 10,
+        "launches": 266,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 10,
+          "released": 10,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      },
+      "decode-window5": {
+        "cases": 10,
+        "launches": 266,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 1203,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 10,
+          "released": 10,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      },
+      "asan-prefill": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 0,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 10,
+          "released": 10,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      },
+      "asan-decode": {
+        "cases": 10,
+        "launches": 1074,
+        "compared_bytes": 5529829376,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 16085225472,
+        "upload_bytes": 16085225472,
+        "decode_hits": 0,
+        "decode_misses": 1208,
+        "decode_evictions": 1203,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 10,
+          "released": 10,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      },
+      "memcheck-prefill": {
+        "cases": 1,
+        "launches": 91,
+        "compared_bytes": 1669644288,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 1757657088,
+        "upload_bytes": 1757657088,
+        "decode_hits": 0,
+        "decode_misses": 132,
+        "decode_evictions": 0,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 1,
+          "released": 1,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      },
+      "memcheck-decode": {
+        "cases": 1,
+        "launches": 91,
+        "compared_bytes": 1669644288,
+        "sampled_peak_payload": 66577920,
+        "reader_bytes": 1757657088,
+        "upload_bytes": 1757657088,
+        "decode_hits": 0,
+        "decode_misses": 132,
+        "decode_evictions": 127,
+        "mismatches": 0,
+        "session_ownership": {
+          "attached": 1,
+          "released": 1,
+          "native_vocab": 129280,
+          "native_context": 1048576
+        }
+      }
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "sanitizer_harness_compile_warnings": {
+      "asan-session-unit-build": [
+        "moe_reduce_16_avx2",
+        "moe_reduce_8_avx2",
+        "moe_reference_exp_avx2"
+      ],
+      "asan-moe-unit-build": [
+        "moe_reduce_16_avx2",
+        "moe_reduce_8_avx2",
+        "moe_reference_exp_avx2"
+      ]
+    },
+    "warning_note": "Normal clean product/standard/bench/CUDA builds and normal/ASAN real probes have zero warnings. The two whole-module Clang ASAN unit builds each retain three pre-existing unused-helper warnings in unchanged src/moe_cpu_kernels.c; the exact names/source hash were checked, without suppression.",
+    "source_files_frozen_and_reverified": 734,
+    "sanitizers": "Host ASAN/UBSAN session and MoE unit suites, full real prefill and decode chains; CUDA memcheck/leak check on largest case in both placement modes. Zero sanitizer errors and zero leaked GPU bytes."
+  },
+  "evidence": {
+    "directory": "/tmp/bitnet-goal-native-session",
+    "qualification_sha256": "83179a523ef30d5106d9890c3a227fcda03de6ef58bf79528c63b40dc4f5a60c",
+    "probe_sha256": "bb8c88ea393d8f9ab299f42ab196575775dace4dc22c654182ab68f4483db6ab",
+    "source_freeze_sha256": "2a0c617c357627d2bbadcc78696c2555be58289accc6793d025b78a2dcfff32a",
+    "paired_reference_sha256": "a7a4b0ef42022891cb9b91850c049cadbd681656e7de2ca34bc4e7ec7693685f",
+    "prior_arithmetic": "docs/deepseek-v41-1017-native-moe-final.json"
+  },
+  "limits": [
+    "This qualifies native host session storage and existing resource ownership. The full MoE schedule is still external test orchestration, not a production session execution API.",
+    "Requests are recreated on reset in this lifecycle probe. Production bounded workspace setup/reuse, composed failure/cancellation handling and overlapping consumers remain required.",
+    "Model/backend and source lifetime contracts still apply to queued GPU consumers. Host cleanup does not make full-model teardown safe during outstanding work.",
+    "Default routed <=8 BC decode and full attention/Engram/forward/generation/CLI remain unadmitted by this session-factory qualification. V4.1 defaults to zero hash-routing layers.",
+    "These offload scans have zero decode-cache hits and synchronous uploads. No warm-cache, vLLM parity or serving performance claim."
+  ]
+}

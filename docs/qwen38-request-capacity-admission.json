@@ -1,0 +1,428 @@
+{
+  "scope": "Matched controlled-step48-request before/after KV admission; not a new vLLM comparison, wall-clock offered-load or total-VRAM qualification",
+  "modes": {
+    "fixed": {
+      "runs": [
+        {
+          "elapsed_ms": 43167.685739,
+          "tokens_per_second": 71.164343,
+          "itl_p95_ms": 68.63492199999746,
+          "itl_p99_ms": 69.1443709999985,
+          "itl_p999_ms": 95.15963099999988,
+          "itl_max_ms": 95.15963099999988,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 4294967296,
+          "peak_kv_bytes": 4294967296
+        },
+        {
+          "elapsed_ms": 44270.356681,
+          "tokens_per_second": 69.391806,
+          "itl_p95_ms": 69.3583779999999,
+          "itl_p99_ms": 70.27590999999666,
+          "itl_p999_ms": 95.8962570000001,
+          "itl_max_ms": 95.8962570000001,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 4294967296,
+          "peak_kv_bytes": 4294967296
+        },
+        {
+          "elapsed_ms": 44489.567119,
+          "tokens_per_second": 69.049896,
+          "itl_p95_ms": 69.64666800000123,
+          "itl_p99_ms": 70.58611400000154,
+          "itl_p999_ms": 96.06297099999983,
+          "itl_max_ms": 96.06297099999983,
+          "intervals_over100_ms": 0,
+          "retained_kv_bytes": 4294967296,
+          "peak_kv_bytes": 4294967296
+        }
+      ],
+      "medians": {
+        "elapsed_ms": 44270.356681,
+        "tokens_per_second": 69.391806,
+        "itl_p95_ms": 69.3583779999999,
+        "itl_p99_ms": 70.27590999999666,
+        "itl_p999_ms": 95.8962570000001,
+        "itl_max_ms": 95.8962570000001,
+        "intervals_over100_ms": 0,
+        "retained_kv_bytes": 4294967296,
+        "peak_kv_bytes": 4294967296
+      }
+    },
+    "sized": {
+      "runs": [
+        {
+          "elapsed_ms": 43756.467283,
+          "tokens_per_second": 70.206765,
+          "itl_p95_ms": 69.00572800000009,
+          "itl_p99_ms": 69.59814399999959,
+          "itl_p999_ms": 113.61375899999985,
+          "itl_max_ms": 113.61375899999985,
+          "intervals_over100_ms": 8,
+          "retained_kv_bytes": 536870912,
+          "peak_kv_bytes": 536870912,
+          "memory_validation": {
+            "capacity_pool_valid": true,
+            "created": 20,
+            "reused": 28,
+            "evicted": 12,
+            "retained_kv_bytes": 536870912,
+            "peak_kv_bytes": 536870912
+          }
+        },
+        {
+          "elapsed_ms": 44186.425126,
+          "tokens_per_second": 69.523615,
+          "itl_p95_ms": 69.08606100000179,
+          "itl_p99_ms": 70.16976799999975,
+          "itl_p999_ms": 113.1233599999996,
+          "itl_max_ms": 113.1233599999996,
+          "intervals_over100_ms": 8,
+          "retained_kv_bytes": 536870912,
+          "peak_kv_bytes": 536870912,
+          "memory_validation": {
+            "capacity_pool_valid": true,
+            "created": 20,
+            "reused": 28,
+            "evicted": 12,
+            "retained_kv_bytes": 536870912,
+            "peak_kv_bytes": 536870912
+          }
+        },
+        {
+          "elapsed_ms": 44632.438013,
+          "tokens_per_second": 68.828864,
+          "itl_p95_ms": 69.71594399999958,
+          "itl_p99_ms": 70.78428700000222,
+          "itl_p999_ms": 113.92577600000004,
+          "itl_max_ms": 113.92577600000004,
+          "intervals_over100_ms": 8,
+          "retained_kv_bytes": 536870912,
+          "peak_kv_bytes": 536870912,
+          "memory_validation": {
+            "capacity_pool_valid": true,
+            "created": 20,
+            "reused": 28,
+            "evicted": 12,
+            "retained_kv_bytes": 536870912,
+            "peak_kv_bytes": 536870912
+          }
+        }
+      ],
+      "medians": {
+        "elapsed_ms": 44186.425126,
+        "tokens_per_second": 69.523615,
+        "itl_p95_ms": 69.08606100000179,
+        "itl_p99_ms": 70.16976799999975,
+        "itl_p999_ms": 113.61375899999985,
+        "itl_max_ms": 113.61375899999985,
+        "intervals_over100_ms": 8,
+        "retained_kv_bytes": 536870912,
+        "peak_kv_bytes": 536870912
+      }
+    }
+  },
+  "full_goal_complete": false,
+  "comparison": {
+    "throughput_ratio": 1.001899489400809,
+    "p99_ratio": 0.9984896389104472,
+    "p999_ratio": 1.1847569712757373,
+    "kv_ratio": 0.125
+  },
+  "source_sha256": {
+    "include/generate_batch.h": "caaf8135ea8e82299d5633c3b13f9fa624acfda0c7a323d4b9c369f4b5f5029b",
+    "src/generate_batch.c": "4d089190f5eb633d10fdfc20b6778f9ff6e5e1ed727fcc5e5f7c0fa64fed7226",
+    "test/test_generate_batch.c": "358066010fb03184306c04833fd9a2ca5de8705dd8f501bb7d36f7e31dc0d2e7",
+    "bench/bench_bf16_arrivals.c": "810d6e32f540d7b60f8153579a97cc1fe7eac9d6d710a178dc75b96631377138",
+    "bench/verify_bf16_capacity_pool.py": "8d15cd9a50ee5935015cdf5fa7dff6a93c446a7ab57dd9656f1582dad164931a",
+    "bench/verify_bf16_arrivals.py": "c22b9984986fbca305a19ad995941519d0ffd3a1f6736c276cd4e36f42c4d47f",
+    "bench/verify_bf16_wall_clock.py": "be0afbfc577337ab92baa86b320864736b61fd479b003478e71c6066de35b319",
+    "test/test_bf16_capacity_pool.py": "cfc7fd48df0eb67eca0de4bfd670a0cfc825f9fb27684e8271f83cb831ceb989",
+    "src/transformer/bf16_pool.c": "203bfd22dd1e1176781f26e11ed2edd116fbf1f4ef7741fba3fa4f123690596c",
+    "src/transformer/bf16_internal.h": "84ea22183512ff2eaf549693768fd9365597509c1fd530cacabc17b0d22d2af7",
+    "Makefile": "d9738ebb993f70427f54726cc43ffdde25fd5e3d6cf0dbe5557ec7b231592f3b"
+  },
+  "correctness": {
+    "default_legacy": {
+      "matrices": 134,
+      "heads": 784,
+      "bf16_words": 194682880
+    },
+    "sized12": {
+      "matrices": 134,
+      "heads": 784,
+      "bf16_words": 194682880
+    },
+    "sized48_controlled": {
+      "matrices": 572,
+      "heads": 4132,
+      "bf16_words": 1026058240
+    },
+    "sized48_wall_clock": {
+      "matrices": 573,
+      "heads": 4136,
+      "bf16_words": 1027051520
+    },
+    "reference_values_changed": false,
+    "all_six_timing_geometries_and_streams_match": true
+  },
+  "memory_cases": {
+    "sized12": {
+      "capacity_pool_valid": true,
+      "created": 8,
+      "reused": 4,
+      "evicted": 0,
+      "retained_kv_bytes": 100663296,
+      "peak_kv_bytes": 100663296
+    },
+    "sized48": {
+      "capacity_pool_valid": true,
+      "created": 20,
+      "reused": 28,
+      "evicted": 12,
+      "retained_kv_bytes": 536870912,
+      "peak_kv_bytes": 536870912
+    }
+  },
+  "long_gap_localization": [
+    {
+      "run": 0,
+      "long_gap_cohorts": [
+        {
+          "call": 66,
+          "gaps": [
+            {
+              "id": 4,
+              "interval_ms": 113.61375899999985
+            },
+            {
+              "id": 5,
+              "interval_ms": 113.61375899999985
+            },
+            {
+              "id": 6,
+              "interval_ms": 113.61375899999985
+            },
+            {
+              "id": 7,
+              "interval_ms": 113.61375899999985
+            }
+          ],
+          "admissions": [
+            8,
+            9,
+            10,
+            11
+          ],
+          "new_allocations": [
+            8,
+            9,
+            10,
+            11
+          ]
+        },
+        {
+          "call": 214,
+          "gaps": [
+            {
+              "id": 16,
+              "interval_ms": 110.6535559999993
+            },
+            {
+              "id": 17,
+              "interval_ms": 110.6535559999993
+            },
+            {
+              "id": 18,
+              "interval_ms": 110.6535559999993
+            },
+            {
+              "id": 19,
+              "interval_ms": 110.6535559999993
+            }
+          ],
+          "admissions": [
+            20,
+            21,
+            22,
+            23
+          ],
+          "new_allocations": [
+            20,
+            21,
+            22,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "run": 1,
+      "long_gap_cohorts": [
+        {
+          "call": 66,
+          "gaps": [
+            {
+              "id": 4,
+              "interval_ms": 113.1233599999996
+            },
+            {
+              "id": 5,
+              "interval_ms": 113.1233599999996
+            },
+            {
+              "id": 6,
+              "interval_ms": 113.1233599999996
+            },
+            {
+              "id": 7,
+              "interval_ms": 113.1233599999996
+            }
+          ],
+          "admissions": [
+            8,
+            9,
+            10,
+            11
+          ],
+          "new_allocations": [
+            8,
+            9,
+            10,
+            11
+          ]
+        },
+        {
+          "call": 214,
+          "gaps": [
+            {
+              "id": 16,
+              "interval_ms": 110.67881399999897
+            },
+            {
+              "id": 17,
+              "interval_ms": 110.67881399999897
+            },
+            {
+              "id": 18,
+              "interval_ms": 110.67881399999897
+            },
+            {
+              "id": 19,
+              "interval_ms": 110.67881399999897
+            }
+          ],
+          "admissions": [
+            20,
+            21,
+            22,
+            23
+          ],
+          "new_allocations": [
+            20,
+            21,
+            22,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "long_gap_cohorts": [
+        {
+          "call": 66,
+          "gaps": [
+            {
+              "id": 4,
+              "interval_ms": 113.92577600000004
+            },
+            {
+              "id": 5,
+              "interval_ms": 113.92577600000004
+            },
+            {
+              "id": 6,
+              "interval_ms": 113.92577600000004
+            },
+            {
+              "id": 7,
+              "interval_ms": 113.92577600000004
+            }
+          ],
+          "admissions": [
+            8,
+            9,
+            10,
+            11
+          ],
+          "new_allocations": [
+            8,
+            9,
+            10,
+            11
+          ]
+        },
+        {
+          "call": 214,
+          "gaps": [
+            {
+              "id": 16,
+              "interval_ms": 112.15932599999724
+            },
+            {
+              "id": 17,
+              "interval_ms": 112.15932599999724
+            },
+            {
+              "id": 18,
+              "interval_ms": 112.15932599999724
+            },
+            {
+              "id": 19,
+              "interval_ms": 112.15932599999724
+            }
+          ],
+          "admissions": [
+            20,
+            21,
+            22,
+            23
+          ],
+          "new_allocations": [
+            20,
+            21,
+            22,
+            23
+          ]
+        }
+      ]
+    }
+  ],
+  "qualification": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    },
+    "final_standard": true,
+    "asan_ubsan": true,
+    "request_record_recycling": 1024,
+    "request_ids_above_uint32": true,
+    "slot_transition_corruption_rejections": true,
+    "legacy_backend_struct_layout_unchanged": true
+  },
+  "limits": {
+    "sized_mode_opt_in": true,
+    "kv_payload_only": true,
+    "total_vram_bound_qualified": false,
+    "steady_state_qualified": false,
+    "new_vllm_parity_claim": false,
+    "cold_p999_regression_observed": true
+  },
+  "evidence_directory": "/tmp/bitnet-goal-capacity-admission"
+}

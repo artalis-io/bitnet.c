@@ -8,6 +8,7 @@
 #include "threadpool.h"
 #include "gguf.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef BN_FORCE_SCALAR
@@ -483,6 +484,15 @@ fallback_loop:
 
 #if !defined(__AVX2__) && !(defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
     if (W->type == BN_GGUF_TENSOR_Q8_0) {
+#if defined(__ARM_NEON)
+        /* Reuse weights across tokens without changing decode arithmetic. */
+        BnKQuantFloatMatmulCtx float_ctx = { out, W, X, n_tokens, cols };
+        BnTPTask float_task = {
+            bn_quant_q8_neon_float_matmul_range, &float_ctx, rows
+        };
+        bn_tp_dispatch(pool, &float_task, 1);
+        return;
+#endif
         int n_blocks = cols / 32;
         if (n_blocks < 1 || n_blocks > BN_MAX_SCALE_BLOCKS) goto fallback_loop;
         size_t xq_size = (size_t)n_tokens * cols;
@@ -1321,4 +1331,155 @@ void bn_quant_matmul_prepared_kquant_input_multi(
     const int16_t *x_bsums, const float *x_float, BnThreadPool *pool) {
     matmul_prepared_kquant_input_multi(out, W, prepared, n, n_tokens,
         x_q, x_d, x_bsums, x_float, pool, NULL);
+}
+
+static bn_tp_fn prefill_tiled_kernel(int type) {
+#ifdef __AVX2__
+    if (type == BN_GGUF_TENSOR_IQ4_XS || type == BN_GGUF_TENSOR_IQ3_S ||
+        type == BN_GGUF_TENSOR_IQ3_XXS)
+        return bn_quant_iq_panel_avx2_tiled_matmul_range;
+    if (type == BN_GGUF_TENSOR_Q3_K) return bn_quant_q3k_avx2_tiled_matmul_range;
+    if (type == BN_GGUF_TENSOR_Q6_K) return bn_quant_q6k_avx2_tiled_matmul_range;
+    if (type == BN_GGUF_TENSOR_Q5_K) return bn_quant_q5k_avx2_tiled_matmul_range;
+#else
+    (void)type;
+#endif
+    return NULL;
+}
+
+static int prefill_matrix_input_valid(float *out, const BnQWeight *W,
+                                      int n_tokens) {
+    const BnQuantFormatOps *ops = W ? bn_quant_format_ops(W->type) : NULL;
+    return out && W && W->data && W->rows > 0 && W->cols > 0 && ops &&
+        bn_quant_format_has_cpu_matmul(W->type) && ops->block_elems > 0 &&
+        W->cols % ops->block_elems == 0 &&
+        (size_t)n_tokens <= SIZE_MAX / sizeof(float) / (size_t)W->rows &&
+        (size_t)n_tokens <= SIZE_MAX / sizeof(float) / (size_t)W->cols;
+}
+
+static int prefill_group_valid(float **out, const BnQWeight **W, int n,
+                               int n_tokens, int *any_tiled,
+                               int *any_delegated) {
+    if (!out || !W || n <= 0 || n_tokens <= 0) return 0;
+    *any_tiled = *any_delegated = 0;
+    for (int i = 0; i < n; i++) {
+        if (!prefill_matrix_input_valid(out[i], W[i], n_tokens) ||
+            (i && W[i]->cols != W[0]->cols)) return 0;
+        if (bn_quant_format_cpu_prefill_uses_tiled(W[i]->type, n_tokens)) {
+            if (!prefill_tiled_kernel(W[i]->type)) return 0;
+            *any_tiled = 1;
+        } else {
+            *any_delegated = 1;
+        }
+    }
+    return 1;
+}
+
+static void prefill_dispatch(float **out, const BnQWeight **W,
+    const BnPreparedWeight **prepared, int n, int n_tokens,
+    const int8_t *q, const float *d, const int16_t *bsums,
+    const float *X, int8_t *scratch, BnThreadPool *pool) {
+#ifndef __AVX2__
+    (void)q; (void)d; (void)bsums;
+#endif
+    /* Bound task storage while preserving caller-owned activation lifetime. */
+    for (int base = 0; base < n;) {
+        int batch = n - base;
+        if (batch > BN_MAX_MULTI_MATMUL) batch = BN_MAX_MULTI_MATMUL;
+#ifdef __AVX2__
+        BnKQuantMatmulCtx ctx[BN_MAX_MULTI_MATMUL];
+        BnTPTask tasks[BN_MAX_MULTI_MATMUL];
+        int task_count = 0;
+#endif
+        for (int j = 0; j < batch; j++) {
+            int i = base + j;
+            const BnPreparedWeight *pw = prepared ? prepared[i] : NULL;
+#ifdef __AVX2__
+            if (bn_quant_format_cpu_prefill_uses_tiled(W[i]->type, n_tokens)) {
+                ctx[task_count] = (BnKQuantMatmulCtx){out[i], W[i],
+                    (int8_t *)q, (float *)d, (int16_t *)bsums,
+                    n_tokens, W[i]->cols, pw, NULL};
+                tasks[task_count] = (BnTPTask){prefill_tiled_kernel(W[i]->type),
+                    &ctx[task_count], W[i]->rows};
+                task_count++;
+                continue;
+            }
+#endif
+            bn_quant_matmul_prepared(out[i], W[i], pw, X, n_tokens,
+                                     scratch, pool);
+        }
+#ifdef __AVX2__
+        if (task_count) bn_tp_dispatch(pool, tasks, task_count);
+#endif
+        base += batch;
+    }
+}
+
+int bn_quant_matmul_prefill_prepared_kquant_input_multi(
+    float **out, const BnQWeight **W, const BnPreparedWeight **prepared,
+    int n, int n_tokens, const int8_t *q, const float *d,
+    const int16_t *bsums, const float *X, int8_t *scratch,
+    BnThreadPool *pool) {
+    int any_tiled, any_delegated;
+    if (!q || !d || !bsums ||
+        !prefill_group_valid(out, W, n, n_tokens, &any_tiled, &any_delegated) ||
+        W[0]->cols % BN_QK_K != 0 ||
+        (any_delegated && (!X || !scratch))) {
+        fprintf(stderr, "[bn:quant] invalid reference prefill prepared input\n");
+        return -1;
+    }
+    prefill_dispatch(out, W, prepared, n, n_tokens, q, d, bsums,
+                     X, scratch, pool);
+    return 0;
+}
+
+int bn_quant_matmul_prefill_prepared_multi(
+    float **out, const BnQWeight **W, const BnPreparedWeight **prepared, int n,
+    const float *X, int n_tokens, int8_t *x_q_buf, BnThreadPool *pool) {
+    int any_tiled, any_delegated;
+    if (!X || !x_q_buf ||
+        !prefill_group_valid(out, W, n, n_tokens, &any_tiled, &any_delegated)) {
+        fprintf(stderr, "[bn:quant] invalid reference prefill projection group\n");
+        return -1;
+    }
+#ifdef __AVX2__
+    if (any_tiled) {
+        int cols = W[0]->cols;
+        int nb = cols / BN_QK_K;
+        size_t count = (size_t)n_tokens * cols;
+        size_t blocks = (size_t)n_tokens * nb;
+        int8_t *q = malloc(count);
+        float *d = malloc(blocks * sizeof(*d));
+        int16_t *bsums = malloc(blocks * 16 * sizeof(*bsums));
+        if (!q || !d || !bsums) {
+            free(q); free(d); free(bsums);
+            fprintf(stderr, "[bn:quant] reference prefill input allocation failed\n");
+            return -1;
+        }
+        for (int t = 0; t < n_tokens; t++)
+            matmul_quant_x_to_q8k(X + (size_t)t * cols,
+                q + (size_t)t * cols, d + (size_t)t * nb,
+                bsums + (size_t)t * nb * 16, cols);
+        prefill_dispatch(out, W, prepared, n, n_tokens, q, d, bsums,
+                         X, x_q_buf, pool);
+        free(q); free(d); free(bsums);
+        return 0;
+    }
+#else
+    (void)any_tiled;
+#endif
+    prefill_dispatch(out, W, prepared, n, n_tokens, NULL, NULL, NULL,
+                     X, x_q_buf, pool);
+    return 0;
+}
+
+int bn_quant_matmul_prefill_prepared(float *out, const BnQWeight *W,
+                                    const BnPreparedWeight *prepared,
+                                    const float *X, int n_tokens,
+                                    int8_t *x_q_buf, BnThreadPool *pool) {
+    float *outputs[1] = {out};
+    const BnQWeight *weights[1] = {W};
+    const BnPreparedWeight *layouts[1] = {prepared};
+    return bn_quant_matmul_prefill_prepared_multi(outputs, weights, layouts, 1,
+                                                 X, n_tokens, x_q_buf, pool);
 }

@@ -1,0 +1,742 @@
+{
+  "status": "Reusable learned-router FFN session executor now qualified for source small-batch decode and existing grouped prefill; full-model admission and whole goal remain open",
+  "implementation": {
+    "module": "src/transformer/trellis.c; existing transformer module and BnBackendSession GPU resource container",
+    "api": "bn_transformer_trellis_session_plan / prepare_session / session_input / run_learned",
+    "request": "One prepared request reuses router/common/output storage and nine additional small-batch scratch/metadata views. Source counter capacity stays 8*topk even for max_tokens1. Counters zero once at setup, reused across batch sizes. Decode-only max_tokens1..8 omits all prefill buffers, planner groups and prefill backend reservations/callback requirements.",
+    "placement": "Reads only selected IDs and route weights to the host, validates routing metadata, skips zero route weights, preserves selection order while binding unique active expert triples. Acquires all active experts before source A/B; no CPU sorting or activation arithmetic. Up to48 simultaneous leases, delegated to existing provider quota/LRU policies; no capacity precheck that could reject cached hits.",
+    "lifetime": "Decode leases remain held through shared F16 FFN and final F32 addition; one final completion fence precedes release. Partial acquisition/failure drains before releasing. A completion failure destroys/drains the private request before returning weight leases, requiring reset/setup. Metadata-read failure drains without publishing results.",
+    "result": "BnTransformerTrellisProfile explicitly distinguishes PREFILL and DECODE. Decode publishes router/routed/shared/final views; prefill-only order/count/base/kind/slots views are all empty and slot_rows=0. Results expire on the next execution attempt.",
+    "compatibility": "Existing prefill source geometry, tier widths, folded batches, numeric policies and shared FFN are retained. No provider internals, top-level GPU mechanics, model-family predicates, mutable model weights, new root module, or default full-model admission added."
+  },
+  "budget": {
+    "workspaces": {
+      "cold-prefill": [
+        {
+          "session": 0,
+          "device_bytes": 2466268315,
+          "host_bytes": 41504,
+          "batch_cap": 5,
+          "slot_rows": 54068,
+          "group_rows": 16384
+        },
+        {
+          "session": 1,
+          "device_bytes": 2466268315,
+          "host_bytes": 41504,
+          "batch_cap": 5,
+          "slot_rows": 54068,
+          "group_rows": 16384
+        },
+        {
+          "session": 2,
+          "device_bytes": 53866412,
+          "host_bytes": 12320,
+          "batch_cap": 0,
+          "slot_rows": 0,
+          "group_rows": 0
+        }
+      ],
+      "cold-decode": [
+        {
+          "session": 0,
+          "device_bytes": 2435859611,
+          "host_bytes": 41504,
+          "batch_cap": 5,
+          "slot_rows": 54068,
+          "group_rows": 16384
+        },
+        {
+          "session": 1,
+          "device_bytes": 2435859611,
+          "host_bytes": 41504,
+          "batch_cap": 5,
+          "slot_rows": 54068,
+          "group_rows": 16384
+        },
+        {
+          "session": 2,
+          "device_bytes": 53866412,
+          "host_bytes": 12320,
+          "batch_cap": 0,
+          "slot_rows": 0,
+          "group_rows": 0
+        }
+      ],
+      "resident": [
+        {
+          "session": 0,
+          "device_bytes": 2671527067,
+          "host_bytes": 41504,
+          "batch_cap": 5,
+          "slot_rows": 54068,
+          "group_rows": 16384
+        },
+        {
+          "session": 1,
+          "device_bytes": 2671527067,
+          "host_bytes": 41504,
+          "batch_cap": 5,
+          "slot_rows": 54068,
+          "group_rows": 16384
+        },
+        {
+          "session": 2,
+          "device_bytes": 53866412,
+          "host_bytes": 12320,
+          "batch_cap": 0,
+          "slot_rows": 0,
+          "group_rows": 0
+        }
+      ]
+    },
+    "expert_payload_bytes": 13315584,
+    "cold_pools": {
+      "ram_bytes": 639148032,
+      "decode_bytes": 639148032,
+      "temporary_bytes": 639148032,
+      "staging_bytes": 13315584
+    },
+    "resident_layer_pool": {
+      "ram_bytes": 639148032,
+      "decode_bytes": 5113184256,
+      "temporary_bytes": 0,
+      "staging_bytes": 13315584
+    },
+    "scope": "Controller-owned heap payload and conservative device request payload/workspace only. Excludes immutable core/parameters/routers, expert stores, host session history/logits, request metadata, thread stack, allocator/driver/library overhead. Shared backend workspace is conservatively counted independently for combined mode; not total RSS/VRAM admission."
+  },
+  "correctness": {
+    "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "layer": 39,
+    "default_clip": 10,
+    "decode_unique_source_cases": 32,
+    "decode_rows": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "decode_patterns": [
+      "prefix",
+      "repeat",
+      "large finite row",
+      "zero"
+    ],
+    "prefill_reference_variants": 10,
+    "prefill_rows": [
+      64,
+      256,
+      1024,
+      4096,
+      8192
+    ],
+    "prefill_numeric_policies": [
+      0,
+      1
+    ],
+    "comparison": "All compared F16/F32 routing/routed/shared/final tensors and prefill intermediates are byte-exact against independently preserved source data. Original I64 decode expert IDs compare exactly after lossless I32 metadata conversion. No changed goldens. Decode-only and both full sessions share immutable model data; full sessions interleave prefill/decode in forward and reverse shape order.",
+    "normal": "Three main configurations each192decode+20prefill comparisons: temporary window5, admission window1, fully cached layer window32 with temporary quota zero. Additional mixed-policy run performs192decode+20prefill comparisons and asserts prefill cannot change decode-cache occupancy/payload/eviction counts.",
+    "negative": "Budget-1 before request publication; every setup activation allocation failure and counter-zero failure; idempotence; incompatible policy/owner rejection; missing prefill callbacks allowed only in decode-only mode; first/second routing read failures; 47 pinned unrelated experts force BUSY after partial acquisition; injected completion failure verifies request destruction before temporary weight reclamation; balanced request creation/destruction; model config and session positions unchanged.",
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "asan-moe-unit-build": 0,
+        "asan-moe-unit": 0,
+        "cold-prefill": 0,
+        "cold-decode": 0,
+        "resident": 0,
+        "asan-prefill": 0,
+        "asan-decode": 0,
+        "asan-resident": 0,
+        "memcheck-prefill": 0,
+        "memcheck-decode": 0,
+        "memcheck-resident": 0,
+        "initcheck-prefill": 0,
+        "initcheck-decode": 0,
+        "initcheck-resident": 0,
+        "nsys": 0,
+        "nsys-export": 0
+      },
+      "records": {
+        "cold-prefill": {
+          "decode_cases": 192,
+          "prefill_cases": 20,
+          "compared_bytes": 11730349856,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 57896159232,
+          "upload_bytes": 57896159232,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "cold-decode": {
+          "decode_cases": 192,
+          "prefill_cases": 20,
+          "compared_bytes": 11730349856,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 32210397696,
+          "upload_bytes": 32410131456,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "resident": {
+          "decode_cases": 192,
+          "prefill_cases": 20,
+          "compared_bytes": 11730349856,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 1,
+          "reader_bytes": 0,
+          "upload_bytes": 0,
+          "profile_calls": 0,
+          "busy_cleanup": 0,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "asan-prefill": {
+          "decode_cases": 192,
+          "prefill_cases": 20,
+          "compared_bytes": 11730349856,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 57896159232,
+          "upload_bytes": 57896159232,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "asan-decode": {
+          "decode_cases": 192,
+          "prefill_cases": 20,
+          "compared_bytes": 11730349856,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 32210397696,
+          "upload_bytes": 32410131456,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "asan-resident": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046173384,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 1,
+          "reader_bytes": 0,
+          "upload_bytes": 0,
+          "profile_calls": 0,
+          "busy_cleanup": 0,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "memcheck-prefill": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046173384,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 10226368512,
+          "upload_bytes": 10226368512,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "memcheck-decode": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046173384,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 7203730944,
+          "upload_bytes": 7217046528,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "memcheck-resident": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046173384,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 1,
+          "reader_bytes": 0,
+          "upload_bytes": 0,
+          "profile_calls": 0,
+          "busy_cleanup": 0,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "initcheck-prefill": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046173384,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 10226368512,
+          "upload_bytes": 10226368512,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "initcheck-decode": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046173384,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 7203730944,
+          "upload_bytes": 7217046528,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "initcheck-resident": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046173384,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 1,
+          "reader_bytes": 0,
+          "upload_bytes": 0,
+          "profile_calls": 0,
+          "busy_cleanup": 0,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "nsys": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046782120,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 1,
+          "reader_bytes": 0,
+          "upload_bytes": 0,
+          "profile_calls": 1,
+          "busy_cleanup": 0,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        }
+      },
+      "warnings": {
+        "asan-moe-unit-build": [
+          "moe_reduce_16_avx2",
+          "moe_reduce_8_avx2",
+          "moe_reference_exp_avx2"
+        ]
+      },
+      "frozen_files": 746,
+      "reference_sha256": {
+        "/tmp/bitnet-goal-native-decode/paired-reference": "634906904f4b87d907ec1a1ffba333248264f58c35e6842cd249b0b4f6b3ed3b",
+        "/tmp/bitnet-goal-native-layer/paired": "a7a4b0ef42022891cb9b91850c049cadbd681656e7de2ca34bc4e7ec7693685f"
+      },
+      "probe_sha256": "5d0089b6a379b212a7c643a71ca94b9c283830308946ef2ac152a96f673ae705",
+      "mixed_policy": {
+        "record": {
+          "decode_cases": 192,
+          "prefill_cases": 20,
+          "compared_bytes": 11730349856,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 24540621312,
+          "upload_bytes": 24540621312,
+          "profile_calls": 0,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "prefill_admit": 0,
+        "decode_admit": 1,
+        "prefill_decode_cache_published_payload_and_eviction_counts_unchanged": true,
+        "source_sha256": "63ca47639faea15b77a28e415a55ceb2094bab9b3161d3a6ec73dbc5df59031b"
+      },
+      "cold_profile": {
+        "record": {
+          "decode_cases": 12,
+          "prefill_cases": 4,
+          "compared_bytes": 7046782120,
+          "hot_allocations": 0,
+          "hot_requests": 0,
+          "created": 5,
+          "destroyed": 5,
+          "resident": 0,
+          "reader_bytes": 10679098368,
+          "upload_bytes": 10679098368,
+          "profile_calls": 1,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1
+        },
+        "source_sha256": "b163db5181dc4c82cc2674cfa7d24500189a375e2f916a68d65ffe61e25c1ffa"
+      }
+    }
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "warm_trace": {
+    "scope": "One warmed complete learned-router R8 layer39 FFN on decode-only session, clip10. Full layer cached with zero temporary capacity; input/setup/expert seeding and comparisons outside capture.",
+    "kernel_count": 16,
+    "kernel_duration_sum_ns": 532832,
+    "kernel_span_ns": 640162,
+    "kernel_groups": [
+      {
+        "name": "<unnamed>::quant_a_kernel(const __half *, signed char *, signed char *, float *, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 1376
+      },
+      {
+        "name": "<unnamed>::routing_gemm_i8_kernel(const signed char *, const signed char *, const float *, const signed char *, const signed char *, const float *, __half *, float *, int, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 11776
+      },
+      {
+        "name": "<unnamed>::routing_gemm_reduce_kernel(const float *, __half *, int, int)",
+        "count": 1,
+        "duration_sum_ns": 960
+      },
+      {
+        "name": "bn_cuda_decode_detail::bind(BnCudaDecodeEXL3Pointers, long *, long *, const int *, int, int)",
+        "count": 1,
+        "duration_sum_ns": 3552
+      },
+      {
+        "name": "bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_rot_kernel(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 3360
+      },
+      {
+        "name": "bn_cuda_exl3::silu_mul(__half *, const __half *, const __half *, unsigned long, float)",
+        "count": 1,
+        "duration_sum_ns": 1055
+      },
+      {
+        "name": "bn_cuda_gdn::add_f32_kernel(float *, const float *, const float *, unsigned long)",
+        "count": 1,
+        "duration_sum_ns": 928
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_128x16x128_2_32x16x128_tmaAB_alignCD4_splitK_NNNN",
+        "count": 2,
+        "duration_sum_ns": 17824
+      },
+      {
+        "name": "nvjet_sm120_hss_mma_256x8x64_2_64x8x64_tmaAB_alignCD4_splitK_NNNN",
+        "count": 1,
+        "duration_sum_ns": 7232
+      },
+      {
+        "name": "void <unnamed>::routing_ds3_nogroup_topk_kernel<(int)1>(const __half *, const __half *, int *, __half *, float, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 3136
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_a_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 315841
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_b_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 159648
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 2,
+        "duration_sum_ns": 4448
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 1,
+        "duration_sum_ns": 1696
+      }
+    ],
+    "runtime_api_counts": {
+      "cuKernelGetName": 8,
+      "cuKernelSetAttribute": 3,
+      "cuLaunchKernelEx": 3,
+      "cuStreamGetGreenCtx": 6,
+      "cudaGetDeviceProperties_v12000": 2,
+      "cudaLaunchKernelExC_v11060": 3,
+      "cudaLaunchKernel_v7000": 10,
+      "cudaMemcpyAsync_v3020": 2,
+      "cudaStreamSynchronize_v3020": 3
+    },
+    "device_to_host_routing": {
+      "copies": 2,
+      "bytes": 288
+    },
+    "host_to_device_copies": 0,
+    "allocations_frees": 0,
+    "stream_synchronizations": 3,
+    "expert_io_upload_bytes": 0,
+    "limitation": "Includes router, routed small-batch operation, shared FFN and final F32 addition. Two metadata read fences plus one final completion fence remain. Not full-model latency or a vLLM parity measurement."
+  },
+  "cold_trace": {
+    "scope": "One GPU-cold complete R8 layer39 learned-router FFN, prefix input, clip10, temporary policy. The preceding identical call releases all temporary experts, so the captured call uploads again. OS page-cache state is uncontrolled.",
+    "unique_experts": 34,
+    "projection_uploads": 102,
+    "upload_bytes": 452729856,
+    "upload_device_time_ns": 10553638,
+    "routing_read_bytes": 288,
+    "kernel_count": 16,
+    "kernel_duration_sum_ns": 531234,
+    "kernel_span_ns": 39232249,
+    "weight_allocations": 102,
+    "weight_frees": 102,
+    "activation_allocations": 0,
+    "stream_synchronizations": 105,
+    "upload_completion_fences": 102,
+    "routing_and_final_fences": 3,
+    "runtime_api": [
+      {
+        "name": "cuKernelGetName",
+        "count": 8,
+        "duration_sum_ns": 6341
+      },
+      {
+        "name": "cuKernelSetAttribute",
+        "count": 3,
+        "duration_sum_ns": 1952
+      },
+      {
+        "name": "cuLaunchKernelEx",
+        "count": 3,
+        "duration_sum_ns": 13901
+      },
+      {
+        "name": "cuStreamGetGreenCtx",
+        "count": 6,
+        "duration_sum_ns": 1923
+      },
+      {
+        "name": "cudaFree_v3020",
+        "count": 102,
+        "duration_sum_ns": 4375866
+      },
+      {
+        "name": "cudaGetDeviceProperties_v12000",
+        "count": 2,
+        "duration_sum_ns": 831
+      },
+      {
+        "name": "cudaLaunchKernelExC_v11060",
+        "count": 3,
+        "duration_sum_ns": 16174
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "count": 10,
+        "duration_sum_ns": 154258
+      },
+      {
+        "name": "cudaMalloc_v3020",
+        "count": 102,
+        "duration_sum_ns": 5960861
+      },
+      {
+        "name": "cudaMemcpyAsync_v3020",
+        "count": 2,
+        "duration_sum_ns": 60323
+      },
+      {
+        "name": "cudaMemcpy_v3020",
+        "count": 102,
+        "duration_sum_ns": 13117740
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "count": 105,
+        "duration_sum_ns": 2340351
+      }
+    ],
+    "kernel_groups": [
+      {
+        "name": "<unnamed>::quant_a_kernel(const __half *, signed char *, signed char *, float *, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 1376
+      },
+      {
+        "name": "<unnamed>::routing_gemm_i8_kernel(const signed char *, const signed char *, const float *, const signed char *, const signed char *, const float *, __half *, float *, int, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 11840
+      },
+      {
+        "name": "<unnamed>::routing_gemm_reduce_kernel(const float *, __half *, int, int)",
+        "count": 1,
+        "duration_sum_ns": 960
+      },
+      {
+        "name": "bn_cuda_decode_detail::bind(BnCudaDecodeEXL3Pointers, long *, long *, const int *, int, int)",
+        "count": 1,
+        "duration_sum_ns": 3680
+      },
+      {
+        "name": "bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_rot_kernel(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 3584
+      },
+      {
+        "name": "bn_cuda_exl3::silu_mul(__half *, const __half *, const __half *, unsigned long, float)",
+        "count": 1,
+        "duration_sum_ns": 1024
+      },
+      {
+        "name": "bn_cuda_gdn::add_f32_kernel(float *, const float *, const float *, unsigned long)",
+        "count": 1,
+        "duration_sum_ns": 896
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_128x16x128_2_32x16x128_tmaAB_alignCD4_splitK_NNNN",
+        "count": 2,
+        "duration_sum_ns": 17472
+      },
+      {
+        "name": "nvjet_sm120_hss_mma_256x8x64_2_64x8x64_tmaAB_alignCD4_splitK_NNNN",
+        "count": 1,
+        "duration_sum_ns": 7072
+      },
+      {
+        "name": "void <unnamed>::routing_ds3_nogroup_topk_kernel<(int)1>(const __half *, const __half *, int *, __half *, float, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 3168
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_a_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 315521
+      },
+      {
+        "name": "void bn_cuda_decode_detail::exl3_moe_coop_ns::exl3_moe_coop_b_kernel<(int)3, (int)2, (bool)1, (bool)0>(bn_cuda_decode_detail::MoeCoopParams)",
+        "count": 1,
+        "duration_sum_ns": 158625
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 2,
+        "duration_sum_ns": 4384
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 1,
+        "duration_sum_ns": 1632
+      }
+    ],
+    "next_performance_work": "Current synchronous immutable projection uploads allocate/free each miss and fence each of three projections per expert. Reusing budgeted weight storage and batching upload completion can reduce these costs while retaining publication/lease invariants.",
+    "limitation": "Single component trace; kernel span includes launch, CPU placement and upload gaps but excludes post-kernel cleanup. Not end-to-end wall latency, physical SSD bytes, or vLLM parity."
+  },
+  "changed_source_files": [
+    "include/transformer_internal.h",
+    "test/native_executor_checks.h",
+    "src/transformer/trellis.c"
+  ],
+  "artifacts": {
+    "root": "/tmp/bitnet-goal-native-decode-executor",
+    "qualification": "/tmp/bitnet-goal-native-decode-executor/qualification.json",
+    "frozen": "/tmp/bitnet-goal-native-decode-executor/frozen-source.json",
+    "build_log": "/tmp/bitnet-goal-native-decode-executor/build-driver.log",
+    "decode_references": "/tmp/bitnet-goal-native-decode/paired-reference/reference.json",
+    "prefill_references": "/tmp/bitnet-goal-native-layer/paired/reference.json"
+  },
+  "limitations": [
+    "Explicit learned-router layer39 FFN component only; full-model forward remains unadmitted. V4.1 defaults to zero hash-routing layers, so no first-three hash-router port is required.",
+    "Full attention, Engram, complete native forward/generation/CLI admission, continuous serving and matched vLLM parity remain open.",
+    "Full-executor qualification uses checkpoint clip10; clip0 was separately qualified at the underlying routed/shared primitive level and was not substituted into this checkpoint.",
+    "Warm/cold traces are one FFN invocation, not statistical end-to-end latency or full-model throughput. Cold source reads are logical reader bytes; OS page cache is uncontrolled.",
+    "Caller serializes access, including shared expert-store mutation across sessions; concurrent serving admission/cancellation is not implemented here."
+  ],
+  "architecture_correction": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "architecture": [
+      "DeepseekV41ForCausalLM"
+    ],
+    "subclass": {
+      "arch_string": "DeepseekV41ForCausalLM",
+      "cfg_prefix": "text_config->",
+      "default_num_hash_layers": 0
+    },
+    "base": {
+      "arch_string": "DeepseekV4ForCausalLM",
+      "cfg_prefix": "",
+      "default_num_hash_layers": 3
+    },
+    "explicit_num_hash_layers": null,
+    "effective_num_hash_layers": 0,
+    "layers": 40,
+    "routing": "All40 layers use learned sqrtsoftplus routing; no first-three hash-routing requirement for this V4.1 checkpoint.",
+    "proof": "DeepseekV41Config overrides default_num_hash_layers=0, calls its parent initializer; the parent reads num_hash_layers with self.default_num_hash_layers. Inherited make_mlp selects hash only when layer<config.num_hash_layers.",
+    "source_sha256": {
+      "architecture/deepseek_v41.py": "18e0dc275d300e68ee09e51d890a029907dfd32a2e1c13a53f1b2cc0a3a48aff",
+      "architecture/deepseek_v4.py": "c7e0199c9002e929903d25739bd9e1d3c4dbec2b1ac7a20fcd077b50f6795e83",
+      "architecture/architectures.py": "178434127d2a062735e30da67dbf45ca3b2052cce51b03ded0c5798d7dc00306"
+    },
+    "config_sha256": "d0c1867b26c99c5721e8e75816c2e4a2ac527d4651bcc5a32aa970b73b7ddf17",
+    "storage_audit": "All48 shard headers have no tid2eid/hash/token_to tensor and no unindexed tensors; consistent with zero hash layers, not missing required weights."
+  }
+}

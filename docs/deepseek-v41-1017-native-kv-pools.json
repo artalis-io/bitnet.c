@@ -1,0 +1,307 @@
+{
+  "reference_profile_correction": {
+    "checkpoint_norm_epsilon": 1e-20,
+    "historical_reference_epsilon": 1e-06,
+    "source": "Checkpoint text_config.rms_norm_eps; original DSV4Compressor and idx_k_norm inherit it.",
+    "effect": {
+      "pool_idx": 45,
+      "keys": 45
+    },
+    "history": "Initial index-key and pool engineering captures used1e-6 for index norm. Their artifacts remain intact but do not prove this checkpoint profile. New checkpoint-original-reference/checkpoint-paired-reference use config-derived1e-20; probe passes model native numerics, not a hardcoded default.",
+    "historical_artifacts": "/tmp/bitnet-goal-native-kv-pools/historical-eps1e-6",
+    "prior_index_document": "docs/deepseek-v41-1017-native-index-keys.json"
+  },
+  "status": "qualified F16 compressed/index pool ownership and publication component; full native forward remains closed",
+  "architecture": "DeepseekV41ForCausalLM",
+  "apis": {
+    "backend": "BnGPUPagedLatentPublishResidentPlan / paged_latent_publish_f16_resident",
+    "transformer": [
+      "bn_transformer_trellis_kv_session_plan",
+      "bn_transformer_trellis_prepare_session_kv",
+      "bn_transformer_trellis_kv_views",
+      "bn_transformer_trellis_kv_publish"
+    ]
+  },
+  "implementation": {
+    "ownership": "TrellisRequest in existing BnSession backend GPU container owns optional host KV metadata and the same native resident request owns every table/pool/ring allocation. Model/anatomy and backend immutable weight ownership unchanged. Session reset/free finishes device work before releasing all resources.",
+    "layout": "F16 source-default DSA pools. Page size256 TOKENS, entries/page256/rate. Per owner pool_c [pages,epp,448], pool_r [pages,epp,64], pool_idx [pages,epp,128]; projected KV/gate rings [256+rate,512]. One immutable identity token-page table per request. Reader layers borrow architecture kv_source owner views; index-selection ownership is separate.",
+    "setup": "Separate explicit KV payload/host quotas alongside existing FFN options. Setup stages FFN and KV on one new request and attaches only after successful initialization/completion; any failure destroys all staged resources. Idempotent matching setup; no upgrade/resize of a live request. Pool planning reads architecture ownership/rates, never family predicates.",
+    "publication": "Fused device bit-copy of rotated latent/channel splits and index keys through block table. Validate scalar extents, typed exact views, ownership and pairwise disjointness before writes. Backend requires valid injective immutable page IDs; transformer-owned identity table satisfies this without hot readback.",
+    "visibility": "Owner-local token cursor and visible entries=cursor/rate. Append or caller-produced rewind<=256 tokens. Incomplete-window zero-entry calls accept canonical empty stages and commit only token cursor after completion. All pool bytes outside written entries remain unchanged; stale entries beyond visibility cannot be attended. Controller commits after one explicit completion fence.",
+    "failure": "Malformed scalar/count/controller ownership arguments reject before publication. Backend rejection/execution failure or completion failure conservatively destroys the native request and invalidates every old view until reset/setup. Session whole-model position is not advanced by this component.",
+    "backend_boundary": "New transformer ownership uses existing BnBackendScalarKind mapping. GPU mechanics remain backend-private; public GPU backend declaration plus include/wiring only in main CUDA TU. No quant numerical changes or CPU weight handles."
+  },
+  "checkpoint": {
+    "path": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "owners": [
+      2,
+      8,
+      14,
+      20
+    ],
+    "rates": [
+      2,
+      2,
+      2,
+      1
+    ],
+    "maxseq": 1024,
+    "pages": 4,
+    "norm_epsilon": 1e-20,
+    "kv_payload_bytes_per_request": 5388304,
+    "scope": "Two separately owned native sessions; same FFN request container, max chunk511. Pools/rings/metadata allocated once. Four owners shared by compressed reader layers2..39; sliding layers0/1 outside this pool API."
+  },
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "license": "third_party/exllamav3/LICENSE",
+    "geometry": "cache/dsa.py CacheLayer_dsa and modules/dsv4.py::_forward_cached_one/_indexer_keys. Cache defaults F16; optional quantized pools not admitted here.",
+    "captures": "Preserved original and matched system-cuBLAS captures. Original compressor source captures provide projected/ring/unrotated stage data; independent Torch matmul plus original norm/RoPE source CABI derive keys and rotate latents, then Torch indexed assignment publishes source pools. Candidate output never seeds references.",
+    "wrappers": {
+      "/tmp/bitnet-goal-native-attention-qkv/reference.so": "13da6c34769cfece929d4b7ee85cbda2084b5d000a615169a02788ddc0b3b257",
+      "/tmp/bitnet-goal-native-rmsnorm/reference.so": "df855447522fa9b18803432573056269d26fb5e976b1d9c5eeb3fd8092f11fcb"
+    },
+    "capture_script_sha256": "636d0b8d1c70eef096696d42d221ae663d11c936cec56225ee71578b5a10b92c",
+    "cross_library_different_case_counts": {
+      "ring_gate": 45,
+      "projected_gate": 38,
+      "ring_kv": 44,
+      "projected_kv": 40,
+      "pool_c": 36,
+      "pool_r": 33,
+      "pool_idx": 34,
+      "latents": 33,
+      "keys": 30,
+      "projected": 30
+    },
+    "synthetic": {
+      "cases": 72,
+      "header_sha256": "ac5761af7bb3a47eb10b1d8f824b905b73c1c1f429e3ed9dc9eeb41e131e2336",
+      "torch": "2.14.0+cu130"
+    }
+  },
+  "correctness": {
+    "actual_cases": 48,
+    "pipeline_calls_per_run": 96,
+    "comparison": "Native backend-owned checkpoint matrices/norms; production compressor -> latent key operation -> production transformer publication. Both entire projected-row rings, raw KV/gate projections, rotated stage, projected/rotated keys, positions and all complete pools byte-exact. Two sessions reuse fixed guarded stage buffers; all shared-reader aliases verified and session cursor isolation checked.",
+    "frames": "Each owner continuous chunks1/1/3/7/31/32/33/257/1/511 through token877, then rewind750 for7 and757 for33. Includes rate2 zero-entry call, partial windows, page crossings, chunk>ring and stale pool tails.",
+    "ownership": "Exact KV payload allocation delta agrees with plan. Short device/host quotas reject before request creation. Matching setup allocates nothing. Live FFN-only request cannot be upgraded; incompatible KV capacity rejected. Three injected mid-KV allocation failures and one setup completion failure detach/free all staged resources. Publication completion failure destroys request; reset/setup restores zero pools/cursors. Backend alias rejection also destroys request. Immutable model config preserved.",
+    "synthetic": "72 independent Torch bit-copy fixtures x2 requests=144 calls; F16 all-bit-pattern inputs including NaNs/zero signs, D32/128/512, rates1/2, identity/permuted8-page tables, page boundaries/tail capacity, rows1/7/31/32/33/511. Full output hashes, guards, immutable inputs/table and late-invalid-plan/foreign-request/alias rejection.",
+    "legacy_ffn": {
+      "decode_cases": 12,
+      "prefill_cases": 4,
+      "compared_bytes": 7046173384,
+      "hot_allocations": 0,
+      "hot_requests": 0,
+      "created": 5,
+      "destroyed": 5,
+      "resident": 0,
+      "reader_bytes": 7203730944,
+      "upload_bytes": 7217046528,
+      "profile_calls": 0,
+      "busy_cleanup": 1,
+      "completion_failure_cleanup": 1,
+      "setup_rollback": 1
+    },
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "legacy-probe-build": 0,
+        "real": 0,
+        "asan-real": 0,
+        "memcheck": 0,
+        "initcheck": 0,
+        "racecheck": 0,
+        "legacy-ffn": 0,
+        "nsys": 0,
+        "export": 0
+      },
+      "records": {
+        "real": {
+          "calls": 96,
+          "compared_bytes": 151399320,
+          "hot_allocations": 0,
+          "kv_device_bytes": 5388304,
+          "owners": 4,
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "asan-real": {
+          "calls": 96,
+          "compared_bytes": 151399320,
+          "hot_allocations": 0,
+          "kv_device_bytes": 5388304,
+          "owners": 4,
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "memcheck": {
+          "calls": 96,
+          "compared_bytes": 151399320,
+          "hot_allocations": 0,
+          "kv_device_bytes": 5388304,
+          "owners": 4,
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "initcheck": {
+          "calls": 96,
+          "compared_bytes": 151399320,
+          "hot_allocations": 0,
+          "kv_device_bytes": 5388304,
+          "owners": 4,
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        },
+        "nsys": {
+          "calls": 96,
+          "compared_bytes": 151399320,
+          "hot_allocations": 0,
+          "kv_device_bytes": 5388304,
+          "owners": 4,
+          "setup_failures": 4,
+          "completion_failure_recovered": true
+        }
+      },
+      "frozen_files": 765,
+      "references": {
+        "/tmp/bitnet-goal-native-kv-pools/checkpoint-original-reference": "53c669703c702d7b23bf6f4c89f144624f1066e381df905584e763e01aa408d1",
+        "/tmp/bitnet-goal-native-kv-pools/checkpoint-paired-reference": "0935e5a5086d0cb943fcd759356bca60467e6c5524cdacb6ffe6b1fe99968f2c"
+      },
+      "probe_sha256": "14187cb97204893d325890a81262fa495229beb852b2ea020a565929de43bf93"
+    }
+  },
+  "trace": {
+    "kernels": [
+      {
+        "name": "nvjet_sm120_hsh_mma_128x112x64_3_32x56x64_tmaAB_alignCD4_splitK_NNNN",
+        "count": 1,
+        "total_ns": 13600
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 1,
+        "total_ns": 2688
+      },
+      {
+        "name": "bn_cuda_compress_detail::dsv4_compress_windows_kernel(const __half *, const __half *, const __half *, const __half *, float *, const float *, const __half *, float, const float *, __half *, __half *, const int *, int, int, int, int, int, int, int, int, int, bool, const int *, int, int, int, int, const int *, int, int, bool)",
+        "count": 1,
+        "total_ns": 4128
+      },
+      {
+        "name": "bn_cuda_compress_detail::dsv4_compress_store_kernel(const __half *, const __half *, __half *, __half *, const int *, int, int, int, int, int, const int *, int)",
+        "count": 1,
+        "total_ns": 1088
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_32x32x128_6_16x16x128_tmaAB_alignCD4_bz_NNNN",
+        "count": 1,
+        "total_ns": 2880
+      },
+      {
+        "name": "bn_cuda_latent_keys::positions(int *, int, int, int)",
+        "count": 1,
+        "total_ns": 544
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, __half, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "count": 1,
+        "total_ns": 1472
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)0>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "count": 2,
+        "total_ns": 3904
+      },
+      {
+        "name": "bn_cuda_paged_latents::publish(const unsigned short *, const unsigned short *, const int *, unsigned short *, unsigned short *, unsigned short *, int, int, int, int, int, int)",
+        "count": 1,
+        "total_ns": 1824
+      }
+    ],
+    "kernel_count": 10,
+    "kernel_total_ns": 32128,
+    "api_calls": [
+      {
+        "name": "cuStreamGetGreenCtx",
+        "count": 4
+      },
+      {
+        "name": "cuKernelSetAttribute",
+        "count": 2
+      },
+      {
+        "name": "cuLaunchKernelEx",
+        "count": 2
+      },
+      {
+        "name": "cudaLaunchKernelExC_v11060",
+        "count": 1
+      },
+      {
+        "name": "cuKernelGetName",
+        "count": 7
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "count": 7
+      },
+      {
+        "name": "cuLibraryLoadData",
+        "count": 1
+      },
+      {
+        "name": "cuLibraryGetKernel",
+        "count": 1
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "count": 1
+      }
+    ],
+    "transfer_calls": 0,
+    "transfer_bytes": 0,
+    "scope": "One warmed layer20 rate1 chunk511: production compressor and latent-key operations plus transformer-owned publication/completion. Input/metadata uploads and reference readbacks outside capture. Component pipeline only, not complete attention/model throughput."
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "changed_previous_source_files": [
+    "Makefile",
+    "include/gpu_backend.h",
+    "include/transformer_internal.h",
+    "src/gpu_cuda.cu",
+    "test/test_cuda_backend.c",
+    "src/transformer/trellis.c"
+  ],
+  "new_source_test_files": [
+    "src/gpu_cuda_paged_latents.cuh",
+    "src/transformer/trellis_kv.h",
+    "test/cuda_native_paged_latents_checks.h",
+    "test/cuda_native_paged_latents_reference.h"
+  ],
+  "artifacts": {
+    "root": "/tmp/bitnet-goal-native-kv-pools",
+    "frozen_source": "/tmp/bitnet-goal-native-kv-pools/frozen-source.json",
+    "qualification": "/tmp/bitnet-goal-native-kv-pools/qualification.json",
+    "original_reference": "/tmp/bitnet-goal-native-kv-pools/original-reference/reference.json",
+    "paired_reference": "/tmp/bitnet-goal-native-kv-pools/paired-reference/reference.json"
+  },
+  "limitations": [
+    "Explicit F16 compressed/index pool component. Compressor and index-key producer orchestration is qualified by the probe; production full attention controller, frequency construction and compressor norm/zero-metadata setup still need integration.",
+    "No SWA ring, index-query scoring/topk/candidate selection, attention, F32 attention de-rotation, grouped output projection, Engram or complete native forward/generation/CLI admission.",
+    "No cache quantization, global cross-request page allocator, prefix sharing/eviction, CPU tier or concurrent KV scheduling yet. Requests own separate private paged pools and immutable identity maps; generic backend publication also qualifies permuted tables.",
+    "Host quota covers owned KV metadata and setup table scratch; device quota covers payload, excluding backend/driver/allocator descriptor overhead and immutable model/expert caches.",
+    "ASAN/UBSAN instruments probe, transformer Trellis/KV ownership, session/backend-session and selected model/reader/layout C sources; CUDA TU host validation is not claimed ASAN-instrumented. Device memcheck/leak/init/race tools separately passed.",
+    "Qualified selected sm_120a only; no full-model performance, vLLM parity or serving-tail claim."
+  ]
+}

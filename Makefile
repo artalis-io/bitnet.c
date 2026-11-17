@@ -1,6 +1,7 @@
 CC      ?= cc
 CXX     ?= c++
-NVCC    ?= /usr/local/cuda-13.2/bin/nvcc
+# Prefer the selected toolkit over an older distribution nvcc on PATH.
+NVCC    ?= $(if $(wildcard /usr/local/cuda/bin/nvcc),/usr/local/cuda/bin/nvcc,nvcc)
 CUDA_ARCH ?= sm_120
 LDFLAGS = -lm
 
@@ -25,7 +26,24 @@ CFLAGS += -D_GNU_SOURCE
 LDFLAGS += -lpthread
 endif
 
-QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/prepared.c src/quant/kernel_select.c src/quant/policy.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_prepared_kquant_input.c src/quant/matvec_multi.c src/quant/mxfp4_scalar.c
+# Optional host-only preparation math. Sequential linkage avoids changing
+# process-wide MKL threading settings; inference kernels remain unchanged.
+ifeq ($(BN_ENABLE_MKL_VML),1)
+ifneq ($(UNAME_S),Linux)
+$(error BN_ENABLE_MKL_VML requires Linux x86-64)
+endif
+ifneq ($(shell uname -m),x86_64)
+$(error BN_ENABLE_MKL_VML requires Linux x86-64)
+endif
+MKL_VML_ROOT ?= $(CURDIR)/.deps/oneMKL-2021.1.1
+CFLAGS += -DBN_ENABLE_MKL_VML -I$(MKL_VML_ROOT)/include
+LDFLAGS += -L$(MKL_VML_ROOT)/lib \
+    -Wl,--disable-new-dtags,-rpath,$(MKL_VML_ROOT)/lib \
+    -Wl,--no-as-needed -lmkl_intel_lp64 -lmkl_sequential -lmkl_core \
+    -Wl,--as-needed -lpthread -lm -ldl
+endif
+
+QUANT_COMMON = src/quant/int4_rows.c src/quant/fp8.c src/quant/exl3.c src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/prepared.c src/quant/kernel_select.c src/quant/policy.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_prepared_kquant_input.c src/quant/matvec_multi.c src/quant/mxfp4_scalar.c
 
 UNAME_M := $(shell uname -m)
 ifneq ($(filter arm% aarch%,$(UNAME_M)),)
@@ -71,7 +89,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
-    src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c src/transformer/bf16.c src/transformer/bf16_pool.c src/transformer/trellis.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
     src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
@@ -118,7 +136,7 @@ else
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
-    src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c src/transformer/bf16.c src/transformer/bf16_pool.c src/transformer/trellis.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
     src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
@@ -126,7 +144,7 @@ else
 endif
 
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
-MODEL_SRCS = src/model.c src/model_arch.c src/model_policy.c src/model_session.c src/model_gpu.c src/model_embed.c src/model_backend.c src/model_moe.c src/backend_layout.c src/backend_model.c src/backend_session.c src/backend_quant.c src/runtime_policy.c src/gpu_backend_runtime.c src/gpu_policy.c
+MODEL_SRCS = src/json.c src/safetensors.c src/trellis.c src/model.c src/model_arch.c src/model_policy.c src/model_session.c src/model_gpu.c src/model_embed.c src/model_backend.c src/model_moe.c src/backend_layout.c src/backend_model.c src/backend_model_rows.c src/backend_session.c src/backend_session_rows.c src/backend_quant.c src/runtime_policy.c src/gpu_backend_runtime.c src/gpu_policy.c
 MOE_SRCS = src/moe.c src/moe_cache.c src/moe_io.c src/moe_policy.c src/moe_cpu_kernels.c src/moe_route.c src/moe_math.c src/moe_execute.c src/moe_prefill.c src/moe_stats.c
 TRANSFORMER_SRCS = src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND)
 SAMPLER_SRCS = src/sampler.c src/sampler_backend.c
@@ -171,6 +189,8 @@ else
 endif
 
 # --- CUDA (optional: BN_ENABLE_CUDA=1) ---
+FA2_ROOT ?= .deps/flash-attention
+MLA_ROOT ?= .deps/flashinfer
 ifdef BN_ENABLE_CUDA
   CUDA_CFLAGS := -DBN_ENABLE_CUDA
   CUDA_NVCCFLAGS := -arch=$(CUDA_ARCH)
@@ -179,8 +199,8 @@ ifdef BN_ENABLE_CUDA
     CUDA_NVCCFLAGS := -gencode=arch=compute_120a,code=sm_120a
     CUDA_CFLAGS += -DBN_CUDA_MXFP4_SM120
   endif
-  CUDA_SRCS := src/gpu_cuda.cu
-  CUDA_OBJS := src/gpu_cuda.o
+  CUDA_SRCS := src/gpu_cuda.cu src/gpu_cuda_native_frequency.cu src/gpu_cuda_native_index.cu src/gpu_cuda_native_topk.cu src/gpu_cuda_native_candidates.cu src/gpu_cuda_native_candidate_use.cu src/gpu_cuda_compress.cu src/gpu_cuda_native_rope.cu src/gpu_cuda_exl3_decode.cu src/gpu_cuda_exl3_fused.cu src/gpu_cuda_native_moe.cu src/gpu_cuda_exl3_fold.cu src/gpu_cuda_router.cu src/gpu_cuda_hc4.cu src/gpu_cuda_fa2.cu src/gpu_cuda_mla_attention.cu
+  CUDA_OBJS := src/gpu_cuda.o src/gpu_cuda_native_frequency.o src/gpu_cuda_native_attention.o src/gpu_cuda_native_index.o src/gpu_cuda_native_topk.o src/gpu_cuda_native_candidates.o src/gpu_cuda_native_candidate_use.o src/gpu_cuda_compress.o src/gpu_cuda_native_rope.o src/gpu_cuda_exl3_decode.o src/gpu_cuda_exl3_fused.o src/gpu_cuda_native_moe.o src/gpu_cuda_exl3_fold.o src/gpu_cuda_router.o src/gpu_cuda_hc4.o src/gpu_cuda_fa2.o src/gpu_cuda_mla_attention.o
   CUDA_LDFLAGS := -L$(dir $(NVCC))../lib64 -lcudart -lcublas -lstdc++
   LINK := $(CC)
 else
@@ -194,7 +214,7 @@ endif
 
 SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
        $(TRANSFORMER_SRCS) src/tokenizer.c $(SAMPLER_SRCS) \
-       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c $(WEBGPU_SRCS) src/main.c
+       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate_batch_plan.c src/generate_batch.c src/generate.c $(WEBGPU_SRCS) src/main.c
 CFLAGS += $(WEBGPU_CFLAGS) $(METAL_CFLAGS) $(CUDA_CFLAGS)
 LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS) $(METAL_FRAMEWORKS) $(CUDA_LDFLAGS)
 OBJS = $(SRCS:.c=.o) $(METAL_OBJS) $(CUDA_OBJS)
@@ -213,6 +233,14 @@ endif
 # Default target
 bitnet: $(BUILD_CONFIG_STAMP) $(OBJS)
 	$(LINK) $(CFLAGS) -o $@ $(filter %.o,$^) $(LDFLAGS)
+
+.PHONY: test_cli_bf16
+test_cli_bf16: bitnet
+	python3 test/test_cli_bf16.py --binary ./bitnet --model "$(MODEL)"
+
+.PHONY: test_cli_bf16_cp
+test_cli_bf16_cp: bitnet
+	python3 test/test_cli_bf16_cp.py --binary ./bitnet --model "$(MODEL)"
 
 # Debug build
 debug: CFLAGS += -DDEBUG -g -O0
@@ -233,8 +261,84 @@ src/quant/%.o: src/quant/%.c $(HEADERS) $(BUILD_CONFIG_STAMP)
 src/transformer/%.o: src/transformer/%.c $(HEADERS) $(BUILD_CONFIG_STAMP)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/%.o: src/%.cu $(HEADERS) $(wildcard src/quant/*.cuh) $(BUILD_CONFIG_STAMP)
+src/%.o: src/%.cu $(HEADERS) $(wildcard src/*.cuh src/quant/*.cuh) $(BUILD_CONFIG_STAMP)
 	$(NVCC) -O3 -std=c++11 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda.o: src/gpu_cuda_expert_cache_group.cuh src/gpu_cuda_expert_cache_bank.cuh src/gpu_cuda_native_ple.cuh src/gpu_cuda_moe_shared.cuh src/gpu_cuda_moe_joint.cuh
+src/transformer/bf16.o: src/transformer/bf16_shared.h
+src/gpu_cuda.o: src/gpu_cuda_native_attention.h src/gpu_cuda_native_candidate_use.h src/gpu_cuda_native_candidates.h src/gpu_cuda_native_topk.h src/gpu_cuda_native_index.h src/gpu_cuda_compress.h src/gpu_cuda_native_rope.h src/gpu_cuda_exl3_decode.h src/gpu_cuda_exl3_fused.h src/gpu_cuda_native_moe.h src/gpu_cuda_exl3_fold.h src/gpu_cuda_hc4.h src/gpu_cuda_router.h
+
+src/gpu_cuda_native_attention.o: src/gpu_cuda_native_attention.cu src/gpu_cuda_native_attention.h $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_native_index.o: src/gpu_cuda_native_index.cu src/gpu_cuda_native_index.h $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_native_topk.o: src/gpu_cuda_native_topk.cu src/gpu_cuda_native_topk.h $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_native_candidates.o: src/gpu_cuda_native_candidates.cu src/gpu_cuda_native_candidates.h $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_native_candidate_use.o: src/gpu_cuda_native_candidate_use.cu src/gpu_cuda_native_candidate_use.h $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_compress.o: src/gpu_cuda_compress.cu src/gpu_cuda_compress.h src/gpu_cuda_compress_kernels.cuh $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --use_fast_math -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+# Frequency construction preserves Torch pow/div/F32 operation boundaries.
+# Keep it separate from the existing fast-math GPT-J rotation translation unit.
+src/gpu_cuda_native_frequency.o: src/gpu_cuda_native_frequency.cu src/gpu_cuda_native_rope.h $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_native_rope.o: src/gpu_cuda_native_rope.cu src/gpu_cuda_native_rope.h src/gpu_cuda_native_rope_kernel.cuh $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --use_fast_math --expt-extended-lambda -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_exl3_decode.o: src/gpu_cuda_exl3_decode.cu src/gpu_cuda_exl3_decode.h $(wildcard src/cuda_exl3_fused/*.cuh src/cuda_exl3_fused/*.h src/cuda_exl3_fused/quant/*.cuh) $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --expt-relaxed-constexpr --use_fast_math -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_exl3_fused.o: src/gpu_cuda_exl3_fused.cu src/gpu_cuda_exl3_fused.h $(wildcard src/cuda_exl3_fused/*.cuh src/cuda_exl3_fused/*.h src/cuda_exl3_fused/quant/*.cuh) $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --use_fast_math -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_native_moe.o: src/gpu_cuda_native_moe.cu src/gpu_cuda_native_moe.h $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --use_fast_math -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_exl3_fold.o: src/gpu_cuda_exl3_fold.cu src/gpu_cuda_exl3_fold.h $(wildcard src/gpu_cuda_exl3_fold_*.cuh) $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --use_fast_math -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_router.o: src/gpu_cuda_router.cu src/gpu_cuda_router.h src/gpu_cuda_router_det.cuh $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --use_fast_math -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+src/gpu_cuda_hc4.o: src/gpu_cuda_hc4.cu src/gpu_cuda_hc4.h src/gpu_cuda_hc4_lanes.cuh $(HEADERS) $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 --use_fast_math -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
+ifdef BN_ENABLE_CUDA
+.PHONY: fetch-cuda-attention
+fetch-cuda-attention: $(FA2_ROOT)/.bn-fa2-ready
+
+$(FA2_ROOT)/.bn-fa2-ready: patches/fetch-cuda-attention.sh
+	sh patches/fetch-cuda-attention.sh "$(FA2_ROOT)"
+
+src/gpu_cuda_fa2.o: src/gpu_cuda_fa2.cu src/gpu_cuda_fa2.h $(FA2_ROOT)/.bn-fa2-ready $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 $(CUDA_NVCCFLAGS) --expt-relaxed-constexpr --expt-extended-lambda --use_fast_math \
+		-Xcompiler=-Wno-deprecated-declarations -DFLASH_NAMESPACE=bn_fa2 \
+		-DFLASHATTENTION_DISABLE_DROPOUT -DFLASHATTENTION_DISABLE_ALIBI \
+		-DFLASHATTENTION_DISABLE_SOFTCAP -DFLASHATTENTION_DISABLE_LOCAL -DFLASHATTENTION_DISABLE_UNEVEN_K \
+		-I$(FA2_ROOT)/csrc/flash_attn/src -I$(FA2_ROOT)/csrc/cutlass/include \
+		-MMD -MP -MF src/gpu_cuda_fa2.d -c -o $@ $<
+
+$(MLA_ROOT)/.bn-mla-ready: patches/fetch-cuda-mla.sh
+	sh patches/fetch-cuda-mla.sh "$(MLA_ROOT)"
+
+src/gpu_cuda_mla_attention.o: src/gpu_cuda_mla_attention.cu src/gpu_cuda_mla_attention.h $(MLA_ROOT)/.bn-mla-ready $(BUILD_CONFIG_STAMP)
+	$(NVCC) -O3 -std=c++17 $(CUDA_NVCCFLAGS) $(CUDA_CFLAGS) --expt-relaxed-constexpr --use_fast_math \
+		-I$(MLA_ROOT)/include -I$(MLA_ROOT)/3rdparty/cutlass/include \
+		-I$(MLA_ROOT)/3rdparty/cccl/libcudacxx/include -I$(MLA_ROOT)/3rdparty/cccl/cub -I$(MLA_ROOT)/3rdparty/cccl/thrust \
+		-MMD -MP -MF src/gpu_cuda_mla_attention.d -c -o $@ $<
+
+-include src/gpu_cuda_mla_attention.d
+-include src/gpu_cuda_fa2.d
+endif
 
 
 # Objective-C pattern rule for Metal backend
@@ -251,8 +355,38 @@ bench_kernels: $(BENCH_SRCS) $(BENCH_OBJS)
 
 BENCH_PREFILL_SRCS = bench/bench_prefill.c $(filter-out src/main.c, $(SRCS))
 
+bench_bf16_latency: bench/bench_bf16_latency.c bench/bf16_policy_io.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+bench_flash_offload: bench/bench_flash_offload.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+ifeq ($(BN_ENABLE_CUDA),1)
+bench_native_forward: bench/bench_native_forward.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+endif
+
+bench_bf16_concurrency: bench/bench_bf16_concurrency.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+bench_bf16_arrivals: bench/bench_bf16_arrivals.c bench/bf16_policy_io.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+bench_bf16_batch: bench/bench_bf16_batch.c bench/bf16_policy_io.h bench/bf16_batch_schedule.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+bench_checkpoint_gdn: bench/bench_checkpoint_gdn.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+bench_checkpoint_attention: bench/bench_checkpoint_attention.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 bench_prefill: $(BENCH_PREFILL_SRCS) $(METAL_OBJS) $(CUDA_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+ifeq ($(BN_ENABLE_CUDA),1)
+bench_prefill: CFLAGS += -I$(dir $(NVCC))../include
+endif
 
 # Scalar backend benchmark (no explicit SIMD kernels)
 SCALAR_CFLAGS = -O3 -flto -Wall -Wextra -Wshadow -std=c11 -Iinclude -DBN_FORCE_SCALAR
@@ -285,7 +419,7 @@ SCALAR_TRANSFORMER_BACKEND = src/transformer/math_scalar.c src/transformer/math_
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
-    src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c src/transformer/bf16.c src/transformer/bf16_pool.c src/transformer/trellis.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
     src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
@@ -295,7 +429,7 @@ SCALAR_SRCS = src/platform.c src/gguf.c $(QUANT_COMMON) $(SCALAR_QUANT_BACKEND) 
        src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c \
        $(SCALAR_TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) \
        src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c \
-       src/prompt_cache.c src/generate.c src/main.c
+       src/prompt_cache.c src/generate_batch_plan.c src/generate_batch.c src/generate.c src/main.c
 
 SCALAR_BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SCALAR_SRCS))
 
@@ -322,7 +456,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS) $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_cuda_compare bench_qwen_cuda_matrix bench_gemma4_cuda_matrix bench_kernels_run bitnet_scalar bitnet_avx2 bitnet_avx512 build_cpu_parity_backends bench_scalar bench_scalar_layers bench_avx2 bench_avx512 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_cpu_parity test_cpu_parity_required test_qwen_cpu_parity test_gemma4_cpu_parity test_gguf test_quant test_quant_avx2 test_quant_scalar test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_qwen36_cuda test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check check-cpu-parity-tools check-cpu-parity-fixtures check-cpu-parity-remote-fixtures fetch-cpu-parity-fixtures fetch-qwen36-sparse-fixture fetch-gemma4-fixtures fetch-wgpu clean
+.PHONY: test_mhc debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_cuda_compare bench_qwen_cuda_matrix bench_gemma4_cuda_matrix bench_kernels_run bitnet_scalar bitnet_avx2 bitnet_avx512 build_cpu_parity_backends bench_scalar bench_scalar_layers bench_avx2 bench_avx512 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_cpu_parity test_cpu_parity_required test_qwen_cpu_parity test_gemma4_cpu_parity test_gguf test_quant test_quant_avx2 test_quant_scalar test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_qwen36_cuda test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check check-cpu-parity-tools check-cpu-parity-fixtures check-cpu-parity-remote-fixtures fetch-cpu-parity-fixtures fetch-qwen36-sparse-fixture fetch-gemma4-fixtures fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -371,11 +505,53 @@ check-cpu-parity-tools:
 check-cpu-parity-remote-fixtures:
 	./scripts/check_cpu_parity_remote_fixtures.sh
 
-test: test_architecture test_cpu_parity_harness test_gguf test_quant test_quant_scalar test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend
+test: test_platform test_backend_session_rows test_backend_model_rows test_int4_rows test_fp8 test_json test_gpu_moe_cache test_trellis test_exl3 test_safetensors test_mhc test_bf16_capacity_pool test_bf16_wall_clock_verifier test_bf16_arrival_workload test_generate_batch test_generate_batch_plan test_bf16_pool test_bf16_mixed_reference test_bf16_batch_schedule test_bench_bf16_policy test_bf16_serving_verifiers test_architecture test_cpu_parity_harness test_bf16_resume_reference_harness test_prefill_reference_harness test_gguf test_quant test_quant_scalar test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_prefill_profile test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend
+
+.PHONY: test_platform
+test_platform: test/test_platform.c src/platform.c include/platform.h
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+test_bf16_pool: test/test_bf16_pool.c src/transformer/bf16_pool.c src/transformer/bf16_internal.h
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_bf16_mixed_reference
+test_bf16_mixed_reference:
+	python3 test/test_bf16_mixed_reference.py
+
+.PHONY: test_bench_bf16_policy
+test_bench_bf16_policy:
+	python3 test/test_bench_bf16_policy.py
+
+.PHONY: test_bf16_serving_verifiers
+test_bf16_serving_verifiers:
+	python3 test/test_bf16_serving_verifiers.py
+
+.PHONY: test_prefill_profile
+test_glm_cli_profile: bitnet
+	python3 test/test_glm_cli_profile.py ./bitnet
+
+test_prefill_profile: test_qwen36
+	python3 test/test_prefill_profile.py ./test_qwen36
 
 .PHONY: test_cpu_parity_harness
 test_cpu_parity_harness:
 	bash test/test_cpu_parity_harness.sh
+
+.PHONY: test_bf16_resume_reference_harness
+.PHONY: test_bf16_batch_schedule
+test_bf16_batch_schedule: test/test_bf16_batch_schedule.c bench/bf16_batch_schedule.h
+	$(CC) $(CFLAGS) -o $@ test/test_bf16_batch_schedule.c $(LDFLAGS) && ./$@
+
+test_bf16_resume_reference_harness:
+	python3 test/test_bf16_resume_reference.py
+
+.PHONY: test_prefill_reference_harness
+test_prefill_reference_harness:
+	python3 test/test_prefill_reference_harness.py
+
+# Optional real-model independent-reference replay; build only, needs CLI inputs.
+test_prefill_reference: test/test_prefill_reference.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_architecture: test_backend_matrix test_model_matrix
 
@@ -402,6 +578,22 @@ test_qwen_cpu_parity: bitnet bitnet_scalar build_cpu_parity_backends
 test_gemma4_cpu_parity: bitnet bitnet_scalar build_cpu_parity_backends
 	./test/gemma4_cpu_parity.sh
 
+.PHONY: test_gpu_moe_cache
+test_gpu_moe_cache: test/test_gpu_moe_cache.c src/gpu_moe_cache.c src/sh_log.c src/platform.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+.PHONY: test_trellis
+test_trellis: test/test_trellis.c src/trellis.c src/safetensors.c src/platform.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+.PHONY: test_exl3
+test_exl3: test/test_exl3.c src/quant/exl3.c src/quant/fp16.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+.PHONY: test_safetensors
+test_safetensors: test/test_safetensors.c src/safetensors.c src/platform.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
 test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
@@ -422,13 +614,15 @@ else
 	@echo "test_avx512_quant skipped: x86_64 only"
 endif
 
-test_tokenizer: test/test_tokenizer.c src/tokenizer.c src/model_arch.c src/gguf.c src/platform.c src/sh_log.c
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+test_tokenizer: test/test_tokenizer.c src/safetensors.c src/json.c src/tokenizer.c src/model_arch.c src/gguf.c src/platform.c src/sh_log.c src/sh_arena.c src/threadpool.c $(QUANT_SRCS)
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS) && ./$@
 
 test_transformer: test/test_transformer.c $(TRANSFORMER_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                   src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c \
                   src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS) && ./$@
+
+test_transformer: test/glm_anatomy_reference.h test/glm_anatomy_checks.h include/model_anatomy.h
 
 test_threadpool: test/test_threadpool.c src/threadpool.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
@@ -446,18 +640,23 @@ test_ssm: test/test_ssm.c src/transformer/ssm_scalar.c \
           src/transformer/math_scalar.c $(SSM_BACKEND)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
+test_mhc: test/test_mhc.c src/transformer/math_scalar.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
 test_gguf_fuzz: test/test_gguf_fuzz.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_moe: test/test_moe.c $(MOE_SRCS) src/turboquant.c $(MODEL_SRCS) src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) \
+test_moe: test/native_trellis_owner_checks.h test/native_trellis_store_checks.h test/native_moe_plan_checks.h test/native_moe_plan_reference.h test/native_router_checks.h test/native_parameter_checks.h test/native_core_checks.h test/native_f16_layout_checks.h test/native_numerics_checks.h test/test_moe.c $(MOE_SRCS) src/turboquant.c $(MODEL_SRCS) src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) \
           src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c \
           src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@
+
+test_qwen36: test/ple_ids_reference.h
 
 test_qwen36: test/test_qwen36.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
              src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
              src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@
 
 test_gemma4: test/test_gemma4.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
              src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
@@ -485,12 +684,12 @@ endif
 ifdef BN_ENABLE_CUDA
 test_qwen36_cuda: test/test_qwen36.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
              src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
-             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c src/gpu_cuda.o
+             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c $(CUDA_OBJS)
 	$(CC) $(CFLAGS) -DBN_QWEN36_TEST_CUDA -o $@ $^ $(LDFLAGS) && ./$@
 
 test_gemma4_cuda: test/test_gemma4.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
              src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
-             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c src/gpu_cuda.o
+             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c $(CUDA_OBJS)
 	$(CC) $(CFLAGS) -DBN_GEMMA4_TEST_CUDA -o $@ $^ $(LDFLAGS) && ./$@
 else
 test_qwen36_cuda:
@@ -505,11 +704,12 @@ test_gemma4_backend_matrix: test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test
 test_generate: test/test_generate.c src/generate.c src/bn_alloc.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) src/threadpool.c \
                src/sh_arena.c src/sh_log.c src/session.c
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS) && ./$@
 
 test_q2k: test/test_q2k.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
+test_moe: test/native_index_session_checks.h test/native_session_checks.h test/native_executor_checks.h
 test_session: test/test_session.c src/session.c src/bn_alloc.c src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
               src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c \
               src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c
@@ -526,17 +726,250 @@ test_turboquant: test/test_turboquant.c src/turboquant.c
 test_gpu_graph_ir: test/test_gpu_graph_ir.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
+test_gpu_backend: test/glm_mla_layout_checks.h test/glm_indexer_layout_checks.h test/glm_moe_work_checks.h test/glm_moe_layout_checks.h test/glm_dense_ffn_checks.h test/glm_mhc_layout_checks.h test/glm_kda_layout_checks.h include/model_anatomy.h
 test_gpu_backend: test/test_gpu_backend.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                   src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
                   src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                   src/session.c src/bn_alloc.c
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS) && ./$@
 
 ifdef BN_ENABLE_CUDA
-test_cuda_backend: test/cuda_decode_attention_f32_reference.h test/cuda_router512_reference.h test/cuda_q451_routed_reference.h test/cuda_hc_mixer_reference.h test/cuda_hc_rmsnorm_reference.h test/cuda_signed_sqrt_gate_reference.h test/cuda_hc_combine_reference.h test/cuda_prefix_attention_reference.h test/cuda_window_attention_reference.h test/cuda_routed_reference.h test/cuda_mxfp4_routed_reference.h test/cuda_q5q6_routed_reference.h test/cuda_merged_routed_q4_reference.h test/cuda_norm_residual_reference.h test/cuda_prepared_v_reference.h test/cuda_routed_q4_reference.h test/cuda_gelu_prefill_reference.h test/cuda_expert_reduction_reference.h test/cuda_scaled_rmsnorm_reference.h test/cuda_mxfp4_reference.h test/cuda_mxfp4_fixture.h test/cuda_q3k_reference.h test/cuda_q8_reference.h test/cuda_iq4nl_reference.h test/cuda_iq4xs_reference.h test/cuda_iq3s_reference.h test/test_cuda_backend.c test/test_cuda_diagnostics.sh test/cuda_signed_mmq_reference.h test/cuda_standalone_ffn_fixture.h test/cuda_standalone_ffn_reference.h test/cuda_rmsnorm_batch_reference.h test/cuda_prepared_rope_reference.h test/cuda_signed_mmq_fixture.h test/cuda_q6_reference.h test/cuda_kquant_reference.h test/cuda_dense_projection_reference.h test/cuda_dense_prefill_reference.h test/cuda_decode_attention_reference.h test/cuda_gelu_reference.h test/cuda_ssm_reference.h $(filter-out src/main.o,$(OBJS))
+# Materialized mHC -> normalized KDA -> mHC attention transition replay.
+test_cuda_glm_context: test/test_cuda_glm_context.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+test_cuda_flash_group: test/test_cuda_flash_group.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS) -Wl,--wrap=bn_moe_host_expert_acquire
+
+test_cuda_glm_group: test/test_cuda_glm_group.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS) -Wl,--wrap=bn_moe_host_expert_acquire
+
+test_cuda_glm_request: test/test_cuda_glm_request.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+test_cuda_glm_mhc_kda: test/test_cuda_glm_mhc_kda.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+# Actual pre-indexer -> paged index cache append/gather composition.
+test_cuda_glm_mla_block: test/test_cuda_glm_mla_block.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_mla_block.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_indexed_mla: test/test_cuda_glm_indexed_mla.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_indexed_mla.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_mla_attention_kernel: test/test_cuda_glm_mla_attention_kernel.c test/test_cuda_glm_indexer.c test/cuda_glm_mla_attention_reference.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_mla_attention_kernel.c $(filter %.o,$^) $(LDFLAGS) && ./$@
+
+test_cuda_backend: test/cuda_f16_grouped_output_checks.h test/cuda_native_attention_checks.h test/cuda_native_attention_reference.h test/cuda_native_candidate_use_checks.h test/cuda_native_candidate_use_reference.h test/cuda_native_candidates_checks.h test/cuda_native_candidates_reference.h test/cuda_native_topk_checks.h test/cuda_native_topk_reference.h test/cuda_native_index_checks.h test/cuda_native_index_reference.h test/cuda_native_swa_ring_checks.h test/cuda_native_swa_ring_reference.h test/cuda_native_paged_latents_checks.h test/cuda_native_paged_latents_reference.h test/cuda_native_latent_keys_checks.h test/cuda_native_latent_keys_reference.h test/cuda_native_compress_checks.h test/cuda_native_compress_reference.h test/cuda_native_qkv_checks.h test/cuda_native_qkv_reference.h test/cuda_decode_exl3_checks.h test/cuda_decode_exl3_reference.h test_cuda_glm_mla_attention_kernel
+
+test_cuda_glm_mla_attention: test/test_cuda_glm_mla_attention.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_mla_attention.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_mla_cache_chain: test/test_cuda_glm_mla_cache_chain.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_mla_cache_chain.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_mla_cache: test/test_cuda_glm_mla_cache.c test/cuda_glm_mla_cache_reference.h test/test_cuda_glm_indexer.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_mla_cache.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_mla_projection: test/test_cuda_glm_mla_projection.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_mla_projection.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_indexer_decode: test/test_cuda_glm_indexer_decode.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_indexer_decode.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_indexer_select: test/test_cuda_glm_indexer_select.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_indexer_select.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_indexer_scores: test/test_cuda_glm_indexer_scores.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_indexer_scores.c $(filter %.o,$^) $(LDFLAGS)
+
+test_cuda_glm_indexer_cache: test/test_cuda_glm_indexer_cache.c test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_indexer_cache.c $(filter %.o,$^) $(LDFLAGS)
+
+# Actual GLM pre-indexer projections, normalization, FP8 and resumed tail.
+test_cuda_glm_preindexer: test/test_cuda_glm_preindexer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+# Actual GLM raw-F32 router/shared and complete streamed MoE replays.
+test_cuda_glm_router: test/test_cuda_glm_router.c test/glm_router_edge_checks.h src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+test_cuda_glm_moe_layer: test/test_cuda_glm_moe_layer.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+# Final deferred mHC/mean/RMS/head from independent checkpoint tuples.
+test_cuda_glm_final_output: test/test_cuda_glm_final_output.c test/test_cuda_glm_deferred_kda.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $< $(filter-out src/main.o,$(OBJS)) $(LDFLAGS)
+
+# All main-model immutable GLM resources, with aggregate budget rollback.
+test_cuda_glm_model_resources: test/test_cuda_glm_model_resources.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Complete KDA/MoE from the independent deferred boundary.
+test_cuda_glm_kda_moe_block: test/test_cuda_glm_kda_moe_block.c test/test_cuda_glm_deferred_kda.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $< $(filter-out src/main.o,$(OBJS)) $(LDFLAGS)
+
+# Actual GLM routed expert execution with bounded banks and supplied routes.
+test_cuda_glm_routed_ffn: test/test_cuda_glm_routed_ffn.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Token embedding through the first three dense decoder blocks.
+test_cuda_glm_dense_prefix: test/test_cuda_glm_dense_prefix.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+# Actual checkpoint dense FFN replay.
+test_cuda_glm_dense_ffn: test/test_cuda_glm_dense_ffn.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+# Complete previous-FFN post -> attention -> following FFN-pre replay.
+test_cuda_glm_deferred_kda: test/test_cuda_glm_deferred_kda.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+# Default deferred/fused mHC replay across decode and prefill dispatch regimes.
+test_cuda_glm_mhc_fused: test/test_cuda_glm_mhc_fused.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Optional checkpoint mHC replay; independent reference files are required.
+test_cuda_glm_mhc: test/test_cuda_glm_mhc.c include/model_anatomy.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+
+# Optional actual-checkpoint KDA replay; requires independently captured files.
+test_cuda_glm_kda_layer: test/test_cuda_glm_kda_layer.c src/transformer/bf16_internal.h include/model_anatomy.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter-out %.h,$^) $(LDFLAGS)
+endif
+
+ifdef BN_ENABLE_CUDA
+# Build only: requires the pinned model and independent rotary-cache fixture.
+test_bf16_runtime: test/test_bf16_runtime.c src/transformer/bf16_internal.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS)
+
+# Build only: fixed packed geometry, explicit original-reference norm policy.
+.PHONY: reference_cuda_bf16_packed
+reference_cuda_bf16_packed: test/reference_cuda_bf16_packed.c bench/bf16_policy_io.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -Ibench -o $@ $(filter %.c %.o,$^) $(LDFLAGS)
+
+.PHONY: reference_cuda_bf16_mixed
+reference_cuda_bf16_mixed: test/reference_cuda_bf16_mixed.c bench/bf16_policy_io.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -Ibench -o $@ $(filter %.c %.o,$^) $(LDFLAGS)
+
+.PHONY: test_cuda_fp16
+test_cuda_fp16: test/test_cuda_fp16.cu src/quant/fp16_cuda.cuh
+	$(NVCC) -O3 -std=c++11 -Isrc $(CUDA_NVCCFLAGS) -o $@ $< && ./$@
+
+.PHONY: test_cuda_moe_group
+test_cuda_moe_group: test_cuda_q8_mma test/reference_cuda_bf16_moe_group.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@ --synthetic
+
+.PHONY: test_cuda_q8_mma
+test_cuda_q8_mma: test_cuda_fp16 test/test_cuda_q8_mma.cu src/quant/q8_bf16_mma_cuda.cuh src/quant/int8_mma_cuda.cuh
+	$(NVCC) -O3 -std=c++11 -Isrc -Iinclude $(CUDA_NVCCFLAGS) -o $@ test/test_cuda_q8_mma.cu && ./$@
+
+.PHONY: test_cuda_moe_bank
+test_cuda_moe_bank: test_cuda_moe_group test/test_cuda_moe_bank.c test/cuda_moe_shared_bank_checks.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@
+
+# Chain GPU tests so make -j cannot run these probes concurrently.
+.PHONY: test_cuda_expert_cache
+test_cuda_expert_cache: test_cuda_moe_bank test/test_cuda_expert_cache.c test/cuda_expert_cache_group_checks.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@
+
+# The resident GLM indexer probes continue the serial CUDA test chain.
+.PHONY: test_cuda_glm_indexer
+test_cuda_glm_indexer: test_cuda_expert_cache test/test_cuda_glm_indexer.c test/cuda_glm_indexer_reference.h test/cuda_glm_layernorm_reference.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_cuda_glm_fp8_cache
+test_cuda_glm_fp8_cache: test_cuda_glm_indexer test/test_cuda_glm_fp8_cache.c test/test_cuda_glm_indexer.c test/cuda_glm_fp8_cache_reference.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_fp8_cache.c $(filter %.o,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_cuda_glm_score
+test_cuda_glm_score: test_cuda_glm_fp8_cache test/test_cuda_glm_score.c test/test_cuda_glm_indexer.c test/cuda_glm_score_reference.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_score.c $(filter %.o,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_cuda_glm_select
+test_cuda_glm_select: test_cuda_glm_score test/test_cuda_glm_select.c test/test_cuda_glm_indexer.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_select.c $(filter %.o,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_cuda_glm_paged_score
+test_cuda_glm_paged_score: test_cuda_glm_select test/test_cuda_glm_paged_score.c test/test_cuda_glm_indexer.c test/cuda_glm_paged_score_reference.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ test/test_cuda_glm_paged_score.c $(filter %.o,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_cuda_shared_math
+test_cuda_shared_math: test_cuda_glm_paged_score test/test_cuda_shared_math.c test/cuda_bf16_shared_math_reference.h test/cuda_bf16_silu_profiles_reference.h $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_cuda_silu_profiles
+test_cuda_silu_profiles: test/cuda_compiled_silu_reference.h
+test_cuda_silu_profiles: test/reference_cuda_silu_profiles.cu src/gpu_cuda_activation.cuh test/cuda_bf16_silu_profiles_reference.h test_cuda_shared_math
+	$(NVCC) -O3 -std=c++11 -Isrc -Itest $(CUDA_NVCCFLAGS) -o $@ $< && ./$@
+
+.PHONY: test_cuda_attention_gate
+test_cuda_attention_gate: test/test_cuda_attention_gate.cu src/gpu_cuda_attention_gate.cuh test_cuda_silu_profiles
+	$(NVCC) -O3 -std=c++11 -Isrc $(CUDA_NVCCFLAGS) -o $@ $< && ./$@
+
+test_cuda_backend: test_cuda_attention_gate
+
+test_cuda_backend: test/cuda_native_ple_checks.h test/cuda_native_ple_reference.h
+test_cuda_backend: test/cuda_f16_ffn_checks.h test/cuda_f16_ffn_reference.h test/cuda_fused_exl3_checks.h test/cuda_fused_exl3_reference.h test/cuda_native_moe_checks.h test/cuda_native_moe_reference.h test/native_moe_plan_reference.h test/cuda_folded_exl3_checks.h test/cuda_folded_exl3_reference.h test/cuda_native_router_checks.h test/cuda_native_router_reference.h test/cuda_native_embedding_head_checks.h test/cuda_native_embedding_head_reference.h test/cuda_native_hc4_checks.h test/cuda_native_hc4_reference.h test/cuda_native_norm_checks.h test/cuda_native_norm_reference.h test/cuda_raw_rows_checks.h test/cuda_f16_linear_checks.h test/cuda_f16_rows_checks.h test/cuda_exl3_checks.h test/cuda_exl3_ffn_checks.h
+test_cuda_backend: test/cuda_f32_add_checks.h test/cuda_f32_add_reference.h test/cuda_fused_exl3_group_checks.h
+test_cuda_backend: test/cuda_stacked_ffn_reference.h test/cuda_bf16_mixed_attention_reference.h
+test_cuda_backend: test/cuda_compiled_silu_reference.h
+test_cuda_backend: test/cuda_clamped_swiglu_checks.h test/cuda_clamped_swiglu_reference.h
+test_cuda_backend: test/cuda_mhc_fused_checks.h test/cuda_mhc_fused_reference.h test/cuda_mhc_checks.h test/cuda_mhc_reference.h
+test_cuda_backend: test/cuda_f32_weight_conv_reference.h
+test_cuda_backend: test/cuda_kda_reference.h
+test_cuda_backend: test/cuda_glm_output_norm_reference.h
+test_cuda_backend: test/cuda_fused_persistent_norm_reference.h
+test_cuda_backend: test/cuda_compiled_gated_norm_reference.h test/cuda_looped_add_norm_reference.h test/cuda_general_tiled_norm_reference.h
+test_cuda_backend: test/cuda_bf16_projected_gdn_reference.h
+
+test_cuda_backend: test/cuda_bf16_gdn_noncp_reference.h
+test_cuda_backend: test/cuda_bf16_attention_batch_reference.h test/cuda_bf16_gdn_decode_profiles_reference.h
+test_cuda_backend: test/cuda_bf16_gdn_cp_boundary_reference.h test/cuda_bf16_attention_compiled_gate_reference.h test/cuda_bf16_gdn_cp_log_reference.h test/cuda_bf16_gdn_cp_reference.h test/cuda_compiled_norm_reference.h test/cuda_bf16_add3_norm_reference.h
+test_cuda_backend: test/cuda_bf16_gdn_cancellation_reference.h test/cuda_paged_kv_append_reference.h test/cuda_bf16_ple_gate_reference.h test/cuda_bf16_ple_conv_reference.h test/cuda_bf16_rope_reference.h test/cuda_bf16_f32_mean_reference.h test/cuda_bf16_wide_mean_reference.h test/cuda_bf16_grouped_mean_reference.h test/cuda_bf16_hc_reference.h test/cuda_bf16_qk_prep_reference.h test/cuda_bf16_attention_reference.h test/cuda_bf16_iq3_reference.h test/cuda_bf16_iq3_ffn_reference.h test/cuda_bf16_q4q6_reference.h test/cuda_bf16_q4q6_ffn_reference.h test/cuda_bf16_gdn_gated_norm_reference.h test/cuda_bf16_gdn_conv_chain_reference.h test/cuda_bf16_gdn_handoff_reference.h test/cuda_bf16_gdn_composed_reference.h test/cuda_bf16_gdn_prefill_reference.h test/cuda_bf16_gdn_prep_reference.h test/cuda_bf16_conv_reference.h test/cuda_bf16_residual_reference.h test/cuda_bf16_ffn_reference.h test/cuda_bf16_q5_reference.h test/cuda_bf16_q5_ffn_reference.h test/cuda_bf16_q8_reference.h test/cuda_bf16_q3_reference.h test/cuda_bf16_dispatch_reference.h test/cuda_bf16_matrix_reference.h test/cuda_bf16_norm_reference.h test/cuda_q8_partial_rows_reference.h test/cuda_f32_prepared_attention_reference.h test/cuda_shared_q8_matvec_reference.h test/cuda_gated_mmf_reference.h test/cuda_gated_mmf_fixture.h test/cuda_q5k_fused_gateup_reference.h test/cuda_q51_matvec_reference.h test/cuda_qk8_prefill_reference.h test/cuda_qk8_fixture.h test/cuda_q451_prefill_reference.h test/cuda_hc_fused_post_reference.h test/cuda_hc_fused_mean_reference.h test/cuda_gqa6_prefix_gemm_reference.h test/cuda_gqa6_prefix_attention_reference.h test/cuda_decode_attention_f32_reference.h test/cuda_router512_reference.h test/cuda_q451_routed_reference.h test/cuda_hc_mixer_reference.h test/cuda_hc_rmsnorm_reference.h test/cuda_signed_sqrt_gate_reference.h test/cuda_hc_combine_reference.h test/cuda_prefix_attention_reference.h test/cuda_window_attention_reference.h test/cuda_routed_reference.h test/cuda_mxfp4_routed_reference.h test/cuda_q5q6_routed_reference.h test/cuda_merged_routed_q4_reference.h test/cuda_norm_residual_reference.h test/cuda_prepared_v_reference.h test/cuda_routed_q4_reference.h test/cuda_gelu_prefill_reference.h test/cuda_expert_reduction_reference.h test/cuda_scaled_rmsnorm_reference.h test/cuda_mxfp4_reference.h test/cuda_mxfp4_fixture.h test/cuda_q3k_reference.h test/cuda_q8_reference.h test/cuda_iq4nl_reference.h test/cuda_iq4xs_reference.h test/cuda_iq3s_reference.h test/test_cuda_backend.c test/test_cuda_diagnostics.sh test/cuda_signed_mmq_reference.h test/cuda_standalone_ffn_fixture.h test/cuda_standalone_ffn_reference.h test/cuda_rmsnorm_batch_reference.h test/cuda_prepared_rope_reference.h test/cuda_signed_mmq_fixture.h test/cuda_q6_reference.h test/cuda_kquant_reference.h test/cuda_dense_projection_reference.h test/cuda_dense_prefill_reference.h test/cuda_decode_attention_reference.h test/cuda_gelu_reference.h test/cuda_ssm_reference.h $(filter-out src/main.o,$(OBJS))
 	$(CC) $(CFLAGS) -o $@ $(filter %.c %.o,$^) $(LDFLAGS) && ./$@
 	bash test/test_cuda_diagnostics.sh ./$@
 else
+test_cuda_glm_mla_attention_kernel:
+	@echo "test_cuda_glm_mla_attention_kernel skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_glm_paged_score:
+	@echo "test_cuda_glm_paged_score skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_glm_select:
+	@echo "test_cuda_glm_select skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_glm_score:
+	@echo "test_cuda_glm_score skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_glm_fp8_cache:
+	@echo "test_cuda_glm_fp8_cache skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_glm_indexer:
+	@echo "test_cuda_glm_indexer skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_moe_group:
+	@echo "test_cuda_moe_group skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_moe_bank:
+	@echo "test_cuda_moe_bank skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_shared_math:
+	@echo "test_cuda_shared_math skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_silu_profiles:
+	@echo "test_cuda_silu_profiles skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_attention_gate:
+	@echo "test_cuda_attention_gate skipped: set BN_ENABLE_CUDA=1"
+
+test_cuda_q8_mma:
+	@echo "test_cuda_q8_mma skipped: set BN_ENABLE_CUDA=1"
+
+test_bf16_runtime:
+	@echo "test_bf16_runtime requires BN_ENABLE_CUDA=1"
+	@false
+
 test_cuda_backend:
 	@echo "test_cuda_backend skipped: set BN_ENABLE_CUDA=1"
 endif
@@ -549,6 +982,12 @@ test_e2e: test/test_e2e.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant
 test_prefill: test/test_prefill.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
               src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
               src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_prefill_output_rows: test/test_prefill_output_rows.c $(filter-out src/main.o,$(OBJS))
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_prefill_continuation: test/test_prefill_continuation.c $(filter-out src/main.o,$(OBJS))
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_kv_f16: test/test_kv_f16.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
@@ -633,7 +1072,7 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/math_scalar.c src/transformer/math_ba
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
-    src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c src/transformer/bf16.c src/transformer/bf16_pool.c src/transformer/trellis.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
     src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
@@ -666,6 +1105,14 @@ ifeq ($(UNAME_M),x86_64)
 	$(CC) $(AVX2_BIN_FLAGS) -o $@ $^ $(LDFLAGS)
 else
 	@echo "bitnet_avx2 skipped: requires x86_64 host"
+endif
+
+# Optional real-model replay with AVX2-only CPU execution; build only.
+test_prefill_reference_avx2: test/test_prefill_reference.c $(filter-out src/main.c,$(AVX2_BIN_SRCS))
+ifeq ($(UNAME_M),x86_64)
+	$(CC) $(AVX2_BIN_FLAGS) -o $@ $^ $(LDFLAGS)
+else
+	@echo "test_prefill_reference_avx2 skipped: requires x86_64 host"
 endif
 
 test_quant_avx2: test/test_quant.c $(AVX2_QUANT_SRCS) src/threadpool.c src/sh_arena.c
@@ -821,13 +1268,13 @@ endif
 COHERENCE_SRCS = test/test_coherence.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                  src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
                  src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
-                 src/session.c src/bn_alloc.c src/prompt_cache.c src/generate.c $(SAMPLER_SRCS)
+                 src/session.c src/bn_alloc.c src/prompt_cache.c src/generate_batch_plan.c src/generate_batch.c src/generate.c $(SAMPLER_SRCS)
 ifdef BN_ENABLE_WEBGPU
 COHERENCE_SRCS += src/gpu_wgpu.c
 endif
 COHERENCE_EXTRA_OBJS :=
 ifdef BN_ENABLE_CUDA
-COHERENCE_EXTRA_OBJS += src/gpu_cuda.o
+COHERENCE_EXTRA_OBJS += $(CUDA_OBJS)
 endif
 ifdef BN_ENABLE_METAL
 COHERENCE_OBJS = $(COHERENCE_SRCS:.c=.o) src/gpu_metal.o
@@ -845,4 +1292,209 @@ test_coherence: $(COHERENCE_SRCS) $(COHERENCE_EXTRA_OBJS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bitnet_avx2 bitnet_avx512 bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_avx512 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_quant_avx2 test_quant_scalar test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_metal_f32 test_coherence test_e2e test_prefill test_kv_f16 test/llama_layer_probe test/libllama_token_trace.so default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+	rm -f test_platform
+	rm -f test_cuda_flash_group
+	rm -f test_cuda_glm_group
+	rm -f test_gguf_batch_options
+	rm -f bench_native_forward
+	rm -f test_cuda_attention_gate
+	rm -f test_cuda_q8_mma
+	rm -f bench_bf16_latency
+	rm -f bench_flash_offload
+	rm -f bench_bf16_concurrency
+	rm -f bench_bf16_batch bench_bf16_arrivals
+	rm -f bench_checkpoint_gdn
+	rm -f bench_checkpoint_attention
+	rm -f test_cuda_silu_profiles
+	rm -f test_cuda_shared_math
+	rm -f test_cuda_glm_final_output
+	rm -f test_cuda_glm_context
+	rm -f test_cuda_glm_request
+	rm -f test_cuda_glm_model_resources
+	rm -f test_cuda_glm_kda_moe_block
+	rm -f test_cuda_glm_paged_score test_cuda_glm_select test_cuda_glm_score test_cuda_glm_fp8_cache test_cuda_glm_indexer test_cuda_moe_bank
+	rm -f test_cuda_moe_group
+	rm -f test_cuda_expert_cache
+	rm -f test_bf16_runtime
+	rm -f test_backend_session_rows test_backend_model_rows test_int4_rows test_fp8 test_json test_bf16_batch_schedule test_bf16_pool test_generate_batch_plan test_generate_batch test_safetensors test_exl3 test_trellis test_gpu_moe_cache
+	rm -f reference_cuda_bf16_packed reference_cuda_bf16_mixed
+	rm -f test_cuda_glm_mla_block test_cuda_glm_indexed_mla test_cuda_glm_mla_attention_kernel test_cuda_glm_mla_attention test_cuda_glm_mla_cache_chain test_cuda_glm_mla_cache test_cuda_glm_mla_projection test_cuda_glm_indexer_decode test_cuda_glm_indexer_select test_cuda_glm_indexer_scores test_cuda_glm_indexer_cache test_cuda_glm_preindexer test_cuda_glm_router test_cuda_glm_moe_layer test_cuda_glm_routed_ffn test_cuda_glm_dense_prefix test_cuda_glm_dense_ffn test_cuda_glm_deferred_kda test_cuda_glm_mhc_fused test_cuda_glm_mhc_kda test_cuda_glm_mhc test_cuda_glm_kda_layer bitnet bitnet_scalar bitnet_avx2 bitnet_avx512 bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_avx512 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_quant_avx2 test_quant_scalar test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_mhc test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_generate_native_text test_native_cli test_native_text_timing test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_cuda_fp16 test_gpu_wgpu test_gpu_validate test_metal_f32 test_coherence test_e2e test_prefill test_prefill_output_rows test_prefill_continuation test_prefill_reference test_prefill_reference_avx2 test_kv_f16 test/llama_layer_probe test/libllama_token_trace.so default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+
+.PHONY: test_generate_batch_plan
+test_generate_batch_plan: test/test_generate_batch_plan.c test/generate_batch_plan_reference.h include/generate_batch_plan.h src/generate_batch_plan.c
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_generate_batch
+test_generate_batch: test/test_generate_batch.c test/generate_batch_plan_reference.h include/generate_batch.h include/generate_batch_plan.h src/generate_batch.c src/generate_batch_plan.c
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_bf16_arrival_workload
+test_bf16_arrival_workload:
+	python3 test/test_bf16_arrival_workload.py
+
+.PHONY: test_bf16_wall_clock_verifier
+test_bf16_wall_clock_verifier:
+	python3 test/test_bf16_wall_clock_verifier.py
+
+.PHONY: test_bf16_capacity_pool
+test_bf16_capacity_pool:
+	python3 test/test_bf16_capacity_pool.py
+
+.PHONY: test_json
+test_json: test/test_json.c src/json.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+.PHONY: test_fp8
+test_fp8: test/test_fp8.c src/quant/fp8.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+# Private native request orchestration headers.
+test_moe: test/native_attention_session_checks.h test/native_anatomy_checks.h src/transformer/trellis_attention.h src/transformer/trellis_kv.h src/transformer/trellis_swa.h src/transformer/trellis_index.h
+
+test_moe: test/native_producer_checks.h src/transformer/trellis_producer.h
+
+test_cuda_backend: test/cuda_native_frequency_checks.h test/cuda_native_frequency_reference.h
+test_cuda_backend: test/cuda_scaled_rows_checks.h
+
+.PHONY: test_int4_rows
+test_int4_rows: test/test_int4_rows.c src/quant/int4_rows.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+.PHONY: test_backend_model_rows
+test_backend_model_rows: test/test_backend_model_rows.c src/backend_model_rows.c src/trellis.c src/safetensors.c src/json.c src/platform.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+.PHONY: test_backend_session_rows
+test_backend_session_rows: test/test_backend_session_rows.c test/test_backend_model_rows.c src/backend_session_rows.c src/backend_model_rows.c src/trellis.c src/safetensors.c src/json.c src/platform.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
+	$(CC) $(CFLAGS) -o $@ $(filter-out test/test_backend_model_rows.c,$^) $(LDFLAGS) && ./$@
+
+test_moe: test/native_rows_checks.h src/transformer/trellis_rows.h src/transformer/trellis_engram.h
+
+src/model_arch.o: src/model_arch_engram.h
+test_moe: src/model_arch_engram.h test/native_engram_layout_checks.h test/native_engram_layout_reference.h
+
+test_moe: test/native_ngram_rows_checks.h test/native_ngram_rows_reference.h
+
+src/tokenizer.o: src/tokenizer_vocab.h
+src/tokenizer.o test_tokenizer: src/tokenizer_encode.h src/tokenizer_encode_unicode.h
+test_tokenizer: src/tokenizer_vocab.h
+
+test_tokenizer: test/native_vocab_checks.h test/native_vocab_reference.h
+
+src/tokenizer.o: src/tokenizer_map.h src/tokenizer_map_data.h
+test_tokenizer: src/tokenizer_map.h src/tokenizer_map_data.h
+
+test_tokenizer: test/native_tokenmap_checks.h test/native_tokenmap_reference.h
+
+src/transformer/trellis.o: src/transformer/trellis_engram.h src/transformer/trellis_hc.h src/transformer/trellis_block.h src/transformer/trellis_forward.h
+
+test_moe: test/native_engram_stage_checks.h
+test_moe: src/transformer/trellis_hc.h
+test_moe: src/transformer/trellis_block.h
+test_moe: src/transformer/trellis_forward.h
+
+test_tokenizer: test/native_encode_checks.h test/native_encode_reference.h test/native_encode_edges.h
+
+src/tokenizer.o test_tokenizer: src/tokenizer_decode_stream.h
+test_tokenizer: test/native_stream_checks.h test/native_stream_reference.h test/native_stream_error_reference.h test/native_stream_fallback_reference.h
+
+# Native text orchestration and its reference control.
+src/generate.o test_generate: src/generate_native_text.h src/generate_native_schedule.h
+bench_native_forward: bench/native_text_profile.h
+
+.PHONY: test_generate_native_text
+test: test_generate_native_text
+test_generate_native_text: test/test_generate_native_text.c src/tokenizer.c src/json.c src/model_arch.c src/safetensors.c src/gguf.c src/platform.c src/sh_log.c src/sh_arena.c src/threadpool.c $(QUANT_SRCS) src/generate_native_text.h src/generate_native_schedule.h test/native_schedule_checks.h test/native_encode_reference.h test/native_text_control_reference.h
+	$(CC) $(CFLAGS) -DBN_TEST_NATIVE_TEXT_HEADER -o $@ $(filter-out %.h,$^) $(LDFLAGS) && ./$@
+
+src/main.o: src/main_gguf_batch.h src/main_gguf_batch_options.h src/main_bf16_policy.h src/main_native_text.h src/main_native_options.h src/main_native_io.h src/main_native_batch.h src/main_native_batch_input.h
+
+.PHONY: test_native_cli
+test: test_native_cli
+test_native_cli: test/test_native_cli.c src/json.c src/main_native_options.h src/main_native_io.h src/main_native_batch_input.h include/generate_batch_plan.h
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+.PHONY: test_native_text_timing
+test: test_native_text_timing
+test_native_text_timing: test/test_native_text_timing.c bench/native_text_timing.h
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+bench_native_forward: bench/native_text_latency.h bench/native_text_timing.h bench/native_text_workload.h
+
+.PHONY: test_native_text_workload
+test: test_native_text_workload
+test_native_text_workload: test/test_native_text_workload.c bench/native_text_workload.h
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+clean: clean_native_text_workload
+.PHONY: clean_native_text_workload
+clean_native_text_workload:
+	rm -f test_native_text_workload
+
+# Full native storage reuse/payload retention stays in the transformer module.
+src/transformer/trellis.o: src/transformer/trellis_reuse.h src/transformer/trellis_pool.h
+.PHONY: test_native_pool test_native_restart clean-native-reuse
+test: test_native_pool test_native_restart
+test_native_pool: test/test_native_pool.c src/transformer/trellis_pool.h
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+NATIVE_RESTART_DEPS = $(MOE_SRCS) src/turboquant.c $(MODEL_SRCS) src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(filter-out src/transformer/trellis.c,$(TRANSFORMER_BACKEND)) src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
+test_native_restart: test/test_native_restart.c src/transformer/trellis.c src/transformer/trellis_reuse.h src/transformer/trellis_pool.h $(NATIVE_RESTART_DEPS)
+	$(CC) $(CFLAGS) -o $@ $(filter-out src/transformer/trellis.c,$(filter %.c %.o,$^)) $(LDFLAGS) && ./$@
+clean-native-reuse:
+	rm -f test_native_pool test_native_restart
+clean: clean-native-reuse
+
+bench_native_forward: bench/native_text_schedule.h bench/native_schedule_metrics.h
+test_native_text_timing: bench/native_schedule_metrics.h
+
+src/transformer/trellis.o test_native_restart: src/transformer/trellis_group.h
+.PHONY: test_native_group clean-native-group
+test: test_native_group
+test_native_group: test/test_native_group.c test/test_native_restart.c src/transformer/trellis.c src/transformer/trellis_group.h $(NATIVE_RESTART_DEPS)
+	$(CC) $(CFLAGS) -o $@ $(filter-out test/test_native_restart.c src/transformer/trellis.c,$(filter %.c %.o,$^)) $(LDFLAGS) && ./$@
+clean-native-group:
+	rm -f test_native_group
+clean: clean-native-group
+
+bench_native_forward: bench/native_text_group.h
+
+.PHONY: test_gguf_batch_options
+test: test_gguf_batch_options
+test_gguf_batch_options: test/test_gguf_batch_options.c src/json.c src/main_native_options.h src/main_gguf_batch_options.h src/main_bf16_policy.h include/generate_batch_plan.h
+	$(CC) $(CFLAGS) -Isrc -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+
+src/main.o: src/main_gguf_memory.h
+
+.PHONY: test_gguf_memory clean_gguf_memory
+test: test_gguf_memory
+test_gguf_memory: test/test_gguf_memory.c src/main_gguf_memory.h src/main_gguf_batch_options.h src/main_native_options.h src/generate_batch_plan.c include/generate_batch_plan.h
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -Wl,--gc-sections -o $@ test/test_gguf_memory.c src/generate_batch_plan.c $(LDFLAGS) && ./$@
+clean: clean_gguf_memory
+clean_gguf_memory:
+	rm -f test_gguf_memory
+
+.PHONY: test_native_memory clean_native_memory
+test: test_native_memory
+test_native_memory: test/test_native_memory.c src/main_native_memory.h src/main_native_options.h src/generate_batch_plan.c include/generate_batch_plan.h
+	$(CC) $(CFLAGS) -o $@ test/test_native_memory.c src/generate_batch_plan.c $(LDFLAGS) && ./$@
+clean: clean_native_memory
+clean_native_memory:
+	rm -f test_native_memory
+src/main.o: src/main_native_memory.h
+
+.PHONY: test_serve_io clean_serve_io
+test: test_serve_io
+test_serve_io: test/test_serve_io.c src/main_serve_io.h src/json.c include/json.h
+	$(CC) $(CFLAGS) -o $@ test/test_serve_io.c src/json.c $(LDFLAGS) && ./$@
+clean: clean_serve_io
+clean_serve_io:
+	rm -f test_serve_io
+
+.PHONY: test_serve clean_serve
+test: test_serve
+test_serve: test/test_serve.c src/main_serve.h src/main_serve_io.h src/generate_batch.c src/generate_batch_plan.c src/json.c include/generate_batch.h include/generate_batch_plan.h
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) $(LDFLAGS) && ./$@
+clean: clean_serve
+clean_serve:
+	rm -f test_serve
+src/main.o: src/main_serve.h src/main_serve_io.h

@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 static size_t signed_mmq_fixture_bytes(int type, size_t elements) {
- return type==8 ? elements/32*sizeof(BnBlockQ8_0) : type==21 ? elements/256*sizeof(BnBlockIQ3S) : type==11 ? elements/256*sizeof(BnBlockQ3K) : type==23 ? elements/256*sizeof(BnBlockIQ4XS) : elements/32*sizeof(BnBlockIQ4NL);
+ return type==12 ? elements/256*sizeof(BnBlockQ4K) : type==14 ? elements/256*sizeof(BnBlockQ6K) : type==13 ? elements/256*sizeof(BnBlockQ5K) : type==8 ? elements/32*sizeof(BnBlockQ8_0) : type==21 ? elements/256*sizeof(BnBlockIQ3S) : type==11 ? elements/256*sizeof(BnBlockQ3K) : type==23 ? elements/256*sizeof(BnBlockIQ4XS) : elements/32*sizeof(BnBlockIQ4NL);
 }
 static void signed_mmq_fixture_weights(void *data,int type,size_t elements,int seed) {
  size_t blocks=elements/((type==20||type==8)?32:256);
@@ -12,6 +12,19 @@ static void signed_mmq_fixture_weights(void *data,int type,size_t elements,int s
   uint16_t d=(uint16_t)(0x2400+(b%19)*37);if(seed && b%3==0)d|=0x8000;if(seed && b%17==0)d=0;
   if(type==8){BnBlockQ8_0*w=(BnBlockQ8_0*)data+b;w->d=d;
    for(int i=0;i<32;i++)w->qs[i]=(int8_t)((int)((b*29+i*13+seed*3)%255)-127);
+  }else if(type==12){BnBlockQ4K*w=(BnBlockQ4K*)data+b;w->d=d;
+   w->dmin=(uint16_t)(0x2000+(b%23)*29);if(seed&&b%5==0)w->dmin|=0x8000;if(seed&&b%19==0)w->dmin=0;
+   for(int i=0;i<12;i++)w->scales[i]=(uint8_t)(b*31+i*17+seed*5);
+   for(int i=0;i<128;i++)w->qs[i]=(uint8_t)(b*29+i*13+seed*3);
+  }else if(type==14){BnBlockQ6K*w=(BnBlockQ6K*)data+b;w->d=d;
+   for(int i=0;i<128;i++)w->ql[i]=(uint8_t)(b*29+i*13+seed*3);
+   for(int i=0;i<64;i++)w->qh[i]=(uint8_t)(b*19+i*37+seed);
+   for(int i=0;i<16;i++)w->scales[i]=(int8_t)((int)((b*31+i*17+seed*5)%255)-127);
+  }else if(type==13){BnBlockQ5K*w=(BnBlockQ5K*)data+b;w->d=d;
+   w->dmin=(uint16_t)(0x2000+(b%23)*29);if(seed&&b%5==0)w->dmin|=0x8000;if(seed&&b%19==0)w->dmin=0;
+   for(int i=0;i<12;i++)w->scales[i]=(uint8_t)(b*31+i*17+seed*5);
+   for(int i=0;i<32;i++)w->qh[i]=(uint8_t)(b*19+i*37+seed);
+   for(int i=0;i<128;i++)w->qs[i]=(uint8_t)(b*29+i*13+seed*3);
   }else if(type==21){BnBlockIQ3S*w=(BnBlockIQ3S*)data+b;w->d=d;
    for(int i=0;i<64;i++)w->qs[i]=(uint8_t)(b*29+i*13+seed*3);
    for(int i=0;i<8;i++)w->qh[i]=(uint8_t)(b*19+i*37+seed);

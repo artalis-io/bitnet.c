@@ -2,7 +2,9 @@
 #define BN_CUDA_HC_RMSNORM_REFERENCE_H
 #include <stdint.h>
 /* Original llama.cpp 3d3d7c81813067fc8c185da017e0af03b4269b1e CUDA, SM120.
- * Grouped RMSNorm followed by an F32 per-stream weight. */
+ * Grouped RMSNorm followed by an F32 per-stream weight.
+ * All 48 hashes revalidated unchanged against df18bee11 CUDA using
+ * reference_cuda_hc_rmsnorm.c. */
 typedef struct {
     int dim, streams, seed;
     float magnitude;

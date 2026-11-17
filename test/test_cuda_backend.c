@@ -1,13 +1,32 @@
+#ifdef BN_CAPTURE_UPLOAD_LIFECYCLE
+#include <cuda_profiler_api.h>
+#endif
+#include "cuda_bf16_rope_reference.h"
 #include "cuda_prefix_attention_reference.h"
+#include "cuda_gqa6_prefix_attention_reference.h"
+#include "cuda_gqa6_prefix_gemm_reference.h"
 #include "cuda_hc_combine_reference.h"
 #include "cuda_hc_mixer_reference.h"
+#include "cuda_hc_fused_mean_reference.h"
+#include "cuda_hc_fused_post_reference.h"
+#include "cuda_q51_matvec_reference.h"
+#include "cuda_shared_q8_matvec_reference.h"
+#include "cuda_moe_weighted_sum_reference.h"
+#include "cuda_moe_shared_math_reference.h"
+#include "transformer_plan_internal.h"
+#include "transformer_logits_internal.h"
+#include "cuda_q5k_fused_gateup_reference.h"
+#include "cuda_gated_mmf_fixture.h"
+#include "cuda_gated_mmf_reference.h"
 #include "cuda_hc_rmsnorm_reference.h"
 #include "cuda_signed_sqrt_gate_reference.h"
 #include "cuda_gelu_reference.h"
 #include "cuda_ssm_reference.h"
 #include "gpu_cuda.h"
+#include "backend_quant.h"
 #include "gguf.h"
 #include "model_config.h"
+#include "model_arch.h"
 #include "moe_types.h"
 #include "quant.h"
 #include "transformer_math_internal.h"
@@ -1018,6 +1037,9 @@ static void run_iq4xs_reference_case(BnGPUBackend *gpu) {
 #include "cuda_mxfp4_routed_reference.h"
 #include "cuda_q5q6_routed_reference.h"
 #include "cuda_q451_routed_reference.h"
+#include "cuda_q451_prefill_reference.h"
+#include "cuda_qk8_prefill_reference.h"
+#include "cuda_qk8_fixture.h"
 #include "cuda_router512_reference.h"
 #ifdef BN_CUDA_MXFP4_SM120
 static void run_mxfp4_combined_case(BnGPUBackend *gpu,
@@ -1168,7 +1190,12 @@ static void run_routed_graph_case(BnGPUBackend **backends, BnGPUBackend *owner,
     assert(small_hash);
     uint64_t reference_hash = 0;
     uint64_t small_reference_hash = 0;
+    uint64_t reference_mid_hash = 0;
+    size_t mid_count = (size_t)k * r->hidden;
+    float *mid_values = malloc(mid_count * sizeof(float));
+    assert(mid_values);
     for(int mode=0;mode<3;mode++) {
+        uint64_t default_mid_hash = 0;
         BnGPUBackend *gpu=backends[mode];
         BnGPUOp ops[13]={0};
         for(int j=0;j<11;j++) {
@@ -1213,19 +1240,56 @@ static void run_routed_graph_case(BnGPUBackend **backends, BnGPUBackend *owner,
             assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_XB2,route,sizeof(route),0)==0);
             assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_HB,small_route,sizeof(small_route),0)==0);
             output[0]=output[r->dim+1]=12345.0f;
-            assert(gpu->execute(gpu->ctx,ops,13,ops[10].buf_out,output+1,r->dim)==0);
+            int execute_result = gpu->execute(gpu->ctx, ops, 13,
+                ops[10].buf_out, output + 1, r->dim);
+            if (execute_result != 0)
+                fprintf(stderr, "CUDA routed graph execute failed: gate=%d "
+                    "down=%d mode=%d repeat=%d dim=%d hidden=%d seed=%d\n",
+                    gate_type, down_type, mode, repeat,
+                    r->dim, r->hidden, r->seed);
+            assert(execute_result == 0);
             assert(gpu->read_activation(gpu->ctx,BN_GPU_VALUE_XB,small_output,sizeof(small_output),0)==0);
             if(repeat==0) {
-                assert(cuda_test_float_bits_hash(output+1,r->dim)==r->hash);
-                assert(cuda_test_float_bits_hash(small_output,small_dim)==small_hash);
+                uint64_t actual = cuda_test_float_bits_hash(output+1,r->dim);
+                if (actual != r->hash)
+                    fprintf(stderr,
+                        "CUDA routed graph mismatch: gate=%d down=%d dim=%d "
+                        "hidden=%d experts=%d seed=%d mode=%d "
+                        "got=%016llx expected=%016llx\n",
+                        gate_type, down_type, r->dim, r->hidden, r->experts,
+                        r->seed, mode, (unsigned long long)actual,
+                        (unsigned long long)r->hash);
+                assert(actual==r->hash);
+                uint64_t small_actual = cuda_test_float_bits_hash(small_output, small_dim);
+                if (small_actual != small_hash)
+                    fprintf(stderr, "CUDA small routed graph mismatch: gate=%d down=%d "
+                        "mode=%d dim=%d hidden=%d seed=%d got=%016llx expected=%016llx\n",
+                        gate_type, down_type, mode, r->dim, r->hidden, r->seed,
+                        (unsigned long long)small_actual, (unsigned long long)small_hash);
+                assert(small_actual == small_hash);
+                assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_MOE_HB,
+                    mid_values, mid_count * sizeof(float), 0) == 0);
+                default_mid_hash = cuda_test_float_bits_hash(mid_values, mid_count);
             } else if(repeat==2) {
+                assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_MOE_HB,
+                    mid_values, mid_count * sizeof(float), 0) == 0);
+                uint64_t mid_hash = cuda_test_float_bits_hash(mid_values, mid_count);
+                if (gate_type == BN_GGUF_TENSOR_MXFP4) {
+                    /* The reference SiLU must run, even when subsequent Q8
+                     * quantization erases its small FP32 differences. */
+                    assert(mid_hash != default_mid_hash);
+                    if (mode == 0) reference_mid_hash = mid_hash;
+                    else assert(mid_hash == reference_mid_hash);
+                }
                 uint64_t actual_hash = cuda_test_float_bits_hash(output+1,r->dim);
                 uint64_t actual_small_hash = cuda_test_float_bits_hash(small_output,small_dim);
                 if(mode==0) {
                     reference_hash = actual_hash;
                     small_reference_hash = actual_small_hash;
-                    assert(reference_hash != r->hash);
-                    assert(small_reference_hash != small_hash);
+                    if (gate_type != BN_GGUF_TENSOR_MXFP4) {
+                        assert(reference_hash != r->hash);
+                        assert(small_reference_hash != small_hash);
+                    }
                 } else {
                     assert(actual_hash == reference_hash);
                     assert(actual_small_hash == small_reference_hash);
@@ -1244,6 +1308,7 @@ static void run_routed_graph_case(BnGPUBackend **backends, BnGPUBackend *owner,
         assert(gpu->execute(gpu->ctx,ops,8193,ops[10].buf_out,output+1,r->dim)!=0);
         for(int j=0;j<r->dim;j++)assert(output[j+1]==12345.0f);
     }
+    free(mid_values);
     owner->buffer_destroy(owner->ctx,sg);owner->buffer_destroy(owner->ctx,su);
     owner->buffer_destroy(owner->ctx,sd);
 }
@@ -1411,12 +1476,75 @@ static void run_q5q6_routed_reference_cases(BnGPUBackend *gpu, int graph_only) {
 #endif
 }
 
-static void run_q451_routed_reference_cases(BnGPUBackend *gpu, int graph_only) {
+#ifdef BN_CUDA_MXFP4_SM120
+/* Keep only one expert's weights on the device. Global geometry remains
+ * the full routed prompt, even when this expert receives one token. */
+static void run_kquant_gathered_case(BnGPUBackend *gpu, const BnCudaRoutedReference *r,
+    const uint8_t *gate, const uint8_t *up, const uint8_t *down, float *input, float *out,
+    int gate_type, int down_type) {
+    int dim=r->dim, hidden=r->hidden, nt=r->nt, experts=r->experts, k=8;
+    size_t n=(size_t)nt*dim, items=(size_t)nt*k;
+    size_t gb=bn_quant_format_data_size(gate_type,hidden,dim);
+    size_t db=bn_quant_format_data_size(down_type,dim,hidden);
+    float *gather=malloc((n+2)*sizeof(float)), *result=malloc((n+2)*sizeof(float));
+    float *raw=malloc(items*dim*sizeof(float)); int *slots=malloc((size_t)nt*sizeof(int));
+    assert(gather && result && raw && slots);
+    for (int stacked=0; stacked<2; stacked++) for (int alias=0; alias<2; alias++) {
+        mxfp4_fixture_input(input,n,r->seed);
+        for (int e=0; e<experts; e++) {
+            int count=0;
+            for (int t=0; t<nt; t++) for (int j=0; j<k; j++) {
+                if ((t*7+j*3)%experts != e) continue;
+                slots[count]=t*k+j;
+                memcpy(gather+1+(size_t)count*dim,input+(size_t)t*dim,(size_t)dim*sizeof(float));
+                count++;
+            }
+            if (!count) continue;
+            assert(count<=nt);
+            size_t values=(size_t)count*dim;
+            gather[0]=gather[values+1]=result[0]=result[values+1]=12345.0f;
+            void *g=stacked ? gpu->buffer_create_stacked2(gpu->ctx,gate+e*gb,gb,up+e*gb,gb,
+                gate_type,2*hidden,dim) : gpu->buffer_create(gpu->ctx,gate+e*gb,gb,gate_type,hidden,dim);
+            void *u=stacked ? NULL : gpu->buffer_create(gpu->ctx,up+e*gb,gb,gate_type,hidden,dim);
+            void *d=gpu->buffer_create(gpu->ctx,down+e*db,db,down_type,dim,hidden);
+            assert(g && (u || stacked) && d);
+            BnGPUMoEExpertBatchPlan plan={nt,experts,e,0};
+            float *got=alias ? gather+1 : result+1;
+            assert(gpu->moe_expert_ffn_batch(gpu->ctx,got,g,u,d,gather+1,count,dim,hidden,
+                gate_type,gate_type,down_type,BN_MODEL_ACTIVATION_SILU,&plan)==0);
+            for (int i=0; i<count; i++) memcpy(raw+(size_t)slots[i]*dim,
+                got+(size_t)i*dim,(size_t)dim*sizeof(float));
+            uint64_t before=cuda_test_float_bits_hash(got,values);
+            plan.expert_index=experts;
+            assert(gpu->moe_expert_ffn_batch(gpu->ctx,got,g,u,d,gather+1,count,dim,hidden,
+                gate_type,gate_type,down_type,BN_MODEL_ACTIVATION_SILU,&plan)!=0);
+            assert(cuda_test_float_bits_hash(got,values)==before);
+            assert(gather[0]==12345.0f && gather[values+1]==12345.0f);
+            assert(result[0]==12345.0f && result[values+1]==12345.0f);
+            gpu->buffer_destroy(gpu->ctx,g); if(u)gpu->buffer_destroy(gpu->ctx,u);
+            gpu->buffer_destroy(gpu->ctx,d);
+        }
+        for (int t=0; t<nt; t++) for (int i=0; i<dim; i++) {
+            float sum=0.0f;
+            for(int j=0;j<k;j++)sum=fmaf(raw[((size_t)t*k+j)*dim+i],(float)(j+1)/36.0f,sum);
+            out[(size_t)t*dim+i]=sum;
+        }
+        uint64_t hash=cuda_test_float_bits_hash(out,n);
+        if(hash!=r->hash)fprintf(stderr,"gathered quant nt=%d dim=%d seed=%d stacked=%d alias=%d got=%016llx expected=%016llx\n",nt,dim,r->seed,stacked,alias,(unsigned long long)hash,(unsigned long long)r->hash);
+        assert(hash==r->hash);
+    }
+    free(gather);free(result);free(raw);free(slots);
+}
+
+#endif
+
+static void run_q451_routed_reference_set(BnGPUBackend *gpu, int graph_only,
+    const BnCudaRoutedReference *references, size_t case_count) {
 #ifdef BN_CUDA_MXFP4_SM120
     BnGPUBackend *graph_backends[3]={0};
     if(graph_only==1)mxfp4_graph_backend_init(graph_backends);
-    for (size_t c = 0; c < sizeof(cuda_q451_routed_reference)/sizeof(cuda_q451_routed_reference[0]); c++) {
-        const BnCudaRoutedReference *r = &cuda_q451_routed_reference[c];
+    for (size_t c = 0; c < case_count; c++) {
+        const BnCudaRoutedReference *r = &references[c];
         if(graph_only==1 && r->nt!=1)continue;
         int dim=r->dim, hidden=r->hidden, experts=r->experts, nt=r->nt, k=8;
         size_t elements=(size_t)experts*hidden*dim;
@@ -1448,14 +1576,20 @@ static void run_q451_routed_reference_cases(BnGPUBackend *gpu, int graph_only) {
         for(int t=0;t<nt;t++)for(int j=0;j<k;j++) {
             ids[t*k+j]=(t*7+j*3)%experts;route[t*k+j]=(float)(j+1)/36.0f;
         }
-        void *g=gpu->buffer_create(gpu->ctx,gate,gate_bytes,BN_GGUF_TENSOR_Q4_K,experts*hidden,dim);
-        void *u=gpu->buffer_create(gpu->ctx,up,gate_bytes,BN_GGUF_TENSOR_Q4_K,experts*hidden,dim);
-        void *d=gpu->buffer_create(gpu->ctx,down,down_bytes,BN_GGUF_TENSOR_Q5_1,experts*dim,hidden);
-        assert(g && u && d);
-        if(graph_only==1) {
+        void *g=graph_only==2 ? NULL : gpu->buffer_create(gpu->ctx,gate,gate_bytes,BN_GGUF_TENSOR_Q4_K,experts*hidden,dim);
+        void *u=graph_only==2 ? NULL : gpu->buffer_create(gpu->ctx,up,gate_bytes,BN_GGUF_TENSOR_Q4_K,experts*hidden,dim);
+        void *d=graph_only==2 ? NULL : gpu->buffer_create(gpu->ctx,down,down_bytes,BN_GGUF_TENSOR_Q5_1,experts*dim,hidden);
+        assert(graph_only==2 || (g && u && d));
+        if(graph_only==2) {
+            input[0]=input[n+1]=output[0]=output[n+1]=12345.0f;
+            run_kquant_gathered_case(gpu,r,gate,up,down,input+1,output+1,
+                BN_GGUF_TENSOR_Q4_K,BN_GGUF_TENSOR_Q5_1);
+            assert(input[0]==12345.0f && input[n+1]==12345.0f);
+            assert(output[0]==12345.0f && output[n+1]==12345.0f);
+        } else if(graph_only==1) {
             run_routed_graph_case(graph_backends,gpu,r,gate,up,down,g,u,d,input,output,
-                BN_GGUF_TENSOR_Q4_K,BN_GGUF_TENSOR_Q5_1,cuda_q451_routed_reference,
-                sizeof(cuda_q451_routed_reference)/sizeof(cuda_q451_routed_reference[0]));
+                BN_GGUF_TENSOR_Q4_K,BN_GGUF_TENSOR_Q5_1,references,
+                case_count);
         } else for(int repeat=0;repeat<2;repeat++)for(int alias=0;alias<2;alias++) {
             input[0]=input[n+1]=output[0]=output[n+1]=12345.0f;
             mxfp4_fixture_input(input+1,n,r->seed);
@@ -1464,7 +1598,7 @@ static void run_q451_routed_reference_cases(BnGPUBackend *gpu, int graph_only) {
                 nt,dim,hidden,experts,k,BN_GGUF_TENSOR_Q4_K,BN_GGUF_TENSOR_Q4_K,
                 BN_GGUF_TENSOR_Q5_1,BN_MODEL_ACTIVATION_SILU)==0);
             if(cuda_test_float_bits_hash(out,n)!=r->hash)
-                fprintf(stderr,"routed Q4_K/Q5_1 case=%zu alias=%d repeat=%d mismatch\n",c,alias,repeat);
+                fprintf(stderr,"routed Q4_K/Q5_1 case=%zu nt=%d alias=%d repeat=%d got=%016llx expected=%016llx\n",c,nt,alias,repeat,(unsigned long long)cuda_test_float_bits_hash(out,n),(unsigned long long)r->hash);
             assert(cuda_test_float_bits_hash(out,n)==r->hash);
             int saved=ids[0];
             const int invalid[]={-1,experts,ids[1]};
@@ -1479,14 +1613,289 @@ static void run_q451_routed_reference_cases(BnGPUBackend *gpu, int graph_only) {
             assert(input[0]==12345.0f && input[n+1]==12345.0f);
             assert(output[0]==12345.0f && output[n+1]==12345.0f);
         }
-        gpu->buffer_destroy(gpu->ctx,g);gpu->buffer_destroy(gpu->ctx,u);gpu->buffer_destroy(gpu->ctx,d);
+        if(g)gpu->buffer_destroy(gpu->ctx,g);
+        if(u)gpu->buffer_destroy(gpu->ctx,u);
+        if(d)gpu->buffer_destroy(gpu->ctx,d);
         free(gate);free(up);free(down);free(input);free(output);free(route);free(ids);
     }
     if(graph_only==1)for(int mode=0;mode<3;mode++)bn_gpu_cuda_destroy(graph_backends[mode]);
-    printf("CUDA routed Q4_K/Q5_1 %sreference PASSED\n",graph_only?"graph ":"");
+    printf("CUDA routed Q4_K/Q5_1 %sreference PASSED\n",graph_only==2?"gathered ":(graph_only==1?"graph ":""));
 #else
-    (void)gpu; (void)graph_only;
+    (void)gpu; (void)graph_only; (void)references; (void)case_count;
     printf("CUDA routed Q4_K/Q5_1 reference skipped: requires SM120 native FP4 build\n");
+#endif
+}
+
+static void run_q451_routed_reference_cases(BnGPUBackend *gpu, int graph_only) {
+    run_q451_routed_reference_set(gpu, graph_only, cuda_q451_routed_reference,
+        sizeof(cuda_q451_routed_reference)/sizeof(cuda_q451_routed_reference[0]));
+}
+
+static void run_q451_prefill_reference_cases(BnGPUBackend *gpu) {
+    run_q451_routed_reference_set(gpu, 0, cuda_q451_prefill_fused_reference,
+        sizeof(cuda_q451_prefill_fused_reference)/sizeof(cuda_q451_prefill_fused_reference[0]));
+}
+
+static void run_q5k_fused_gateup_reference_cases(BnGPUBackend *gpu) {
+    size_t words = 0;
+    size_t cases = sizeof(cuda_q5k_fused_reference) / sizeof(cuda_q5k_fused_reference[0]);
+    for (size_t c = 0; c < cases; c++) {
+        const BnCudaQ5KFusedReference *r = &cuda_q5k_fused_reference[c];
+        size_t elements = (size_t)r->rows * r->cols;
+        size_t bytes = elements / 256 * 176;
+        void *g = malloc(bytes), *u = malloc(bytes);
+        float *x = malloc((size_t)r->cols * sizeof(float));
+        float *out = malloc(((size_t)r->rows + 4) * sizeof(float));
+        assert(g && u && x && out);
+        qk8_fixture_gate(g, elements, 1, r->seed);
+        qk8_fixture_gate(u, elements, 1, r->seed + 19);
+        for (int i = 0; i < r->cols; i++)
+            x[i] = (float)((i * 37 + 11 + r->seed) % 251 - 125) / 259.0f;
+        void *w = gpu->buffer_create_stacked2(gpu->ctx, g, bytes, u, bytes,
+            BN_GGUF_TENSOR_Q5_K, r->rows * 2, r->cols);
+        assert(w);
+        BnGPUActivationPlan plan = {0}; float rope = 1.0f;
+        plan.dim = r->cols; plan.vocab_size = r->rows + 4;
+        plan.hb_elements = plan.xb2_elements = r->rows + 4;
+        plan.n_layers = plan.n_heads = 1; plan.seq_len = 2;
+        plan.kv_dim = plan.head_size = 2;
+        plan.rope_frequencies = &rope; plan.rope_frequency_count = 1;
+        assert(gpu->init_activations(gpu->ctx, &plan) == 0);
+        BnGPUOp ops[33] = {{0}};
+        for (int i = 0; i < 31; i++) {
+            ops[i].op_code = BN_GPU_CODE_COPY;
+            ops[i].buf_in = BN_GPU_VALUE_X; ops[i].buf_out = BN_GPU_VALUE_SCRATCH;
+            ops[i].p[2] = r->cols;
+        }
+        BnGPUOp *op = &ops[31];
+        op->op_code = BN_GPU_CODE_FUSED_GATEUP_SILU;
+        op->W_buf = w; op->type = BN_GGUF_TENSOR_Q5_K;
+        op->buf_in = BN_GPU_VALUE_X; op->buf_out = BN_GPU_VALUE_HB;
+        op->p[0] = r->rows * 2; op->p[1] = r->cols; op->p[2] = r->rows;
+        op->flags = BN_GPU_OP_FLAG_REFERENCE_SILU;
+        ops[32].op_code = BN_GPU_CODE_COPY; ops[32].buf_in = BN_GPU_VALUE_HB;
+        ops[32].buf_out = BN_GPU_VALUE_LOGITS; ops[32].p[1] = 2;
+        ops[32].p[2] = r->rows;
+        for (int pass = 0; pass < 3; pass++) {
+            op->flags = pass ? BN_GPU_OP_FLAG_REFERENCE_ACTIVATION
+                             : BN_GPU_OP_FLAG_REFERENCE_SILU;
+            for (int i = 0; i < r->rows + 4; i++) out[i] = 12345.0f;
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_X, x,
+                (size_t)r->cols * sizeof(float), 0) == 0);
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_LOGITS, out,
+                ((size_t)r->rows + 4) * sizeof(float), 0) == 0);
+            assert(gpu->execute(gpu->ctx, pass ? ops : ops + 31,
+                pass ? 33 : 2, BN_GPU_VALUE_LOGITS, out, r->rows + 4) == 0);
+            uint64_t hash = cuda_test_float_bits_hash(out + 2, r->rows);
+            if (hash != r->hash) fprintf(stderr,
+                "Q5_K fused case=%zu pass=%d got=%016llx expected=%016llx\n",
+                c, pass, (unsigned long long)hash, (unsigned long long)r->hash);
+            assert(hash == r->hash);
+            assert(out[0] == 12345.0f && out[1] == 12345.0f &&
+                out[r->rows + 2] == 12345.0f && out[r->rows + 3] == 12345.0f);
+            words += r->rows;
+        }
+        gpu->free_activations(gpu->ctx); gpu->buffer_destroy(gpu->ctx, w);
+        free(g); free(u); free(x); free(out);
+    }
+    printf("CUDA Q5_K fused reference PASSED: %zu cases, %zu words\n", cases, words);
+}
+
+static void run_shared_q8_matvec_reference_cases(BnGPUBackend *gpu) {
+#ifdef BN_CUDA_MXFP4_SM120
+    size_t words=0,cases=sizeof(cuda_shared_q8_reference)/sizeof(cuda_shared_q8_reference[0]);
+    for(size_t c=0;c<cases;c++) {
+        const BnCudaSharedQ8Reference *r=&cuda_shared_q8_reference[c];
+        int rows=r->rows,cols=r->cols,seed=r->seed;
+        size_t nb=(size_t)rows*cols/32,bytes=nb*34;
+        uint8_t *weight=malloc(bytes);float *x=malloc((size_t)cols*sizeof(float));
+        float *bias=malloc((size_t)rows*sizeof(float));
+        float *guard=malloc(((size_t)rows+6)*sizeof(float)),*got=guard+1;
+        assert(weight && x && bias && guard);
+        for(size_t b=0;b<nb;b++) {
+            uint8_t *w=weight+b*34;uint16_t d=(uint16_t)(0x1800+((b+seed)%17)*37);
+            memcpy(w,&d,2);
+            for(int j=0;j<32;j++)w[2+j]=(uint8_t)((int)((b*19+j*23+seed)%255)-127);
+        }
+        for(int i=0;i<cols;i++)x[i]=(float)((i*37+11+seed)%251-125)/259.0f;
+        for(int i=0;i<rows;i++)bias[i]=(float)((i*7+seed)%17-8)*0.015625f;
+        void *w=gpu->buffer_create(gpu->ctx,weight,bytes,BN_GGUF_TENSOR_Q8_0,rows,cols);
+        void *bw=gpu->buffer_create(gpu->ctx,bias,(size_t)rows*sizeof(float),BN_GGUF_TENSOR_F32,rows,1);
+        assert(w && bw);
+        BnGPUActivationPlan plan={0};float rope=1.0f;
+        plan.dim=cols;plan.vocab_size=rows+4;
+        plan.hb_elements=plan.xb2_elements=(rows>cols?rows:cols)+4;
+        plan.n_layers=plan.n_heads=1;plan.seq_len=2;plan.kv_dim=plan.head_size=2;
+        plan.rope_frequencies=&rope;plan.rope_frequency_count=1;
+        assert(gpu->init_activations(gpu->ctx,&plan)==0);
+        BnGPUOp ops[34]={0};
+        for(int j=0;j<31;j++) {
+            ops[j].op_code=BN_GPU_CODE_COPY;ops[j].buf_in=BN_GPU_VALUE_X;
+            ops[j].buf_out=BN_GPU_VALUE_SCRATCH;ops[j].p[2]=cols;
+        }
+        BnGPUOp *mv=&ops[31];mv->op_code=BN_GPU_CODE_MATVEC;
+        mv->W_buf=w;mv->type=BN_GGUF_TENSOR_Q8_0;mv->rows=rows;mv->cols=cols;
+        mv->buf_in=BN_GPU_VALUE_X;mv->buf_out=BN_GPU_VALUE_LOGITS;mv->p[5]=2;
+        for(int pass=0;pass<12;pass++) {
+            for(int i=0;i<rows+6;i++)guard[i]=12345.0f;
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_X,x,(size_t)cols*sizeof(float),0)==0);
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_LOGITS,got,((size_t)rows+4)*sizeof(float),0)==0);
+            mv->flags=pass==2
+                ? bn_transformer_gpu_moe_shared_gateup_matvec_flags(
+                    gpu,BN_GGUF_TENSOR_Q8_0,0,1)
+                : bn_transformer_gpu_moe_shared_down_matvec_flags(
+                    gpu,BN_GGUF_TENSOR_Q8_0,0,1,0);
+            if (pass == 5) {
+                mv->buf_out = BN_GPU_VALUE_LOGITS; mv->p[5] = 2;
+                mv->flags = bn_transformer_gpu_hyper_projection_matvec_flags(
+                    gpu, BN_GGUF_TENSOR_Q8_0, 0);
+            }
+            if (pass >= 6)
+                mv->flags = bn_transformer_gpu_attention_projection_reference_flags(
+                    gpu, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, 1);
+            if (pass >= 9)
+                mv->flags = bn_transformer_gpu_attention_output_reference_flags(
+                    gpu, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, 1);
+            if(pass==3) {
+                mv->buf_out=BN_GPU_VALUE_XB2;mv->p[5]=0;
+                ops[32].op_code=BN_GPU_CODE_BIAS_ADD;ops[32].W_buf=bw;
+                ops[32].buf_in=BN_GPU_VALUE_XB2;ops[32].p[0]=rows;
+                ops[33].op_code=BN_GPU_CODE_COPY;ops[33].buf_in=BN_GPU_VALUE_XB2;
+                ops[33].buf_out=BN_GPU_VALUE_LOGITS;ops[33].p[1]=2;ops[33].p[2]=rows;
+            }
+            if (pass == 4) {
+                BnQWeight output = {0}; output.data = weight;
+                output.type = BN_GGUF_TENSOR_Q8_0; output.rows = rows; output.cols = cols;
+                bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
+                    got + 2, &output, NULL, w, x, NULL, NULL, gpu);
+            } else {
+                assert(gpu->execute(gpu->ctx,pass==0?mv:ops,
+                    pass==0?1:(pass==3?34:32),BN_GPU_VALUE_LOGITS,got,rows+4)==0);
+            }
+            uint64_t expected=pass==3?r->biased_hash:r->hash;
+            uint64_t hash=cuda_test_float_bits_hash(got+2,rows);
+            if(hash!=expected)fprintf(stderr,"Q8_0 matvec case=%zu pass=%d got=%016llx expected=%016llx\n",c,pass,(unsigned long long)hash,(unsigned long long)expected);
+            assert(hash==expected);
+            assert(guard[0]==12345.0f && guard[rows+5]==12345.0f);
+            assert(got[0]==12345.0f && got[1]==12345.0f && got[rows+2]==12345.0f && got[rows+3]==12345.0f);
+            words+=(size_t)rows;
+        }
+        gpu->free_activations(gpu->ctx);gpu->buffer_destroy(gpu->ctx,w);gpu->buffer_destroy(gpu->ctx,bw);
+        free(weight);free(x);free(bias);free(guard);
+    }
+    printf("CUDA shared Q8 projection policy reference PASSED: %zu cases, %zu words\n",cases,words);
+#else
+    (void)gpu;
+#endif
+}
+
+static void run_q51_matvec_reference_cases(BnGPUBackend *gpu) {
+#ifdef BN_CUDA_MXFP4_SM120
+    /* Baseline unflagged floating-input outputs, preserved separately from
+     * the independent quantized-input oracle and its bias counterparts. */
+    const uint64_t legacy[]={UINT64_C(0xfc02d486dc906c8b),UINT64_C(0x613855188fc8289a),
+        UINT64_C(0xb1daeaa981920772),UINT64_C(0x28c90590f0ad8c98),UINT64_C(0x09617e506bf61cd2),
+        UINT64_C(0x1cc35a9a21901ff0),UINT64_C(0x44c131b25ea31736),UINT64_C(0x794829429fd89977)};
+    size_t words=0,cases=sizeof(cuda_q51_matvec_reference)/sizeof(cuda_q51_matvec_reference[0]);
+    assert(cases==sizeof(legacy)/sizeof(legacy[0]));
+    for(size_t c=0;c<cases;c++) {
+        const BnCudaQ51MatvecReference *r=&cuda_q51_matvec_reference[c];
+        int rows=r->rows,cols=r->cols,seed=r->seed;
+        size_t nb=(size_t)rows*cols/32,bytes=nb*24;
+        uint8_t *weight=malloc(bytes);float *x=malloc((size_t)cols*sizeof(float));
+        float *bias=malloc((size_t)rows*sizeof(float));
+        float *guard=malloc(((size_t)rows+6)*sizeof(float)),*got=guard+1;
+        assert(weight && x && bias && guard);
+        for(size_t b=0;b<nb;b++) {
+            uint8_t *w=weight+b*24;uint16_t d=(uint16_t)(0x1800+((b+seed)%17)*37);
+            uint16_t m=(uint16_t)(0x9400+((b*3+seed)%19)*29);
+            memcpy(w,&d,2);memcpy(w+2,&m,2);
+            for(int j=4;j<24;j++)w[j]=(uint8_t)(b*19+j*23+seed);
+        }
+        for(int i=0;i<cols;i++)x[i]=(float)((i*37+11+seed)%251-125)/259.0f;
+        for(int i=0;i<rows;i++)bias[i]=(float)((i*7+seed)%17-8)*0.015625f;
+        void *w=gpu->buffer_create(gpu->ctx,weight,bytes,BN_GGUF_TENSOR_Q5_1,rows,cols);
+        void *bw=gpu->buffer_create(gpu->ctx,bias,(size_t)rows*sizeof(float),BN_GGUF_TENSOR_F32,rows,1);
+        assert(w && bw);
+        BnGPUActivationPlan plan={0};float rope=1.0f;
+        plan.dim=cols;plan.vocab_size=rows+4;
+        plan.hb_elements=plan.xb2_elements=(rows>cols?rows:cols)+4;
+        plan.n_layers=plan.n_heads=1;plan.seq_len=2;plan.kv_dim=plan.head_size=2;
+        plan.rope_frequencies=&rope;plan.rope_frequency_count=1;
+        assert(gpu->init_activations(gpu->ctx,&plan)==0);
+        BnGPUOp ops[34]={0};
+        for(int j=0;j<31;j++) {
+            ops[j].op_code=BN_GPU_CODE_COPY;ops[j].buf_in=BN_GPU_VALUE_X;
+            ops[j].buf_out=BN_GPU_VALUE_SCRATCH;ops[j].p[2]=cols;
+        }
+        BnGPUOp *mv=&ops[31];mv->op_code=BN_GPU_CODE_MATVEC;
+        mv->W_buf=w;mv->type=BN_GGUF_TENSOR_Q5_1;mv->rows=rows;mv->cols=cols;
+        mv->buf_in=BN_GPU_VALUE_X;mv->buf_out=BN_GPU_VALUE_LOGITS;mv->p[5]=2;
+        for(int pass=0;pass<5;pass++) {
+            for(int i=0;i<rows+6;i++)guard[i]=12345.0f;
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_X,x,(size_t)cols*sizeof(float),0)==0);
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_LOGITS,got,((size_t)rows+4)*sizeof(float),0)==0);
+            mv->flags=pass==3?0:BN_GPU_OP_FLAG_MATVEC_BLOCK_Q8_ACTIVATION;
+            mv->p[6]=pass==2; /* Also cover the lowered boolean request. */
+            if(pass==2)mv->flags=0;
+            if(pass==4) {
+                mv->buf_out=BN_GPU_VALUE_XB2;mv->p[5]=0;
+                ops[32].op_code=BN_GPU_CODE_BIAS_ADD;ops[32].W_buf=bw;
+                ops[32].buf_in=BN_GPU_VALUE_XB2;ops[32].p[0]=rows;
+                ops[33].op_code=BN_GPU_CODE_COPY;ops[33].buf_in=BN_GPU_VALUE_XB2;
+                ops[33].buf_out=BN_GPU_VALUE_LOGITS;ops[33].p[1]=2;ops[33].p[2]=rows;
+            }
+            assert(gpu->execute(gpu->ctx,pass==0||pass==3?mv:ops,
+                pass==0||pass==3?1:(pass==4?34:32),BN_GPU_VALUE_LOGITS,got,rows+4)==0);
+            uint64_t expected=pass==3?legacy[c]:(pass==4?r->biased_hash:r->hash);
+            uint64_t hash=cuda_test_float_bits_hash(got+2,rows);
+            if(hash!=expected)fprintf(stderr,"Q5_1 matvec case=%zu pass=%d got=%016llx expected=%016llx\n",c,pass,(unsigned long long)hash,(unsigned long long)expected);
+            assert(hash==expected);
+            assert(guard[0]==12345.0f && guard[rows+5]==12345.0f);
+            assert(got[0]==12345.0f && got[1]==12345.0f && got[rows+2]==12345.0f && got[rows+3]==12345.0f);
+            words+=(size_t)rows;
+        }
+        gpu->free_activations(gpu->ctx);gpu->buffer_destroy(gpu->ctx,w);gpu->buffer_destroy(gpu->ctx,bw);
+        free(weight);free(x);free(bias);free(guard);
+    }
+    printf("CUDA Q5_1 explicit activation reference PASSED: %zu cases, %zu words\n",cases,words);
+#else
+    (void)gpu;
+#endif
+}
+
+static void run_q451_gathered_prefill_reference_cases(BnGPUBackend *gpu) {
+    run_q451_routed_reference_set(gpu, 2, cuda_q451_routed_reference,
+        sizeof(cuda_q451_routed_reference)/sizeof(cuda_q451_routed_reference[0]));
+    run_q451_routed_reference_set(gpu, 2, cuda_q451_prefill_fused_reference,
+        sizeof(cuda_q451_prefill_fused_reference)/sizeof(cuda_q451_prefill_fused_reference[0]));
+}
+
+static void run_qk8_gathered_reference_cases(BnGPUBackend *gpu) {
+#ifdef BN_CUDA_MXFP4_SM120
+    const BnCudaRoutedReference *sets[]={cuda_q48_prefill_reference,cuda_q58_prefill_reference};
+    size_t cases=sizeof(cuda_q48_prefill_reference)/sizeof(cuda_q48_prefill_reference[0]);
+    size_t words=0;
+    for(int five=0;five<2;five++)for(size_t c=0;c<cases;c++) {
+        const BnCudaRoutedReference *r=&sets[five][c];
+        int gt=five?BN_GGUF_TENSOR_Q5_K:BN_GGUF_TENSOR_Q4_K;
+        size_t elements=(size_t)r->experts*r->hidden*r->dim,n=(size_t)r->nt*r->dim;
+        size_t gb=bn_quant_format_data_size(gt,r->experts*r->hidden,r->dim);
+        size_t db=bn_quant_format_data_size(BN_GGUF_TENSOR_Q8_0,r->experts*r->dim,r->hidden);
+        uint8_t *g=malloc(gb),*u=malloc(gb),*d=malloc(db);
+        float *x=malloc((n+2)*sizeof(float)),*out=malloc((n+2)*sizeof(float));
+        assert(g && u && d && x && out);
+        qk8_fixture_gate(g,elements,five,r->seed);qk8_fixture_gate(u,elements,five,r->seed+19);
+        qk8_fixture_down(d,elements,r->seed+37);
+        x[0]=x[n+1]=out[0]=out[n+1]=12345.0f;
+        run_kquant_gathered_case(gpu,r,g,u,d,x+1,out+1,gt,BN_GGUF_TENSOR_Q8_0);
+        assert(x[0]==12345.0f && x[n+1]==12345.0f && out[0]==12345.0f && out[n+1]==12345.0f);
+        words+=4*n;
+        free(g);free(u);free(d);free(x);free(out);
+    }
+    printf("CUDA gathered Q4_K/Q8_0 and Q5_K/Q8_0 reference PASSED: %zu cases, %zu words\n",2*cases,words);
+#else
+    (void)gpu;
 #endif
 }
 
@@ -1934,7 +2343,7 @@ static void run_dense_gateup_reference_case(BnGPUBackend *gpu) {
     printf("CUDA dense gate/up reference PASSED\n");
 }
 
-static void run_dense_qk_reference_case(BnGPUBackend *gpu) {
+static void run_dense_qk_reference_mode(BnGPUBackend *gpu, int mixed_pair) {
     for (size_t c = 0; c < sizeof(cuda_dense_projection_reference) /
                                 sizeof(cuda_dense_projection_reference[0]); c++) {
         const BnCudaDenseProjectionReferenceCase *ref = &cuda_dense_projection_reference[c];
@@ -1985,15 +2394,39 @@ static void run_dense_qk_reference_case(BnGPUBackend *gpu) {
         void *gated_qb = gpu->buffer_create(gpu->ctx, gated_weights,
             gated_bytes, ref->type, 4128, dim);
         assert(gated_qb);
+        void *pair = NULL, *gated_pair = NULL, *pair_q = NULL, *pair_gq = NULL, *pair_k = NULL;
+        int pair_type = ref->type == BN_GGUF_TENSOR_Q4_K
+            ? BN_GGUF_TENSOR_Q5_K : BN_GGUF_TENSOR_Q4_K;
+        if (mixed_pair) {
+            size_t q_bytes = bn_quant_format_data_size(pair_type, 4096, dim);
+            void *q_data = malloc(q_bytes);
+            assert(q_data);
+            kquant_fixture_weights(q_data, pair_type, (size_t)4096 * dim / BN_QK_K);
+            pair_q = gpu->buffer_create(gpu->ctx, q_data, q_bytes / 2,
+                                        pair_type, 2048, dim);
+            pair_gq = gpu->buffer_create(gpu->ctx, q_data, q_bytes,
+                                         pair_type, 4096, dim);
+            pair_k = gpu->buffer_create(gpu->ctx,
+                (char *)qw + (size_t)2048 * row_bytes, (size_t)32 * row_bytes,
+                ref->type, 32, dim);
+            free(q_data);
+            assert(pair_q && pair_gq && pair_k && gpu->buffer_create_prefill_qk_pair);
+            assert(gpu->buffer_create_prefill_qk_pair(gpu->ctx, NULL, pair_k) == NULL);
+            pair = gpu->buffer_create_prefill_qk_pair(gpu->ctx, pair_q, pair_k);
+            gated_pair = gpu->buffer_create_prefill_qk_pair(gpu->ctx, pair_gq, pair_k);
+            assert(pair && gated_pair);
+        }
         for (int variant = 0; variant < 4; variant++) {
             int alias = variant & 1, gated = variant >= 2;
             for (size_t i = 0; i < count + 2; i++) out[i] = -12345.0f;
             for (size_t i = 0; i < nk + 2; i++) key[i] = value[i] = -12345.0f;
             if (alias) memcpy(out + 1, x, count * sizeof(float));
             assert(gpu->prefill_dense_layer(gpu->ctx, out + 1,
-                gated ? gated_qb : qb, v, wo, gu, gu, down, nw, nw, NULL, NULL, NULL, NULL,
+                mixed_pair ? (gated ? gated_pair : pair) : (gated ? gated_qb : qb),
+                v, wo, gu, gu, down, nw, nw, NULL, NULL, NULL, NULL,
                 NULL, NULL, bias, alias ? out + 1 : x, key + 1, value + 1,
-                nt, dim, 256, 64, 1, 32, 64, 32, gated ? 4128 : 2080, ref->type, 32, 0,
+                nt, dim, 256, 64, 1, 32, 64, 32, gated ? 4128 : 2080,
+                mixed_pair ? pair_type : ref->type, 32, 0,
                 dim, 2048, 0, 0, 0, 0, BN_MODEL_ACTIVATION_GELU, gated, 0,
                 1e-6f, 0, 32, 0, 0, 32, 1.0f, 1.0f, 0, 0) == 0);
             uint64_t hash = cuda_test_float_bits_hash(key + 1, nk);
@@ -2017,6 +2450,17 @@ static void run_dense_qk_reference_case(BnGPUBackend *gpu) {
             assert(value[0] == -12345.0f && value[nk + 1] == -12345.0f);
             for (size_t i = 0; i < nk; i++) assert(value[i + 1] == 1.0f);
         }
+        if (mixed_pair) {
+            gpu->buffer_destroy(gpu->ctx, pair);
+            gpu->buffer_destroy(gpu->ctx, gated_pair);
+            /* Destroying borrowed views must leave their children usable. */
+            float check[32];
+            assert(gpu->matvec(gpu->ctx, check, pair_k, x, 32, dim, ref->type) == 0);
+            for (int i = 0; i < 32; i++) assert(isfinite(check[i]));
+            gpu->buffer_destroy(gpu->ctx, pair_q);
+            gpu->buffer_destroy(gpu->ctx, pair_gq);
+            gpu->buffer_destroy(gpu->ctx, pair_k);
+        }
         gpu->buffer_destroy(gpu->ctx, gated_qb);
         free(gated_weights);
         void *buffers[] = {qb, v, wo, gu, down, nw, bias};
@@ -2024,7 +2468,90 @@ static void run_dense_qk_reference_case(BnGPUBackend *gpu) {
             gpu->buffer_destroy(gpu->ctx, buffers[i]);
         free(norm); free(zero); free(value); free(key); free(out); free(x); free(qw);
     }
-    printf("CUDA dense Q/K reference PASSED\n");
+    printf("CUDA dense Q/K %sreference PASSED\n", mixed_pair ? "mixed-pair " : "");
+}
+
+static void run_dense_qk_reference_case(BnGPUBackend *gpu) {
+    run_dense_qk_reference_mode(gpu, 0);
+}
+
+static void run_prefill_qk_pair_rope_reference_case(BnGPUBackend *gpu) {
+    enum { dim = 256, hd = 32, nt = 33, hidden = 32 };
+    float *x = malloc((size_t)nt * dim * sizeof(float));
+    float *out = malloc(((size_t)nt * dim + 2) * sizeof(float));
+    float key[nt * hd + 2], value[nt * hd + 2];
+    float identity[hd * dim] = {0}, zero[dim * hd] = {0};
+    float norm[dim], gamma[hd], frequency[hd / 2];
+    assert(x && out);
+    for (int i = 0; i < dim; i++) norm[i] = 1.0f;
+    for (int i = 0; i < hd; i++) {
+        identity[i * dim + i] = 1.0f;
+        gamma[i] = (float)(i + 3) / 17.0f;
+    }
+    for (int i = 0; i < hd / 2; i++) frequency[i] = 1.0f;
+    for (int t = 0; t < nt; t++)
+        for (int i = 0; i < dim; i++)
+            x[t * dim + i] = ((i + t) & 1) ? -2.0f : 2.0f;
+    void *q = gpu->buffer_create(gpu->ctx, identity, sizeof(identity), 0, hd, dim);
+    void *k = gpu->buffer_create(gpu->ctx, identity, sizeof(identity), 0, hd, dim);
+    void *v = gpu->buffer_create(gpu->ctx, zero, sizeof(zero), 0, hd, dim);
+    void *wo = gpu->buffer_create(gpu->ctx, zero, sizeof(zero), 0, dim, hd);
+    void *gate = gpu->buffer_create(gpu->ctx, zero, sizeof(zero), 0, hidden, dim);
+    void *down = gpu->buffer_create(gpu->ctx, zero, sizeof(zero), 0, dim, hidden);
+    void *nw = gpu->buffer_create(gpu->ctx, norm, sizeof(norm), 0, dim, 1);
+    void *kw = gpu->buffer_create(gpu->ctx, gamma, sizeof(gamma), 0, hd, 1);
+    void *pair = gpu->buffer_create_prefill_qk_pair(gpu->ctx, q, k);
+    assert(q && k && v && wo && gate && down && nw && kw && pair);
+    for (int separate = 0; separate < 2; separate++) {
+        BnGPUActivationPlan plan = {0};
+        plan.dim = plan.xb2_elements = dim;
+        plan.hb_elements = hidden;
+        plan.vocab_size = hd;
+        plan.n_layers = plan.attention_layer_count = 1;
+        plan.n_heads = 1; plan.seq_len = 64;
+        plan.kv_dim = plan.head_size = hd;
+        plan.rope_frequencies = frequency; plan.rope_frequency_count = hd / 2;
+        plan.separate_rope_norm = separate;
+        assert(gpu->init_activations(gpu->ctx, &plan) == 0);
+        out[0] = out[nt * dim + 1] = key[0] = key[nt * hd + 1] =
+            value[0] = value[nt * hd + 1] = -12345.0f;
+        assert(gpu->prefill_dense_layer(gpu->ctx, out + 1, pair, v, wo,
+            gate, gate, down, nw, nw, NULL, NULL, kw, kw, NULL, NULL, NULL,
+            x, key + 1, value + 1, nt, dim, hidden, 1, 1, hd, 1, hd,
+            2 * hd, 0, hd, 0, dim, hd, 0, 0, 0, 0,
+            BN_MODEL_ACTIVATION_SILU, 0, 0, 0.0f, 0, hd, 0, 0, hd,
+            1.0f, 1.0f, 0, 0) == 0);
+        uint64_t hash = cuda_test_float_bits_hash(key + 1, nt * hd);
+        /* Independent pinned GGML standalone CUDA RoPE, never self-generated.
+         * See reference_cuda_qk_pair_rope.c; fused rounding must differ. */
+        if (separate && hash != UINT64_C(0xcbb2be23d5347d46))
+            fprintf(stderr, "paired separate RoPE hash %016llx != cbb2be23d5347d46\n",
+                    (unsigned long long)hash);
+        if (separate) assert(hash == UINT64_C(0xcbb2be23d5347d46));
+        else assert(hash != UINT64_C(0xcbb2be23d5347d46));
+        assert(memcmp(out + 1, x, (size_t)nt * dim * sizeof(float)) == 0);
+        assert(out[0] == -12345.0f && out[nt * dim + 1] == -12345.0f);
+        assert(key[0] == -12345.0f && key[nt * hd + 1] == -12345.0f);
+        assert(value[0] == -12345.0f && value[nt * hd + 1] == -12345.0f);
+    }
+    void *buffers[] = {pair, q, k, v, wo, gate, down, nw, kw};
+    for (unsigned i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
+        gpu->buffer_destroy(gpu->ctx, buffers[i]);
+    free(out); free(x);
+    printf("CUDA paired separate RoPE independent reference PASSED\n");
+}
+
+static void run_prefill_qk_pair_reference_case(BnGPUBackend *shared_gpu) {
+    BnBackendRuntimePolicy policy = {0};
+    assert(bn_backend_runtime_policy_clone(&policy, &shared_gpu->runtime_policy) == 0);
+    assert(bn_backend_runtime_policy_set(&policy,
+        "BN_CUDA_ENABLE_PREFILL_QK_PAIR", "1", 1) == 0);
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(gpu);
+    run_dense_qk_reference_mode(gpu, 1);
+    run_prefill_qk_pair_rope_reference_case(gpu);
+    bn_gpu_cuda_destroy(gpu);
 }
 
 #include "cuda_decode_attention_reference.h"
@@ -2461,7 +2988,63 @@ static void run_attention_window_replay_case(BnGPUBackend *gpu) {
     printf("CUDA attention window replay PASSED\n");
 }
 
+#include "cuda_gqa12_order_reference.h"
+static void run_gqa12_order_reference_cases(BnGPUBackend *gpu) {
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_gqa12_order_reference)/sizeof(cuda_gqa12_order_reference[0]);c++) {
+        const BnCudaGqa12OrderReference *r=&cuda_gqa12_order_reference[c];
+        int nh=r->nk*r->gqa,dim=nh*256,pad=(r->valid+255)/256*256;
+        int stride=r->nk*256+32,seq=pad+2,offset=stride;
+        size_t cache_words=(size_t)stride*seq;
+        float *q=malloc((size_t)dim*4),*k=malloc(cache_words*4),*v=malloc(cache_words*4),*out=malloc(((size_t)dim+4)*4);
+        assert(q&&k&&v&&out);
+        for(int i=0;i<dim;i++)q[i]=(float)((i*17+r->seed*13)%251-125)/61.0f;
+        for(size_t i=0;i<cache_words;i++)k[i]=v[i]=12345.0f;
+        for(int t=0;t<pad;t++)for(int h=0;h<r->nk;h++)for(int j=0;j<256;j++) {
+            size_t i=((size_t)t*r->nk+h)*256+j,at=(size_t)offset+(size_t)t*stride+h*256+j;
+            k[at]=t<r->valid?(float)((int)((i*11+r->seed*7)%257)-128)/59.0f:0.0f;
+            v[at]=t<r->valid?(float)((int)((i*19+r->seed*3)%263)-131)/127.0f:0.0f;
+        }
+        uint64_t kh=cuda_test_float_bits_hash(k,cache_words),vh=cuda_test_float_bits_hash(v,cache_words);
+        BnGPUActivationPlan plan={0};plan.dim=plan.hb_elements=plan.xb2_elements=dim;
+        plan.vocab_size=dim+4;plan.n_layers=plan.attention_layer_count=1;
+        plan.n_heads=nh;plan.head_size=256;plan.seq_len=seq;plan.kv_dim=stride;
+        assert(gpu->init_activations(gpu->ctx,&plan)==0);
+        BnGPUOp ops[35]={{0}};
+        for(int i=0;i<31;i++){ops[i].op_code=BN_GPU_CODE_COPY;ops[i].buf_in=BN_GPU_VALUE_Q;ops[i].buf_out=BN_GPU_VALUE_SCRATCH;ops[i].p[2]=dim;}
+        BnGPUOp *a=&ops[31];a->op_code=r->valid<=256?BN_GPU_CODE_FLASH_ATTN:BN_GPU_CODE_GQA_SCORES;
+        a->buf_in=BN_GPU_VALUE_Q;a->buf_out=BN_GPU_VALUE_XB;
+        a->flags=BN_GPU_OP_FLAG_REFERENCE_ATTENTION_ORDER;a->attention_window=r->window;
+        a->p[0]=nh;a->p[1]=256;a->p[2]=r->valid;a->p[3]=r->gqa;a->p[4]=stride;a->p[5]=seq;a->p[6]=offset;a->p[7]=f32_bits(0.0625f);
+        int count=32;
+        if(r->valid>256) {
+            ops[32].op_code=BN_GPU_CODE_SOFTMAX;ops[32].p[0]=nh;ops[32].p[1]=r->valid;ops[32].p[2]=seq;
+            ops[33]=*a;ops[33].op_code=BN_GPU_CODE_GQA_COMBINE;count=34;
+        }
+        ops[count].op_code=BN_GPU_CODE_COPY;ops[count].buf_in=BN_GPU_VALUE_XB;ops[count].buf_out=BN_GPU_VALUE_LOGITS;ops[count].p[1]=2;ops[count].p[2]=dim;
+        for(int pass=0;pass<3;pass++) {
+            for(int i=0;i<dim+4;i++)out[i]=12345.0f;
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_Q,q,(size_t)dim*4,0)==0);
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_KEY_CACHE,k,cache_words*4,0)==0);
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_VALUE_CACHE,v,cache_words*4,0)==0);
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_LOGITS,out,((size_t)dim+4)*4,0)==0);
+            assert(gpu->execute(gpu->ctx,pass?ops:ops+31,pass?count+1:count-30,BN_GPU_VALUE_LOGITS,out,dim+4)==0);
+            uint64_t hash=cuda_test_float_bits_hash(out+2,dim);
+            if(hash!=r->hash)fprintf(stderr,"nonflash F32 attention case=%zu keys=%d pass=%d got=%016llx expected=%016llx\n",c,r->valid,pass,(unsigned long long)hash,(unsigned long long)r->hash);
+            assert(hash==r->hash);assert(out[0]==12345.0f&&out[1]==12345.0f&&out[dim+2]==12345.0f&&out[dim+3]==12345.0f);
+            words+=(size_t)dim;
+        }
+        assert(gpu->read_activation(gpu->ctx,BN_GPU_VALUE_KEY_CACHE,k,cache_words*4,0)==0);
+        assert(gpu->read_activation(gpu->ctx,BN_GPU_VALUE_VALUE_CACHE,v,cache_words*4,0)==0);
+        assert(cuda_test_float_bits_hash(k,cache_words)==kh&&cuda_test_float_bits_hash(v,cache_words)==vh);
+        gpu->free_activations(gpu->ctx);free(q);free(k);free(v);free(out);
+    }
+    printf("CUDA nonflash F32 GQA reference PASSED: %zu cases, %zu words\n",sizeof(cuda_gqa12_order_reference)/sizeof(cuda_gqa12_order_reference[0]),words);
+}
+
 static void run_decode_attention_f32_reference_cases(BnGPUBackend *gpu) {
+    assert(sizeof(cuda_decode_attention_f32_reference) ==
+           sizeof(cuda_decode_attention_f32_split_reference));
     const int d = 256, gqa = 6, nk = 4, nh = nk * gqa, seq = 256;
     const size_t dim = (size_t)nh * d, kv_dim = (size_t)nk * d;
     float *q = malloc(dim * sizeof(float));
@@ -2479,6 +3062,9 @@ static void run_decode_attention_f32_reference_cases(BnGPUBackend *gpu) {
                                 sizeof(cuda_decode_attention_f32_reference[0]); c++) {
         const BnCudaDecodeAttentionF32ReferenceCase *ref =
             &cuda_decode_attention_f32_reference[c];
+        const BnCudaDecodeAttentionF32ReferenceCase *split_ref =
+            &cuda_decode_attention_f32_split_reference[c];
+        assert(split_ref->valid == ref->valid && split_ref->seed == ref->seed);
         float mag = ref->seed ? 3.0f : 1.0f;
         for (size_t i = 0; i < dim; i++)
             q[i] = sinf((float)(i * 17 + 3 + ref->seed)) * (1.31f * mag);
@@ -2522,11 +3108,11 @@ static void run_decode_attention_f32_reference_cases(BnGPUBackend *gpu) {
         assert(gpu->execute(gpu->ctx, ops, 3, BN_GPU_VALUE_XB,
                             out, (int)dim) == 0);
         actual = cuda_test_float_bits_hash(out, dim);
-        if (actual != ref->hash)
+        if (actual != split_ref->hash)
             fprintf(stderr, "F32 split decode attention keys=%d seed=%d hash=%016llx expected=%016llx\n",
                 ref->valid, ref->seed, (unsigned long long)actual,
-                (unsigned long long)ref->hash);
-        assert(actual == ref->hash);
+                (unsigned long long)split_ref->hash);
+        assert(actual == split_ref->hash);
     }
     gpu->free_activations(gpu->ctx);
     free(out); free(cache_v); free(cache_k); free(q);
@@ -3620,6 +4206,4826 @@ static void run_model_attention_reference_case(BnGPUBackend *shared_gpu) {
 }
 
 #include "cuda_rmsnorm_batch_reference.h"
+#include "cuda_bf16_norm_reference.h"
+
+static uint16_t cuda_test_bf16_rne(float value) {
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    return (uint16_t)((bits + 0x7fffu + ((bits >> 16) & 1u)) >> 16);
+}
+
+#include "cuda_bf16_matrix_reference.h"
+
+#include "cuda_bf16_dispatch_reference.h"
+#include "cuda_bf16_q3_reference.h"
+#include "cuda_bf16_q8_reference.h"
+#include "cuda_bf16_q5_reference.h"
+#include "cuda_bf16_q4q6_reference.h"
+#include "cuda_bf16_iq3_reference.h"
+
+static uint64_t bf16_output_hash(const uint16_t *data, size_t words) {
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (size_t i = 0; i < words; i++) {
+        hash = (hash ^ (data[i] & 255)) * UINT64_C(1099511628211);
+        hash = (hash ^ (data[i] >> 8)) * UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+#include "cuda_bf16_ffn_reference.h"
+#include "cuda_bf16_q5_ffn_reference.h"
+#include "cuda_bf16_q4q6_ffn_reference.h"
+#include "cuda_bf16_iq3_ffn_reference.h"
+
+#include "cuda_bf16_residual_reference.h"
+#include "cuda_bf16_conv_reference.h"
+#include "cuda_bf16_gdn_prep_reference.h"
+
+#include "cuda_bf16_gdn_decode_reference.h"
+#include "cuda_bf16_gdn_decode_profiles_reference.h"
+#include "cuda_bf16_projected_gdn_reference.h"
+
+#include "backend_session.h"
+#include "cuda_bf16_gdn_prefill_reference.h"
+
+static BnGPUResidentView cuda_test_resident_alloc(BnGPUBackend *gpu, void *request,
+    int type, size_t count, const void *host) {
+    BnGPUResidentView view = {0};
+    assert(gpu->resident_alloc(request,type,count,&view) == 0);
+    assert(view.request == request && view.type == type && view.count == count);
+    if (host) assert(gpu->resident_write(request,view,host) == 0);
+    return view;
+}
+
+#include "cuda_f16_rows_checks.h"
+#include "cuda_raw_rows_checks.h"
+#include "cuda_native_norm_checks.h"
+#include "cuda_native_ple_checks.h"
+#include "cuda_native_hc4_checks.h"
+#include "cuda_native_embedding_head_checks.h"
+#include "cuda_native_router_checks.h"
+#include "cuda_folded_exl3_checks.h"
+#include "cuda_native_moe_checks.h"
+#include "cuda_fused_exl3_checks.h"
+#include "cuda_decode_exl3_checks.h"
+#include "cuda_f16_linear_checks.h"
+#include "cuda_f16_ffn_checks.h"
+#include "cuda_native_qkv_checks.h"
+#include "cuda_native_frequency_checks.h"
+#include "cuda_scaled_rows_checks.h"
+#include "cuda_native_compress_checks.h"
+#include "cuda_native_latent_keys_checks.h"
+#include "cuda_native_paged_latents_checks.h"
+#include "cuda_native_swa_ring_checks.h"
+#include "cuda_native_index_checks.h"
+#include "cuda_native_topk_checks.h"
+#include "cuda_native_candidates_checks.h"
+#include "cuda_native_candidate_use_checks.h"
+#include "cuda_f16_grouped_output_checks.h"
+#include "cuda_native_attention_checks.h"
+#include "cuda_f32_add_checks.h"
+#include "cuda_exl3_checks.h"
+#include "cuda_exl3_ffn_checks.h"
+#include "cuda_bf16_ple_conv_reference.h"
+static void run_ple_conv_reference(BnGPUBackend *gpu) {
+    assert(gpu->ple_conv_bf16_resident);
+    size_t words=0;
+    for(size_t ci=0;ci<sizeof(ple_conv_reference)/sizeof(ple_conv_reference[0]);ci++) {
+        const BnPLEConvReference *c=&ple_conv_reference[ci];
+        size_t n=(size_t)c->nt*c->dim,h=(size_t)(c->kernel-1)*c->dilation*c->dim;
+        size_t counts[]={n,(size_t)c->dim*c->kernel,n,n,h};
+        uint16_t *host[5];
+        for(int role=0;role<5;role++) {
+            host[role]=malloc(counts[role]*2);assert(host[role]);
+            for(size_t i=0;i<counts[role];i++) host[role][i]=cuda_test_bf16_rne(ldexpf(
+                (float)((int)((i*(13+role*6)+c->seed*11+role*19)%509)-254)/128.0f,(int)(i%7)-3));
+        }
+        void *w=gpu->buffer_create_quant_only(gpu->ctx,host[1],counts[1]*2,BN_GGUF_TENSOR_BF16,c->dim,c->kernel);assert(w);
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *r=bn_gpu_backend_resident_request(gpu,session);assert(r);
+        BnGPUPLEConvResidentPlan p={0};p.n_tokens=c->nt;p.dim=c->dim;p.kernel=c->kernel;p.dilation=c->dilation;p.weight=w;
+        p.x=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,n,host[0]);
+        p.residual=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,n,host[2]);
+        p.outer=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,n,host[3]);
+        p.initial_history=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,h,host[4]);
+        size_t cap=n>h?n:h;uint16_t *out=malloc((cap+2)*2);assert(out);
+        for(size_t i=0;i<cap+2;i++)out[i]=0x5a5a;
+        BnGPUResidentView ow=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,n+2,out);
+        BnGPUResidentView hw=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,h+2,out);
+        p.out=bn_gpu_resident_view_slice(ow,1,n);p.next_history=bn_gpu_resident_view_slice(hw,1,h);
+        BnGPUPLEConvResidentPlan bad=p;bad.out=p.x;assert(gpu->ple_conv_bf16_resident(gpu->ctx,r,&bad)==-1);
+        bad=p;bad.next_history=p.initial_history;assert(gpu->ple_conv_bf16_resident(gpu->ctx,r,&bad)==-1);
+        bad=p;bad.dilation=9;assert(gpu->ple_conv_bf16_resident(gpu->ctx,r,&bad)==-1);
+        bad=p;bad.out.count--;assert(gpu->ple_conv_bf16_resident(gpu->ctx,r,&bad)==-1);
+        assert(!gpu->ple_conv_bf16_resident(gpu->ctx,r,&p));
+        assert(!gpu->resident_read(r,ow,out));assert(out[0]==0x5a5a&&out[n+1]==0x5a5a);
+        uint64_t actual=bf16_output_hash(out+1,n);
+        if(actual!=c->out)fprintf(stderr,"PLE case%zu output %016llx expected %016llx\n",ci,(unsigned long long)actual,(unsigned long long)c->out);
+        assert(actual==c->out);
+        assert(!gpu->resident_read(r,hw,out));assert(out[0]==0x5a5a&&out[h+1]==0x5a5a);
+        assert(bf16_output_hash(out+1,h)==c->history);words+=n+h;
+        BnGPUResidentView inputs[]={p.x,p.residual,p.outer,p.initial_history};int roles[]={0,2,3,4};
+        for(int j=0;j<4;j++){assert(!gpu->resident_read(r,inputs[j],out));assert(!memcmp(out,host[roles[j]],inputs[j].count*2));}
+        /* Resume the same sequence with irregular chunks, ending in decode. */
+        BnGPUResidentView histories[]={p.initial_history,p.next_history};
+        int start=0,step=0;
+        while(start<c->nt) {
+            int take=(step%3==0?1:step%3==1?3:16);if(take>c->nt-start)take=c->nt-start;
+            BnGPUPLEConvResidentPlan q=p;q.n_tokens=take;
+            q.x=bn_gpu_resident_view_slice(p.x,(size_t)start*c->dim,(size_t)take*c->dim);
+            q.residual=bn_gpu_resident_view_slice(p.residual,(size_t)start*c->dim,(size_t)take*c->dim);
+            q.outer=bn_gpu_resident_view_slice(p.outer,(size_t)start*c->dim,(size_t)take*c->dim);
+            q.out=bn_gpu_resident_view_slice(p.out,(size_t)start*c->dim,(size_t)take*c->dim);
+            q.initial_history=histories[step%2];q.next_history=histories[(step+1)%2];
+            assert(!gpu->ple_conv_bf16_resident(gpu->ctx,r,&q));start+=take;step++;
+        }
+        assert(!gpu->resident_read(r,p.out,out));assert(bf16_output_hash(out,n)==c->out);
+        assert(!gpu->resident_read(r,histories[step%2],out));assert(bf16_output_hash(out,h)==c->history);
+        words+=n+h;free(out);bn_backend_session_free(session);gpu->buffer_destroy(gpu->ctx,w);
+        for(int role=0;role<5;role++)free(host[role]);
+    }
+    printf("PLE convolution PASSED: 216 cases, %zu exact BF16 words including chunk/decode\n",words);
+}
+
+#include "cuda_bf16_ple_gate_reference.h"
+static void run_ple_gate_reference(BnGPUBackend *gpu) {
+    assert(gpu->ple_gate_bf16_resident);size_t words=0;
+    for(size_t ci=0;ci<sizeof(ple_gate_reference)/sizeof(ple_gate_reference[0]);ci++) {
+        const BnPLEGateReference *c=&ple_gate_reference[ci];
+        size_t n=(size_t)c->nt*c->hc*c->h,nv=(size_t)c->nt*c->h,nw=(size_t)c->hc*c->h;
+        size_t counts[]={n,nv,n,nw,nw,nw};uint16_t *host[6];
+        for(int role=0;role<6;role++) {
+            host[role]=malloc(counts[role]*2);assert(host[role]);
+            for(size_t i=0;i<counts[role];i++)host[role][i]=cuda_test_bf16_rne(ldexpf(
+                (float)((int)((i*(13+role*6)+c->seed*11+role*19)%509)-254)/(role<3?128.0f:4096.0f),(int)(i%7)-3));
+        }
+        if(c->seed==1)for(size_t i=0;i<n;i++)host[2][i]=host[0][i]^0x8000;
+        if(c->seed==2)memset(host[2],0,n*2);
+        void *weights[3];for(int j=0;j<3;j++) {weights[j]=gpu->buffer_create_quant_only(gpu->ctx,host[j+3],nw*2,BN_GGUF_TENSOR_BF16,c->hc,c->h);assert(weights[j]);}
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *r=bn_gpu_backend_resident_request(gpu,session);assert(r);
+        BnGPUPLEGateResidentPlan p={0};p.n_tokens=c->nt;p.dim=c->h;p.streams=c->hc;p.eps=1e-6f;
+        p.norm_key=weights[0];p.norm_query=weights[1];p.norm_conv=weights[2];
+        p.key=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,n,host[0]);
+        p.value=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,nv,host[1]);
+        p.hidden=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,n,host[2]);
+        uint16_t *out=malloc((n+2)*2);assert(out);for(size_t i=0;i<n+2;i++)out[i]=0x5a5a;
+        BnGPUResidentView whole[4],v[4];
+        for(int j=0;j<4;j++){whole[j]=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,n+2,out);v[j]=bn_gpu_resident_view_slice(whole[j],1,n);}
+        p.normalized_key=v[0];p.normalized_query=v[1];p.gated=v[2];p.normed=v[3];
+        BnGPUPLEGateResidentPlan bad=p;bad.normed=p.key;assert(gpu->ple_gate_bf16_resident(gpu->ctx,r,&bad)==-1);
+        bad=p;bad.normalized_key=p.normalized_query;assert(gpu->ple_gate_bf16_resident(gpu->ctx,r,&bad)==-1);
+        bad=p;bad.value.count--;assert(gpu->ple_gate_bf16_resident(gpu->ctx,r,&bad)==-1);
+        bad=p;bad.norm_conv=NULL;assert(gpu->ple_gate_bf16_resident(gpu->ctx,r,&bad)==-1);
+        bad=p;bad.eps=NAN;assert(gpu->ple_gate_bf16_resident(gpu->ctx,r,&bad)==-1);
+        for(int j=0;j<4;j++){assert(!gpu->resident_read(r,whole[j],out));for(size_t i=0;i<n+2;i++)assert(out[i]==0x5a5a);}
+        assert(!gpu->ple_gate_bf16_resident(gpu->ctx,r,&p));
+        for(int j=0;j<4;j++) {
+            assert(!gpu->resident_read(r,whole[j],out));assert(out[0]==0x5a5a&&out[n+1]==0x5a5a);
+            if(j>=2) {
+                uint64_t actual=bf16_output_hash(out+1,n),expected=j==2?c->eager_gated:c->eager_normed;
+                if(actual!=expected)fprintf(stderr,"PLE gate case%zu output%d %016llx expected %016llx\n",ci,j,(unsigned long long)actual,(unsigned long long)expected);
+                assert(actual==expected);words+=n;
+            }
+        }
+        BnGPUResidentView inputs[]={p.key,p.value,p.hidden};
+        for(int j=0;j<3;j++){assert(!gpu->resident_read(r,inputs[j],out));assert(!memcmp(out,host[j],counts[j]*2));}
+        free(out);bn_backend_session_free(session);
+        for(int j=0;j<3;j++)gpu->buffer_destroy(gpu->ctx,weights[j]);
+        for(int j=0;j<6;j++)free(host[j]);
+    }
+    printf("PLE gate PASSED: 36 independent eager cases, %zu exact BF16 words\n",words);
+}
+
+static size_t run_resident_rows_case(BnGPUBackend *gpu, int rows, int cols,
+    int seed, uint64_t golden) {
+    size_t row_bytes = (size_t)cols / 32 * sizeof(BnBlockIQ4NL);
+    void *weights = malloc((size_t)rows * row_bytes); assert(weights);
+    signed_mmq_fixture_weights(weights, BN_GGUF_TENSOR_IQ4_NL, (size_t)rows * cols, seed);
+    BnQWeight w = {weights, BN_GGUF_TENSOR_IQ4_NL, rows, cols, 1};
+    int selected = golden ? rows : rows + 1;
+    size_t stride = bn_backend_quant_host_row_stride(&w), bytes = (size_t)selected * stride;
+    int32_t *ids = malloc((size_t)selected * sizeof(*ids));
+    unsigned char *packed = malloc(bytes + 8), *copy = malloc(bytes + 8);
+    size_t count = (size_t)selected * cols;
+    uint16_t *output = malloc((count + 2) * 2); assert(ids && packed && copy && output);
+    memset(packed, 0xa5, bytes + 8);
+    for (int i = 0; i < selected; i++) ids[i] = golden ? i : (i == rows ? 0 : rows - 1 - i);
+    assert(!bn_backend_quant_gather_host_rows(&w, ids, (size_t)selected, packed + 4, bytes));
+    memcpy(copy, packed, bytes + 8);
+    for (size_t i = 0; i < count + 2; i++) output[i] = 0x5a5a;
+    BnBackendSession *session = bn_backend_session_create(); assert(session);
+    void *request = bn_gpu_backend_resident_request(gpu, session); assert(request);
+    BnGPUResidentView raw = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_I32, bytes / 4 + 2, packed);
+    BnGPUResidentView out = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, count + 2, output);
+    BnGPUQuantRowsBF16ResidentPlan plan = {0};
+    plan.rows = selected; plan.cols = cols; plan.type = w.type; plan.row_stride_bytes = stride;
+    plan.packed = bn_gpu_resident_view_slice(raw, 1, bytes / 4);
+    plan.out = bn_gpu_resident_view_slice(out, 1, count);
+    if (rows == 1 && cols == 32 && !seed) {
+        assert(gpu->quant_rows_bf16_resident(NULL, request, &plan) == -1);
+        assert(gpu->quant_rows_bf16_resident(gpu->ctx, NULL, &plan) == -1);
+        assert(gpu->quant_rows_bf16_resident(gpu->ctx, request, NULL) == -1);
+        BnBackendSession *other = bn_backend_session_create(); assert(other);
+        void *foreign = bn_gpu_backend_resident_request(gpu, other); assert(foreign);
+        for (int bad = 0; bad < 12; bad++) {
+            BnGPUQuantRowsBF16ResidentPlan p = plan;
+            switch (bad) {
+                case 0: p.rows = 0; break;
+                case 1: p.cols = 0; break;
+                case 2: p.cols--; break;
+                case 3: p.rows = INT_MAX; break;
+                case 4: p.type = BN_GGUF_TENSOR_Q8_0; break;
+                case 5: p.row_stride_bytes++; break;
+                case 6: p.packed.count--; break;
+                case 7: p.out.count--; break;
+                case 8: p.packed.type = BN_GGUF_TENSOR_BF16; break;
+                case 9: p.out.type = BN_GGUF_TENSOR_I32; break;
+                case 10: p.out.request = foreign; break;
+                case 11: p.out = p.packed; break;
+            }
+            assert(gpu->quant_rows_bf16_resident(gpu->ctx, request, &p) == -1);
+        }
+        assert(!gpu->resident_read(request, out, output));
+        for (size_t i = 0; i < count + 2; i++) assert(output[i] == 0x5a5a);
+        bn_backend_session_free(other);
+    }
+    assert(!gpu->quant_rows_bf16_resident(gpu->ctx, request, &plan));
+    assert(!gpu->resident_read(request, out, output));
+    assert(!gpu->resident_read(request, raw, packed));
+    assert(!memcmp(copy, packed, bytes + 8));
+    assert(output[0] == 0x5a5a && output[count + 1] == 0x5a5a);
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (int row = 0; row < selected; row++) for (int block = 0; block < cols / 32; block++) {
+        float expected[32];
+        const BnBlockIQ4NL *b = (const BnBlockIQ4NL *)((const unsigned char *)weights + (size_t)ids[row] * row_bytes) + block;
+        bn_quant_dequant_iq4nl(b, expected);
+        for (int j = 0; j < 32; j++) {
+            size_t i = (size_t)row * cols + block * 32 + j;
+            assert(output[i + 1] == cuda_test_bf16_rne(expected[j]));
+            hash = (hash ^ (output[i + 1] & 255)) * UINT64_C(1099511628211);
+            hash = (hash ^ (output[i + 1] >> 8)) * UINT64_C(1099511628211);
+        }
+    }
+    if (golden) assert(hash == golden);
+    bn_backend_session_free(session); free(weights); free(ids); free(packed); free(copy); free(output);
+    return count;
+}
+
+static void run_resident_rows_reference(BnGPUBackend *gpu) {
+    assert(gpu->quant_rows_bf16_resident);
+    const int widths[] = {32, 64, 96, 160, 288, 1024}, rows[] = {1, 2, 17, 129};
+    size_t words = 0;
+    for (int w = 0; w < 6; w++) for (int r = 0; r < 4; r++) for (int seed = 0; seed < 2; seed++)
+        words += run_resident_rows_case(gpu, rows[r], widths[w], seed, 0);
+    for (size_t i = 0; i < sizeof(cuda_bf16_decode_cases) / sizeof(cuda_bf16_decode_cases[0]); i++) {
+        const BnBF16DecodeReference *r = &cuda_bf16_decode_cases[i];
+        if (r->type == BN_GGUF_TENSOR_IQ4_NL)
+            words += run_resident_rows_case(gpu, r->rows, r->cols, r->seed, r->hash);
+    }
+    printf("CUDA resident IQ4_NL row decode PASSED: %zu words\n", words);
+}
+
+static void run_resident_upload_reference(BnGPUBackend *gpu) {
+    assert(gpu->resident_upload_reserve && gpu->resident_upload_acquire &&
+        gpu->resident_upload_submit && gpu->resident_upload_cancel);
+    BnBackendSession *session = bn_backend_session_create(); assert(session);
+    void *r = bn_gpu_backend_resident_request(gpu, session); assert(r);
+    BnGPUHostUploadLease lease, sentinel;
+    memset(&sentinel, 0x5a, sizeof(sentinel)); lease = sentinel;
+    assert(gpu->resident_upload_acquire(r, 0, &lease) == -1);
+    assert(!memcmp(&lease, &sentinel, sizeof(lease)));
+    assert(gpu->resident_upload_reserve(NULL, 2, 512, 1024) == -1);
+    assert(gpu->resident_upload_reserve(r, 0, 512, 1024) == -1);
+    assert(gpu->resident_upload_reserve(r, 9, 512, SIZE_MAX) == -1);
+    assert(gpu->resident_upload_reserve(r, 2, SIZE_MAX, SIZE_MAX) == -1);
+    assert(gpu->resident_upload_reserve(r, 2, 512, 1023) == -1);
+    assert(!gpu->resident_upload_reserve(r, 2, 512, 1024));
+    assert(!gpu->resident_upload_reserve(r, 2, 512, 1024));
+    assert(gpu->resident_upload_reserve(r, 1, 512, 1024) == -1);
+    assert(gpu->resident_upload_reserve(r, 2, 1024, 2048) == -1);
+    assert(!gpu->resident_upload_acquire(r, 0, &lease));
+    assert(lease.request == r && lease.slot == 0 && lease.capacity == 512 && lease.data);
+    BnGPUHostUploadLease old = lease, untouched = sentinel;
+    assert(gpu->resident_upload_acquire(r, 0, &untouched) == -1);
+    assert(!memcmp(&untouched, &sentinel, sizeof(untouched)));
+    assert(!gpu->resident_upload_cancel(r, &lease));
+    assert(gpu->resident_upload_cancel(r, &lease) == -1);
+    assert(!gpu->resident_upload_acquire(r, 0, &lease));
+    assert(lease.generation > old.generation);
+    uint32_t initial[130]; for (int i = 0; i < 130; i++) initial[i] = 0x5a5a5a5a;
+    BnGPUResidentView whole = cuda_test_resident_alloc(gpu, r, BN_GGUF_TENSOR_I32, 130, initial);
+    BnGPUResidentView dst = bn_gpu_resident_view_slice(whole, 1, 128);
+    assert(gpu->resident_upload_submit(r, &old, dst) == -1);
+    assert(gpu->resident_upload_cancel(r, &old) == -1);
+    BnBackendSession *foreign_session = bn_backend_session_create(); assert(foreign_session);
+    void *foreign = bn_gpu_backend_resident_request(gpu, foreign_session); assert(foreign);
+    for (int bad = 0; bad < 6; bad++) {
+        BnGPUHostUploadLease wrong = lease;
+        switch (bad) {
+            case 0: wrong.request = foreign; break;
+            case 1: wrong.slot = 2; break;
+            case 2: wrong.generation++; break;
+            case 3: wrong.data = (char *)wrong.data + 4; break;
+            case 4: wrong.capacity--; break;
+            case 5: wrong.data = NULL; break;
+        }
+        assert(gpu->resident_upload_submit(r, &wrong, dst) == -1);
+        assert(gpu->resident_upload_cancel(r, &wrong) == -1);
+    }
+    BnGPUResidentView bad_dst = dst; bad_dst.count++;
+    assert(gpu->resident_upload_submit(r, &lease, bad_dst) == -1);
+    bad_dst = dst; bad_dst.request = foreign;
+    assert(gpu->resident_upload_submit(r, &lease, bad_dst) == -1);
+    assert(!gpu->resident_read(r, whole, initial));
+    for (int i = 0; i < 130; i++) assert(initial[i] == 0x5a5a5a5a);
+    for (int i = 0; i < 128; i++) ((uint32_t *)lease.data)[i] = (uint32_t)i * 37 + 11;
+    assert(!gpu->resident_upload_submit(r, &lease, dst));
+    assert(gpu->resident_upload_submit(r, &lease, dst) == -1);
+    assert(gpu->resident_upload_cancel(r, &lease) == -1);
+    untouched = sentinel;
+    int status = gpu->resident_upload_acquire(r, 0, &untouched);
+    assert(status == 0 || status == BN_GPU_UPLOAD_BUSY);
+    if (status == BN_GPU_UPLOAD_BUSY) assert(!memcmp(&untouched, &sentinel, sizeof(untouched)));
+    else memset(untouched.data, 0xff, untouched.capacity); /* DMA already complete. */
+    assert(!gpu->resident_read(r, whole, initial));
+    for (int i = 0; i < 128; i++) assert(initial[i + 1] == (uint32_t)i * 37 + 11);
+    assert(initial[0] == 0x5a5a5a5a && initial[129] == 0x5a5a5a5a);
+    if (status == BN_GPU_UPLOAD_BUSY) assert(!gpu->resident_upload_acquire(r, 0, &untouched));
+    assert(!gpu->resident_upload_cancel(r, &untouched));
+    assert(!gpu->resident_upload_acquire(r, 1, &lease));
+    memset(lease.data, 0x3c, lease.capacity);
+    assert(!gpu->resident_upload_submit(r, &lease, dst));
+    /* Teardown must wait for this outstanding DMA before unpinning. */
+    bn_backend_session_free(session); bn_backend_session_free(foreign_session);
+
+    session = bn_backend_session_create(); assert(session);
+    r = bn_gpu_backend_resident_request(gpu, session); assert(r);
+    const size_t bytes = 8u * 1024u * 1024u;
+    assert(!gpu->resident_upload_reserve(r, 2, bytes, 2 * bytes));
+    BnGPUResidentView big = cuda_test_resident_alloc(gpu, r, BN_GGUF_TENSOR_I32, bytes / 4, NULL);
+    assert(!gpu->resident_upload_acquire(r, 0, &lease)); memset(lease.data, 0x3c, bytes);
+    assert(!gpu->resident_upload_submit(r, &lease, big));
+    untouched = sentinel; status = gpu->resident_upload_acquire(r, 0, &untouched);
+    assert(status == 0 || status == BN_GPU_UPLOAD_BUSY);
+    if (!status) memset(untouched.data, 0xa5, bytes);
+    else assert(!memcmp(&untouched, &sentinel, sizeof(untouched)));
+    unsigned char *host = malloc(bytes); assert(host);
+    assert(!gpu->resident_read(r, big, host));
+    for (size_t i = 0; i < bytes; i++) assert(host[i] == 0x3c);
+    if (status == BN_GPU_UPLOAD_BUSY) assert(!gpu->resident_upload_acquire(r, 0, &untouched));
+    assert(!gpu->resident_upload_cancel(r, &untouched)); free(host);
+    bn_backend_session_free(session);
+    printf("CUDA pinned upload lifecycle PASSED: large DMA initially %s\n",
+        status == BN_GPU_UPLOAD_BUSY ? "busy" : "complete");
+}
+
+static void run_resident_resize(BnGPUBackend *gpu) {
+    assert(gpu->resident_resize_discard);
+    void *r=gpu->resident_request_create(gpu->ctx),*other=gpu->resident_request_create(gpu->ctx);assert(r&&other);
+    assert(!gpu->resident_upload_reserve(r,1,256,256));
+    const int types[]={BN_GGUF_TENSOR_F32,BN_GGUF_TENSOR_BF16,BN_GGUF_TENSOR_I32};
+    for(int t=0;t<3;t++) {
+        unsigned char host[256],out[256];memset(host,0x5a,sizeof(host));
+        size_t width=t==1?2:4;
+        BnGPUResidentView v=cuda_test_resident_alloc(gpu,r,types[t],8,host),original=v;
+        BnGPUResidentView slice=bn_gpu_resident_view_slice(v,1,3);
+        assert(gpu->resident_resize_discard(other,&v,16)==-1);
+        assert(gpu->resident_resize_discard(r,&slice,16)==-1);
+        assert(gpu->resident_resize_discard(r,&v,0)==-1);
+        assert(gpu->resident_resize_discard(r,&v,SIZE_MAX)==-1);
+        assert(v.slot==original.slot&&v.count==8);
+        assert(!gpu->resident_resize_discard(r,&v,8)&&v.slot==original.slot);
+        assert(!gpu->resident_read(r,v,out)&&!memcmp(out,host,8*width));
+        BnGPUResidentView untouched=cuda_test_resident_alloc(gpu,r,types[t],8,host);
+        for(int i=0;i<16;i++) {
+            BnGPUResidentView stale=v,old_slice=bn_gpu_resident_view_slice(v,0,1);
+            size_t count=i%2?3:32;
+            assert(!gpu->resident_resize_discard(r,&v,count)&&v.count==count&&v.slot!=stale.slot);
+            assert(gpu->resident_read(r,stale,out)==-1);
+            assert(gpu->resident_read(r,old_slice,out)==-1);
+            assert(gpu->resident_write(r,old_slice,host)==-1);
+            assert(gpu->resident_zero(r,old_slice)==-1);
+            assert(gpu->resident_resize_discard(r,&stale,16)==-1);
+            assert(!gpu->resident_write(r,v,host)&&!gpu->resident_read(r,v,out));
+            assert(!memcmp(out,host,count*width));
+            assert(!gpu->resident_read(r,untouched,out)&&!memcmp(out,host,8*width));
+        }
+        BnGPUResidentView next=cuda_test_resident_alloc(gpu,r,types[t],8,host);
+        assert(!gpu->resident_read(r,next,out)&&!memcmp(out,host,8*width));
+        BnGPUHostUploadLease upload;assert(!gpu->resident_upload_acquire(r,0,&upload));
+        memcpy(upload.data,host,v.count*width);
+        assert(gpu->resident_upload_submit(r,&upload,original)==-1);
+        assert(!gpu->resident_upload_submit(r,&upload,v));
+        assert(!gpu->resident_read(r,v,out)&&!memcmp(out,host,v.count*width));
+    }
+    gpu->resident_request_destroy(other);gpu->resident_request_destroy(r);
+    puts("CUDA destructive resident resize, stale generations and isolation PASSED");
+}
+
+static void run_resident_zero(BnGPUBackend *gpu) {
+    assert(gpu->resident_zero);
+    BnBackendSession *a = bn_backend_session_create();
+    BnBackendSession *b = bn_backend_session_create();
+    assert(a && b);
+    void *request = bn_gpu_backend_resident_request(gpu, a);
+    void *other = bn_gpu_backend_resident_request(gpu, b);
+    assert(request && other && request != other);
+    const int types[] = {BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_BF16, BN_GGUF_TENSOR_I32};
+    for (int t = 0; t < 3; t++) {
+        size_t width = t == 1 ? 2 : 4;
+        uint8_t data[32], actual[32];
+        memset(data, 0xa5, sizeof(data));
+        BnGPUResidentView whole = cuda_test_resident_alloc(gpu, request, types[t], 8, data);
+        BnGPUResidentView middle = bn_gpu_resident_view_slice(whole, 2, 3);
+        assert(gpu->resident_zero(other, middle) == -1);
+        BnGPUResidentView invalid = whole;
+        invalid.offset = 7; invalid.count = 2;
+        assert(gpu->resident_zero(request, invalid) == -1);
+        invalid = whole; invalid.type = -1;
+        assert(gpu->resident_zero(request, invalid) == -1);
+        invalid = whole; invalid.count = 0;
+        assert(gpu->resident_zero(request, invalid) == -1);
+        assert(!gpu->resident_zero(request, middle));
+        assert(!gpu->resident_read(request, whole, actual));
+        for (size_t i = 0; i < 8 * width; i++)
+            assert(actual[i] == (i >= 2 * width && i < 5 * width ? 0 : 0xa5));
+        assert(!gpu->resident_zero(request, whole));
+        assert(!gpu->resident_read(request, whole, actual));
+        for (size_t i = 0; i < 8 * width; i++) assert(actual[i] == 0);
+    }
+    bn_backend_session_free(a);
+    bn_backend_session_free(b);
+    puts("CUDA resident zero fill PASSED");
+}
+
+#include "cuda_bf16_embedding_reference.h"
+
+static void cuda_test_embedding(BnGPUBackend *gpu, void *weight, const int32_t *ids,
+    uint16_t *out, int nt, int dim, int vocab) {
+    size_t count=(size_t)nt*dim;
+    BnBackendSession *session=bn_backend_session_create();assert(session);
+    void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+    int32_t *index=malloc(((size_t)nt+2)*sizeof(*index));
+    uint16_t *host=malloc((count+2)*sizeof(*host));assert(index&&host);
+    index[0]=index[nt+1]=INT32_C(0x5a5a5a5a);memcpy(index+1,ids,(size_t)nt*sizeof(*ids));
+    for(size_t i=0;i<count+2;i++)host[i]=0x5a5a;
+    BnGPUResidentView iv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_I32,(size_t)nt+2,index);
+    BnGPUResidentView ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,count+2,host);
+    BnGPUEmbeddingResidentPlan plan={0};plan.n_tokens=nt;plan.dim=dim;plan.vocab_size=vocab;
+    plan.weight=weight;plan.indices=bn_gpu_resident_view_slice(iv,1,nt);
+    plan.out=bn_gpu_resident_view_slice(ov,1,count);
+    assert(gpu->embedding_bf16_resident(gpu->ctx,request,&plan)==-1);
+    assert(gpu->embedding_bf16_reserve(gpu->ctx,request)==0);
+    assert(gpu->embedding_bf16_reserve(gpu->ctx,request)==0);
+    for(int reject=0;reject<11;reject++) {
+        BnGPUEmbeddingResidentPlan bad=plan;
+        switch(reject) {
+            case 0:bad.n_tokens=0;break;case 1:bad.dim++;break;
+            case 2:bad.vocab_size++;break;case 3:bad.weight=NULL;break;
+            case 4:bad.indices.type=BN_GGUF_TENSOR_F32;break;
+            case 5:bad.out.type=BN_GGUF_TENSOR_I32;break;
+            case 6:bad.out.request=session;break;case 7:--bad.indices.count;break;
+            case 8:--bad.out.count;break;case 9:bad.n_tokens=INT_MAX;break;
+            default:bad.indices.request=session;break;
+        }
+        assert(gpu->embedding_bf16_resident(gpu->ctx,request,&bad)==-1);
+    }
+    assert(gpu->resident_read(request,ov,host)==0);
+    for(size_t i=0;i<count+2;i++)assert(host[i]==0x5a5a);
+    assert(gpu->embedding_bf16_resident(gpu->ctx,request,&plan)==0);
+    assert(gpu->resident_read(request,ov,host)==0);
+    assert(host[0]==0x5a5a&&host[count+1]==0x5a5a);memcpy(out,host+1,count*sizeof(*out));
+    assert(gpu->resident_read(request,iv,index)==0);
+    assert(index[0]==INT32_C(0x5a5a5a5a)&&index[nt+1]==INT32_C(0x5a5a5a5a));
+    assert(!memcmp(index+1,ids,(size_t)nt*sizeof(*ids)));
+    free(index);free(host);bn_backend_session_free(session);
+}
+
+static void run_bf16_embedding_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->embedding_bf16_resident&&gpu->embedding_bf16_reserve);size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_embedding_cases)/sizeof(cuda_bf16_embedding_cases[0]);c++) {
+        const BnBF16EmbeddingReference *ref=&cuda_bf16_embedding_cases[c];
+        size_t count=(size_t)ref->tokens*ref->dim, nw=(size_t)ref->vocab*ref->dim;
+        size_t bytes=signed_mmq_fixture_bytes(12,nw);void *raw=malloc(bytes);assert(raw);
+        signed_mmq_fixture_weights(raw,12,nw,ref->seed);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,raw,bytes,12,ref->vocab,ref->dim);assert(weight);free(raw);
+        int32_t *ids=malloc((size_t)ref->tokens*sizeof(*ids));uint16_t*out=malloc(count*sizeof(*out));assert(ids&&out);
+        for(int i=0;i<ref->tokens;i++)ids[i]=(int32_t)(((size_t)i*17+(size_t)i/7+ref->seed*3)%ref->vocab);
+        int32_t boundary[]={0,ref->vocab-1,0,1%ref->vocab};
+        for(int i=0;i<ref->tokens&&i<4;i++)ids[i]=boundary[i];
+        cuda_test_embedding(gpu,weight,ids,out,ref->tokens,ref->dim,ref->vocab);
+        uint64_t hash=bf16_output_hash(out,count);
+        if(hash!=ref->hash)fprintf(stderr,"Embedding mismatch c=%zu vocab=%d dim=%d nt=%d seed=%d hash=%016llx expected=%016llx\n",c,ref->vocab,ref->dim,ref->tokens,ref->seed,(unsigned long long)hash,(unsigned long long)ref->hash);
+        assert(hash==ref->hash);words+=count;
+        gpu->buffer_destroy(gpu->ctx,weight);free(ids);free(out);
+    }
+    /* Bad IDs are request errors, never device assertions or out-of-bounds
+     * weight reads. A peer request and a reset container remain usable. */
+    BnBlockQ4K raw={0};raw.d=0x3c00;
+    void *weight=gpu->buffer_create_quant_only(gpu->ctx,&raw,sizeof(raw),12,1,256);assert(weight);
+    const int32_t bad_ids[]={-1,1,INT32_MIN,INT32_MAX};uint16_t good_out[256];int32_t good_id=0;
+    for(unsigned j=0;j<sizeof(bad_ids)/sizeof(bad_ids[0]);j++) {
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        assert(gpu->embedding_bf16_reserve(gpu->ctx,request)==0);
+        BnGPUEmbeddingResidentPlan plan={0};plan.n_tokens=1;plan.dim=256;plan.vocab_size=1;plan.weight=weight;
+        plan.indices=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_I32,1,&bad_ids[j]);
+        plan.out=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,256,NULL);
+        assert(gpu->embedding_bf16_resident(gpu->ctx,request,&plan)==0);
+        cuda_test_embedding(gpu,weight,&good_id,good_out,1,256,1);
+        for(int i=0;i<256;i++)assert(good_out[i]==0);
+        assert(gpu->resident_synchronize(request)==-1);
+        assert(gpu->embedding_bf16_resident(gpu->ctx,request,&plan)==-1);
+        assert(gpu->resident_read(request,plan.out,good_out)==-1);
+        bn_backend_session_release_gpu_resources(session);
+        request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        assert(gpu->resident_synchronize(request)==0);bn_backend_session_free(session);
+    }
+    gpu->buffer_destroy(gpu->ctx,weight);
+    printf("CUDA resident BF16 embedding PASSED: %zu exact reference words\n",words);
+}
+
+#include "cuda_bf16_q8_embedding_reference.h"
+static void run_bf16_q8_embedding_reference_case(BnGPUBackend *gpu) {
+    const int vocab=65536,dim=256;size_t blocks=(size_t)vocab*dim/32;
+    BnBlockQ8_0 *raw=malloc(blocks*sizeof(*raw));assert(raw);
+    for(int row=0;row<vocab;row++)for(int group=0;group<8;group++) {
+        BnBlockQ8_0 *b=&raw[(size_t)row*8+group];b->d=(uint16_t)row;
+        for(int q=0;q<32;q++)b->qs[q]=(int8_t)(group*32+q-128);
+    }
+    void *weight=gpu->buffer_create_quant_only(gpu->ctx,raw,blocks*sizeof(*raw),BN_GGUF_TENSOR_Q8_0,vocab,dim);assert(weight);free(raw);
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_q8_embedding_cases)/sizeof(cuda_q8_embedding_cases[0]);c++) {
+        const BnQ8EmbeddingReference *ref=&cuda_q8_embedding_cases[c];int nt=ref->tokens;
+        int32_t *ids=malloc((size_t)nt*4);uint16_t *out=malloc((size_t)nt*dim*2);assert(ids&&out);
+        for(int i=0;i<nt;i++)ids[i]=(int32_t)(((uint64_t)i*8191)%65536);
+        cuda_test_embedding(gpu,weight,ids,out,nt,dim,vocab);
+        for(size_t i=0;i<(size_t)nt*dim;i++)if((out[i]&0x7f80)==0x7f80&&(out[i]&0x7f))out[i]=0x7fc0;
+        uint64_t hash=bf16_output_hash(out,(size_t)nt*dim);
+        if(hash!=ref->hash)fprintf(stderr,"Q8 embedding nt%d hash%016llx expected%016llx\n",nt,(unsigned long long)hash,(unsigned long long)ref->hash);
+        assert(hash==ref->hash);words+=(size_t)nt*dim;free(ids);free(out);
+    }
+    gpu->buffer_destroy(gpu->ctx,weight);
+    BnBlockQ8_0 zero[8]={{0}};weight=gpu->buffer_create_quant_only(gpu->ctx,zero,sizeof(zero),BN_GGUF_TENSOR_Q8_0,1,256);assert(weight);
+    int32_t bad[]={-1,1,INT32_MIN,INT32_MAX};
+    for(int i=0;i<4;i++) {
+        BnBackendSession *s=bn_backend_session_create();assert(s);void*r=bn_gpu_backend_resident_request(gpu,s);assert(r);
+        assert(!gpu->embedding_bf16_reserve(gpu->ctx,r));
+        BnGPUEmbeddingResidentPlan e={0};e.n_tokens=1;e.dim=256;e.vocab_size=1;e.weight=weight;
+        e.indices=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_I32,1,&bad[i]);e.out=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,256,NULL);
+        assert(!gpu->embedding_bf16_resident(gpu->ctx,r,&e));assert(gpu->resident_synchronize(r)==-1);
+        int32_t valid=0;uint16_t out[256];cuda_test_embedding(gpu,weight,&valid,out,1,256,1);
+        for(int j=0;j<256;j++)assert(!out[j]);
+        bn_backend_session_free(s);
+    }
+    gpu->buffer_destroy(gpu->ctx,weight);
+    printf("CUDA Q8 BF16 embedding PASSED: %zu reference words, all FP16 scales and signed quants\n",words);
+}
+
+#include "cuda_bf16_attention_reference.h"
+#include "cuda_bf16_attention_batch_reference.h"
+
+static void cuda_test_attention_values(uint16_t *out, size_t count, int role,
+    int seed, size_t start) {
+    static const float special[] = {0.0f,-0.0f,-88.0f,-89.0f,-90.0f,88.0f,89.0f,90.0f};
+    for (size_t j=0; j<count; j++) {
+        size_t i=start+j;
+        float x;
+        if (role==0) x=(float)((int)((i*17+seed*11)%509)-254)/128.0f;
+        else if (role==1) x=(float)((int)((i*7+seed*3)%251)-125)/64.0f;
+        else if (role==2) x=(float)((int)((i*13+seed*5)%257)-128)/32.0f;
+        else x=j<8?special[j]:(float)((int)((i*19+seed*7)%509)-254)/16.0f;
+        out[j]=cuda_test_bf16_rne(x);
+    }
+}
+
+static BnGPUResidentView cuda_test_attention_view(BnGPUBackend *gpu, void *request,
+    size_t count, const uint16_t *input, BnGPUResidentView *whole) {
+    uint16_t *host=malloc((count+16)*sizeof(*host));assert(host);
+    for (size_t i=0;i<count+16;i++) host[i]=0x5a5a;
+    if (input) memcpy(host+8,input,count*sizeof(*host));
+    *whole=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,count+16,host);
+    free(host);return bn_gpu_resident_view_slice(*whole,8,count);
+}
+
+static void cuda_test_attention_read(BnGPUBackend *gpu, void *request,
+    BnGPUResidentView whole, uint16_t *host) {
+    assert(gpu->resident_read(request,whole,host)==0);
+    for (size_t i=0;i<8;i++) assert(host[i]==0x5a5a&&host[whole.count-8+i]==0x5a5a);
+}
+
+#include "cuda_bf16_mixed_attention_reference.h"
+
+static void run_bf16_mixed_attention_reference_case(BnGPUBackend *g) {
+    size_t checked=0;
+    for(size_t ci=0;ci<sizeof(bf16_mixed_attention_cases)/sizeof(bf16_mixed_attention_cases[0]);ci++)
+    for(int mode=0;mode<2;mode++) {
+        const BnBF16MixedAttentionReference *ref=&bf16_mixed_attention_cases[ci];
+        BnBackendSession *co=bn_backend_session_create(),*sessions[8];assert(co);
+        void *coordinator=bn_gpu_backend_resident_request(g,co),*requests[8];assert(coordinator);
+        size_t budget=g->resident_group_queue_workspace_size(g->ctx,BN_GPU_RESIDENT_GROUP_ATTENTION,ref->batch,2);
+        assert(budget&&!g->resident_group_queue_reserve(g->ctx,coordinator,BN_GPU_RESIDENT_GROUP_ATTENTION,ref->batch,2,budget));
+        BnGPUAttentionPrefillSequence seq[8]={0};BnGPUResidentView whole[8][6];
+        uint16_t *input[8][3],*cache[8][2];size_t nq[8],nk[8],nc[8];
+        for(int i=0;i<ref->batch;i++) {
+            int n=ref->queries[i],len=ref->lengths[i],pos=len-n,seed=ref->seed+7*i;
+            nq[i]=(size_t)n*24*256;nk[i]=(size_t)n*4*256;nc[i]=(size_t)len*4*256;
+            sessions[i]=bn_backend_session_create();assert(sessions[i]);
+            requests[i]=bn_gpu_backend_resident_request(g,sessions[i]);assert(requests[i]);
+            /* Scratch capacity is cohort-safe; actual cache storage is exactly
+             * this row's length. Cohort metadata must never widen its bounds. */
+            assert(!g->attention_bf16_reserve(g->ctx,requests[i],n,24,8192));
+            BnGPUAttentionResidentPlan *a=&seq[i].plan;seq[i].request=requests[i];
+            a->n_tokens=n;a->n_heads=24;a->n_kv_heads=4;a->head_size=256;
+            a->position=pos;a->cache_capacity=len;a->scale=.0625f;
+            BnGPUResidentView *views[]={&a->q,&a->k,&a->v};
+            for(int role=0;role<3;role++) {
+                size_t count=role?nk[i]:nq[i];input[i][role]=malloc(count*2);assert(input[i][role]);
+                cuda_test_attention_values(input[i][role],count,role,seed,(size_t)pos*(role?4:24)*256);
+                *views[role]=cuda_test_attention_view(g,requests[i],count,input[i][role],&whole[i][role]);
+            }
+            for(int role=0;role<2;role++) {
+                cache[i][role]=malloc(nc[i]*2);assert(cache[i][role]);
+                for(size_t j=0;j<nc[i];j++)cache[i][role][j]=0x5a5a;
+                cuda_test_attention_values(cache[i][role],(size_t)pos*4*256,role+1,seed,0);
+            }
+            a->key_cache=cuda_test_attention_view(g,requests[i],nc[i],cache[i][0],&whole[i][3]);
+            a->value_cache=cuda_test_attention_view(g,requests[i],nc[i],cache[i][1],&whole[i][4]);
+            a->attention_out=cuda_test_attention_view(g,requests[i],nq[i],NULL,&whole[i][5]);a->out=a->attention_out;
+        }
+        BnGPUAttentionPrefillGroupPlan plan={ref->batch,seq,(BnGPUAttentionSplitPolicy)mode};
+        for(int reject=0;reject<3;reject++) {
+            BnGPUAttentionPrefillSequence badseq[8];memcpy(badseq,seq,sizeof(seq));
+            BnGPUAttentionPrefillGroupPlan bad=plan;bad.sequences=badseq;int last=ref->batch-1;
+            if(reject==0)bad.split_policy=(BnGPUAttentionSplitPolicy)99;
+            else if(reject==1)badseq[last].plan.q.count--;
+            else {
+                if(!mode)continue;
+                badseq[last].plan.n_kv_heads=2;
+                badseq[last].plan.k.count/=2;badseq[last].plan.v.count/=2;
+                badseq[last].plan.key_cache.count/=2;badseq[last].plan.value_cache.count/=2;
+            }
+            assert(g->attention_prefill_group_bf16_resident(g->ctx,coordinator,&bad)==-1);
+        }
+        for(int i=0;i<ref->batch;i++) {
+            size_t max=nc[i]>nq[i]?nc[i]:nq[i];uint16_t *host=malloc((max+16)*2);assert(host);
+            for(int role=0;role<2;role++) {
+                cuda_test_attention_read(g,requests[i],whole[i][3+role],host);
+                assert(!memcmp(host+8,cache[i][role],nc[i]*2));
+            }
+            cuda_test_attention_read(g,requests[i],whole[i][5],host);
+            for(size_t j=0;j<nq[i];j++)assert(host[8+j]==0x5a5a);
+            free(host);
+        }
+        assert(!g->attention_prefill_group_bf16_resident(g->ctx,coordinator,&plan));
+        for(int i=0;i<ref->batch;i++) {
+            size_t max=nc[i]>nq[i]?nc[i]:nq[i];uint16_t *host=malloc((max+16)*2);assert(host);
+            cuda_test_attention_read(g,requests[i],whole[i][5],host);
+            uint64_t hash=bf16_output_hash(host+8,nq[i]);
+            uint64_t want=mode?ref->batch_hashes[i]:ref->singleton_hashes[i];
+            if(hash!=want)fprintf(stderr,"Mixed attention mismatch case=%zu row=%d mode=%d got=%016llx expected=%016llx\n",ci,i,mode,(unsigned long long)hash,(unsigned long long)want);
+            assert(hash==want);checked+=nq[i];
+            for(int role=0;role<3;role++) {
+                cuda_test_attention_read(g,requests[i],whole[i][role],host);
+                assert(!memcmp(host+8,input[i][role],(role?nk[i]:nq[i])*2));free(input[i][role]);
+            }
+            for(int role=0;role<2;role++) {
+                size_t off=(size_t)seq[i].plan.position*4*256;
+                cuda_test_attention_values(cache[i][role]+off,nk[i],role+1,ref->seed+7*i,off);
+                cuda_test_attention_read(g,requests[i],whole[i][3+role],host);
+                assert(!memcmp(host+8,cache[i][role],nc[i]*2));free(cache[i][role]);
+            }
+            free(host);bn_backend_session_free(sessions[i]);
+        }
+        bn_backend_session_free(co);
+    }
+    printf("CUDA mixed BF16 attention reference PASSED: %zu exact words, both cohort policies, local extents\n",checked);
+}
+
+static void run_bf16_attention_batch_reference_case(BnGPUBackend *g) {
+    assert(g->resident_attention_split_policies & (1u << BN_GPU_ATTENTION_SPLIT_BATCH));
+    size_t checked=0;
+    for(size_t ci=0;ci<sizeof(bf16_batch_attention_cases)/sizeof(bf16_batch_attention_cases[0]);ci++) {
+        const BnBF16BatchAttentionReference *ref=&bf16_batch_attention_cases[ci];
+        int maximum=0;
+        for(int i=0;i<ref->batch;i++)if(ref->lengths[i]>maximum)maximum=ref->lengths[i];
+        BnBackendSession *co=bn_backend_session_create(),*sessions[8];assert(co);
+        void *coordinator=bn_gpu_backend_resident_request(g,co),*requests[8];assert(coordinator);
+        size_t budget=g->attention_decode_group_workspace_size(g->ctx,ref->batch);assert(budget);
+        assert(!g->attention_decode_group_reserve(g->ctx,coordinator,ref->batch,budget));
+        BnGPUAttentionDecodeSequence seq[8];memset(seq,0,sizeof(seq));
+        BnGPUResidentView whole[8][6];
+        uint16_t *q[8],*k[8],*v[8],*expected_k[8],*expected_v[8];size_t cache_count[8];
+        const size_t nq=24u*256, nk=4u*256;
+        for(int i=0;i<ref->batch;i++) {
+            int len=ref->lengths[i],capacity=len+3,seed=ref->seed+i*7;
+            sessions[i]=bn_backend_session_create();assert(sessions[i]);
+            requests[i]=bn_gpu_backend_resident_request(g,sessions[i]);assert(requests[i]);
+            assert(!g->attention_bf16_reserve(g->ctx,requests[i],1,24,capacity));
+            cache_count[i]=(size_t)capacity*nk;
+            q[i]=malloc(nq*2);k[i]=malloc(nk*2);v[i]=malloc(nk*2);
+            expected_k[i]=malloc(cache_count[i]*2);expected_v[i]=malloc(cache_count[i]*2);
+            assert(q[i]&&k[i]&&v[i]&&expected_k[i]&&expected_v[i]);
+            cuda_test_attention_values(q[i],nq,0,seed,(size_t)(len-1)*nq);
+            cuda_test_attention_values(k[i],nk,1,seed,(size_t)(len-1)*nk);
+            cuda_test_attention_values(v[i],nk,2,seed,(size_t)(len-1)*nk);
+            for(size_t j=0;j<cache_count[i];j++)expected_k[i][j]=expected_v[i][j]=0x5a5a;
+            cuda_test_attention_values(expected_k[i],(size_t)(len-1)*nk,1,seed,0);
+            cuda_test_attention_values(expected_v[i],(size_t)(len-1)*nk,2,seed,0);
+            BnGPUAttentionResidentPlan *a=&seq[i].plan;
+            seq[i].request=requests[i];a->n_tokens=1;a->n_heads=24;a->n_kv_heads=4;a->head_size=256;
+            a->position=len-1;a->cache_capacity=capacity;a->scale=0.0625f;
+            a->q=cuda_test_attention_view(g,requests[i],nq,q[i],&whole[i][0]);
+            a->k=cuda_test_attention_view(g,requests[i],nk,k[i],&whole[i][1]);
+            a->v=cuda_test_attention_view(g,requests[i],nk,v[i],&whole[i][2]);
+            a->key_cache=cuda_test_attention_view(g,requests[i],cache_count[i],expected_k[i],&whole[i][3]);
+            a->value_cache=cuda_test_attention_view(g,requests[i],cache_count[i],expected_v[i],&whole[i][4]);
+            a->attention_out=cuda_test_attention_view(g,requests[i],nq,NULL,&whole[i][5]);a->out=a->attention_out;
+        }
+        BnGPUAttentionDecodeGroupPlan plan={ref->batch,seq,BN_GPU_ATTENTION_SPLIT_BATCH};
+        BnGPUAttentionDecodeGroupPlan bad=plan;bad.split_policy=(BnGPUAttentionSplitPolicy)2;
+        assert(g->attention_decode_group_bf16_resident(g->ctx,coordinator,&bad)==-1);
+        if(ref->lengths[0]<maximum) {
+            /* A batch-wide partition count can exceed short participants'
+             * singleton scratch. Rejection must precede every cache append. */
+            assert(g->attention_decode_group_bf16_resident(g->ctx,coordinator,&plan)==-1);
+        }
+        for(int i=0;i<ref->batch;i++) {
+            uint16_t *host=malloc((cache_count[i]+16)*2);assert(host);
+            cuda_test_attention_read(g,requests[i],whole[i][3],host);
+            assert(!memcmp(host+8,expected_k[i],cache_count[i]*2));
+            cuda_test_attention_read(g,requests[i],whole[i][4],host);
+            assert(!memcmp(host+8,expected_v[i],cache_count[i]*2));
+            free(host);host=malloc((nq+16)*2);assert(host);
+            cuda_test_attention_read(g,requests[i],whole[i][5],host);
+            for(size_t j=8;j<nq+8;j++)assert(host[j]==0x5a5a);
+            free(host);
+            assert(!g->attention_bf16_reserve(g->ctx,requests[i],1,24,maximum+3));
+        }
+        /* Valid but inconsistent head geometry is not a batched FA2 cohort. */
+        BnGPUAttentionDecodeSequence unequal[8];memcpy(unequal,seq,sizeof(seq));
+        unequal[ref->batch-1].plan.n_kv_heads=2;
+        unequal[ref->batch-1].plan.k.count=nk/2;unequal[ref->batch-1].plan.v.count=nk/2;
+        unequal[ref->batch-1].plan.key_cache.count=cache_count[ref->batch-1]/2;
+        unequal[ref->batch-1].plan.value_cache.count=cache_count[ref->batch-1]/2;
+        bad=plan;bad.sequences=unequal;
+        if(ref->batch>1)assert(g->attention_decode_group_bf16_resident(g->ctx,coordinator,&bad)==-1);
+        for(int repeat=0;repeat<2;repeat++) {
+            assert(!g->attention_decode_group_bf16_resident(g->ctx,coordinator,&plan));
+            for(int i=0;i<ref->batch;i++) {
+                uint16_t *host=malloc((nq+16)*2);assert(host);
+                cuda_test_attention_read(g,requests[i],whole[i][5],host);
+                uint64_t hash=bf16_output_hash(host+8,nq);
+                if(hash!=ref->hashes[i])fprintf(stderr,"Batch attention mismatch case=%zu row=%d repeat=%d\n",ci,i,repeat);
+                assert(hash==ref->hashes[i]);checked+=nq;free(host);
+            }
+        }
+        for(int i=0;i<ref->batch;i++) {
+            size_t offset=(size_t)(ref->lengths[i]-1)*nk;
+            memcpy(expected_k[i]+offset,k[i],nk*2);memcpy(expected_v[i]+offset,v[i],nk*2);
+            uint16_t *host=malloc((cache_count[i]+16)*2);assert(host);
+            cuda_test_attention_read(g,requests[i],whole[i][3],host);
+            assert(!memcmp(host+8,expected_k[i],cache_count[i]*2));
+            cuda_test_attention_read(g,requests[i],whole[i][4],host);
+            assert(!memcmp(host+8,expected_v[i],cache_count[i]*2));free(host);
+            bn_backend_session_free(sessions[i]);free(q[i]);free(k[i]);free(v[i]);free(expected_k[i]);free(expected_v[i]);
+        }
+        bn_backend_session_free(co);
+    }
+    printf("CUDA batch-policy BF16 attention PASSED: %zu exact independent output words, cache/guard/rejection checks\n",checked);
+}
+
+static void run_bf16_rotary_reference_case(BnGPUBackend *gpu) {
+    assert(bn_gpu_backend_can_create_rotary_bf16(gpu));
+    BnBackendSession *session = bn_backend_session_create();
+    assert(session);
+    void *request = bn_gpu_backend_resident_request(gpu, session);
+    assert(request);
+    uint16_t qg[512] = {0}, ki[256], gamma[256], host[528];
+    for (int i = 0; i < 256; ++i) {
+        ki[i] = (i >= 32 && i < 64) ? 0 : 0x3f80;
+        qg[i] = ki[i];
+        gamma[i] = 0x3f70; /* .9375 makes the first-half normalized input round to1. */
+    }
+    void *weight = bn_gpu_backend_create_quant_only_buffer(gpu, gamma,
+        sizeof(gamma), BN_GGUF_TENSOR_BF16, 1, 256);
+    assert(weight);
+    BnGPUResidentView whole[6];
+    BnGPUQKPrepResidentPlan p = {0};
+    p.n_tokens = p.n_heads = p.n_kv_heads = 1;
+    p.head_size = 256; p.rotary_dim = 64; p.eps = 1e-6f;
+    p.q_weight = p.k_weight = weight;
+    p.q_gate = cuda_test_attention_view(gpu, request, 512, qg, &whole[0]);
+    p.k_in = cuda_test_attention_view(gpu, request, 256, ki, &whole[1]);
+    p.v_in = p.k_in;
+    p.q = cuda_test_attention_view(gpu, request, 256, NULL, &whole[2]);
+    p.k = cuda_test_attention_view(gpu, request, 256, NULL, &whole[3]);
+    p.v = cuda_test_attention_view(gpu, request, 256, NULL, &whole[4]);
+    p.gate = cuda_test_attention_view(gpu, request, 256, NULL, &whole[5]);
+    size_t exact = 0;
+    const float bases[] = {10000.0f, 1000000.0f, 10000000.0f};
+    for (size_t b = 0; b < sizeof(bases)/sizeof(bases[0]); ++b) {
+        BnGPURotaryCachePlan plan = {262144, 64, bases[b]}, original = plan;
+        void *cache = bn_gpu_backend_create_rotary_bf16(gpu, &plan);
+        assert(cache && memcmp(&plan, &original, sizeof(plan)) == 0);
+        p.cos_sin = cache;
+        for (size_t j = 0; j < sizeof(cuda_bf16_rope_cases)/sizeof(cuda_bf16_rope_cases[0]); ++j) {
+            const BnBF16RopeReference *ref = &cuda_bf16_rope_cases[j];
+            if (ref->theta != bases[b]) continue;
+            p.position = ref->position;
+            assert(gpu->qk_prep_bf16_resident(gpu->ctx, request, &p) == 0);
+            for (int out = 2; out <= 3; ++out) {
+                cuda_test_attention_read(gpu, request, whole[out], host);
+                for (int i = 0; i < 64; ++i) assert(host[8+i] == ref->words[i]);
+                for (int i = 64; i < 256; ++i) assert(host[8+i] == 0x3f80);
+                exact += 64;
+            }
+        }
+        bn_gpu_backend_destroy_buffer(gpu, cache);
+    }
+    const int caps[] = {1, 2, 8, 129, 512};
+    for (size_t j = 0; j < sizeof(caps)/sizeof(caps[0]); ++j) {
+        BnGPURotaryCachePlan plan = {caps[j], 64, 10000000.0f};
+        void *cache = bn_gpu_backend_create_rotary_bf16(gpu, &plan); assert(cache);
+        p.cos_sin = cache; p.position = caps[j]-1;
+        assert(gpu->qk_prep_bf16_resident(gpu->ctx, request, &p) == 0);
+        cuda_test_attention_read(gpu, request, whole[2], host);
+        int found = 0;
+        for (size_t i = 0; i < sizeof(cuda_bf16_rope_cases)/sizeof(cuda_bf16_rope_cases[0]); ++i) {
+            const BnBF16RopeReference *ref = &cuda_bf16_rope_cases[i];
+            if (ref->theta == plan.theta && ref->position == p.position) {
+                assert(memcmp(host+8, ref->words, 128) == 0); found = 1;
+            }
+        }
+        assert(found); exact += 64;
+        bn_gpu_backend_destroy_buffer(gpu, cache);
+    }
+    for (int bad = 0; bad < 8; ++bad) {
+        BnGPURotaryCachePlan plan = {512, 64, 10000000.0f};
+        if (bad == 0) plan.positions = 0;
+        if (bad == 1) plan.positions = -1;
+        if (bad == 2) plan.positions = 262145;
+        if (bad == 3) plan.rotary_dim = 32;
+        if (bad == 4) plan.theta = 1.0f;
+        if (bad == 5) plan.theta = -1.0f;
+        if (bad == 6) plan.theta = INFINITY;
+        if (bad == 7) plan.theta = NAN;
+        assert(!bn_gpu_backend_create_rotary_bf16(gpu, &plan));
+    }
+    assert(!bn_gpu_backend_create_rotary_bf16(gpu, NULL));
+    assert(!bn_gpu_backend_create_rotary_bf16(NULL, NULL));
+    cuda_test_attention_read(gpu, request, whole[0], host);
+    assert(memcmp(host+8, qg, sizeof(qg)) == 0);
+    cuda_test_attention_read(gpu, request, whole[1], host);
+    assert(memcmp(host+8, ki, sizeof(ki)) == 0);
+    bn_backend_session_free(session);
+    bn_gpu_backend_destroy_buffer(gpu, weight);
+    printf("CUDA native BF16 rotary cache PASSED: %zu exact reference words\n", exact);
+}
+
+#include "cuda_bf16_attention_compiled_gate_reference.h"
+_Static_assert(sizeof(cuda_bf16_attention_compiled_gate_hash)/sizeof(cuda_bf16_attention_compiled_gate_hash[0]) ==
+    sizeof(cuda_bf16_attention_cases)/sizeof(cuda_bf16_attention_cases[0]), "compiled gate fixture coverage");
+
+static void run_bf16_attention_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->attention_bf16_reserve&&gpu->attention_bf16_resident);
+    BnBackendSession *session=NULL;void *request=NULL;
+    BnGPUResidentView key={0},value={0},key_whole={0},value_whole={0};
+    uint16_t *expected_k=NULL,*expected_v=NULL;size_t words=0;int chain=-1;
+    for (size_t c=0;c<sizeof(cuda_bf16_attention_cases)/sizeof(cuda_bf16_attention_cases[0]);c++) {
+        const BnBF16AttentionReference *ref=&cuda_bf16_attention_cases[c];
+        size_t nq=(size_t)ref->tokens*ref->heads*256;
+        size_t nkv=(size_t)ref->tokens*ref->kv_heads*256;
+        size_t nc=(size_t)ref->capacity*ref->kv_heads*256;
+        if (chain!=ref->chain) {
+            bn_backend_session_free(session);free(expected_k);free(expected_v);
+            session=bn_backend_session_create();assert(session);
+            request=bn_gpu_backend_resident_request(gpu,session);assert(request);chain=ref->chain;
+            expected_k=malloc(nc*2);expected_v=malloc(nc*2);assert(expected_k&&expected_v);
+            for(size_t i=0;i<nc;i++)expected_k[i]=expected_v[i]=0x5a5a;
+            key=cuda_test_attention_view(gpu,request,nc,expected_k,&key_whole);
+            value=cuda_test_attention_view(gpu,request,nc,expected_v,&value_whole);
+        }
+        uint16_t *q=malloc(nq*2),*k=malloc(nkv*2),*v=malloc(nkv*2),*g=malloc(nq*2);
+        size_t max=nq>nc?nq:nc;uint16_t *host=malloc((max+16)*2);assert(q&&k&&v&&g&&host);
+        cuda_test_attention_values(q,nq,0,ref->seed,(size_t)ref->position*ref->heads*256);
+        cuda_test_attention_values(k,nkv,1,ref->seed,(size_t)ref->position*ref->kv_heads*256);
+        cuda_test_attention_values(v,nkv,2,ref->seed,(size_t)ref->position*ref->kv_heads*256);
+        cuda_test_attention_values(g,nq,3,ref->seed,(size_t)ref->position*ref->heads*256);
+        BnGPUResidentView whole[6];BnGPUAttentionResidentPlan plan={0};
+        plan.n_tokens=ref->tokens;plan.n_heads=ref->heads;plan.n_kv_heads=ref->kv_heads;
+        plan.head_size=256;plan.position=ref->position;plan.cache_capacity=ref->capacity;
+        plan.gated=ref->gated;plan.scale=0.0625f;plan.key_cache=key;plan.value_cache=value;
+        plan.q=cuda_test_attention_view(gpu,request,nq,q,&whole[0]);
+        plan.k=cuda_test_attention_view(gpu,request,nkv,k,&whole[1]);
+        plan.v=cuda_test_attention_view(gpu,request,nkv,v,&whole[2]);
+        plan.attention_out=cuda_test_attention_view(gpu,request,nq,NULL,&whole[3]);
+        if(ref->gated) {
+            plan.gate=cuda_test_attention_view(gpu,request,nq,g,&whole[4]);
+            plan.out=cuda_test_attention_view(gpu,request,nq,NULL,&whole[5]);
+        } else plan.out=plan.attention_out;
+        assert(gpu->attention_bf16_reserve(gpu->ctx,request,ref->tokens,ref->heads,ref->capacity)==0);
+        assert(gpu->attention_bf16_reserve(gpu->ctx,request,ref->tokens,ref->heads,ref->capacity)==0);
+        for(int reject=0;reject<14;reject++) {
+            BnGPUAttentionResidentPlan bad=plan;
+            switch(reject) {
+                case 0:bad.head_size=128;break;case 1:bad.position=-1;break;
+                case 2:bad.position=ref->capacity;break;case 3:bad.scale=NAN;break;
+                case 4:bad.q.type=BN_GGUF_TENSOR_F32;break;case 5:bad.q.count--;break;
+                case 6:bad.q.offset++;break;case 7:bad.key_cache=bad.value_cache;break;
+                case 8:bad.out=bad.q;break;case 9:bad.n_kv_heads=0;break;
+                case 10:bad.q.request=session;break;case 11:bad.gated=2;break;
+                case 12:bad.cache_capacity=INT_MAX;break;
+                default:bad.gate_profile=(BnGPUAttentionGateProfile)2;break;
+            }
+            assert(gpu->attention_bf16_resident(gpu->ctx,request,&bad)==-1);
+        }
+        cuda_test_attention_read(gpu,request,whole[3],host);
+        for(size_t i=0;i<nq;i++)assert(host[8+i]==0x5a5a);
+        assert(gpu->attention_bf16_resident(gpu->ctx,request,&plan)==0);
+        cuda_test_attention_read(gpu,request,whole[3],host);
+        uint64_t ah=bf16_output_hash(host+8,nq);
+        if(ah!=ref->attention_hash)fprintf(stderr,"Attention mismatch case=%zu chain=%d nt=%d pos=%d hash=%016llx expected=%016llx\n",c,chain,ref->tokens,ref->position,(unsigned long long)ah,(unsigned long long)ref->attention_hash);
+        assert(ah==ref->attention_hash);
+        cuda_test_attention_read(gpu,request,ref->gated?whole[5]:whole[3],host);
+        uint64_t gh=bf16_output_hash(host+8,nq);
+        if(gh!=ref->hash)fprintf(stderr,"Attention gate mismatch case=%zu hash=%016llx expected=%016llx\n",c,(unsigned long long)gh,(unsigned long long)ref->hash);
+        assert(gh==ref->hash);words+=2*nq;
+        if(ref->gated && (gpu->resident_attention_gate_profiles &
+                (1u << BN_GPU_ATTENTION_GATE_COMPILED_F32))) {
+            plan.gate_profile=BN_GPU_ATTENTION_GATE_COMPILED_F32;
+            assert(gpu->attention_bf16_resident(gpu->ctx,request,&plan)==0);
+            cuda_test_attention_read(gpu,request,whole[3],host);
+            assert(bf16_output_hash(host+8,nq)==ref->attention_hash);
+            cuda_test_attention_read(gpu,request,whole[5],host);
+            assert(bf16_output_hash(host+8,nq)==cuda_bf16_attention_compiled_gate_hash[c]);
+            words+=nq;
+        }
+        size_t off=(size_t)ref->position*ref->kv_heads*256;
+        memcpy(expected_k+off,k,nkv*2);memcpy(expected_v+off,v,nkv*2);
+        cuda_test_attention_read(gpu,request,key_whole,host);assert(!memcmp(host+8,expected_k,nc*2));
+        cuda_test_attention_read(gpu,request,value_whole,host);assert(!memcmp(host+8,expected_v,nc*2));
+        const uint16_t *inputs[]={q,k,v,g};
+        for(int j=0;j<(ref->gated?4:3);j++) {
+            cuda_test_attention_read(gpu,request,whole[j==3?4:j],host);
+            assert(!memcmp(host+8,inputs[j],(j==1||j==2?nkv:nq)*2));
+        }
+        free(q);free(k);free(v);free(g);free(host);
+    }
+    bn_backend_session_free(session);free(expected_k);free(expected_v);
+    printf("CUDA resident BF16 attention PASSED: %zu exact reference words, persistent KV chains\n",words);
+}
+
+typedef struct {
+    size_t ref_index;
+    BnGPUAttentionResidentPlan plan;
+    BnGPUResidentView whole[6];
+    uint16_t *input[4];
+} BnAttentionGroupTrial;
+
+static BnGPUResidentView attention_group_fixture_view(BnGPUBackend *g,void *r,
+    BnGPUResidentView arena,size_t *cursor,size_t n,const uint16_t *input,BnGPUResidentView *whole) {
+    if(!arena.count)return cuda_test_attention_view(g,r,n,input,whole);
+    assert(*cursor<=arena.count&&n+16<=arena.count-*cursor);
+    *whole=bn_gpu_resident_view_slice(arena,*cursor,n+16);*cursor+=n+16;
+    uint16_t *host=malloc((n+16)*2);assert(host);
+    for(size_t i=0;i<n+16;i++)host[i]=0x5a5a;
+    if(input)memcpy(host+8,input,n*2);
+    assert(!g->resident_write(r,*whole,host));free(host);
+    return bn_gpu_resident_view_slice(*whole,8,n);
+}
+static void attention_group_check_trial(BnGPUBackend *g,const BnAttentionGroupTrial *t,size_t *words) {
+    const BnBF16AttentionReference *ref=&cuda_bf16_attention_cases[t->ref_index];
+    size_t nq=(size_t)ref->tokens*ref->heads*256,nk=(size_t)ref->tokens*ref->kv_heads*256;
+    uint16_t *host=malloc((nq+16)*2);assert(host);
+    BnGPUResidentView w=t->whole[3];cuda_test_attention_read(g,w.request,w,host);
+    uint64_t hash=bf16_output_hash(host+8,nq);
+    if(hash!=ref->attention_hash)fprintf(stderr,"Grouped attention ref=%zu pos=%d hash=%016llx expected=%016llx\n",t->ref_index,ref->position,(unsigned long long)hash,(unsigned long long)ref->attention_hash);
+    assert(hash==ref->attention_hash);*words+=nq;
+    if(ref->gated) {
+        w=t->whole[5];cuda_test_attention_read(g,w.request,w,host);
+        uint64_t want=t->plan.gate_profile==BN_GPU_ATTENTION_GATE_COMPILED_F32?cuda_bf16_attention_compiled_gate_hash[t->ref_index]:ref->hash;
+        assert(bf16_output_hash(host+8,nq)==want);*words+=nq;
+    }
+    for(int j=0;j<(ref->gated?4:3);j++) {
+        w=t->whole[j==3?4:j];cuda_test_attention_read(g,w.request,w,host);
+        assert(!memcmp(host+8,t->input[j],(j==1||j==2?nk:nq)*2));
+    }
+    free(host);
+}
+static void run_resident_group_queue_case(BnGPUBackend *g) {
+    assert(g->resident_group_queue_workspace_size&&g->resident_group_queue_reserve);
+    assert(!g->resident_group_queue_workspace_size(g->ctx,(BnGPUResidentGroupKind)99,4,2));
+    for(int kind=BN_GPU_RESIDENT_GROUP_GDN;kind<=BN_GPU_RESIDENT_GROUP_ATTENTION;kind++) {
+        BnGPUResidentGroupKind k=(BnGPUResidentGroupKind)kind;
+        assert(!g->resident_group_queue_workspace_size(g->ctx,k,0,2));
+        assert(!g->resident_group_queue_workspace_size(g->ctx,k,257,2));
+        assert(!g->resident_group_queue_workspace_size(g->ctx,k,4,0));
+        assert(!g->resident_group_queue_workspace_size(g->ctx,k,4,65));
+        size_t bytes=g->resident_group_queue_workspace_size(g->ctx,k,4,2);
+        assert(bytes>g->resident_group_queue_workspace_size(g->ctx,k,4,1));
+        BnBackendSession *s=bn_backend_session_create();assert(s);
+        void *r=bn_gpu_backend_resident_request(g,s);assert(r);
+        assert(g->resident_group_queue_reserve(g->ctx,r,k,4,2,bytes-1)==-1);
+        assert(!g->resident_group_queue_reserve(g->ctx,r,k,4,2,bytes));
+        assert(!g->resident_group_queue_reserve(g->ctx,r,k,4,2,bytes));
+        assert(g->resident_group_queue_reserve(g->ctx,r,k,3,2,bytes)==-1);
+        assert(g->resident_group_queue_reserve(g->ctx,r,k,4,1,bytes)==-1);
+        bn_backend_session_free(s);
+    }
+    puts("CUDA bounded group staging queue admission PASSED");
+}
+
+static void run_bf16_attention_group_reference_case(BnGPUBackend *g) {
+    assert(g->attention_prefill_group_bf16_resident);
+    assert(g->attention_decode_group_workspace_size&&g->attention_decode_group_reserve&&g->attention_decode_group_bf16_resident);
+    const int batches[]={1,2,3,8,16};size_t words=0,cache_words=0;int launches=0,updates=0;
+    size_t nr=sizeof(cuda_bf16_attention_cases)/sizeof(cuda_bf16_attention_cases[0]);
+    int profiles=(g->resident_attention_gate_profiles&(1u<<BN_GPU_ATTENTION_GATE_COMPILED_F32))?2:1;
+    for(int mode=0;mode<6;mode++)for(int profile=0;profile<profiles;profile++)for(int b=0;b<5;b++) {
+        int prefill=mode>=3,storage=mode%3;
+        int batch=batches[b],cursor[16]={0},length[16]={0},position[16]={0};
+        BnBackendSession *co=bn_backend_session_create(),*session[16];assert(co);
+        void *coordinator=bn_gpu_backend_resident_request(g,co),*request[16];assert(coordinator);
+        BnGPUResidentView key[16],value[16],key_whole[16],value_whole[16];
+        uint16_t *expected_k[16],*expected_v[16];size_t cache_count[16],arena_count=0,arena_cursor=0;
+        BnAttentionGroupTrial trials[16][4];memset(trials,0,sizeof(trials));
+        size_t budget=g->attention_decode_group_workspace_size(g->ctx,batch);assert(budget);
+        assert(!g->attention_decode_group_workspace_size(g->ctx,0));assert(!g->attention_decode_group_workspace_size(g->ctx,257));
+        if(!prefill) {
+            assert(g->attention_decode_group_reserve(g->ctx,coordinator,batch,budget-1)==-1);
+            assert(!g->attention_decode_group_reserve(g->ctx,coordinator,batch,budget));
+            assert(!g->attention_decode_group_reserve(g->ctx,coordinator,batch,budget));
+        } else {
+            size_t bytes=g->resident_group_queue_workspace_size(g->ctx,BN_GPU_RESIDENT_GROUP_ATTENTION,batch,2);
+            assert(bytes && !g->resident_group_queue_reserve(g->ctx,coordinator,BN_GPU_RESIDENT_GROUP_ATTENTION,batch,2,bytes));
+        }
+        for(int q=0;q<batch;q++) {
+            int chain=(q+b)%11;size_t first=0;
+            while(first<nr&&(cuda_bf16_attention_cases[first].chain!=chain||(!prefill && cuda_bf16_attention_cases[first].tokens!=1)))first++;
+            assert(first<nr);const BnBF16AttentionReference *r=&cuda_bf16_attention_cases[first];
+            position[q]=r->position;
+            for(size_t c=first;c<nr&&cuda_bf16_attention_cases[c].chain==chain;c++) {
+                int j=length[q]++;assert(j<4);trials[q][j].ref_index=c;
+                const BnBF16AttentionReference *ref=&cuda_bf16_attention_cases[c];
+                if(storage==2&&(prefill||ref->tokens==1)) {
+                    size_t nq=(size_t)ref->tokens*ref->heads*256,nk=(size_t)ref->tokens*ref->kv_heads*256;
+                    arena_count+=2*nq+2*nk+(ref->gated?2*nq:0)+(ref->gated?6:4)*16;
+                }
+            }
+        }
+        BnGPUResidentView arena={0};if(storage==2)arena=cuda_test_resident_alloc(g,coordinator,BN_GGUF_TENSOR_BF16,arena_count,NULL);
+        for(int q=0;q<batch;q++) {
+            const BnBF16AttentionReference *r=&cuda_bf16_attention_cases[trials[q][0].ref_index];
+            session[q]=bn_backend_session_create();assert(session[q]);request[q]=bn_gpu_backend_resident_request(g,session[q]);assert(request[q]);
+            size_t nc=(size_t)r->capacity*r->kv_heads*256,prefix=(size_t)r->position*r->kv_heads*256;
+            cache_count[q]=nc;expected_k[q]=malloc(nc*2);expected_v[q]=malloc(nc*2);assert(expected_k[q]&&expected_v[q]);
+            for(size_t i=0;i<nc;i++)expected_k[q][i]=expected_v[q][i]=0x5a5a;
+            /* Exact analytical K/V prefix used by the existing frozen oracle.
+             * Later decode updates persist, including the chain's17-token gap. */
+            cuda_test_attention_values(expected_k[q],prefix,1,r->seed,0);cuda_test_attention_values(expected_v[q],prefix,2,r->seed,0);
+            key[q]=cuda_test_attention_view(g,request[q],nc,expected_k[q],&key_whole[q]);
+            value[q]=cuda_test_attention_view(g,request[q],nc,expected_v[q],&value_whole[q]);
+            int max_tokens=1;for(int j=0;j<length[q];j++) {
+                BnAttentionGroupTrial *t=&trials[q][j];const BnBF16AttentionReference *ref=&cuda_bf16_attention_cases[t->ref_index];
+                size_t nq=(size_t)ref->tokens*ref->heads*256,nk=(size_t)ref->tokens*ref->kv_heads*256;
+                for(int role=0;role<4;role++) {
+                    size_t n=role==1||role==2?nk:nq;t->input[role]=malloc(n*2);assert(t->input[role]);
+                    cuda_test_attention_values(t->input[role],n,role,ref->seed,(size_t)ref->position*(role==1||role==2?ref->kv_heads:ref->heads)*256);
+                }
+                BnGPUAttentionResidentPlan *p=&t->plan;p->n_tokens=ref->tokens;p->n_heads=ref->heads;p->n_kv_heads=ref->kv_heads;
+                p->head_size=256;p->position=ref->position;p->cache_capacity=ref->capacity;p->gated=ref->gated;p->scale=.0625f;
+                p->gate_profile=(BnGPUAttentionGateProfile)(ref->gated?profile:0);p->key_cache=key[q];p->value_cache=value[q];
+                void *owner=storage&&(prefill||ref->tokens==1)?coordinator:request[q];BnGPUResidentView packed=prefill||ref->tokens==1?arena:(BnGPUResidentView){0};
+                p->q=attention_group_fixture_view(g,owner,packed,&arena_cursor,nq,t->input[0],&t->whole[0]);
+                p->k=attention_group_fixture_view(g,owner,packed,&arena_cursor,nk,t->input[1],&t->whole[1]);
+                p->v=attention_group_fixture_view(g,owner,packed,&arena_cursor,nk,t->input[2],&t->whole[2]);
+                p->attention_out=attention_group_fixture_view(g,owner,packed,&arena_cursor,nq,NULL,&t->whole[3]);
+                if(ref->gated) {
+                    p->gate=attention_group_fixture_view(g,owner,packed,&arena_cursor,nq,t->input[3],&t->whole[4]);
+                    p->out=attention_group_fixture_view(g,owner,packed,&arena_cursor,nq,NULL,&t->whole[5]);
+                } else p->out=p->attention_out;
+                if(ref->tokens>max_tokens)max_tokens=ref->tokens;
+            }
+            assert(!g->attention_bf16_reserve(g->ctx,request[q],max_tokens,r->heads,r->capacity));
+        }
+        assert(arena_cursor==arena_count);
+        for(int phase=0;phase<8;phase++) {
+            BnGPUAttentionDecodeSequence seq[16];BnAttentionGroupTrial *active[16];int owner_index[16],count=0;
+            for(int q=0;q<batch;q++)if(phase>=q%3&&cursor[q]<length[q]) {
+                BnAttentionGroupTrial *t=&trials[q][cursor[q]];
+                assert(t->plan.position==position[q]);
+                if(!prefill&&t->plan.n_tokens>1) {
+                    assert(!g->attention_bf16_resident(g->ctx,request[q],&t->plan));attention_group_check_trial(g,t,&words);
+                    size_t n=(size_t)t->plan.n_tokens*t->plan.n_kv_heads*256,off=(size_t)position[q]*t->plan.n_kv_heads*256;
+                    memcpy(expected_k[q]+off,t->input[1],n*2);memcpy(expected_v[q]+off,t->input[2],n*2);
+                    position[q]+=t->plan.n_tokens;cursor[q]++;continue;
+                }
+                seq[count].request=request[q];seq[count].plan=t->plan;active[count]=t;owner_index[count++]=q;
+            }
+            if(count) {
+                BnGPUAttentionDecodeGroupPlan p={count,seq,BN_GPU_ATTENTION_SPLIT_SINGLETON};
+                for(int reject=0;reject<10;reject++) {
+                    BnGPUAttentionDecodeSequence bad[16];memcpy(bad,seq,(size_t)count*sizeof(*bad));int last=count-1;
+                    switch(reject) {
+                        case 0:bad[last].request=NULL;break;case 1:bad[last].request=coordinator;break;
+                        case 2:bad[last].plan.key_cache.request=coordinator;break;
+                        case 3:bad[last].plan.q.count--;break;case 4:bad[last].plan.position=INT_MAX;break;
+                        case 5:bad[last].plan.out=bad[last].plan.q;break;
+                        case 6:bad[last].plan.n_tokens=prefill?0:2;break;
+                        case 7:bad[last].plan.scale=NAN;break;
+                        case 8:if(count>1)bad[last].request=bad[0].request;else bad[last].plan.head_size=128;break;
+                        default:if(count>1)bad[last].plan.out=bad[0].plan.attention_out;else bad[last].plan.q.request=session[0];break;
+                    }
+                    BnGPUAttentionDecodeGroupPlan invalid={count,bad,BN_GPU_ATTENTION_SPLIT_SINGLETON};
+                    BnGPUAttentionPrefillGroupPlan invalid_prefill={count,bad,BN_GPU_ATTENTION_SPLIT_SINGLETON};
+                    assert((prefill?g->attention_prefill_group_bf16_resident(g->ctx,coordinator,&invalid_prefill):
+                        g->attention_decode_group_bf16_resident(g->ctx,coordinator,&invalid))==-1);
+                }
+                for(int i=0;i<count;i++) {
+                    BnGPUResidentView v=active[i]->whole[3];uint16_t *host=malloc(v.count*2);assert(host);
+                    cuda_test_attention_read(g,v.request,v,host);for(size_t n=8;n<v.count-8;n++)assert(host[n]==0x5a5a);free(host);
+                }
+                if(prefill)for(int i=0;i<count;i++) {
+                    int q=owner_index[i];uint16_t *host=malloc((cache_count[q]+16)*2);assert(host);
+                    cuda_test_attention_read(g,request[q],key_whole[q],host);assert(!memcmp(host+8,expected_k[q],cache_count[q]*2));
+                    cuda_test_attention_read(g,request[q],value_whole[q],host);assert(!memcmp(host+8,expected_v[q],cache_count[q]*2));free(host);
+                }
+                BnGPUAttentionPrefillGroupPlan packed_prefill={count,seq,BN_GPU_ATTENTION_SPLIT_SINGLETON};
+                int rc=prefill?g->attention_prefill_group_bf16_resident(g->ctx,coordinator,&packed_prefill):g->attention_decode_group_bf16_resident(g->ctx,coordinator,&p);
+                if(rc==BN_GPU_GROUP_BUSY){assert(!g->resident_synchronize(coordinator));
+                    rc=prefill?g->attention_prefill_group_bf16_resident(g->ctx,coordinator,&packed_prefill):g->attention_decode_group_bf16_resident(g->ctx,coordinator,&p);}
+                assert(!rc);
+                /* Repeat the same append before readback: owner waits and
+                 * coordinator scratch reuse must be ordered by events. */
+                if(prefill)assert(!g->attention_prefill_group_bf16_resident(g->ctx,coordinator,&packed_prefill));
+                launches+=prefill?2:1;updates+=prefill?2*count:count;
+                for(int i=0;i<count;i++) {
+                    int q=owner_index[i];BnAttentionGroupTrial *t=active[i];attention_group_check_trial(g,t,&words);
+                    size_t n=(size_t)t->plan.n_tokens*t->plan.n_kv_heads*256,off=(size_t)position[q]*t->plan.n_kv_heads*256;
+                    memcpy(expected_k[q]+off,t->input[1],n*2);memcpy(expected_v[q]+off,t->input[2],n*2);
+                    position[q]+=t->plan.n_tokens;cursor[q]++;assert(!g->resident_synchronize(request[q]));
+                }
+                assert(!g->resident_synchronize(coordinator));
+            }
+            for(int q=0;q<batch;q++) {
+                uint16_t *host=malloc((cache_count[q]+16)*2);assert(host);
+                cuda_test_attention_read(g,request[q],key_whole[q],host);assert(!memcmp(host+8,expected_k[q],cache_count[q]*2));
+                cuda_test_attention_read(g,request[q],value_whole[q],host);assert(!memcmp(host+8,expected_v[q],cache_count[q]*2));
+                cache_words+=2*cache_count[q];free(host);
+            }
+        }
+        for(int q=0;q<batch;q++) {
+            assert(cursor[q]==length[q]);
+            for(int j=0;j<length[q];j++)for(int role=0;role<4;role++)free(trials[q][j].input[role]);
+            free(expected_k[q]);free(expected_v[q]);bn_backend_session_free(session[q]);
+        }
+        bn_backend_session_free(co);
+    }
+    printf("CUDA grouped BF16 attention PASSED: %d launches, %d independent sequence updates, %zu reference words, %zu cache words\n",launches,updates,words,cache_words);
+}
+
+#include "cuda_bf16_qk_prep_reference.h"
+
+static void cuda_test_qk_values(uint16_t *out,size_t count,int mul,int seed,int mod,int div) {
+    for(size_t i=0;i<count;i++) {
+        float value=(float)((int)((i*(size_t)mul+seed)%mod)-mod/2)/div;
+        if(mul==17&&seed>=143)value=ldexpf(value,(int)(i%9)-4);
+        if(i==0&&((mul==7&&seed>=39)||(mul==11&&seed>=65)))value=-0.0f;
+        out[i]=cuda_test_bf16_rne(value);
+    }
+}
+
+/* Same independent goldens through merged, padded merged and independently
+ * padded input layouts. Padding and enclosing canaries must remain untouched. */
+static void run_bf16_qk_strided_layouts(BnGPUBackend *gpu,void *r,
+    const BnBF16QKPrepReference *ref,const uint16_t *x,
+    const BnGPUQKPrepResidentPlan *base,size_t *words) {
+    size_t widths[]={(size_t)ref->heads*512,(size_t)ref->kv_heads*256,
+                     (size_t)ref->kv_heads*256};
+    size_t packed=widths[0]+widths[1]+widths[2];
+    const uint64_t hashes[]={ref->q_hash,ref->k_hash,ref->v_hash,ref->gate_hash};
+    for(int layout=0;layout<3;layout++) {
+        BnGPUQKPrepResidentPlan p=*base;
+        size_t strides[3],counts[3],offsets[]={0,widths[0],widths[0]+widths[1]};
+        uint16_t *inputs[3]={0};BnGPUResidentView roots[3],views[3];
+        int buffers=layout==2?3:1;
+        for(int i=0;i<3;i++)strides[i]=layout==2?widths[i]+8*(size_t)(i+1):packed+(layout==1?16:0);
+        for(int i=0;i<buffers;i++) {
+            counts[i]=layout==2?(size_t)(ref->tokens-1)*strides[i]+widths[i]:(size_t)ref->tokens*strides[0];
+            inputs[i]=malloc(counts[i]*2);assert(inputs[i]);
+            for(size_t j=0;j<counts[i];j++)inputs[i][j]=0xa55a;
+        }
+        for(int t=0;t<ref->tokens;t++)for(int i=0;i<3;i++) {
+            uint16_t *dst=layout==2?inputs[i]+(size_t)t*strides[i]:inputs[0]+(size_t)t*strides[0]+offsets[i];
+            memcpy(dst,x+(size_t)t*packed+offsets[i],widths[i]*2);
+        }
+        for(int i=0;i<buffers;i++)views[i]=cuda_test_attention_view(gpu,r,counts[i],inputs[i],&roots[i]);
+        BnGPUResidentView *target[]={&p.q_gate,&p.k_in,&p.v_in};
+        for(int i=0;i<3;i++) {
+            size_t count=(size_t)(ref->tokens-1)*strides[i]+widths[i];
+            *target[i]=bn_gpu_resident_view_slice(views[layout==2?i:0],layout==2?0:offsets[i],count);
+            assert(target[i]->count==count);
+        }
+        p.q_gate_row_stride=strides[0];p.k_in_row_stride=strides[1];p.v_in_row_stride=strides[2];
+        for(int i=0;i<3;i++)for(int badkind=0;badkind<6;badkind++) {
+            BnGPUQKPrepResidentPlan bad=p;
+            size_t *badstrides[]={&bad.q_gate_row_stride,&bad.k_in_row_stride,&bad.v_in_row_stride};
+            BnGPUResidentView *badviews[]={&bad.q_gate,&bad.k_in,&bad.v_in};
+            switch(badkind) {
+                case 0:*badstrides[i]=widths[i]-8;break;
+                case 1:*badstrides[i]=widths[i]+1;break;
+                case 2:*badstrides[i]=SIZE_MAX-7;break;
+                case 3:badviews[i]->count--;break;
+                case 4:badviews[i]->count++;break;
+                default:bad.q=*badviews[i];break;
+            }
+            assert(gpu->qk_prep_bf16_resident(gpu->ctx,r,&bad)==-1);
+        }
+        /* The preceding contiguous run populated outputs: invalid calls must
+         * preserve them; a valid retry then reuses those exact output buffers. */
+        for(int pass=0;pass<2;pass++) {
+            if(pass)assert(gpu->qk_prep_bf16_resident(gpu->ctx,r,&p)==0);
+            BnGPUResidentView out[]={p.q,p.k,p.v,p.gate};
+            for(int i=0;i<4;i++) {
+                uint16_t *actual=malloc(out[i].count*2);assert(actual);
+                assert(gpu->resident_read(r,out[i],actual)==0);
+                assert(bf16_output_hash(actual,out[i].count)==hashes[i]);
+                if(pass)*words+=out[i].count;
+                free(actual);
+            }
+        }
+        for(int i=0;i<buffers;i++) {
+            uint16_t *after=malloc((counts[i]+16)*2);assert(after);
+            cuda_test_attention_read(gpu,r,roots[i],after);
+            assert(!memcmp(after+8,inputs[i],counts[i]*2));free(after);free(inputs[i]);
+        }
+    }
+}
+
+static void run_bf16_qk_prep_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->qk_prep_bf16_resident);size_t words=0,strided_words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_qk_prep_cases)/sizeof(cuda_bf16_qk_prep_cases[0]);c++) {
+        const BnBF16QKPrepReference *ref=&cuda_bf16_qk_prep_cases[c];
+        size_t nq=(size_t)ref->tokens*ref->heads*256,nk=(size_t)ref->tokens*ref->kv_heads*256;
+        size_t nx=2*(nq+nk),ncs=(size_t)(ref->position+ref->tokens)*ref->rotary;
+        uint16_t *x=malloc(nx*2),*cs=malloc(ncs*2),*host=malloc((nx+16)*2),qw[256],kw[256];assert(x&&cs&&host);
+        cuda_test_qk_values(x,nx,17,ref->seed*11,509,32);
+        cuda_test_qk_values(qw,256,7,ref->seed*3,127,64);
+        cuda_test_qk_values(kw,256,11,ref->seed*5,127,64);
+        cuda_test_qk_values(cs,ncs,13,ref->seed*7,257,128);
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *r=bn_gpu_backend_resident_request(gpu,session);assert(r);
+        BnGPUQKPrepResidentPlan plan={0};plan.n_tokens=ref->tokens;plan.n_heads=ref->heads;plan.n_kv_heads=ref->kv_heads;
+        plan.head_size=256;plan.rotary_dim=ref->rotary;plan.position=ref->position;plan.eps=1e-6f;plan.weight_offset=ref->beta;
+        plan.q_weight=gpu->buffer_create_quant_only(gpu->ctx,qw,512,BN_GGUF_TENSOR_BF16,1,256);
+        plan.k_weight=gpu->buffer_create_quant_only(gpu->ctx,kw,512,BN_GGUF_TENSOR_BF16,1,256);
+        plan.cos_sin=gpu->buffer_create_quant_only(gpu->ctx,cs,ncs*2,BN_GGUF_TENSOR_BF16,ref->position+ref->tokens,ref->rotary);
+        assert(plan.q_weight&&plan.k_weight&&plan.cos_sin);
+        BnGPUResidentView whole[7];
+        uint16_t *qin=malloc(2*nq*2),*kin=malloc(nk*2),*vin=malloc(nk*2);assert(qin&&kin&&vin);
+        for(int t=0;t<ref->tokens;t++){size_t qrow=(size_t)ref->heads*512,krow=(size_t)ref->kv_heads*256;
+            memcpy(qin+(size_t)t*qrow,x+(size_t)t*(qrow+2*krow),qrow*2);
+            memcpy(kin+(size_t)t*krow,x+(size_t)t*(qrow+2*krow)+qrow,krow*2);
+            memcpy(vin+(size_t)t*krow,x+(size_t)t*(qrow+2*krow)+qrow+krow,krow*2);}
+        plan.q_gate=cuda_test_attention_view(gpu,r,2*nq,qin,&whole[0]);
+        plan.k_in=cuda_test_attention_view(gpu,r,nk,kin,&whole[5]);
+        plan.v_in=cuda_test_attention_view(gpu,r,nk,vin,&whole[6]);
+        plan.q=cuda_test_attention_view(gpu,r,nq,NULL,&whole[1]);
+        plan.k=cuda_test_attention_view(gpu,r,nk,NULL,&whole[2]);
+        plan.v=cuda_test_attention_view(gpu,r,nk,NULL,&whole[3]);
+        plan.gate=cuda_test_attention_view(gpu,r,nq,NULL,&whole[4]);
+        for(int reject=0;reject<15;reject++) {
+            BnGPUQKPrepResidentPlan bad=plan;
+            switch(reject) {
+                case 0:bad.head_size=128;break;case 1:bad.rotary_dim=3;break;
+                case 2:bad.rotary_dim=258;break;case 3:bad.position=-1;break;
+                case 4:bad.position++;break;case 5:bad.eps=NAN;break;
+                case 6:bad.weight_offset=2;break;case 7:bad.q=bad.gate;break;
+                case 8:bad.q_gate.type=BN_GGUF_TENSOR_F32;break;case 9:bad.q_gate.count--;break;
+                case 10:bad.q_weight=NULL;break;case 11:bad.q_weight=bad.cos_sin;break;
+                case 12:bad.q.offset++;break;case 13:bad.q.request=session;break;
+                default:bad.n_tokens=INT_MAX;break;
+            }
+            assert(gpu->qk_prep_bf16_resident(gpu->ctx,r,&bad)==-1);
+        }
+        cuda_test_attention_read(gpu,r,whole[1],host);for(size_t i=0;i<nq;i++)assert(host[8+i]==0x5a5a);
+        assert(gpu->qk_prep_bf16_resident(gpu->ctx,r,&plan)==0);
+        const uint64_t hashes[]={ref->q_hash,ref->k_hash,ref->v_hash,ref->gate_hash};
+        size_t counts[]={nq,nk,nk,nq};
+        for(int j=0;j<4;j++) {
+            cuda_test_attention_read(gpu,r,whole[j+1],host);uint64_t hash=bf16_output_hash(host+8,counts[j]);
+            if(hash!=hashes[j])fprintf(stderr,"QK prep case=%zu output=%d hash=%016llx expected=%016llx\n",c,j,(unsigned long long)hash,(unsigned long long)hashes[j]);
+            assert(hash==hashes[j]);words+=counts[j];
+        }
+        cuda_test_attention_read(gpu,r,whole[0],host);assert(!memcmp(host+8,qin,2*nq*2));
+        cuda_test_attention_read(gpu,r,whole[5],host);assert(!memcmp(host+8,kin,nk*2));
+        cuda_test_attention_read(gpu,r,whole[6],host);assert(!memcmp(host+8,vin,nk*2));
+        run_bf16_qk_strided_layouts(gpu,r,ref,x,&plan,&strided_words);
+        for(int i=1;i<=4;i++)cuda_test_attention_read(gpu,r,whole[i],host);
+        free(qin);free(kin);free(vin);
+        bn_backend_session_free(session);gpu->buffer_destroy(gpu->ctx,plan.q_weight);gpu->buffer_destroy(gpu->ctx,plan.k_weight);gpu->buffer_destroy(gpu->ctx,plan.cos_sin);
+        free(x);free(cs);free(host);
+    }
+    printf("CUDA resident BF16 QK prep PASSED: %zu exact reference words\n",words);
+    printf("CUDA strided BF16 QK prep PASSED: 51 layouts, %zu exact reference words\n",strided_words);
+}
+
+/* All frozen QK fixtures in mixed-position groups, preserving independent
+ * request owners. The golden hashes above are never generated by this test. */
+static void run_bf16_qk_group_reference_case(BnGPUBackend *gpu) {
+    enum {N=17};
+    assert(sizeof(cuda_bf16_qk_prep_cases)/sizeof(cuda_bf16_qk_prep_cases[0])==N);
+    assert(gpu->qk_prep_group_workspace_size&&gpu->qk_prep_group_reserve&&gpu->qk_prep_group_bf16_resident);
+    const int batches[]={1,2,3,8,16};size_t words=0;int launches=0;
+    for(int mode=0;mode<4;mode++) {
+        BnBackendSession *co=bn_backend_session_create(),*sessions[N];assert(co);
+        void *coordinator=bn_gpu_backend_resident_request(gpu,co);assert(coordinator);
+        BnGPUQKPrepSequence seq[N];BnGPUResidentView whole[N][7];
+        uint16_t *inputs[N][3];
+        size_t budget=gpu->qk_prep_group_workspace_size(gpu->ctx,16);assert(budget);
+        assert(!gpu->qk_prep_group_workspace_size(gpu->ctx,0));
+        assert(!gpu->qk_prep_group_workspace_size(gpu->ctx,257));
+        assert(gpu->qk_prep_group_reserve(gpu->ctx,coordinator,16,budget-1)==-1);
+        assert(!gpu->qk_prep_group_reserve(gpu->ctx,coordinator,16,budget));
+        assert(!gpu->qk_prep_group_reserve(gpu->ctx,coordinator,16,budget));
+        assert(gpu->qk_prep_group_reserve(gpu->ctx,coordinator,8,budget)==-1);
+        for(int c=0;c<N;c++) {
+            const BnBF16QKPrepReference *ref=&cuda_bf16_qk_prep_cases[c];
+            size_t nq=(size_t)ref->tokens*ref->heads*256,nk=(size_t)ref->tokens*ref->kv_heads*256;
+            size_t nx=2*(nq+nk),ncs=(size_t)(ref->position+ref->tokens)*ref->rotary;
+            uint16_t *x=malloc(nx*2),*cs=malloc(ncs*2),qw[256],kw[256];assert(x&&cs);
+            cuda_test_qk_values(x,nx,17,ref->seed*11,509,32);
+            cuda_test_qk_values(qw,256,7,ref->seed*3,127,64);
+            cuda_test_qk_values(kw,256,11,ref->seed*5,127,64);
+            cuda_test_qk_values(cs,ncs,13,ref->seed*7,257,128);
+            sessions[c]=bn_backend_session_create();assert(sessions[c]);
+            seq[c].request=bn_gpu_backend_resident_request(gpu,sessions[c]);assert(seq[c].request);
+            BnGPUQKPrepResidentPlan *p=&seq[c].plan;memset(p,0,sizeof(*p));
+            p->n_tokens=ref->tokens;p->n_heads=ref->heads;p->n_kv_heads=ref->kv_heads;
+            p->head_size=256;p->rotary_dim=ref->rotary;p->position=ref->position;p->eps=1e-6f;p->weight_offset=ref->beta;
+            p->q_weight=gpu->buffer_create_quant_only(gpu->ctx,qw,512,BN_GGUF_TENSOR_BF16,1,256);
+            p->k_weight=gpu->buffer_create_quant_only(gpu->ctx,kw,512,BN_GGUF_TENSOR_BF16,1,256);
+            p->cos_sin=gpu->buffer_create_quant_only(gpu->ctx,cs,ncs*2,BN_GGUF_TENSOR_BF16,ref->position+ref->tokens,ref->rotary);
+            assert(p->q_weight&&p->k_weight&&p->cos_sin);
+            inputs[c][0]=malloc(2*nq*2);inputs[c][1]=malloc(nk*2);inputs[c][2]=malloc(nk*2);
+            assert(inputs[c][0]&&inputs[c][1]&&inputs[c][2]);
+            for(int t=0;t<ref->tokens;t++) {
+                size_t qr=(size_t)ref->heads*512,kr=(size_t)ref->kv_heads*256;
+                memcpy(inputs[c][0]+t*qr,x+t*(qr+2*kr),qr*2);
+                memcpy(inputs[c][1]+t*kr,x+t*(qr+2*kr)+qr,kr*2);
+                memcpy(inputs[c][2]+t*kr,x+t*(qr+2*kr)+qr+kr,kr*2);
+            }
+            void *in_owner=mode>=2?coordinator:seq[c].request;
+            void *out_owner=mode?coordinator:seq[c].request;
+            if(mode==3) {
+                size_t qr=(size_t)ref->heads*512,kr=(size_t)ref->kv_heads*256,stride=qr+2*kr;
+                BnGPUResidentView merged=cuda_test_attention_view(gpu,in_owner,nx,x,&whole[c][0]);
+                p->q_gate=bn_gpu_resident_view_slice(merged,0,(size_t)(ref->tokens-1)*stride+qr);
+                p->k_in=bn_gpu_resident_view_slice(merged,qr,(size_t)(ref->tokens-1)*stride+kr);
+                p->v_in=bn_gpu_resident_view_slice(merged,qr+kr,(size_t)(ref->tokens-1)*stride+kr);
+                p->q_gate_row_stride=p->k_in_row_stride=p->v_in_row_stride=stride;
+            } else {
+                p->q_gate=cuda_test_attention_view(gpu,in_owner,2*nq,inputs[c][0],&whole[c][0]);
+                p->k_in=cuda_test_attention_view(gpu,in_owner,nk,inputs[c][1],&whole[c][5]);
+                p->v_in=cuda_test_attention_view(gpu,in_owner,nk,inputs[c][2],&whole[c][6]);
+            }
+            p->q=cuda_test_attention_view(gpu,out_owner,nq,NULL,&whole[c][1]);
+            p->k=cuda_test_attention_view(gpu,out_owner,nk,NULL,&whole[c][2]);
+            p->v=cuda_test_attention_view(gpu,out_owner,nk,NULL,&whole[c][3]);
+            p->gate=cuda_test_attention_view(gpu,out_owner,nq,NULL,&whole[c][4]);
+            free(x);free(cs);
+        }
+        /* Reject a complete plan before submitting any participant's work. */
+        for(int reject=0;reject<12;reject++) {
+            BnGPUQKPrepSequence bad[2]={seq[0],seq[2]};
+            switch(reject) {
+                case 0:bad[1].request=bad[0].request;break;
+                case 1:bad[1].request=coordinator;break;
+                case 2:bad[1].plan.q.request=sessions[2];break;
+                case 3:bad[1].plan.q=bad[1].plan.gate;break;
+                case 4:bad[1].plan.position=INT_MAX;break;
+                case 5:bad[1].plan.q.count--;break;
+                case 6:bad[1].plan.q_weight=NULL;break;
+                case 7:bad[1].plan.n_heads=0;break;
+                case 8:bad[1].request=NULL;break;
+                case 9:bad[1].plan.q=bad[0].plan.q;break;
+                case 10:bad[1].plan.k_in=bad[0].plan.k;break;
+                default:bad[1].plan.k_in.request=seq[12].request;break;
+            }
+            BnGPUQKPrepGroupPlan p={2,bad};
+            assert(gpu->qk_prep_group_bf16_resident(gpu->ctx,coordinator,&p)==-1);
+        }
+        for(int c=0;c<N;c++)for(int j=1;j<=4;j++) {
+            BnGPUResidentView v=whole[c][j];uint16_t *host=malloc(v.count*2);assert(host);
+            cuda_test_attention_read(gpu,v.request,v,host);
+            for(size_t i=8;i<v.count-8;i++)assert(host[i]==0x5a5a);
+            free(host);
+        }
+        for(size_t b=0;b<sizeof(batches)/sizeof(batches[0]);b++)for(int start=0;start<N;start+=batches[b]) {
+            int count=N-start;if(count>batches[b])count=batches[b];
+            BnGPUQKPrepGroupPlan p={count,seq+start};
+            int rc=gpu->qk_prep_group_bf16_resident(gpu->ctx,coordinator,&p);
+            if(rc==BN_GPU_GROUP_BUSY) {assert(!gpu->resident_synchronize(coordinator));rc=gpu->qk_prep_group_bf16_resident(gpu->ctx,coordinator,&p);}
+            assert(!rc);launches++;
+            for(int c=start;c<start+count;c++) {
+                const BnBF16QKPrepReference *ref=&cuda_bf16_qk_prep_cases[c];
+                const uint64_t hashes[]={ref->q_hash,ref->k_hash,ref->v_hash,ref->gate_hash};
+                for(int j=1;j<=4;j++) {
+                    BnGPUResidentView v=whole[c][j];uint16_t *host=malloc(v.count*2);assert(host);
+                    cuda_test_attention_read(gpu,v.request,v,host);
+                    assert(bf16_output_hash(host+8,v.count-16)==hashes[j-1]);words+=v.count-16;free(host);
+                }
+                if(mode==3) {
+                    BnGPUResidentView v=whole[c][0];uint16_t *host=malloc(v.count*2);assert(host);
+                    cuda_test_attention_read(gpu,v.request,v,host);
+                    size_t qr=(size_t)ref->heads*512,kr=(size_t)ref->kv_heads*256,stride=qr+2*kr;
+                    for(int token=0;token<ref->tokens;token++) {
+                        assert(!memcmp(host+8+token*stride,inputs[c][0]+token*qr,qr*2));
+                        assert(!memcmp(host+8+token*stride+qr,inputs[c][1]+token*kr,kr*2));
+                        assert(!memcmp(host+8+token*stride+qr+kr,inputs[c][2]+token*kr,kr*2));
+                    }
+                    free(host);
+                } else for(int j=0;j<3;j++) {
+                    BnGPUResidentView v=whole[c][j==0?0:j+4];uint16_t *host=malloc(v.count*2);assert(host);
+                    cuda_test_attention_read(gpu,v.request,v,host);assert(!memcmp(host+8,inputs[c][j],(v.count-16)*2));free(host);
+                }
+                assert(!gpu->resident_synchronize(seq[c].request));
+            }
+            assert(!gpu->resident_synchronize(coordinator));
+        }
+        for(int c=0;c<N;c++) {
+            for(int j=0;j<3;j++)free(inputs[c][j]);
+            gpu->buffer_destroy(gpu->ctx,seq[c].plan.q_weight);gpu->buffer_destroy(gpu->ctx,seq[c].plan.k_weight);gpu->buffer_destroy(gpu->ctx,seq[c].plan.cos_sin);
+            bn_backend_session_free(sessions[c]);
+        }
+        bn_backend_session_free(co);
+    }
+    printf("CUDA grouped BF16 QK prep PASSED: %d launches, %zu exact reference words, mixed positions/chunks and four owner/packed layouts\n",launches,words);
+}
+
+#include "cuda_bf16_f32_mean_reference.h"
+static void run_bf16_f32_mean_reference_case(BnGPUBackend *gpu) {
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_f32_mean_cases)/sizeof(cuda_bf16_f32_mean_cases[0]);c++) {
+        const BnBF16F32MeanReference *ref=&cuda_bf16_f32_mean_cases[c];
+        size_t count=(size_t)ref->tokens*5120;
+        uint16_t *x=malloc(count*2),*res=malloc(count*2),*host=malloc((count+16)*2),w[5120];assert(x&&res&&host);
+        for(size_t i=0;i<count;i++) {
+            x[i]=cuda_test_bf16_rne(ldexpf((float)((int)((i*37+ref->seed*11)%509)-254)/128,(int)(i%13)-6));
+            res[i]=cuda_test_bf16_rne(ldexpf((float)((int)((i*13+i/17+ref->seed*3)%251)-125)/64,(int)(i%11)-5));
+        }
+        for(int i=0;i<5120;i++)w[i]=cuda_test_bf16_rne((float)(((i*7+ref->seed)%127)-63)/64);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,sizeof(w),BN_GGUF_TENSOR_BF16,1,5120);assert(weight);
+        BnBackendSession *s=bn_backend_session_create();assert(s);void*r=bn_gpu_backend_resident_request(gpu,s);assert(r);
+        BnGPUResidentView whole[4],xv=cuda_test_attention_view(gpu,r,count,x,&whole[0]),rv=cuda_test_attention_view(gpu,r,count,res,&whole[1]),out=cuda_test_attention_view(gpu,r,count,NULL,&whole[2]),next=cuda_test_attention_view(gpu,r,count,NULL,&whole[3]);
+        BnGPURMSNormResidentPlan p={0};p.n_tokens=ref->tokens;p.dim=5120;p.weight_offset=ref->offset;p.reduction=BN_GPU_RMSNORM_REDUCTION_CONTIGUOUS_F32;p.eps=1e-6f;p.weight=weight;p.x=xv;p.out=out;
+        BnGPUAddRMSNormResidentPlan a={0};a.n_tokens=p.n_tokens;a.dim=p.dim;a.weight_offset=p.weight_offset;a.reduction=p.reduction;a.eps=p.eps;a.weight=weight;a.x=xv;a.residual=rv;a.out=out;a.residual_out=next;
+        for(int bad=0;bad<4;bad++) {
+            BnGPURMSNormResidentPlan bp=p;BnGPUAddRMSNormResidentPlan ba=a;
+            if(bad==0){bp.reduction=99;ba.reduction=99;}
+            else if(bad==1){bp.dim=256;ba.dim=256;}
+            else if(bad==2){bp.out=xv;ba.out=xv;}
+            else {bp.x.request=s;ba.x.request=s;}
+            assert(gpu->rmsnorm_bf16_resident(gpu->ctx,r,&bp)==-1);
+            assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,r,&ba)==-1);
+        }
+        cuda_test_attention_read(gpu,r,whole[2],host);for(size_t i=0;i<count;i++)assert(host[8+i]==0x5a5a);
+        if(ref->add)assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,r,&a)==0);
+        else assert(gpu->rmsnorm_bf16_resident(gpu->ctx,r,&p)==0);
+        cuda_test_attention_read(gpu,r,whole[2],host);uint64_t h=bf16_output_hash(host+8,count);
+        if(h!=ref->hash)fprintf(stderr,"F32 mean norm mismatch case=%zu nt=%d offset=%d add=%d actual=%016llx expected=%016llx\n",c,ref->tokens,ref->offset,ref->add,(unsigned long long)h,(unsigned long long)ref->hash);
+        assert(h==ref->hash);words+=count;
+        cuda_test_attention_read(gpu,r,whole[3],host);
+        if(ref->add){assert(bf16_output_hash(host+8,count)==ref->residual_hash);words+=count;}
+        else for(size_t i=0;i<count;i++)assert(host[8+i]==0x5a5a);
+        cuda_test_attention_read(gpu,r,whole[0],host);assert(!memcmp(host+8,x,count*2));
+        cuda_test_attention_read(gpu,r,whole[1],host);assert(!memcmp(host+8,res,count*2));
+        bn_backend_session_free(s);gpu->buffer_destroy(gpu->ctx,weight);free(x);free(res);free(host);
+    }
+    printf("CUDA contiguous F32 mean BF16 norm PASSED: %zu exact reference words\n",words);
+}
+
+#include "cuda_bf16_wide_mean_reference.h"
+static void run_bf16_wide_mean_reference_case(BnGPUBackend *gpu) {
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_wide_mean_cases)/sizeof(cuda_bf16_wide_mean_cases[0]);c++) {
+        const BnBF16WideMeanReference *ref=&cuda_bf16_wide_mean_cases[c];
+        int dim=ref->dim;
+        size_t count=(size_t)ref->tokens*dim;
+        uint16_t *x=malloc(count*2),*res=malloc(count*2),*host=malloc((count+16)*2),*w=malloc((size_t)dim*2);assert(x&&res&&host&&w);
+        for(size_t i=0;i<count;i++) {
+            x[i]=cuda_test_bf16_rne(ldexpf((float)((int)((i*37+ref->seed*11)%509)-254)/128,(int)(i%13)-6));
+            res[i]=cuda_test_bf16_rne(ldexpf((float)((int)((i*13+i/17+ref->seed*3)%251)-125)/64,(int)(i%11)-5));
+        }
+        for(int i=0;i<dim;i++)w[i]=cuda_test_bf16_rne((float)(((i*7+ref->seed)%127)-63)/64);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,(size_t)dim*2,BN_GGUF_TENSOR_BF16,1,dim);assert(weight);
+        BnBackendSession *s=bn_backend_session_create();assert(s);void*r=bn_gpu_backend_resident_request(gpu,s);assert(r);
+        BnGPUResidentView whole[4],xv=cuda_test_attention_view(gpu,r,count,x,&whole[0]),rv=cuda_test_attention_view(gpu,r,count,res,&whole[1]),out=cuda_test_attention_view(gpu,r,count,NULL,&whole[2]),next=cuda_test_attention_view(gpu,r,count,NULL,&whole[3]);
+        BnGPURMSNormResidentPlan p={0};p.n_tokens=ref->tokens;p.dim=dim;p.weight_groups=ref->offset?0:1;p.weight_offset=ref->offset;p.reduction=BN_GPU_RMSNORM_REDUCTION_CONTIGUOUS_F32;p.eps=1e-6f;p.weight=weight;p.x=xv;p.out=out;
+        BnGPUAddRMSNormResidentPlan a={0};a.n_tokens=p.n_tokens;a.dim=p.dim;a.weight_groups=p.weight_groups;a.weight_offset=p.weight_offset;a.reduction=p.reduction;a.eps=p.eps;a.weight=weight;a.x=xv;a.residual=rv;a.out=out;a.residual_out=next;
+        for(int bad=0;bad<9;bad++) {
+            BnGPURMSNormResidentPlan bp=p;BnGPUAddRMSNormResidentPlan ba=a;
+            if(bad==0){bp.reduction=99;ba.reduction=99;}
+            else if(bad==1){bp.dim=256;ba.dim=256;}
+            else if(bad==2){bp.out=xv;ba.out=xv;}
+            else if(bad==3){bp.x.request=s;ba.x.request=s;}
+            else {const int invalid[]={2047,2049,INT_MAX-3,0,130564};bp.dim=ba.dim=invalid[bad-4];}
+            assert(gpu->rmsnorm_bf16_resident(gpu->ctx,r,&bp)==-1);
+            assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,r,&ba)==-1);
+        }
+        cuda_test_attention_read(gpu,r,whole[2],host);for(size_t i=0;i<count;i++)assert(host[8+i]==0x5a5a);
+        if(ref->add)assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,r,&a)==0);
+        else assert(gpu->rmsnorm_bf16_resident(gpu->ctx,r,&p)==0);
+        cuda_test_attention_read(gpu,r,whole[2],host);uint64_t h=bf16_output_hash(host+8,count);
+        if(h!=ref->hash)fprintf(stderr,"wide F32 mean norm mismatch case=%zu nt=%d offset=%d add=%d actual=%016llx expected=%016llx\n",c,ref->tokens,ref->offset,ref->add,(unsigned long long)h,(unsigned long long)ref->hash);
+        assert(h==ref->hash);words+=count;
+        cuda_test_attention_read(gpu,r,whole[3],host);
+        if(ref->add){assert(bf16_output_hash(host+8,count)==ref->residual_hash);words+=count;}
+        else for(size_t i=0;i<count;i++)assert(host[8+i]==0x5a5a);
+        cuda_test_attention_read(gpu,r,whole[0],host);assert(!memcmp(host+8,x,count*2));
+        cuda_test_attention_read(gpu,r,whole[1],host);assert(!memcmp(host+8,res,count*2));
+        bn_backend_session_free(s);gpu->buffer_destroy(gpu->ctx,weight);free(x);free(res);free(host);free(w);
+    }
+    printf("CUDA wide contiguous F32 mean BF16 norm PASSED: %zu exact reference words\n",words);
+}
+
+#include "cuda_bf16_grouped_mean_reference.h"
+static void run_bf16_grouped_mean_reference_case(BnGPUBackend *gpu) {
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_grouped_mean_cases)/sizeof(cuda_bf16_grouped_mean_cases[0]);c++) {
+        const BnBF16GroupedMeanReference *ref=&cuda_bf16_grouped_mean_cases[c];
+        int dim=ref->dim,groups=ref->groups;
+        size_t count=(size_t)ref->tokens*dim;
+        uint16_t *x=malloc(count*2),*res=malloc(count*2),*host=malloc((count+16)*2),*w=malloc((size_t)groups*dim*2);assert(x&&res&&host&&w);
+        for(size_t i=0;i<count;i++) {
+            x[i]=cuda_test_bf16_rne(ldexpf((float)((int)((i*37+ref->seed*11)%509)-254)/128,(int)(i%13)-6));
+            res[i]=cuda_test_bf16_rne(ldexpf((float)((int)((i*13+i/17+ref->seed*3)%251)-125)/64,(int)(i%11)-5));
+        }
+        for(int i=0;i<groups*dim;i++)w[i]=cuda_test_bf16_rne((float)(((i*7+ref->seed)%127)-63)/64);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,(size_t)groups*dim*2,BN_GGUF_TENSOR_BF16,groups,dim);assert(weight);
+        void *short_weight=gpu->buffer_create_quant_only(gpu->ctx,w,(size_t)dim*2,BN_GGUF_TENSOR_BF16,1,dim);assert(short_weight);
+        BnBackendSession *s=bn_backend_session_create();assert(s);void*r=bn_gpu_backend_resident_request(gpu,s);assert(r);
+        BnGPUResidentView whole[4],xv=cuda_test_attention_view(gpu,r,count,x,&whole[0]),rv=cuda_test_attention_view(gpu,r,count,res,&whole[1]),out=cuda_test_attention_view(gpu,r,count,NULL,&whole[2]),next=cuda_test_attention_view(gpu,r,count,NULL,&whole[3]);
+        BnGPURMSNormResidentPlan p={0};p.n_tokens=ref->tokens;p.dim=dim;p.weight_groups=groups;p.weight_offset=ref->offset;p.reduction=BN_GPU_RMSNORM_REDUCTION_CONTIGUOUS_F32;p.eps=1e-6f;p.weight=weight;p.x=xv;p.out=out;
+        BnGPUAddRMSNormResidentPlan a={0};a.n_tokens=p.n_tokens;a.dim=p.dim;a.weight_groups=groups;a.weight_offset=p.weight_offset;a.reduction=p.reduction;a.eps=p.eps;a.weight=weight;a.x=xv;a.residual=rv;a.out=out;a.residual_out=next;
+        for(int bad=0;bad<15;bad++) {
+            BnGPURMSNormResidentPlan bp=p;BnGPUAddRMSNormResidentPlan ba=a;
+            if(bad==0){bp.reduction=99;ba.reduction=99;}
+            else if(bad==1){bp.dim=256;ba.dim=256;}
+            else if(bad==2){bp.out=xv;ba.out=xv;}
+            else if(bad==3){bp.x.request=s;ba.x.request=s;}
+            else if(bad<9){const int invalid[]={2047,2049,INT_MAX-3,0,130564};bp.dim=ba.dim=invalid[bad-4];}
+            else if(bad==9)bp.weight_groups=ba.weight_groups=-1;
+            else if(bad==10)bp.weight_groups=ba.weight_groups=ref->tokens+1;
+            else if(bad==11)bp.weight_groups=ba.weight_groups=INT_MAX;
+            else if(bad==12)bp.reduction=ba.reduction=BN_GPU_RMSNORM_REDUCTION_DEFAULT;
+            else if(bad==13)bp.weight=ba.weight=short_weight;
+            else bp.weight_groups=ba.weight_groups=ref->tokens-1;
+            assert(gpu->rmsnorm_bf16_resident(gpu->ctx,r,&bp)==-1);
+            assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,r,&ba)==-1);
+        }
+        cuda_test_attention_read(gpu,r,whole[2],host);for(size_t i=0;i<count;i++)assert(host[8+i]==0x5a5a);
+        if(ref->add)assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,r,&a)==0);
+        else assert(gpu->rmsnorm_bf16_resident(gpu->ctx,r,&p)==0);
+        cuda_test_attention_read(gpu,r,whole[2],host);uint64_t h=bf16_output_hash(host+8,count);
+        if(h!=ref->hash)fprintf(stderr,"grouped F32 mean norm mismatch case=%zu nt=%d offset=%d add=%d actual=%016llx expected=%016llx\n",c,ref->tokens,ref->offset,ref->add,(unsigned long long)h,(unsigned long long)ref->hash);
+        assert(h==ref->hash);words+=count;
+        cuda_test_attention_read(gpu,r,whole[3],host);
+        if(ref->add){assert(bf16_output_hash(host+8,count)==ref->residual_hash);words+=count;}
+        else for(size_t i=0;i<count;i++)assert(host[8+i]==0x5a5a);
+        cuda_test_attention_read(gpu,r,whole[0],host);assert(!memcmp(host+8,x,count*2));
+        cuda_test_attention_read(gpu,r,whole[1],host);assert(!memcmp(host+8,res,count*2));
+        bn_backend_session_free(s);gpu->buffer_destroy(gpu->ctx,weight);gpu->buffer_destroy(gpu->ctx,short_weight);free(x);free(res);free(host);free(w);
+    }
+    printf("CUDA grouped contiguous F32 mean BF16 norm PASSED: %zu exact reference words\n",words);
+}
+
+#include "cuda_bf16_hc_reference.h"
+static void hc_reference_pattern(uint16_t *x,size_t n,int seed,int role) {
+    for(size_t i=0;i<n;i++)x[i]=cuda_test_bf16_rne(ldexpf(
+        (float)((int)((i*(13+role*6)+seed*11+role*19)%509)-254)/128,(int)(i%9)-4));
+}
+static void hc_reference_check(BnGPUBackend *gpu,void *r,BnGPUResidentView whole,
+    uint16_t *host,size_t n,uint64_t expected,const char *name,size_t c) {
+    cuda_test_attention_read(gpu,r,whole,host);
+    uint64_t actual=bf16_output_hash(host+8,n);
+    if(actual!=expected)fprintf(stderr,"BF16 HC mismatch %s case%zu actual=%016llx expected=%016llx\n",
+        name,c,(unsigned long long)actual,(unsigned long long)expected);
+    assert(actual==expected);
+}
+static void run_bf16_hc_reference_cases(BnGPUBackend *gpu) {
+    assert(gpu->scaled_silu_bf16_resident&&gpu->hyper_connection_mix_bf16_resident&&gpu->hyper_connection_combine_bf16_resident);
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_hc_cases)/sizeof(cuda_bf16_hc_cases[0]);c++) {
+        const BnBF16HCReference *ref=&cuda_bf16_hc_cases[c];
+        size_t narrow=(size_t)ref->tokens*ref->dim,wide=narrow*ref->streams,small=(size_t)ref->tokens*ref->rank;
+        size_t counts[]={small,wide,wide,wide,narrow,(size_t)ref->tokens*ref->streams,small,narrow,wide};
+        size_t cap=wide>small?wide:small;uint16_t *host=malloc((cap+16)*2),*input[6];assert(host);
+        BnBackendSession *s=bn_backend_session_create();assert(s);void*r=bn_gpu_backend_resident_request(gpu,s);assert(r);
+        BnGPUResidentView v[9],whole[9];
+        for(int i=0;i<9;i++) {
+            if(i<6){input[i]=malloc(counts[i]*2);assert(input[i]);hc_reference_pattern(input[i],counts[i],ref->seed,i);}
+            v[i]=cuda_test_attention_view(gpu,r,counts[i],i<6?input[i]:NULL,whole+i);
+        }
+        BnGPUScaledSiluResidentPlan a={0};a.rows=ref->tokens;a.cols=ref->rank;a.divisor=ref->streams;a.x=v[0];a.out=v[6];
+        BnGPUHyperMixResidentPlan m={0};m.n_tokens=ref->tokens;m.dim=ref->dim;m.streams=ref->streams;m.normalized=v[1];m.gate=v[2];m.out=v[7];
+        BnGPUHyperCombineResidentPlan b={0};b.n_tokens=ref->tokens;b.dim=ref->dim;b.streams=ref->streams;
+        b.residual=v[3];b.block_out=v[4];b.inject=v[5];b.out=v[8];
+        assert(gpu->scaled_silu_bf16_resident(NULL,r,&a)==-1&&gpu->scaled_silu_bf16_resident(gpu->ctx,NULL,&a)==-1&&gpu->scaled_silu_bf16_resident(gpu->ctx,r,NULL)==-1);
+        assert(gpu->hyper_connection_mix_bf16_resident(NULL,r,&m)==-1&&gpu->hyper_connection_combine_bf16_resident(NULL,r,&b)==-1);
+        for(int bad=0;bad<11;bad++) {
+            BnGPUScaledSiluResidentPlan q=a;
+            switch(bad){case 0:q.rows=0;break;case 1:q.cols=0;break;case 2:q.rows=INT_MAX;q.cols=INT_MAX;break;
+            case 3:q.divisor=0;break;case 4:q.divisor=3;break;case 5:q.divisor=32;break;case 6:q.out=q.x;break;
+            case 7:q.out.count--;break;case 8:q.x.request=s;break;case 9:q.x.type=BN_GGUF_TENSOR_F32;break;default:q.x.count--;break;}
+            assert(gpu->scaled_silu_bf16_resident(gpu->ctx,r,&q)==-1);
+            BnGPUHyperMixResidentPlan z=m;
+            switch(bad){case 0:z.n_tokens=0;break;case 1:z.dim=0;break;case 2:z.n_tokens=INT_MAX;z.dim=INT_MAX;break;
+            case 3:z.streams=1;break;case 4:z.streams=3;break;case 5:z.streams=32;break;case 6:z.out=z.normalized;break;
+            case 7:z.out.count--;break;case 8:z.gate.request=s;break;case 9:z.gate.type=BN_GGUF_TENSOR_F32;break;default:z.normalized.count--;break;}
+            assert(gpu->hyper_connection_mix_bf16_resident(gpu->ctx,r,&z)==-1);
+            BnGPUHyperCombineResidentPlan y=b;
+            switch(bad){case 0:y.n_tokens=0;break;case 1:y.dim=0;break;case 2:y.n_tokens=INT_MAX;y.dim=INT_MAX;break;
+            case 3:y.streams=1;break;case 4:y.streams=3;break;case 5:y.streams=32;break;case 6:y.out=y.residual;break;
+            case 7:y.out.count--;break;case 8:y.inject.request=s;break;case 9:y.inject.type=BN_GGUF_TENSOR_F32;break;default:y.block_out.count--;break;}
+            assert(gpu->hyper_connection_combine_bf16_resident(gpu->ctx,r,&y)==-1);
+        }
+        for(int j=6;j<9;j++){cuda_test_attention_read(gpu,r,whole[j],host);for(size_t i=0;i<counts[j];i++)assert(host[i+8]==0x5a5a);}
+        assert(!gpu->scaled_silu_bf16_resident(gpu->ctx,r,&a));hc_reference_check(gpu,r,whole[6],host,small,ref->scaled,"scaled",c);words+=small;
+        a.divisor=1;assert(!gpu->scaled_silu_bf16_resident(gpu->ctx,r,&a));hc_reference_check(gpu,r,whole[6],host,small,ref->unscaled,"unscaled",c);words+=small;
+        assert(!gpu->hyper_connection_mix_bf16_resident(gpu->ctx,r,&m));hc_reference_check(gpu,r,whole[7],host,narrow,ref->mixed,"mixed",c);words+=narrow;
+        assert(!gpu->hyper_connection_combine_bf16_resident(gpu->ctx,r,&b));hc_reference_check(gpu,r,whole[8],host,wide,ref->combined,"combined",c);words+=wide;
+        for(int i=0;i<6;i++){cuda_test_attention_read(gpu,r,whole[i],host);assert(!memcmp(host+8,input[i],counts[i]*2));free(input[i]);}
+        bn_backend_session_free(s);free(host);
+    }
+    printf("CUDA resident BF16 HC stages PASSED: %zu exact reference words\n",words);
+}
+
+static void run_join_columns_resident_case(BnGPUBackend *gpu) {
+    assert(gpu->join_columns_resident);size_t words=0;
+    const int shapes[][3]={{1,2,1},{3,33,1},{5,67,33},{17,5120,2048},{129,10240,4096}};
+    for(int type_index=0;type_index<2;type_index++)for(unsigned c=0;c<sizeof(shapes)/sizeof(shapes[0]);c++) {
+        int rows=shapes[c][0],cols=shapes[c][1],lc=shapes[c][2];
+        int type=type_index?BN_GGUF_TENSOR_F32:BN_GGUF_TENSOR_BF16;size_t width=type_index?4:2;
+        size_t n=(size_t)rows*cols,nl=(size_t)rows*lc,nr=n-nl;
+        unsigned char *expected=malloc(n*width),*left=malloc(nl*width),*right=malloc(nr*width),*host=malloc((n+16)*width);assert(expected&&left&&right&&host);
+        for(size_t i=0;i<n;i++) {
+            uint32_t value=(uint32_t)(i*UINT32_C(0x9e3779b9))^UINT32_C(0x7fc00001);
+            memcpy(expected+i*width,&value,width);
+        }
+        for(int row=0;row<rows;row++) {
+            memcpy(left+(size_t)row*lc*width,expected+(size_t)row*cols*width,(size_t)lc*width);
+            memcpy(right+(size_t)row*(cols-lc)*width,expected+((size_t)row*cols+lc)*width,(size_t)(cols-lc)*width);
+        }
+        BnBackendSession*s=bn_backend_session_create();assert(s);void*r=bn_gpu_backend_resident_request(gpu,s);assert(r);
+        memset(host,0x5a,(n+16)*width);
+        BnGPUResidentView all=cuda_test_resident_alloc(gpu,r,type,n+16,host);
+        BnGPUJoinColumnsResidentPlan p={0};p.rows=rows;p.cols=cols;p.left_cols=lc;
+        p.left=cuda_test_resident_alloc(gpu,r,type,nl,left);p.right=cuda_test_resident_alloc(gpu,r,type,nr,right);p.x=bn_gpu_resident_view_slice(all,8,n);
+        for(int j=0;j<6;j++) {
+            BnGPUJoinColumnsResidentPlan bad=p;
+            switch(j){case 0:bad.left_cols=0;break;case 1:bad.rows=INT_MAX;break;
+                case 2:bad.x.request=s;break;case 3:bad.x.count--;break;
+                case 4:bad.x=bad.left;break;default:bad.left.type=BN_GGUF_TENSOR_I32;break;}
+            assert(gpu->join_columns_resident(gpu->ctx,r,&bad)==-1);
+        }
+        assert(gpu->resident_read(r,all,host)==0);for(size_t i=0;i<(n+16)*width;i++)assert(host[i]==0x5a);
+        assert(gpu->join_columns_resident(gpu->ctx,r,&p)==0);
+        assert(gpu->resident_read(r,all,host)==0);assert(!memcmp(host+8*width,expected,n*width));
+        for(size_t i=0;i<8*width;i++)assert(host[i]==0x5a&&host[(n+8)*width+i]==0x5a);
+        assert(gpu->resident_read(r,p.left,host)==0);assert(!memcmp(host,left,nl*width));
+        assert(gpu->resident_read(r,p.right,host)==0);assert(!memcmp(host,right,nr*width));
+        words+=n;bn_backend_session_free(s);free(expected);free(left);free(right);free(host);
+    }
+    printf("CUDA resident join columns PASSED: %zu bit-exact F32/BF16 words\n",words);
+}
+
+#include "cuda_bf16_gdn_cancellation_reference.h"
+
+/* Real-prompt cancellation reduced independently to one active value column.
+ * The local scaled term must round before the history FMA, including on resume. */
+static void run_bf16_gdn_cancellation_reference_case(BnGPUBackend *gpu) {
+    const size_t nq=2u*16*128,nv=2u*48*128,ng=2u*48,ns=48u*128*128;
+    uint16_t *q=calloc(nq,2),*k=calloc(nq,2),*v=calloc(nv,2),*out=malloc(nv*2);
+    float *g=malloc(ng*4),*beta=malloc(ng*4),*initial=calloc(ns,4),*state=malloc(ns*4);
+    assert(q&&k&&v&&out&&g&&beta&&initial&&state);
+    for(int t=0;t<2;t++) {
+        for(int h=0;h<16;h++) {
+            memcpy(q+((size_t)t*16+h)*128,cuda_gdn_cancel_q+t*128,256);
+            memcpy(k+((size_t)t*16+h)*128,cuda_gdn_cancel_k+t*128,256);
+        }
+        for(int h=0;h<48;h++) {
+            v[((size_t)t*48+h)*128+22]=cuda_gdn_cancel_v[t];
+            memcpy(g+(size_t)t*48+h,cuda_gdn_cancel_g+t,4);
+            memcpy(beta+(size_t)t*48+h,cuda_gdn_cancel_beta+t,4);
+        }
+    }
+    for(int h=0;h<48;h++)memcpy(initial+((size_t)h*128+22)*128,cuda_gdn_cancel_state,512);
+    BnBackendSession *session=bn_backend_session_create();assert(session);
+    void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+    BnGPUGDNPrefillResidentPlan p={0};
+    p.n_tokens=2;p.hk=16;p.hv=48;p.dk=p.dv=128;p.q_scale=0x1.6a09e6p-4f;
+    p.output_profile=BN_GPU_GDN_OUTPUT_HISTORY_FMA;
+    p.q=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,q);
+    p.k=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,k);
+    p.v=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv,v);
+    p.log_decay=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,g);
+    p.beta=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,beta);
+    p.initial_state=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns,initial);
+    p.next_state=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns,NULL);
+    p.out=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv,NULL);
+    assert(gpu->gdn_prefill_bf16_reserve(gpu->ctx,request,2)==0);
+    const uint64_t hashes[]={cuda_gdn_cancel_local_hash,cuda_gdn_cancel_out_hash};
+    for(int profile=0;profile<2;profile++) {
+        p.output_profile=(BnGPUGDNOutputProfile)profile;
+        assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,&p)==0);
+        assert(gpu->resident_synchronize(request)==0);
+        assert(gpu->resident_read(request,p.out,out)==0);
+        uint64_t actual=bf16_output_hash(out,nv);
+        if(actual!=hashes[profile])fprintf(stderr,"GDN cancellation profile=%d output hash=%016llx expected=%016llx\n",profile,(unsigned long long)actual,(unsigned long long)hashes[profile]);
+        assert(actual==hashes[profile]);
+        assert(gpu->resident_read(request,p.next_state,state)==0);
+        assert(cuda_test_float_bits_hash(state,ns)==cuda_gdn_cancel_state_hash);
+        assert(gpu->resident_read(request,p.initial_state,state)==0);
+        assert(memcmp(initial,state,ns*4)==0);
+    }
+    bn_backend_session_free(session);
+    free(q);free(k);free(v);free(out);free(g);free(beta);free(initial);free(state);
+    printf("test_cuda_bf16_gdn_cancellation... PASSED\n");
+}
+
+#include "cuda_bf16_gdn_cp_reference.h"
+#include "cuda_bf16_gdn_cp_log_reference.h"
+#include "cuda_bf16_gdn_cp_boundary_reference.h"
+#include "cuda_bf16_gdn_noncp_reference.h"
+
+static void run_bf16_gdn_cp_resident_reference_case(BnGPUBackend *gpu) {
+    if (!gpu->gdn_cp_prefill_bf16_workspace_size ||
+        !gpu->gdn_cp_prefill_bf16_workspace_size(gpu->ctx,129,512)) return;
+    assert(gpu->gdn_cp_prefill_bf16_reserve && gpu->gdn_cp_prefill_bf16_resident);
+    assert(!gpu->gdn_cp_prefill_bf16_workspace_size(NULL,129,512));
+    assert(!gpu->gdn_cp_prefill_bf16_workspace_size(gpu->ctx,0,512));
+    assert(!gpu->gdn_cp_prefill_bf16_workspace_size(gpu->ctx,8193,512));
+    assert(!gpu->gdn_cp_prefill_bf16_workspace_size(gpu->ctx,129,0));
+    assert(!gpu->gdn_cp_prefill_bf16_workspace_size(gpu->ctx,129,65));
+    assert(!gpu->gdn_cp_prefill_bf16_workspace_size(gpu->ctx,129,4160));
+    assert(gpu->gdn_cp_prefill_chunk_tokens);
+    assert(gpu->gdn_cp_prefill_chunk_tokens(gpu->ctx,129)==512);
+    assert(!gpu->gdn_cp_prefill_chunk_tokens(gpu->ctx,0));
+    assert(!gpu->gdn_cp_prefill_chunk_tokens(gpu->ctx,8193));
+    size_t checked = 0;
+    const size_t base_count=sizeof(gdn_cp_prefill_cases)/sizeof(gdn_cp_prefill_cases[0]);
+    int grouped_checked=0;
+    assert(gpu->resident_gdn_prefill_recurrences & (1u << BN_GPU_GDN_PREFILL_NONCP));
+    const size_t log_count=sizeof(gdn_cp_log_cases)/sizeof(gdn_cp_log_cases[0]);
+    const size_t boundary_count=sizeof(gdn_cp_boundary_cases)/sizeof(gdn_cp_boundary_cases[0]);
+    const size_t cp_count=base_count+log_count+boundary_count;
+    const size_t noncp_count=sizeof(gdn_noncp_prefill_cases)/sizeof(gdn_noncp_prefill_cases[0]);
+    for (size_t ci=0;ci<cp_count+noncp_count;ci++) {
+        int noncp=ci>=cp_count;
+        int log_input=noncp?gdn_noncp_prefill_cases[ci-cp_count].log_input:ci>=base_count && ci<base_count+log_count;
+        BnGDNCPPrefillReference converted={0};
+        const BnGDNCPPrefillReference *ref;
+        if(noncp){const BnGDNNonCPPrefillReference *n=&gdn_noncp_prefill_cases[ci-cp_count];converted=(BnGDNCPPrefillReference){n->seed,n->tokens,512,n->output,n->state};ref=&converted;}
+        else ref=ci<base_count?&gdn_cp_prefill_cases[ci]:log_input?&gdn_cp_log_cases[ci-base_count]:&gdn_cp_boundary_cases[ci-base_count-log_count];
+        const int nt=ref->tokens,seed=ref->seed;
+        const size_t nq=(size_t)nt*2048,nv=(size_t)nt*6144,ng=(size_t)nt*48,ns=48u*16384;
+        uint16_t *q=malloc(nq*2),*k=malloc(nq*2),*v=malloc(nv*2),*out=malloc((nv+16)*2);
+        float *alpha=malloc(ng*4),*beta=malloc(ng*4),*initial=malloc((ns+2)*4),*state=malloc((ns+2)*4);
+        assert(q&&k&&v&&out&&alpha&&beta&&initial&&state);
+        for(size_t i=0;i<nq;i++) {
+            q[i]=cuda_test_bf16_rne((float)((int)((i*19+i/23+seed*67)%31)-15)/256.f);
+            k[i]=cuda_test_bf16_rne((float)((int)((i*37+i/13+seed*97)%31)-15)/(seed?1024.f:256.f));
+        }
+        for(size_t i=0;i<nv;i++)v[i]=cuda_test_bf16_rne((float)((int)((i*11+i/17+seed*73)%127)-63)/32.f);
+        for(size_t i=0;i<ng;i++) {
+            beta[i]=(float)((i/48*11+i%48*17+seed)%129)/128;
+            alpha[i]=log_input?-(float)((i*7+seed)%17+1)/1024
+                :.5f+(float)((i*13+i/7+seed*17)%65)/128;
+        }
+        for(size_t i=0;i<ns;i++)initial[i+1]=seed?(float)((int)((i*17+i/31+seed*5)%127)-63)/1024:0.f;
+        initial[0]=initial[ns+1]=12345.f;
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUGDNCPPrefillResidentPlan p={0};
+        p.n_tokens=nt;p.chunk_tokens=ref->chunk;p.hk=16;p.hv=48;p.dk=p.dv=128;p.q_scale=0x1.6a09e6p-4f;
+        p.decay_domain=log_input?BN_GPU_GDN_DECAY_LOG:BN_GPU_GDN_DECAY_MULTIPLIER;
+        p.recurrence=noncp?BN_GPU_GDN_PREFILL_NONCP:BN_GPU_GDN_PREFILL_CP;
+        p.q=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,q);
+        p.k=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,k);
+        p.v=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv,v);
+        p.alpha=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,alpha);
+        p.beta=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,beta);
+        BnGPUResidentView iv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns+2,initial);
+        BnGPUResidentView sv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns+2,initial);
+        BnGPUResidentView ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv+16,NULL);
+        p.initial_state=bn_gpu_resident_view_slice(iv,1,ns);
+        p.next_state=bn_gpu_resident_view_slice(sv,1,ns);
+        p.out=bn_gpu_resident_view_slice(ov,8,nv);
+        assert(gpu->gdn_cp_prefill_bf16_resident(gpu->ctx,request,&p)==-1);
+        assert(gpu->gdn_cp_prefill_bf16_reserve(gpu->ctx,request,nt,ref->chunk<512?64:512)==0);
+        assert(gpu->gdn_cp_prefill_bf16_reserve(gpu->ctx,request,nt,ref->chunk<512?64:512)==0);
+        for(int repeat=0;repeat<2;repeat++) {
+            for(size_t i=0;i<nv+16;i++)out[i]=0x5a5a;
+            assert(gpu->resident_write(request,ov,out)==0);
+            assert(gpu->resident_write(request,sv,initial)==0);
+            for(int invalid=0;invalid<12;invalid++) {
+                BnGPUGDNCPPrefillResidentPlan bad=p;
+                switch(invalid) {
+                    case 0:bad.n_tokens=0;break;
+                    case 1:bad.chunk_tokens=65;break;
+                    case 2:bad.hk=8;break;
+                    case 3:bad.q_scale=1.f;break;
+                    case 4:bad.next_state=bad.initial_state;break;
+                    case 5:bad.out=bad.v;break;
+                    case 6:bad.alpha.type=BN_GGUF_TENSOR_BF16;break;
+                    case 7:bad.q.count--;break;
+                    case 8:bad.k.request=NULL;break;
+                    case 9:bad.q.offset=1;break;
+                    case 10:bad.decay_domain=(BnGPUGDNDecayDomain)2;break;
+                    default:bad.recurrence=(BnGPUGDNPrefillRecurrence)2;break;
+                }
+                assert(gpu->gdn_cp_prefill_bf16_resident(gpu->ctx,request,&bad)==-1);
+            }
+            assert(gpu->resident_read(request,ov,out)==0);
+            for(size_t i=0;i<nv+16;i++)assert(out[i]==0x5a5a);
+            assert(gpu->resident_read(request,sv,state)==0);
+            assert(memcmp(initial,state,(ns+2)*4)==0);
+            assert(gpu->gdn_cp_prefill_bf16_resident(gpu->ctx,request,&p)==0);
+            assert(gpu->resident_read(request,ov,out)==0);
+            assert(gpu->resident_read(request,sv,state)==0);
+            assert(bf16_output_hash(out+8,nv)==ref->output);
+            uint64_t sh=UINT64_C(14695981039346656037);
+            for(size_t i=0;i<ns;i++) {
+                uint32_t bits;memcpy(&bits,state+1+i,4);
+                for(int j=0;j<4;j++)sh=(sh^((bits>>(j*8))&255))*UINT64_C(1099511628211);
+            }
+            assert(sh==ref->state);
+            for(int i=0;i<8;i++)assert(out[i]==0x5a5a&&out[nv+8+i]==0x5a5a);
+            assert(state[0]==12345.f&&state[ns+1]==12345.f);
+            assert(gpu->resident_read(request,iv,state)==0);
+            assert(memcmp(initial,state,(ns+2)*4)==0);
+            checked+=nv+ns;
+        }
+        if(nt==129 && !(grouped_checked & (1 << noncp))) {
+            assert(gpu->gdn_cp_prefill_group_workspace_size && gpu->gdn_cp_prefill_group_reserve && gpu->gdn_cp_prefill_group_resident);
+            size_t budget=gpu->gdn_cp_prefill_group_workspace_size(gpu->ctx,2);
+            assert(budget && !gpu->gdn_cp_prefill_group_workspace_size(gpu->ctx,257));
+            assert(gpu->gdn_cp_prefill_group_reserve(gpu->ctx,request,2,budget-1)==-1);
+            assert(!gpu->gdn_cp_prefill_group_reserve(gpu->ctx,request,2,budget));
+            assert(!gpu->gdn_cp_prefill_group_reserve(gpu->ctx,request,2,budget));
+            BnBackendSession *owners[2];void *requests[2];BnGPUResidentView ins[2],outs[2],states[2];
+            BnGPUGDNCPPrefillSequence seq[2];
+            for(int i=0;i<2;i++) {
+                owners[i]=bn_backend_session_create();assert(owners[i]);requests[i]=bn_gpu_backend_resident_request(gpu,owners[i]);assert(requests[i]);
+                ins[i]=cuda_test_resident_alloc(gpu,requests[i],BN_GGUF_TENSOR_F32,ns+2,initial);
+                states[i]=cuda_test_resident_alloc(gpu,requests[i],BN_GGUF_TENSOR_F32,ns+2,initial);
+                outs[i]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv+16,NULL);
+                seq[i].request=requests[i];seq[i].plan=p;
+                seq[i].plan.initial_state=bn_gpu_resident_view_slice(ins[i],1,ns);
+                seq[i].plan.next_state=bn_gpu_resident_view_slice(states[i],1,ns);
+                seq[i].plan.out=bn_gpu_resident_view_slice(outs[i],8,nv);
+                for(size_t j=0;j<nv+16;j++)out[j]=0x5a5a;
+                assert(!gpu->resident_write(request,outs[i],out));
+            }
+            const BnGDNCPPrefillReference *short_ref=NULL;
+            int short_tokens=noncp?17:1;
+            for(size_t i=0;i<base_count;i++)if(gdn_cp_prefill_cases[i].tokens==short_tokens &&
+                gdn_cp_prefill_cases[i].seed==seed && gdn_cp_prefill_cases[i].chunk==ref->chunk)short_ref=&gdn_cp_prefill_cases[i];
+            assert(short_ref);
+            const BnGDNCPPrefillReference *expected[2]={ref,short_ref};
+            /* A NONCP129/CP17 group checks distinct arithmetic and lengths
+             * while preserving separate participant state ownership. */
+            seq[1].plan.recurrence=BN_GPU_GDN_PREFILL_CP;
+            seq[1].plan.n_tokens=short_tokens;
+            seq[1].plan.q.count=seq[1].plan.k.count=(size_t)short_tokens*2048;
+            seq[1].plan.v.count=seq[1].plan.out.count=(size_t)short_tokens*6144;
+            seq[1].plan.alpha.count=seq[1].plan.beta.count=(size_t)short_tokens*48;
+            BnGPUGDNCPPrefillGroupPlan group={2,seq};
+            assert(gpu->gdn_cp_prefill_bf16_resident(gpu->ctx,request,&seq[0].plan)==-1);
+            for(int invalid=0;invalid<5;invalid++) {
+                BnGPUGDNCPPrefillSequence bad[2]={seq[0],seq[1]};BnGPUGDNCPPrefillGroupPlan g={2,bad};
+                if(invalid==0)bad[1].plan.q.count--;
+                if(invalid==1)bad[1].request=bad[0].request;
+                if(invalid==2)bad[1].plan.out=bad[0].plan.out;
+                if(invalid==3)bad[1].plan.next_state=bad[1].plan.initial_state;
+                if(invalid==4)bad[1].plan.recurrence=(BnGPUGDNPrefillRecurrence)2;
+                assert(gpu->gdn_cp_prefill_group_resident(gpu->ctx,request,&g)==-1);
+            }
+            for(int i=0;i<2;i++) {
+                assert(!gpu->resident_read(request,outs[i],out));for(size_t j=0;j<nv+16;j++)assert(out[j]==0x5a5a);
+                assert(!gpu->resident_read(requests[i],states[i],state));assert(!memcmp(state,initial,(ns+2)*4));
+            }
+            /* Reuse event storage while owner streams still have queued work. */
+            for(int repeat=0;repeat<2;repeat++)
+                assert(!gpu->gdn_cp_prefill_group_resident(gpu->ctx,request,&group));
+            {
+                for(int i=0;i<2;i++) {
+                    assert(!gpu->resident_read(request,outs[i],out));size_t count=(size_t)expected[i]->tokens*6144;
+                    assert(bf16_output_hash(out+8,count)==expected[i]->output);
+                    for(int j=0;j<8;j++)assert(out[j]==0x5a5a);
+                    for(size_t j=count+8;j<nv+16;j++)assert(out[j]==0x5a5a);
+                    assert(!gpu->resident_read(requests[i],states[i],state));uint64_t hash=UINT64_C(14695981039346656037);
+                    for(size_t j=0;j<ns;j++){uint32_t bits;memcpy(&bits,state+1+j,4);for(int k0=0;k0<4;k0++)hash=(hash^((bits>>(k0*8))&255))*UINT64_C(1099511628211);}
+                    assert(hash==expected[i]->state && state[0]==12345.f && state[ns+1]==12345.f);
+                    assert(!gpu->resident_read(requests[i],ins[i],state));assert(!memcmp(state,initial,(ns+2)*4));
+                    checked+=count+ns;
+                }
+            }
+            for(int i=0;i<2;i++)bn_backend_session_free(owners[i]);
+            grouped_checked|=1 << noncp;
+        }
+        bn_backend_session_free(session);
+        free(q);free(k);free(v);free(out);free(alpha);free(beta);free(initial);free(state);
+    }
+    assert(grouped_checked==3);
+    printf("test_cuda_bf16_gdn_cp_resident: %zu exact output/state words... PASSED\n",checked);
+}
+
+static void run_bf16_gdn_prefill_resident_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->gdn_prefill_bf16_workspace_size);
+    const int capacities[] = {1, 63, 64, 65, 129, 1025};
+    const size_t payloads[] = {1640640, 5842752, 5910528, 7551168, 13461696, 96209088};
+    for (unsigned i = 0; i < sizeof(capacities) / sizeof(capacities[0]); ++i)
+        assert(gpu->gdn_prefill_bf16_workspace_size(gpu->ctx, capacities[i]) == payloads[i]);
+    assert(!gpu->gdn_prefill_bf16_workspace_size(NULL, 1));
+    assert(!gpu->gdn_prefill_bf16_workspace_size(gpu->ctx, -1));
+    assert(!gpu->gdn_prefill_bf16_workspace_size(gpu->ctx, 0));
+    assert(!gpu->gdn_prefill_bf16_workspace_size(gpu->ctx, INT_MAX / (48 * 128) + 1));
+    assert(!gpu->gdn_prefill_bf16_workspace_size(gpu->ctx, INT_MAX));
+    assert(gpu->gdn_prefill_bf16_workspace_size(gpu->ctx, INT_MAX / (48 * 128)) ==
+           UINT64_C(32280389568));
+    assert(bn_gpu_backend_can_resident_request(gpu));
+    assert(bn_gpu_backend_can_gdn_prefill_bf16_resident(gpu));
+    assert(gpu->gdn_prefill_bf16_reserve && gpu->gdn_prefill_bf16_resident);
+    BnGPUBackend absent = {0};
+    assert(!bn_gpu_backend_can_resident_request(&absent));
+    assert(!bn_gpu_backend_can_gdn_prefill_bf16_resident(&absent));
+    assert(bn_gpu_backend_resident_request(&absent,NULL) == NULL);
+    size_t checked = 0, calls = 0;
+    const size_t ns = 48u * 128 * 128;
+    for (size_t c = 0; c < sizeof(cuda_bf16_gdn_prefill_cases)/sizeof(cuda_bf16_gdn_prefill_cases[0]); ++c) {
+        const BnBF16GDNPrefillReference *ref = &cuda_bf16_gdn_prefill_cases[c];
+        int nt = ref->tokens;
+        size_t nq=(size_t)nt*16*128,nv=(size_t)nt*48*128,ng=(size_t)nt*48;
+        uint16_t *q=malloc(nq*2),*k=malloc(nq*2),*v=malloc(nv*2),*out=malloc((nv+16)*2);
+        float *g=malloc(ng*4),*beta=malloc(ng*4),*state=malloc((ns+2)*4),*before=malloc(ns*4);
+        assert(q&&k&&v&&out&&g&&beta&&state&&before);
+        for (size_t i=0;i<nq;i++) {
+            q[i]=cuda_test_bf16_rne((float)((int)((i*37+i/13+ref->seed*11)%509)-254)/8192.0f);
+            k[i]=cuda_test_bf16_rne((float)((int)((i*29+i/13+ref->seed*11+17)%509)-254)/8192.0f);
+        }
+        for (size_t i=0;i<nv;i++)v[i]=cuda_test_bf16_rne((float)((int)((i*23+i/13+ref->seed*11+31)%509)-254)/256.0f);
+        for (size_t i=0;i<ng;i++) {
+            g[i]=-(float)((i*7+ref->seed)%17+1)/1024.0f;
+            beta[i]=(float)((i*13+ref->seed)%31+1)/64.0f;
+        }
+        for (size_t i=0;i<ns;i++)state[i+1]=(float)((int)((i*17+i/37+ref->seed*19)%251)-125)/4096.0f;
+        state[0]=state[ns+1]=12345.0f;
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        assert(bn_gpu_backend_resident_request(gpu,session)==request);
+        BnGPUResidentView qv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,q);
+        BnGPUResidentView kv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,k);
+        BnGPUResidentView vv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv,v);
+        BnGPUResidentView gv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,g);
+        BnGPUResidentView bv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,beta);
+        BnGPUResidentView sa=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns+2,state);
+        BnGPUResidentView sb=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns+2,state);
+        BnGPUResidentView ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv+16,NULL);
+        BnGPUResidentView untouched={0},saved=untouched;
+        assert(gpu->resident_alloc(request,BN_GGUF_TENSOR_Q4_0,17,&untouched)==-1);
+        assert(gpu->resident_alloc(request,BN_GGUF_TENSOR_F32,SIZE_MAX,&untouched)==-1);
+        assert(memcmp(&untouched,&saved,sizeof(saved))==0);
+        assert(gpu->gdn_prefill_bf16_reserve(gpu->ctx,request,0)==-1);
+        assert(gpu->gdn_prefill_bf16_reserve(gpu->ctx,request,INT_MAX)==-1);
+        assert(gpu->gdn_prefill_bf16_reserve(gpu->ctx,request,nt)==0);
+        BnBackendSession *peer_session=NULL;
+        void *peer_request=NULL;
+        BnGPUGDNPrefillResidentPlan peer={0},last={0};
+        int offset=0;
+        for (int phase=0;phase<ref->n_phases;phase++) {
+            int take=ref->splits[phase];size_t no=(size_t)take*48*128;
+            for (size_t i=0;i<nv+16;i++)out[i]=0x5a5a;
+            assert(gpu->resident_write(request,ov,out)==0);
+            BnGPUGDNPrefillResidentPlan p={0};p.n_tokens=take;p.hk=16;p.hv=48;p.dk=p.dv=128;p.q_scale=0x1.6a09e6p-4f;
+            p.q=bn_gpu_resident_view_slice(qv,(size_t)offset*16*128,(size_t)take*16*128);
+            p.k=bn_gpu_resident_view_slice(kv,(size_t)offset*16*128,(size_t)take*16*128);
+            p.v=bn_gpu_resident_view_slice(vv,(size_t)offset*48*128,no);
+            p.log_decay=bn_gpu_resident_view_slice(gv,(size_t)offset*48,(size_t)take*48);
+            p.beta=bn_gpu_resident_view_slice(bv,(size_t)offset*48,(size_t)take*48);
+            p.initial_state=bn_gpu_resident_view_slice(sa,1,ns);
+            p.next_state=bn_gpu_resident_view_slice(sb,1,ns);
+            p.out=bn_gpu_resident_view_slice(ov,8,no);
+            assert(gpu->resident_read(request,p.initial_state,before)==0);
+            if (phase==0) {
+                for (int reject=0;reject<13;reject++) {
+                    BnGPUGDNPrefillResidentPlan bad=p;
+                    switch(reject) {
+                        case 0:bad.hk=8;break;
+                        case 1:bad.dk=64;break;
+                        case 2:bad.n_tokens=nt+1;break;
+                        case 3:bad.q_scale=NAN;break;
+                        case 4:bad.q.type=BN_GGUF_TENSOR_F32;break;
+                        case 5:--bad.k.count;break;
+                        case 6:++bad.q.offset;break;
+                        case 7:bad.next_state=bad.initial_state;break;
+                        case 8:bad.out=bad.v;break;
+                        case 9:bad.beta.slot=UINT32_MAX;break;
+                        case 10:bad.v.request=session;break;
+                        case 11:bad.output_profile=(BnGPUGDNOutputProfile)2;break;
+                        default:bad.log_decay.offset=SIZE_MAX;break;
+                    }
+                    assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,&bad)==-1);
+                }
+                assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,NULL)==-1);
+                assert(gpu->resident_read(request,ov,out)==0);
+                for(size_t i=0;i<nv+16;i++)assert(out[i]==0x5a5a);
+            }
+            if (c==2 && phase==0) {
+                peer_session=bn_backend_session_create();assert(peer_session);
+                peer_request=bn_gpu_backend_resident_request(gpu,peer_session);assert(peer_request && peer_request!=request);
+                peer=p;
+                peer.q=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_BF16,nq,q);
+                peer.k=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_BF16,nq,k);
+                peer.v=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_BF16,nv,v);
+                peer.log_decay=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_F32,ng,g);
+                peer.beta=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_F32,ng,beta);
+                peer.initial_state=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_F32,ns,before);
+                peer.next_state=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_F32,ns,NULL);
+                peer.out=cuda_test_resident_alloc(gpu,peer_request,BN_GGUF_TENSOR_BF16,nv,NULL);
+                assert(gpu->gdn_prefill_bf16_reserve(gpu->ctx,peer_request,nt)==0);
+                BnGPUGDNPrefillResidentPlan foreign=p;foreign.v=peer.v;
+                assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,&foreign)==-1);
+                assert(gpu->resident_read(request,peer.initial_state,state+1)==-1);
+                assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,peer_request,&peer)==0);
+            }
+            last=p;
+            assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,&p)==0);
+            assert(gpu->resident_synchronize(request)==0);
+            assert(gpu->resident_read(request,ov,out)==0);
+            assert(gpu->resident_read(request,p.initial_state,state+1)==0);
+            assert(memcmp(before,state+1,ns*4)==0);
+            assert(gpu->resident_read(request,sb,state)==0);
+            uint64_t oh=bf16_output_hash(out+8,no),sh=cuda_test_float_bits_hash(state+1,ns);
+            if (oh!=ref->out[phase] || sh!=ref->state[phase])fprintf(stderr,"resident GDN c=%zu phase=%d output=%d state=%d\n",c,phase,oh==ref->out[phase],sh==ref->state[phase]);
+            assert(oh==ref->out[phase] && sh==ref->state[phase]);
+            for(size_t i=0;i<8;i++)assert(out[i]==0x5a5a);
+            for(size_t i=no+8;i<nv+16;i++)assert(out[i]==0x5a5a);
+            assert(state[0]==12345.0f && state[ns+1]==12345.0f);
+            BnGPUResidentView swap=sa;sa=sb;sb=swap;
+            offset+=take;checked+=no+ns;calls++;
+        }
+        assert(offset==nt);
+        if (peer_session) {
+            /* Release the first request without an explicit completion wait. */
+            assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,&last)==0);
+            bn_backend_session_free(session);session=NULL;
+            assert(gpu->resident_synchronize(peer_request)==0);
+            assert(gpu->resident_read(peer_request,peer.out,out+8)==0);
+            assert(gpu->resident_read(peer_request,peer.next_state,state+1)==0);
+            assert(bf16_output_hash(out+8,nv)==ref->out[0]);
+            assert(cuda_test_float_bits_hash(state+1,ns)==ref->state[0]);
+            checked+=nv+ns;calls++;
+            bn_backend_session_free(peer_session);
+        }
+        bn_backend_session_free(session);
+        free(q);free(k);free(v);free(out);free(g);free(beta);free(state);free(before);
+    }
+    printf("test_cuda_bf16_gdn_prefill_resident... PASSED (%zu calls, %zu output/state words)\n",calls,checked);
+}
+
+static void cuda_test_gdn_decode_input(uint16_t *x, uint16_t *ba,
+    const BnBF16GDNDecodeReference *r, int step) {
+    int dim = (2 * r->hk + r->hv) * 128;
+    const float scales[] = {0.0f, 0x1p-20f, 1.0f, 256.0f};
+    for (size_t i = 0; i < (size_t)dim; i++)
+        x[i] = cuda_test_bf16_rne((float)((int)((i * 37 + i / 13 + r->seed * 11 + step * 7) % 509) - 254) /
+            128.0f * scales[(step + r->seed) % 4]);
+    for (int h = 0; h < r->hv; h++) {
+        ba[h] = cuda_test_bf16_rne((float)((h * 13 + r->seed * 11 + step * 5) % 251 - 125) / 16.0f);
+        ba[r->hv + h] = cuda_test_bf16_rne((float)((h * 17 + h / 19 + r->seed * 3 + step * 11) % 509 - 254) / 8.0f);
+    }
+}
+
+static void run_bf16_gdn_decode_reference_case(BnGPUBackend *gpu) {
+    assert(bn_gpu_backend_can_gdn_decode_bf16(gpu));
+    BnGPUBackend absent = {0};
+    assert(!bn_gpu_backend_can_gdn_decode_bf16(&absent));
+    assert(bn_gpu_backend_gdn_decode_bf16(&absent, NULL, NULL, NULL, NULL, NULL, NULL, 1, 128, 1, 128, 1.0f) == -1);
+    size_t checked = 0;
+    for (size_t c = 0; c < sizeof(cuda_bf16_gdn_decode_cases) / sizeof(cuda_bf16_gdn_decode_cases[0]); c++) {
+        const BnBF16GDNDecodeReference *r = &cuda_bf16_gdn_decode_cases[c];
+        size_t n = (size_t)(2 * r->hk + r->hv) * 128, no = (size_t)r->hv * 128;
+        size_t ns = no * 128, nb = (size_t)r->hv * 2;
+        uint16_t *x = malloc((n + 2) * sizeof(*x)), *out = malloc((no + 2) * sizeof(*out));
+        uint16_t *ba = malloc((nb + 2) * sizeof(*ba)), *bias = malloc((size_t)r->hv * sizeof(*bias));
+        float *state = malloc((ns + 2) * sizeof(*state)), *a_log = malloc((size_t)r->hv * sizeof(*a_log));
+        assert(x && out && ba && bias && state && a_log);
+        for (int h = 0; h < r->hv; h++) {
+            a_log[h] = (float)((h * 11 + r->seed * 5) % 29 - 14) / 8.0f + 0x1p-17f;
+            bias[h] = cuda_test_bf16_rne((float)((h * 7 + r->seed) % 31 - 15) / 32.0f);
+        }
+        void *al = gpu->buffer_create_quant_only(gpu->ctx, a_log, (size_t)r->hv * sizeof(float), BN_GGUF_TENSOR_F32, 1, r->hv);
+        void *dt = gpu->buffer_create_quant_only(gpu->ctx, bias, (size_t)r->hv * sizeof(uint16_t), BN_GGUF_TENSOR_BF16, 1, r->hv);
+        assert(al && dt);
+        for (int mode = 0; mode < 3; mode++) {
+            for (size_t i = 0; i < ns; i++)
+                state[i + 1] = r->seed ? (float)((int)((i * 17 + i / 37 + r->seed * 19) % 251) - 125) / 4096.0f : 0.0f;
+            x[0] = x[n + 1] = out[0] = out[no + 1] = ba[0] = ba[nb + 1] = 0x5a5a;
+            state[0] = state[ns + 1] = 12345.0f;
+            for (int step = 0; step < 8; step++) {
+                if (mode == 2 && step == 4) {
+                    float *resumed = malloc((ns + 2) * sizeof(float));
+                    assert(resumed);
+                    memcpy(resumed, state, (ns + 2) * sizeof(float));
+                    free(state);
+                    state = resumed;
+                }
+                cuda_test_gdn_decode_input(x + 1, ba + 1, r, step);
+                uint16_t *y = mode == 1 ? x + 1 : out + 1;
+                assert(bn_gpu_backend_gdn_decode_bf16(gpu, y, state + 1, al, dt,
+                    x + 1, ba + 1, r->hk, 128, r->hv, 128, 0x1.6a09e6p-4f) == 0);
+                uint64_t oh = bf16_output_hash(y, no), sh = cuda_test_float_bits_hash(state + 1, ns);
+                if (oh != r->out[step] || sh != r->state[step])
+                    fprintf(stderr, "BF16 GDN decode mismatch case=%zu mode=%d step=%d output=%d state=%d\n", c, mode, step, oh == r->out[step], sh == r->state[step]);
+                assert(oh == r->out[step] && sh == r->state[step]);
+                assert(x[0] == 0x5a5a && x[n + 1] == 0x5a5a && out[0] == 0x5a5a && out[no + 1] == 0x5a5a);
+                assert(ba[0] == 0x5a5a && ba[nb + 1] == 0x5a5a && state[0] == 12345.0f && state[ns + 1] == 12345.0f);
+                checked += no + ns;
+            }
+        }
+        uint64_t before = cuda_test_float_bits_hash(state + 1, ns);
+        uint16_t sentinel = 0x5a5a;
+#define BN_GDN_DECODE_REJECT(AL,DT,X,BA,HK,DK,HV,DV,SCALE) \
+        assert(bn_gpu_backend_gdn_decode_bf16(gpu, &sentinel, state + 1, AL, DT, X, BA, HK, DK, HV, DV, SCALE) == -1)
+        BN_GDN_DECODE_REJECT(al, dt, x + 1, ba + 1, 0, 128, r->hv, 128, 1.0f);
+        BN_GDN_DECODE_REJECT(al, dt, x + 1, ba + 1, r->hk, 64, r->hv, 128, 1.0f);
+        BN_GDN_DECODE_REJECT(al, dt, x + 1, ba + 1, r->hk, 128, r->hv, 64, 1.0f);
+        BN_GDN_DECODE_REJECT(al, dt, x + 1, ba + 1, r->hv + 1, 128, r->hv, 128, 1.0f);
+        BN_GDN_DECODE_REJECT(al, dt, x + 1, ba + 1, r->hk, 128, r->hv, 128, NAN);
+        BN_GDN_DECODE_REJECT(al, dt, x + 1, ba + 1, r->hk, 128, r->hv, 128, 0.0f);
+        BN_GDN_DECODE_REJECT(dt, al, x + 1, ba + 1, r->hk, 128, r->hv, 128, 1.0f);
+        BN_GDN_DECODE_REJECT(al, dt, (uint16_t *)(state + 1), ba + 1, r->hk, 128, r->hv, 128, 1.0f);
+        BN_GDN_DECODE_REJECT(al, dt, x + 1, x + 1, r->hk, 128, r->hv, 128, 1.0f);
+#undef BN_GDN_DECODE_REJECT
+        assert(sentinel == 0x5a5a && cuda_test_float_bits_hash(state + 1, ns) == before);
+        gpu->buffer_destroy(gpu->ctx, al);
+        gpu->buffer_destroy(gpu->ctx, dt);
+        free(x); free(out); free(ba); free(bias); free(state); free(a_log);
+    }
+    printf("test_cuda_bf16_gdn_decode... PASSED (%zu output/state words)\n", checked);
+}
+
+static float gdn_profile_value(size_t i,int mult,int offset,int mod,int denominator) {
+ return (float)((int)((i*(size_t)mult+(size_t)offset)%(size_t)mod)-mod/2)/(float)denominator;
+}
+/* This new independent fixture hashes raw little-endian F32 bytes; older
+ * fixtures use one FNV step per uint32 word and keep that separate contract. */
+static uint64_t gdn_profile_state_bytes_hash(const float *values,size_t count) {
+ uint64_t hash=UINT64_C(14695981039346656037);
+ for(size_t i=0;i<count;i++) {
+  uint32_t word;memcpy(&word,values+i,sizeof(word));
+  for(int b=0;b<4;b++)hash=(hash^((word>>(8*b))&255u))*UINT64_C(1099511628211);
+ }
+ return hash;
+}
+static void run_bf16_gdn_decode_profiles_reference_case(BnGPUBackend *gpu) {
+ uint32_t required=(1u<<BN_GPU_GDN_DECODE_PACKED)|(1u<<BN_GPU_GDN_DECODE_RSQRT);
+ if((gpu->resident_gdn_decode_profiles&required)!=required){
+  puts("CUDA independent GDN decode profiles unsupported on this backend; skipped");return;
+ }
+ const size_t nx=10240,nb=96,no=48u*128,ns=48u*128*128;size_t checked=0;
+ for(size_t c=0;c<sizeof(bf16_gdn_decode_profiles_cases)/sizeof(bf16_gdn_decode_profiles_cases[0]);c++) {
+  const BnBF16GDNDecodeProfilesReference *ref=&bf16_gdn_decode_profiles_cases[c];int batch=ref->batch,seed=ref->seed;
+  size_t xn=(size_t)batch*nx,bn=(size_t)batch*nb,on=(size_t)batch*no,sn=(size_t)batch*ns;
+  uint16_t *x=malloc((xn+2)*2),*ba=malloc((bn+2)*2),*out=malloc((on+2)*2),bias[48];
+  float *initial=malloc((sn+2)*4),*next=malloc((sn+2)*4),a[48];assert(x&&ba&&out&&initial&&next);
+  x[0]=x[xn+1]=ba[0]=ba[bn+1]=0x5a5a;initial[0]=initial[sn+1]=12345;
+  for(size_t i=0;i<xn;i++){float v=gdn_profile_value(i,7,seed*17,251,128);if(ref->mode)v=ldexpf(v,(int)((i/17+(size_t)seed)%15)-7);x[i+1]=cuda_test_bf16_rne(v);}
+  for(size_t i=0;i<bn;i++)ba[i+1]=cuda_test_bf16_rne(gdn_profile_value(i,11,seed*3,127,32));
+  for(size_t i=0;i<sn;i++){size_t index=ns+i;float v=gdn_profile_value(index,11,seed*13,511,8192);if(ref->mode){v=ldexpf(v,(int)((index/29+(size_t)seed)%9)-4);v+=(float)((int)(index%7)-3)*0x1p-23f;}initial[i+1]=v;}
+  for(int h=0;h<48;h++){a[h]=gdn_profile_value((size_t)h,3,seed,127,64);bias[h]=cuda_test_bf16_rne(gdn_profile_value((size_t)h,5,seed*7,127,64));}
+  void *al=gpu->buffer_create_quant_only(gpu->ctx,a,sizeof(a),BN_GGUF_TENSOR_F32,1,48);
+  void *dt=gpu->buffer_create_quant_only(gpu->ctx,bias,sizeof(bias),BN_GGUF_TENSOR_BF16,1,48);assert(al&&dt);
+  for(int profile=0;profile<2;profile++)for(int grouped=0;grouped<2;grouped++) {
+   for(size_t i=0;i<on+2;i++)out[i]=0x5a5a;
+   for(size_t i=0;i<sn+2;i++)next[i]=12345;
+   BnBackendSession *co=bn_backend_session_create();assert(co);void *request=bn_gpu_backend_resident_request(gpu,co);assert(request);
+   BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,xn+2,x),bv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,bn+2,ba);
+   BnGPUResidentView ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,on+2,out);
+   BnBackendSession *sessions[4]={0};void *owners[4]={0};BnGPUResidentView inputs[4],states[4];
+   if(!grouped) {
+    inputs[0]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,sn+2,initial);states[0]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,sn+2,next);
+    BnGPUGDNDecodeResidentPlan plan={0};plan.hk=16;plan.hv=48;plan.dk=plan.dv=128;plan.q_scale=0x1.6a09e6p-4f;plan.a_log=al;plan.dt_bias=dt;plan.n_sequences=batch;plan.profile=(BnGPUGDNDecodeProfile)profile;
+    plan.x=bn_gpu_resident_view_slice(xv,1,xn);plan.ba=bn_gpu_resident_view_slice(bv,1,bn);plan.out=bn_gpu_resident_view_slice(ov,1,on);plan.initial_state=bn_gpu_resident_view_slice(inputs[0],1,sn);plan.next_state=bn_gpu_resident_view_slice(states[0],1,sn);
+    BnGPUGDNDecodeResidentPlan bad=plan;bad.profile=(BnGPUGDNDecodeProfile)99;
+    assert(gpu->gdn_decode_bf16_resident(gpu->ctx,request,&bad)==-1);
+    assert(!gpu->resident_read(request,states[0],next));for(size_t i=0;i<sn+2;i++)assert(next[i]==12345);
+    assert(!gpu->gdn_decode_bf16_resident(gpu->ctx,request,&plan));assert(!gpu->resident_read(request,states[0],next));
+    assert(next[0]==12345&&next[sn+1]==12345);
+   } else {
+    BnGPUGDNDecodeSequence rows[4]={{0}};float *buffer=malloc((ns+2)*4);assert(buffer);
+    for(int row=0;row<batch;row++) {
+     sessions[row]=bn_backend_session_create();assert(sessions[row]);owners[row]=bn_gpu_backend_resident_request(gpu,sessions[row]);assert(owners[row]);
+     buffer[0]=buffer[ns+1]=12345;memcpy(buffer+1,initial+1+(size_t)row*ns,ns*4);inputs[row]=cuda_test_resident_alloc(gpu,owners[row],BN_GGUF_TENSOR_F32,ns+2,buffer);
+     for(size_t i=0;i<ns+2;i++)buffer[i]=12345;
+     states[row]=cuda_test_resident_alloc(gpu,owners[row],BN_GGUF_TENSOR_F32,ns+2,buffer);
+     rows[row].request=owners[row];rows[row].x=bn_gpu_resident_view_slice(xv,1+(size_t)row*nx,nx);rows[row].ba=bn_gpu_resident_view_slice(bv,1+(size_t)row*nb,nb);
+     rows[row].out=bn_gpu_resident_view_slice(ov,1+(size_t)row*no,no);rows[row].initial_state=bn_gpu_resident_view_slice(inputs[row],1,ns);rows[row].next_state=bn_gpu_resident_view_slice(states[row],1,ns);
+    }
+    size_t bytes=gpu->gdn_decode_bf16_group_workspace_size(gpu->ctx,batch);assert(bytes&&!gpu->gdn_decode_bf16_group_reserve(gpu->ctx,request,batch,bytes));
+    BnGPUGDNDecodeGroupPlan plan={0};plan.hk=16;plan.hv=48;plan.dk=plan.dv=128;plan.q_scale=0x1.6a09e6p-4f;plan.a_log=al;plan.dt_bias=dt;plan.n_sequences=batch;plan.sequences=rows;plan.profile=(BnGPUGDNDecodeProfile)profile;
+    BnGPUGDNDecodeGroupPlan bad=plan;bad.profile=(BnGPUGDNDecodeProfile)99;assert(gpu->gdn_decode_bf16_group_resident(gpu->ctx,request,&bad)==-1);
+    for(int row=0;row<batch;row++){assert(!gpu->resident_read(owners[row],states[row],buffer));for(size_t i=0;i<ns+2;i++)assert(buffer[i]==12345);}
+    assert(!gpu->gdn_decode_bf16_group_resident(gpu->ctx,request,&plan));
+    for(int row=0;row<batch;row++) {
+     assert(!gpu->resident_read(owners[row],states[row],buffer));assert(buffer[0]==12345&&buffer[ns+1]==12345);memcpy(next+1+(size_t)row*ns,buffer+1,ns*4);
+     assert(!gpu->resident_read(owners[row],inputs[row],buffer));assert(buffer[0]==12345&&buffer[ns+1]==12345&&!memcmp(buffer+1,initial+1+(size_t)row*ns,ns*4));
+    }
+    free(buffer);
+   }
+   assert(!gpu->resident_read(request,ov,out));assert(out[0]==0x5a5a&&out[on+1]==0x5a5a);
+   assert(bf16_output_hash(out+1,on)==ref->out[profile]);assert(gdn_profile_state_bytes_hash(next+1,sn)==ref->state[profile]);checked+=on+sn;
+   uint16_t *copy=malloc((xn+2)*2);assert(copy);assert(!gpu->resident_read(request,xv,copy)&&!memcmp(copy,x,(xn+2)*2));free(copy);
+   copy=malloc((bn+2)*2);assert(copy);assert(!gpu->resident_read(request,bv,copy)&&!memcmp(copy,ba,(bn+2)*2));free(copy);
+   if(!grouped){float *copy_state=malloc((sn+2)*4);assert(copy_state);assert(!gpu->resident_read(request,inputs[0],copy_state)&&!memcmp(copy_state,initial,(sn+2)*4));free(copy_state);}
+   for(int row=0;row<batch;row++){if(sessions[row])bn_backend_session_free(sessions[row]);}
+   bn_backend_session_free(co);
+  }
+  gpu->buffer_destroy(gpu->ctx,al);gpu->buffer_destroy(gpu->ctx,dt);free(x);free(ba);free(out);free(initial);free(next);
+ }
+ printf("CUDA independent GDN decode profiles PASSED: %zu BF16/F32 words\n",checked);
+}
+
+static void run_bf16_gdn_decode_resident_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->gdn_decode_bf16_resident);
+    size_t checked=0,calls=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_gdn_decode_cases)/sizeof(cuda_bf16_gdn_decode_cases[0]);c++) {
+        const BnBF16GDNDecodeReference *ref=&cuda_bf16_gdn_decode_cases[c];
+        size_t nx=(size_t)(2*ref->hk+ref->hv)*128,no=(size_t)ref->hv*128,ns=no*128,nb=(size_t)ref->hv*2;
+        uint16_t *x=malloc((nx+2)*2),*ba=malloc((nb+2)*2),*out=malloc((no+2)*2),*bias=malloc((size_t)ref->hv*2);
+        float *a=malloc((size_t)ref->hv*4),*state=malloc((ns+2)*4),*before=malloc(ns*4);assert(x&&ba&&out&&bias&&a&&state&&before);
+        for(int h=0;h<ref->hv;h++) {a[h]=(float)((h*11+ref->seed*5)%29-14)/8.0f+0x1p-17f;bias[h]=cuda_test_bf16_rne((float)((h*7+ref->seed)%31-15)/32.0f);}
+        void *al=gpu->buffer_create_quant_only(gpu->ctx,a,(size_t)ref->hv*4,BN_GGUF_TENSOR_F32,1,ref->hv),*dt=gpu->buffer_create_quant_only(gpu->ctx,bias,(size_t)ref->hv*2,BN_GGUF_TENSOR_BF16,1,ref->hv);assert(al&&dt);
+        for(int mode=0;mode<2;mode++) {
+            for(size_t i=0;i<ns;i++)state[i+1]=ref->seed?(float)((int)((i*17+i/37+ref->seed*19)%251)-125)/4096.0f:0.0f;
+            state[0]=state[ns+1]=12345.0f;
+            for(size_t i=0;i<no+2;i++)out[i]=0x5a5a;
+            BnBackendSession *session=bn_backend_session_create();assert(session);void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+            BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nx+2,NULL),bv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nb+2,NULL),ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,no+2,out);
+            BnGPUResidentView states[9];int count=mode?9:2;
+            for(int i=0;i<count;i++)states[i]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns+2,state);
+            for(int step=0;step<8;step++) {
+                cuda_test_gdn_decode_input(x+1,ba+1,ref,step);x[0]=x[nx+1]=ba[0]=ba[nb+1]=0x5a5a;
+                assert(gpu->resident_write(request,xv,x)==0&&gpu->resident_write(request,bv,ba)==0);
+                BnGPUGDNDecodeResidentPlan p={0};p.hk=ref->hk;p.hv=ref->hv;p.dk=p.dv=128;p.q_scale=0x1.6a09e6p-4f;p.a_log=al;p.dt_bias=dt;
+                p.x=bn_gpu_resident_view_slice(xv,1,nx);p.ba=bn_gpu_resident_view_slice(bv,1,nb);p.out=bn_gpu_resident_view_slice(ov,1,no);
+                BnGPUResidentView old=states[mode?step:step%2],next=states[mode?step+1:1-step%2];
+                p.initial_state=bn_gpu_resident_view_slice(old,1,ns);p.next_state=bn_gpu_resident_view_slice(next,1,ns);
+                assert(gpu->resident_read(request,p.initial_state,before)==0);
+                if(step==0) for(int reject=0;reject<10;reject++) {
+                    BnGPUGDNDecodeResidentPlan bad=p;
+                    switch(reject) {case 0:bad.hk=0;break;case 1:bad.dk=64;break;case 2:bad.q_scale=NAN;break;case 3:bad.q_scale=0;break;case 4:bad.x.type=BN_GGUF_TENSOR_F32;break;case 5:--bad.ba.count;break;case 6:bad.next_state=bad.initial_state;break;case 7:bad.out=bn_gpu_resident_view_slice(xv,1,no);break;case 8:bad.initial_state.request=session;break;default:bad.dt_bias=NULL;break;}
+                    assert(gpu->gdn_decode_bf16_resident(gpu->ctx,request,&bad)==-1);
+                }
+                assert(gpu->gdn_decode_bf16_resident(gpu->ctx,request,&p)==0);
+                assert(gpu->resident_synchronize(request)==0);
+                assert(gpu->resident_read(request,p.initial_state,state+1)==0);assert(!memcmp(before,state+1,ns*4));
+                assert(gpu->resident_read(request,next,state)==0&&gpu->resident_read(request,ov,out)==0);
+                uint64_t oh=bf16_output_hash(out+1,no),sh=cuda_test_float_bits_hash(state+1,ns);
+                if(oh!=ref->out[step]||sh!=ref->state[step])fprintf(stderr,"resident decode case=%zu mode=%d step=%d out=%d state=%d\n",c,mode,step,oh==ref->out[step],sh==ref->state[step]);
+                assert(oh==ref->out[step]&&sh==ref->state[step]);assert(state[0]==12345&&state[ns+1]==12345&&out[0]==0x5a5a&&out[no+1]==0x5a5a);
+                calls++;checked+=no+ns;
+            }
+            bn_backend_session_free(session);
+        }
+        gpu->buffer_destroy(gpu->ctx,al);gpu->buffer_destroy(gpu->ctx,dt);free(x);free(ba);free(out);free(bias);free(a);free(state);free(before);
+    }
+    printf("CUDA resident BF16 GDN decode PASSED: %zu calls, %zu output/state words\n",calls,checked);
+}
+
+/* Each sequence starts at a different point in the frozen independent vLLM
+ * trajectory. Shared weights, distinct inputs/state, five dependent launches. */
+static void run_bf16_gdn_decode_batch_reference_case(BnGPUBackend *gpu) {
+    const int batches[]={1,2,3,8,16};
+    size_t checked=0,calls=0;
+    assert(gpu->gdn_decode_bf16_resident);
+    for(size_t c=0;c<sizeof(cuda_bf16_gdn_decode_cases)/sizeof(cuda_bf16_gdn_decode_cases[0]);c++) {
+        const BnBF16GDNDecodeReference *ref=&cuda_bf16_gdn_decode_cases[c];
+        size_t nx=(size_t)(2*ref->hk+ref->hv)*128,no=(size_t)ref->hv*128,ns=no*128,nb=(size_t)ref->hv*2;
+        float *a=malloc((size_t)ref->hv*4);uint16_t *bias=malloc((size_t)ref->hv*2);assert(a&&bias);
+        for(int h=0;h<ref->hv;h++) {a[h]=(float)((h*11+ref->seed*5)%29-14)/8.0f+0x1p-17f;bias[h]=cuda_test_bf16_rne((float)((h*7+ref->seed)%31-15)/32.0f);}
+        void *al=gpu->buffer_create_quant_only(gpu->ctx,a,(size_t)ref->hv*4,BN_GGUF_TENSOR_F32,1,ref->hv);
+        void *dt=gpu->buffer_create_quant_only(gpu->ctx,bias,(size_t)ref->hv*2,BN_GGUF_TENSOR_BF16,1,ref->hv);assert(al&&dt);
+        for(size_t b=0;b<sizeof(batches)/sizeof(batches[0]);b++) {
+            int batch=batches[b];size_t sn=ns*batch,on=no*batch,xn=nx*batch,bn=nb*batch;
+            uint16_t *x=malloc((xn+2)*2),*ba=malloc((bn+2)*2),*out=malloc((on+2)*2);
+            float *state=malloc((sn+2)*4),*before=malloc(sn*4);assert(x&&ba&&out&&state&&before);
+            for(int q=0;q<batch;q++) {
+                for(size_t i=0;i<ns;i++)state[1+(size_t)q*ns+i]=ref->seed?(float)((int)((i*17+i/37+ref->seed*19)%251)-125)/4096.0f:0.0f;
+                for(int step=0;step<q%4;step++) {
+                    cuda_test_gdn_decode_input(x+1+(size_t)q*nx,ba+1+(size_t)q*nb,ref,step);
+                    assert(bn_gpu_backend_gdn_decode_bf16(gpu,out+1+(size_t)q*no,state+1+(size_t)q*ns,al,dt,x+1+(size_t)q*nx,ba+1+(size_t)q*nb,ref->hk,128,ref->hv,128,0x1.6a09e6p-4f)==0);
+                    assert(cuda_test_float_bits_hash(state+1+(size_t)q*ns,ns)==ref->state[step]);
+                }
+            }
+            state[0]=state[sn+1]=12345.0f;
+            for(size_t i=0;i<on+2;i++)out[i]=0x5a5a;
+            BnBackendSession *session=bn_backend_session_create();assert(session);
+            void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+            BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,xn+2,NULL);
+            BnGPUResidentView bv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,bn+2,NULL);
+            BnGPUResidentView ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,on+2,out);
+            BnGPUResidentView states[2];
+            for(int i=0;i<2;i++)states[i]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,sn+2,state);
+            BnGPUGDNDecodeResidentPlan p={0};p.hk=ref->hk;p.hv=ref->hv;p.dk=p.dv=128;p.q_scale=0x1.6a09e6p-4f;p.a_log=al;p.dt_bias=dt;p.n_sequences=batch;
+            p.x=bn_gpu_resident_view_slice(xv,1,xn);p.ba=bn_gpu_resident_view_slice(bv,1,bn);p.out=bn_gpu_resident_view_slice(ov,1,on);
+            for(int round=0;round<5;round++) {
+                for(int q=0;q<batch;q++)cuda_test_gdn_decode_input(x+1+(size_t)q*nx,ba+1+(size_t)q*nb,ref,q%4+round);
+                x[0]=x[xn+1]=ba[0]=ba[bn+1]=0x5a5a;
+                assert(gpu->resident_write(request,xv,x)==0&&gpu->resident_write(request,bv,ba)==0);
+                p.initial_state=bn_gpu_resident_view_slice(states[round%2],1,sn);p.next_state=bn_gpu_resident_view_slice(states[1-round%2],1,sn);
+                memcpy(before,state+1,sn*4);
+                if(!round)for(int reject=0;reject<8;reject++) {
+                    BnGPUGDNDecodeResidentPlan bad=p;
+                    switch(reject) {case 0:bad.n_sequences=-1;break;case 1:bad.n_sequences=65536;break;case 2:bad.n_sequences=INT_MAX;break;case 3:bad.x.count--;break;case 4:bad.next_state.count--;break;case 5:bad.out=bad.x;break;case 6:bad.initial_state.request=session;break;default:bad.next_state=bad.initial_state;break;}
+                    assert(gpu->gdn_decode_bf16_resident(gpu->ctx,request,&bad)==-1);
+                }
+                if(!round) {
+                    assert(gpu->resident_read(request,p.next_state,state+1)==0&&!memcmp(before,state+1,sn*4));
+                    assert(gpu->resident_read(request,ov,out)==0);
+                    for(size_t i=0;i<on+2;i++)assert(out[i]==0x5a5a);
+                }
+                assert(gpu->gdn_decode_bf16_resident(gpu->ctx,request,&p)==0);
+                assert(gpu->resident_synchronize(request)==0);
+                assert(gpu->resident_read(request,p.initial_state,state+1)==0&&!memcmp(before,state+1,sn*4));
+                assert(gpu->resident_read(request,states[1-round%2],state)==0&&gpu->resident_read(request,ov,out)==0);
+                assert(state[0]==12345&&state[sn+1]==12345&&out[0]==0x5a5a&&out[on+1]==0x5a5a);
+                for(int q=0;q<batch;q++) {
+                    int step=q%4+round;
+                    uint64_t oh=bf16_output_hash(out+1+(size_t)q*no,no),sh=cuda_test_float_bits_hash(state+1+(size_t)q*ns,ns);
+                    if(oh!=ref->out[step]||sh!=ref->state[step])fprintf(stderr,"batch GDN case=%zu batch=%d sequence=%d step=%d output=%d state=%d\n",c,batch,q,step,oh==ref->out[step],sh==ref->state[step]);
+                    assert(oh==ref->out[step]&&sh==ref->state[step]);checked+=no+ns;
+                }
+                calls++;
+            }
+            bn_backend_session_free(session);free(x);free(ba);free(out);free(state);free(before);
+        }
+        gpu->buffer_destroy(gpu->ctx,al);gpu->buffer_destroy(gpu->ctx,dt);free(a);free(bias);
+    }
+    printf("CUDA batched independent-sequence GDN decode PASSED: %zu launches, %zu output/state words\n",calls,checked);
+}
+
+static void run_bf16_gdn_decode_group_reference_case(BnGPUBackend *gpu, int shared_rows) {
+    const int batches[]={1,2,3,8,16};size_t checked=0,calls=0,busy_observed=0;
+    assert(gpu->gdn_decode_bf16_group_resident&&gpu->gdn_decode_bf16_group_reserve&&gpu->gdn_decode_bf16_group_workspace_size);
+    assert(!gpu->gdn_decode_bf16_group_workspace_size(gpu->ctx,0)&&!gpu->gdn_decode_bf16_group_workspace_size(gpu->ctx,257));
+    for(size_t c=0;c<sizeof(cuda_bf16_projected_gdn_decode_cases)/sizeof(cuda_bf16_projected_gdn_decode_cases[0]);c++) {
+        const BnBF16GDNDecodeReference *ref=shared_rows==2?&cuda_bf16_projected_gdn_decode_cases[c]:&cuda_bf16_gdn_decode_cases[c];
+        size_t nx=(size_t)(2*ref->hk+ref->hv)*128,no=(size_t)ref->hv*128,ns=no*128,nb=(size_t)ref->hv*2;
+        float *a=malloc((size_t)ref->hv*4);uint16_t *bias=malloc((size_t)ref->hv*2);assert(a&&bias);
+        for(int h=0;h<ref->hv;h++){a[h]=(float)((h*11+ref->seed*5)%29-14)/8.0f+0x1p-17f;bias[h]=cuda_test_bf16_rne((float)((h*7+ref->seed)%31-15)/32.0f);}
+        void *al=gpu->buffer_create_quant_only(gpu->ctx,a,(size_t)ref->hv*4,BN_GGUF_TENSOR_F32,1,ref->hv);
+        void *dt=gpu->buffer_create_quant_only(gpu->ctx,bias,(size_t)ref->hv*2,BN_GGUF_TENSOR_BF16,1,ref->hv);assert(al&&dt);
+        for(size_t b=0;b<sizeof(batches)/sizeof(batches[0]);b++) {
+            int batch=batches[b];BnBackendSession *sessions[16]={0};void *requests[16]={0};
+            BnGPUResidentView states[16][2],outputs[16];BnGPUGDNDecodeSequence rows[16]={{0}};
+            uint16_t *x=malloc(nx*2),*ba=malloc(nb*2),*out=malloc((no+2)*2);
+            float *state=malloc((ns+2)*4),*initial=malloc((size_t)batch*ns*4),*before=malloc(ns*4);assert(x&&ba&&out&&state&&initial&&before);
+            for(size_t i=0;i<no+2;i++)out[i]=0x5a5a;
+            for(int q=0;q<batch;q++) {
+                for(size_t i=0;i<ns;i++)state[i+1]=ref->seed?(float)((int)((i*17+i/37+ref->seed*19)%251)-125)/4096.0f:0.0f;
+                for(int step=0;step<q%4;step++) {
+                    cuda_test_gdn_decode_input(x,ba,ref,step);
+                    /* Only fixture warmup uses the independently verified GEMM
+                     * zero-sign contract. Timed/composed rows come from GEMMs. */
+                    if(shared_rows==2) {
+                        for(size_t z=0;z<nx;z++)if(!(x[z]&0x7fff))x[z]=0;
+                        for(size_t z=0;z<nb;z++)if(!(ba[z]&0x7fff))ba[z]=0;
+                    }
+                    assert(bn_gpu_backend_gdn_decode_bf16(gpu,out+1,state+1,al,dt,x,ba,ref->hk,128,ref->hv,128,0x1.6a09e6p-4f)==0);
+                    assert(cuda_test_float_bits_hash(state+1,ns)==ref->state[step]);
+                }
+                memcpy(initial+(size_t)q*ns,state+1,ns*4);state[0]=state[ns+1]=12345.0f;
+                for(size_t i=0;i<no+2;i++)out[i]=0x5a5a;
+                sessions[q]=bn_backend_session_create();assert(sessions[q]);requests[q]=bn_gpu_backend_resident_request(gpu,sessions[q]);assert(requests[q]);
+                rows[q].request=requests[q];rows[q].x=cuda_test_resident_alloc(gpu,requests[q],BN_GGUF_TENSOR_BF16,nx,NULL);
+                rows[q].ba=cuda_test_resident_alloc(gpu,requests[q],BN_GGUF_TENSOR_BF16,nb,NULL);
+                outputs[q]=cuda_test_resident_alloc(gpu,requests[q],BN_GGUF_TENSOR_BF16,no+2,out);
+                rows[q].out=bn_gpu_resident_view_slice(outputs[q],1,no);
+                for(int j=0;j<2;j++)states[q][j]=cuda_test_resident_alloc(gpu,requests[q],BN_GGUF_TENSOR_F32,ns+2,state);
+                assert(gpu->resident_upload_reserve(requests[q],2,nx*2,nx*4)==0);
+            }
+            BnBackendSession *session=bn_backend_session_create();assert(session);void *coordinator=bn_gpu_backend_resident_request(gpu,session);assert(coordinator);
+            void *wx=NULL,*wb=NULL;BnGPUResidentView selector={0};uint16_t *onehot=NULL;
+            BnGPUResidentView shared_x={0},shared_ba={0},foreign_state={0};
+            uint16_t *packed_x=NULL,*packed_ba=NULL,*packed_out=NULL;
+            size_t x_count=(nx+2)*(size_t)batch,ba_count=(nb+2)*(size_t)batch,out_count=(no+2)*(size_t)batch;
+            if(shared_rows) {
+                packed_x=malloc(x_count*2);packed_ba=malloc(ba_count*2);packed_out=malloc(out_count*2);assert(packed_x&&packed_ba&&packed_out);
+                for(size_t i=0;i<x_count;i++)packed_x[i]=0x5a5a;
+                for(size_t i=0;i<ba_count;i++)packed_ba[i]=0x5a5a;
+                for(size_t i=0;i<out_count;i++)packed_out[i]=0x5a5a;
+                shared_x=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,x_count,packed_x);
+                shared_ba=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,ba_count,packed_ba);
+                BnGPUResidentView shared_out=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,out_count,packed_out);
+                foreign_state=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_F32,ns+2,state);
+                if(shared_rows==2) {
+                uint16_t *weights_x=malloc((nx+2)*8*2),*weights_b=malloc((nb+2)*8*2);assert(weights_x&&weights_b);
+                for(int step=0;step<8;step++) {
+                    cuda_test_gdn_decode_input(x,ba,ref,step);
+                    for(size_t r=0;r<nx+2;r++)weights_x[r*8+step]=(r==0||r==nx+1)?0x5a5a:x[r-1];
+                    for(size_t r=0;r<nb+2;r++)weights_b[r*8+step]=(r==0||r==nb+1)?0x5a5a:ba[r-1];
+                }
+                wx=gpu->buffer_create_quant_only(gpu->ctx,weights_x,(nx+2)*8*2,BN_GGUF_TENSOR_BF16,(int)nx+2,8);
+                wb=gpu->buffer_create_quant_only(gpu->ctx,weights_b,(nb+2)*8*2,BN_GGUF_TENSOR_BF16,(int)nb+2,8);assert(wx&&wb);
+                free(weights_x);free(weights_b);
+                onehot=calloc((size_t)batch*8,2);assert(onehot);
+                selector=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,(size_t)batch*8,NULL);
+                assert(gpu->linear_bf16_reserve(gpu->ctx,coordinator,0)==0);
+                } else assert(gpu->resident_upload_reserve(coordinator,2,x_count*2,x_count*4)==0);
+                for(int q=0;q<batch;q++) {
+                    rows[q].x=bn_gpu_resident_view_slice(shared_x,(size_t)q*(nx+2)+1,nx);
+                    rows[q].ba=bn_gpu_resident_view_slice(shared_ba,(size_t)q*(nb+2)+1,nb);
+                    outputs[q]=bn_gpu_resident_view_slice(shared_out,(size_t)q*(no+2),no+2);
+                    rows[q].out=bn_gpu_resident_view_slice(outputs[q],1,no);
+                }
+            }
+            BnGPUResidentView backlog={0};
+            if(c==0&&b==0)backlog=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_F32,64u*1024u*1024u,NULL);
+            size_t budget=gpu->gdn_decode_bf16_group_workspace_size(gpu->ctx,batch);assert(budget);
+            assert(gpu->gdn_decode_bf16_group_reserve(gpu->ctx,coordinator,batch,budget-1)==-1);
+            assert(gpu->gdn_decode_bf16_group_reserve(gpu->ctx,coordinator,batch,budget)==0);
+            assert(gpu->gdn_decode_bf16_group_reserve(gpu->ctx,coordinator,batch,budget)==0);
+            assert(gpu->gdn_decode_bf16_group_reserve(gpu->ctx,coordinator,batch+1,SIZE_MAX)==-1);
+            BnGPUGDNDecodeGroupPlan p={0};p.hk=ref->hk;p.hv=ref->hv;p.dk=p.dv=128;p.q_scale=0x1.6a09e6p-4f;p.a_log=al;p.dt_bias=dt;p.n_sequences=batch;p.sequences=rows;
+            assert(gpu->gdn_decode_bf16_group_resident(session,coordinator,&p)==-1);
+            for(int round=0;round<5;round++) {
+                for(int q=0;q<batch;q++) {
+                    cuda_test_gdn_decode_input(x,ba,ref,q%4+round);
+                    if(shared_rows) {
+                        memcpy(packed_x+(size_t)q*(nx+2)+1,x,nx*2);
+                        memcpy(packed_ba+(size_t)q*(nb+2)+1,ba,nb*2);
+                    } else {
+                    BnGPUHostUploadLease leases[2];
+                    assert(gpu->resident_upload_acquire(requests[q],0,&leases[0])==0&&gpu->resident_upload_acquire(requests[q],1,&leases[1])==0);
+                    memcpy(leases[0].data,x,nx*2);memcpy(leases[1].data,ba,nb*2);
+                    assert(gpu->resident_upload_submit(requests[q],&leases[0],rows[q].x)==0&&gpu->resident_upload_submit(requests[q],&leases[1],rows[q].ba)==0);
+                    }
+                    rows[q].initial_state=bn_gpu_resident_view_slice(states[q][round%2],1,ns);
+                    rows[q].next_state=bn_gpu_resident_view_slice(states[q][1-round%2],1,ns);
+                }
+                if(shared_rows==2) {
+                memset(onehot,0,(size_t)batch*8*2);
+                for(int q=0;q<batch;q++)onehot[q*8+q%4+round]=0x3f80;
+                assert(gpu->resident_write(coordinator,selector,onehot)==0);
+                BnGPUBF16LinearResidentPlan linear={0};linear.n_tokens=batch;linear.cols=8;linear.rows=(int)nx+2;
+                linear.weight.type=BN_GGUF_TENSOR_BF16;linear.weight.decoded=wx;linear.x=selector;linear.out=shared_x;
+                assert(gpu->linear_bf16_resident(gpu->ctx,coordinator,&linear)==0);
+                linear.rows=(int)nb+2;linear.weight.decoded=wb;linear.out=shared_ba;
+                assert(gpu->linear_bf16_resident(gpu->ctx,coordinator,&linear)==0);
+                } else if(shared_rows) {
+                    BnGPUHostUploadLease leases[2];
+                    assert(gpu->resident_upload_acquire(coordinator,0,&leases[0])==0&&gpu->resident_upload_acquire(coordinator,1,&leases[1])==0);
+                    memcpy(leases[0].data,packed_x,x_count*2);memcpy(leases[1].data,packed_ba,ba_count*2);
+                    assert(gpu->resident_upload_submit(coordinator,&leases[0],shared_x)==0&&gpu->resident_upload_submit(coordinator,&leases[1],shared_ba)==0);
+                }
+                if(!round) {
+                    for(int reject=0;reject<(shared_rows?14:10);reject++) {
+                        BnGPUGDNDecodeGroupPlan bad=p;BnGPUGDNDecodeSequence altered[16];memcpy(altered,rows,(size_t)batch*sizeof(*rows));bad.sequences=altered;
+                        switch(reject){case 0:bad.n_sequences=0;break;case 1:bad.n_sequences=257;break;case 2:bad.dk=64;break;case 3:altered[batch-1].next_state=altered[batch-1].initial_state;break;case 4:altered[batch-1].out.count--;break;case 5:altered[batch-1].x.request=session;break;case 6:altered[batch-1].request=coordinator;break;case 7:bad.q_scale=NAN;break;case 8:bad.sequences=NULL;break;case 9:if(batch>1)altered[batch-1]=altered[0];else bad.dt_bias=NULL;break;
+                        case 10:altered[batch-1].initial_state=bn_gpu_resident_view_slice(foreign_state,1,ns);break;
+                        case 11:altered[batch-1].next_state=bn_gpu_resident_view_slice(foreign_state,1,ns);break;
+                        case 12:if(batch>1)altered[batch-1].out=altered[0].out;else altered[0].out=bn_gpu_resident_view_slice(shared_x,1,no);break;
+                        default:if(batch>1)altered[0].out=bn_gpu_resident_view_slice(altered[batch-1].x,0,no);else altered[0].out=bn_gpu_resident_view_slice(shared_ba,1,no);break;}
+                        assert(gpu->gdn_decode_bf16_group_resident(gpu->ctx,coordinator,&bad)==-1);
+                    }
+                    for(int q=0;q<batch;q++) {
+                        assert(gpu->resident_read(requests[q],rows[q].next_state,before)==0&&!memcmp(before,initial+(size_t)q*ns,ns*4));
+                        assert(gpu->resident_read(shared_rows?coordinator:requests[q],outputs[q],out)==0);for(size_t i=0;i<no+2;i++)assert(out[i]==0x5a5a);
+                    }
+                }
+                /* A bounded queued memset backlog exercises descriptor BUSY.
+                 * Host preemption may let it drain; both outcomes are valid. */
+                if(c==0&&b==0&&!round)for(int i=0;i<16;i++)assert(gpu->resident_zero(coordinator,backlog)==0);
+                assert(gpu->gdn_decode_bf16_group_resident(gpu->ctx,coordinator,&p)==0);calls++;
+                if(c==0&&b==0&&!round) {
+                    int result=gpu->gdn_decode_bf16_group_resident(gpu->ctx,coordinator,&p);
+                    assert(result==0||result==BN_GPU_GROUP_BUSY);
+                    if(result==BN_GPU_GROUP_BUSY) {
+                        busy_observed++;
+                        assert(gpu->resident_synchronize(coordinator)==0);
+                        assert(gpu->gdn_decode_bf16_group_resident(gpu->ctx,coordinator,&p)==0);
+                    }
+                    calls++;
+                }
+                /* Enqueue consumers on participant streams before any fence. */
+                for(int q=0;q<batch;q++)assert(gpu->resident_zero(shared_rows?coordinator:requests[q],rows[q].x)==0);
+                /* Either lifetime order must finish dependencies safely. */
+                if(!shared_rows&&round==4&&b%2==0){bn_backend_session_free(session);session=NULL;}
+                for(int q=0;q<batch;q++) {
+                    assert(gpu->resident_read(requests[q],rows[q].initial_state,before)==0&&!memcmp(before,initial+(size_t)q*ns,ns*4));
+                    assert(gpu->resident_read(requests[q],states[q][1-round%2],state)==0&&gpu->resident_read(shared_rows?coordinator:requests[q],outputs[q],out)==0);
+                    assert(state[0]==12345&&state[ns+1]==12345&&out[0]==0x5a5a&&out[no+1]==0x5a5a);
+                    int step=q%4+round;assert(bf16_output_hash(out+1,no)==ref->out[step]&&cuda_test_float_bits_hash(state+1,ns)==ref->state[step]);
+                    memcpy(initial+(size_t)q*ns,state+1,ns*4);checked+=no+ns;
+                }
+            }
+            if(shared_rows) {
+                assert(gpu->resident_read(coordinator,shared_x,packed_x)==0&&gpu->resident_read(coordinator,shared_ba,packed_ba)==0);
+                for(int q=0;q<batch;q++) {
+                    assert(packed_x[(size_t)q*(nx+2)]==0x5a5a&&packed_x[(size_t)q*(nx+2)+nx+1]==0x5a5a);
+                    assert(packed_ba[(size_t)q*(nb+2)]==0x5a5a&&packed_ba[(size_t)q*(nb+2)+nb+1]==0x5a5a);
+                }
+            }
+            free(packed_x);free(packed_ba);free(packed_out);free(onehot);
+            if(wx)gpu->buffer_destroy(gpu->ctx,wx);
+            if(wb)gpu->buffer_destroy(gpu->ctx,wb);
+            for(int q=0;q<batch;q++)bn_backend_session_free(sessions[q]);
+            bn_backend_session_free(session);
+            free(x);free(ba);free(out);free(state);free(initial);free(before);
+        }
+        gpu->buffer_destroy(gpu->ctx,al);gpu->buffer_destroy(gpu->ctx,dt);free(a);free(bias);
+    }
+    printf("CUDA multi-request GDN mode=%d PASSED: %zu launches, %zu output/state words, busy=%zu\n",shared_rows,calls,checked,busy_observed);
+}
+
+
+static void cuda_test_gdn_prep_inputs(uint16_t *x, uint16_t *ba,
+    float *log_a, uint16_t *bias, const BnBF16GDNPrepReference *r) {
+    int dim=2*r->hk*r->dk+r->hv*r->dv;
+    const float scales[]={0.0f,0x1p-20f,1.0f,256.0f};
+    for(size_t i=0;i<(size_t)r->tokens*dim;i++) {
+        float v=(float)((int)((i*37+i/13+(size_t)r->seed*11)%509)-254)/128.0f;
+        v*=scales[(i/(size_t)dim+r->seed)%4];
+        if(r->seed)v=ldexpf(v,(int)((i%(size_t)dim)%7)-3);
+        x[i]=cuda_test_bf16_rne(v);
+    }
+    for(size_t i=0;i<(size_t)r->tokens*r->hv;i++) {
+        size_t t=i/(size_t)r->hv,h=i%(size_t)r->hv;
+        ba[t*2*r->hv+h]=cuda_test_bf16_rne((float)((int)((i*13+(size_t)r->seed*11)%251)-125)/16.0f);
+        ba[t*2*r->hv+r->hv+h]=cuda_test_bf16_rne((float)((int)((i*17+i/19+(size_t)r->seed*3)%509)-254)/8.0f);
+    }
+    for(int h=0;h<r->hv;h++) {
+        log_a[h]=(float)((h*11+r->seed*5)%29-14)/8.0f+0x1p-17f;
+        bias[h]=cuda_test_bf16_rne((float)((h*7+r->seed)%31-15)/32.0f);
+    }
+}
+
+static void run_bf16_gdn_prep_reference_case(BnGPUBackend *gpu) {
+    assert(bn_gpu_backend_can_gdn_prefill_prepare_bf16(gpu));
+    size_t checked=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_gdn_prep_cases)/sizeof(cuda_bf16_gdn_prep_cases[0]);c++) {
+        const BnBF16GDNPrepReference *r=&cuda_bf16_gdn_prep_cases[c];
+        int dim=2*r->hk*r->dk+r->hv*r->dv;
+        size_t n=(size_t)r->tokens*dim,ng=(size_t)r->tokens*r->hv;
+        uint16_t*x=malloc((n+2)*2),*out=malloc((n+2)*2),*ba=malloc((2*ng+2)*2),*bias=malloc((size_t)r->hv*2);
+        float*g=malloc((ng+2)*sizeof(float)),*beta=malloc((ng+2)*sizeof(float)),*log_a=malloc((size_t)r->hv*sizeof(float));
+        assert(x&&out&&ba&&bias&&g&&beta&&log_a);
+        cuda_test_gdn_prep_inputs(x+1,ba+1,log_a,bias,r);
+        void*al=gpu->buffer_create_quant_only(gpu->ctx,log_a,(size_t)r->hv*sizeof(float),BN_GGUF_TENSOR_F32,1,r->hv);
+        void*dt=gpu->buffer_create_quant_only(gpu->ctx,bias,(size_t)r->hv*2,BN_GGUF_TENSOR_BF16,1,r->hv);assert(al&&dt);
+        for(int mode=0;mode<(r->tokens<=33?3:2);mode++) {
+            cuda_test_gdn_prep_inputs(x+1,ba+1,log_a,bias,r);
+            x[0]=x[n+1]=out[0]=out[n+1]=ba[0]=ba[2*ng+1]=0x5a5a;
+            g[0]=g[ng+1]=beta[0]=beta[ng+1]=12345.0f;
+            uint16_t*y=mode==1?x:out;
+            int chunk=mode==2?(r->tokens+1)/2:r->tokens;
+            for(int t=0;t<r->tokens;t+=chunk) {
+                int take=chunk<r->tokens-t?chunk:r->tokens-t;
+                assert(bn_gpu_backend_gdn_prefill_prepare_bf16(gpu,y+1+(size_t)t*dim,
+                    g+1+(size_t)t*r->hv,beta+1+(size_t)t*r->hv,al,dt,
+                    x+1+(size_t)t*dim,ba+1+(size_t)t*2*r->hv,
+                    take,r->hk,r->dk,r->hv,r->dv,r->eps,r->threshold)==0);
+            }
+            uint64_t qh=bf16_output_hash(y+1,n),gh=cuda_test_float_bits_hash(g+1,ng),bh=cuda_test_float_bits_hash(beta+1,ng);
+            if(qh!=r->hash||gh!=r->g_hash||bh!=r->beta_hash)
+                fprintf(stderr,"BF16 GDN prep mismatch case=%zu hk=%d dk=%d hv=%d dv=%d nt=%d seed=%d mode=%d qkv=%d g=%d beta=%d\n",
+                    c,r->hk,r->dk,r->hv,r->dv,r->tokens,r->seed,mode,qh==r->hash,gh==r->g_hash,bh==r->beta_hash);
+            assert(qh==r->hash&&gh==r->g_hash&&bh==r->beta_hash);
+            assert(x[0]==0x5a5a&&x[n+1]==0x5a5a&&out[0]==0x5a5a&&out[n+1]==0x5a5a&&ba[0]==0x5a5a&&ba[2*ng+1]==0x5a5a);
+            assert(g[0]==12345.0f&&g[ng+1]==12345.0f&&beta[0]==12345.0f&&beta[ng+1]==12345.0f);
+            checked+=n+2*ng;
+        }
+        uint16_t sentinel=0x5a5a;
+        assert(bn_gpu_backend_gdn_prefill_prepare_bf16(gpu,&sentinel,g+1,beta+1,al,dt,x+1,ba+1,0,r->hk,r->dk,r->hv,r->dv,r->eps,r->threshold)==-1);
+        assert(bn_gpu_backend_gdn_prefill_prepare_bf16(gpu,&sentinel,g+1,beta+1,al,dt,x+1,ba+1,r->tokens,r->hk,r->dk,r->hv,r->dk==1?2:1,r->eps,r->threshold)==-1);
+        assert(bn_gpu_backend_gdn_prefill_prepare_bf16(gpu,out+1,g+1,g+1,al,dt,x+1,ba+1,r->tokens,r->hk,r->dk,r->hv,r->dv,r->eps,r->threshold)==-1);
+        assert(bn_gpu_backend_gdn_prefill_prepare_bf16(gpu,&sentinel,g+1,beta+1,al,dt,x+1,ba+1,r->tokens,r->hk,r->dk,r->hv,r->dv,0.0f,r->threshold)==-1);
+        assert(bn_gpu_backend_gdn_prefill_prepare_bf16(gpu,&sentinel,g+1,beta+1,al,dt,x+1,ba+1,r->tokens,r->hk,r->dk,r->hv,r->dv,r->eps,NAN)==-1);
+        assert(sentinel==0x5a5a);
+        gpu->buffer_destroy(gpu->ctx,al);gpu->buffer_destroy(gpu->ctx,dt);
+        free(x);free(out);free(ba);free(bias);free(g);free(beta);free(log_a);
+    }
+    printf("CUDA BF16 GDN prefill preparation PASSED: %zu exact BF16/F32 comparisons\n",checked);
+}
+
+static void run_bf16_gdn_prepare_resident_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->gdn_prepare_bf16_resident);
+    size_t checked=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_gdn_prep_cases)/sizeof(cuda_bf16_gdn_prep_cases[0]);c++) {
+        const BnBF16GDNPrepReference *r=&cuda_bf16_gdn_prep_cases[c];
+        int qd=r->hk*r->dk,vd=r->hv*r->dv,dim=2*qd+vd;
+        size_t n=(size_t)r->tokens*dim,nq=(size_t)r->tokens*qd,nv=(size_t)r->tokens*vd,ng=(size_t)r->tokens*r->hv;
+        uint16_t *x=malloc(n*2),*ba=malloc(ng*4),*bias=malloc((size_t)r->hv*2),*out=malloc(n*2);
+        uint16_t *q=calloc(nq+2,2),*k=calloc(nq+2,2),*v=calloc(nv+2,2);
+        float *a=malloc((size_t)r->hv*4),*g=calloc(ng+2,4),*b=calloc(ng+2,4);
+        assert(x&&ba&&bias&&out&&q&&k&&v&&a&&g&&b);
+        cuda_test_gdn_prep_inputs(x,ba,a,bias,r);
+        q[0]=q[nq+1]=k[0]=k[nq+1]=v[0]=v[nv+1]=0x5a5a;
+        g[0]=g[ng+1]=b[0]=b[ng+1]=12345.0f;
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUGDNPrepareResidentPlan p={0};p.n_tokens=r->tokens;p.hk=r->hk;p.dk=r->dk;p.hv=r->hv;p.dv=r->dv;p.norm_eps=r->eps;p.softplus_threshold=r->threshold;
+        p.a_log=gpu->buffer_create_quant_only(gpu->ctx,a,(size_t)r->hv*4,BN_GGUF_TENSOR_F32,1,r->hv);
+        p.dt_bias=gpu->buffer_create_quant_only(gpu->ctx,bias,(size_t)r->hv*2,BN_GGUF_TENSOR_BF16,1,r->hv);assert(p.a_log&&p.dt_bias);
+        p.x=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,x);
+        p.ba=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,2*ng,ba);
+        BnGPUResidentView qv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq+2,q),kv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq+2,k),vv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv+2,v);
+        BnGPUResidentView gv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng+2,g),bv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng+2,b);
+        p.q=bn_gpu_resident_view_slice(qv,1,nq);p.k=bn_gpu_resident_view_slice(kv,1,nq);p.v=bn_gpu_resident_view_slice(vv,1,nv);p.log_decay=bn_gpu_resident_view_slice(gv,1,ng);p.beta=bn_gpu_resident_view_slice(bv,1,ng);
+        if(c==0) {
+            for(int reject=0;reject<9;reject++) {
+                BnGPUGDNPrepareResidentPlan bad=p;
+                switch(reject) {case 0:bad.n_tokens=0;break;case 1:bad.norm_eps=NAN;break;case 2:bad.softplus_threshold=-1;break;case 3:bad.q=bad.x;break;case 4:bad.beta=bad.log_decay;break;case 5:bad.k.request=session;break;case 6:bad.x.type=BN_GGUF_TENSOR_F32;break;case 7:bad.dt_bias=NULL;break;default:bad.ba.offset=SIZE_MAX;break;}
+                assert(gpu->gdn_prepare_bf16_resident(gpu->ctx,request,&bad)==-1);
+            }
+        }
+        assert(gpu->gdn_prepare_bf16_resident(gpu->ctx,request,&p)==0);
+        assert(gpu->resident_read(request,qv,q)==0&&gpu->resident_read(request,kv,k)==0&&gpu->resident_read(request,vv,v)==0);
+        assert(gpu->resident_read(request,gv,g)==0&&gpu->resident_read(request,bv,b)==0);
+        for(int t=0;t<r->tokens;t++) {memcpy(out+(size_t)t*dim,q+1+(size_t)t*qd,(size_t)qd*2);memcpy(out+(size_t)t*dim+qd,k+1+(size_t)t*qd,(size_t)qd*2);memcpy(out+(size_t)t*dim+2*qd,v+1+(size_t)t*vd,(size_t)vd*2);}
+        assert(bf16_output_hash(out,n)==r->hash&&cuda_test_float_bits_hash(g+1,ng)==r->g_hash&&cuda_test_float_bits_hash(b+1,ng)==r->beta_hash);
+        assert(q[0]==0x5a5a&&q[nq+1]==0x5a5a&&k[0]==0x5a5a&&k[nq+1]==0x5a5a&&v[0]==0x5a5a&&v[nv+1]==0x5a5a);
+        assert(g[0]==12345&&g[ng+1]==12345&&b[0]==12345&&b[ng+1]==12345);
+        gpu->buffer_destroy(gpu->ctx,p.a_log);gpu->buffer_destroy(gpu->ctx,p.dt_bias);bn_backend_session_free(session);
+        checked+=n+2*ng;free(x);free(ba);free(bias);free(out);free(q);free(k);free(v);free(a);free(g);free(b);
+    }
+    printf("CUDA resident BF16 GDN preparation PASSED: %zu BF16/F32 words\n",checked);
+}
+
+#include "cuda_bf16_gdn_composed_reference.h"
+#include "cuda_bf16_gdn_handoff_reference.h"
+static void run_bf16_gdn_composed_reference_case(BnGPUBackend *gpu, int with_decode) {
+    size_t checked=0,calls=0,ns=48u*128*128,handoff_calls=0,handoff_words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_gdn_composed_cases)/sizeof(cuda_bf16_gdn_composed_cases[0]);c++) {
+        const BnBF16GDNComposedReference *r=&cuda_bf16_gdn_composed_cases[c];int nt=r->tokens;
+        size_t n=(size_t)nt*10240,ng=(size_t)nt*48,nq=(size_t)nt*2048,nv=(size_t)nt*6144;
+        uint16_t *x=malloc(n*2),*ba=malloc(ng*4),*out=malloc(nv*2),bias[48];float a[48],*state=malloc(ns*4),*before=malloc(ns*4);assert(x&&ba&&out&&state&&before);
+        BnBF16GDNPrepReference shape={16,128,48,128,nt,r->seed,1e-6f,20.0f,0,0,0};cuda_test_gdn_prep_inputs(x,ba,a,bias,&shape);
+        for(size_t i=0;i<ns;i++)state[i]=(float)((int)((i*17+i/37+r->seed*19)%251)-125)/4096.0f;
+        BnBackendSession *session=bn_backend_session_create();assert(session);void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUGDNPrepareResidentPlan prep={0};prep.hk=16;prep.hv=48;prep.dk=prep.dv=128;prep.norm_eps=1e-6f;prep.softplus_threshold=20;
+        prep.a_log=gpu->buffer_create_quant_only(gpu->ctx,a,sizeof(a),BN_GGUF_TENSOR_F32,1,48);prep.dt_bias=gpu->buffer_create_quant_only(gpu->ctx,bias,sizeof(bias),BN_GGUF_TENSOR_BF16,1,48);assert(prep.a_log&&prep.dt_bias);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,x),bav=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,ng*2,ba);
+        BnGPUResidentView qv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,NULL),kv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nq,NULL),vv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv,NULL);
+        BnGPUResidentView gv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,NULL),bv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,NULL);
+        BnGPUResidentView sa=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns,state),sb=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns,NULL),ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nv,NULL);
+        assert(gpu->gdn_prefill_bf16_reserve(gpu->ctx,request,nt)==0);int offset=0;
+        for(int phase=0;phase<r->n_phases;phase++) {
+            int take=r->splits[phase];prep.n_tokens=take;
+            prep.x=bn_gpu_resident_view_slice(xv,(size_t)offset*10240,(size_t)take*10240);prep.ba=bn_gpu_resident_view_slice(bav,(size_t)offset*96,(size_t)take*96);
+            prep.q=bn_gpu_resident_view_slice(qv,0,(size_t)take*2048);prep.k=bn_gpu_resident_view_slice(kv,0,(size_t)take*2048);prep.v=bn_gpu_resident_view_slice(vv,0,(size_t)take*6144);prep.log_decay=bn_gpu_resident_view_slice(gv,0,(size_t)take*48);prep.beta=bn_gpu_resident_view_slice(bv,0,(size_t)take*48);
+            BnGPUGDNPrefillResidentPlan p={0};p.n_tokens=take;p.hk=16;p.hv=48;p.dk=p.dv=128;p.q_scale=0x1.6a09e6p-4f;p.q=prep.q;p.k=prep.k;p.v=prep.v;p.log_decay=prep.log_decay;p.beta=prep.beta;p.initial_state=sa;p.next_state=sb;p.out=bn_gpu_resident_view_slice(ov,0,(size_t)take*6144);
+            assert(gpu->resident_read(request,sa,before)==0);
+            assert(gpu->gdn_prepare_bf16_resident(gpu->ctx,request,&prep)==0);
+            assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,&p)==0);
+            assert(gpu->resident_synchronize(request)==0);
+            assert(gpu->resident_read(request,p.out,out)==0&&gpu->resident_read(request,sa,state)==0);assert(!memcmp(state,before,ns*4));
+            assert(gpu->resident_read(request,sb,state)==0);
+            uint64_t oh=bf16_output_hash(out,(size_t)take*6144),sh=cuda_test_float_bits_hash(state,ns);
+            if(oh!=r->out[phase]||sh!=r->state[phase])fprintf(stderr,"composed case=%zu phase=%d out=%d state=%d\n",c,phase,oh==r->out[phase],sh==r->state[phase]);
+            assert(oh==r->out[phase]&&sh==r->state[phase]);BnGPUResidentView swap=sa;sa=sb;sb=swap;offset+=take;calls++;checked+=(size_t)take*6144+ns;
+        }
+        if(with_decode) {
+            const BnBF16GDNHandoffReference *ref=&cuda_bf16_gdn_handoff_cases[c];
+            assert(ref->tokens==nt&&ref->seed==r->seed);
+            BnBF16GDNDecodeReference decode_shape={0};decode_shape.hk=16;decode_shape.hv=48;decode_shape.seed=r->seed;
+            for(int step=0;step<4;step++) {
+                cuda_test_gdn_decode_input(x,ba,&decode_shape,step);
+                BnGPUGDNDecodeResidentPlan d={0};d.hk=16;d.hv=48;d.dk=d.dv=128;d.q_scale=0x1.6a09e6p-4f;d.a_log=prep.a_log;d.dt_bias=prep.dt_bias;
+                d.x=bn_gpu_resident_view_slice(xv,0,10240);d.ba=bn_gpu_resident_view_slice(bav,0,96);
+                d.initial_state=sa;d.next_state=sb;d.out=bn_gpu_resident_view_slice(ov,0,6144);
+                assert(gpu->resident_write(request,d.x,x)==0&&gpu->resident_write(request,d.ba,ba)==0);
+                assert(gpu->resident_read(request,sa,before)==0);
+                assert(gpu->gdn_decode_bf16_resident(gpu->ctx,request,&d)==0);
+                assert(gpu->resident_synchronize(request)==0);
+                assert(gpu->resident_read(request,sa,state)==0);assert(!memcmp(state,before,ns*4));
+                assert(gpu->resident_read(request,sb,state)==0&&gpu->resident_read(request,d.out,out)==0);
+                uint64_t oh=bf16_output_hash(out,6144),sh=cuda_test_float_bits_hash(state,ns);
+                if(oh!=ref->out[step]||sh!=ref->state[step])fprintf(stderr,"handoff c=%zu step=%d out=%d state=%d\n",c,step,oh==ref->out[step],sh==ref->state[step]);
+                assert(oh==ref->out[step]&&sh==ref->state[step]);BnGPUResidentView swap=sa;sa=sb;sb=swap;
+                handoff_calls++;handoff_words+=6144+ns;
+            }
+        }
+        assert(offset==nt);gpu->buffer_destroy(gpu->ctx,prep.a_log);gpu->buffer_destroy(gpu->ctx,prep.dt_bias);bn_backend_session_free(session);free(x);free(ba);free(out);free(state);free(before);
+    }
+    printf("CUDA resident prep/GDN composition PASSED: %zu calls, %zu output/state words\n",calls,checked);
+    if(with_decode)printf("CUDA resident prefill/decode handoff PASSED: %zu calls, %zu output/state words\n",handoff_calls,handoff_words);
+}
+
+static void cuda_test_bf16_conv_inputs(uint16_t *x, uint16_t *state,
+    uint16_t *w, int dim, int nt, int kernel, int seed) {
+    for (size_t i=0;i<(size_t)dim*nt;i++)
+        x[i]=cuda_test_bf16_rne((float)((int)((i*37+i/13+(size_t)seed*11)%509)-254)/128.0f);
+    for (size_t i=0;i<(size_t)dim*(kernel-1);i++)
+        state[i]=cuda_test_bf16_rne(seed?(float)((int)((i*19+(size_t)seed*5)%251)-125)/256.0f:0.0f);
+    for (size_t i=0;i<(size_t)dim*kernel;i++)
+        w[i]=cuda_test_bf16_rne((float)((int)((i*11+i/7+(size_t)seed*3)%127)-63)/128.0f);
+}
+
+static void run_bf16_conv_reference_case(BnGPUBackend *gpu) {
+    assert(bn_gpu_backend_can_causal_conv_silu_bf16_batch(gpu));
+    size_t checks=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_conv_cases)/sizeof(cuda_bf16_conv_cases[0]);c++) {
+        const BnBF16ConvReference *r=&cuda_bf16_conv_cases[c];
+        size_t n=(size_t)r->dim*r->tokens,ns=(size_t)r->dim*(r->kernel-1);
+        uint16_t *x=malloc((n+2)*2),*out=malloc((n+2)*2),*state=malloc((ns+2)*2);
+        uint16_t *w=malloc((size_t)r->dim*r->kernel*2);
+        assert(x&&out&&state&&w);
+        cuda_test_bf16_conv_inputs(x+1,state+1,w,r->dim,r->tokens,r->kernel,r->seed);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,(size_t)r->dim*r->kernel*2,
+            BN_GGUF_TENSOR_BF16,r->dim,r->kernel);assert(weight);
+        for(int mode=0;mode<(r->tokens<=17?4:2);mode++) {
+            cuda_test_bf16_conv_inputs(x+1,state+1,w,r->dim,r->tokens,r->kernel,r->seed);
+            x[0]=x[n+1]=out[0]=out[n+1]=state[0]=state[ns+1]=0x5a5a;
+            uint16_t *y=(mode&1)?x:out;
+            int chunk=mode==2?(r->tokens+1)/2:mode==3?1:r->tokens;
+            for(int t=0;t<r->tokens;t+=chunk) {
+                int take=chunk<r->tokens-t?chunk:r->tokens-t;
+                assert(bn_gpu_backend_causal_conv_silu_bf16_batch(gpu,
+                    y+1+(size_t)t*r->dim,state+1,weight,x+1+(size_t)t*r->dim,
+                    take,r->dim,r->kernel)==0);
+                assert(state[0]==0x5a5a&&state[ns+1]==0x5a5a);
+            }
+            uint64_t actual=bf16_output_hash(y+1,n),history=bf16_output_hash(state+1,ns);
+            if(actual!=r->hash||history!=r->state_hash)
+                fprintf(stderr,"BF16 conv mismatch dim=%d nt=%d kernel=%d seed=%d mode=%d\n",
+                    r->dim,r->tokens,r->kernel,r->seed,mode);
+            assert(actual==r->hash&&history==r->state_hash);
+            assert(x[0]==0x5a5a&&x[n+1]==0x5a5a&&out[0]==0x5a5a&&out[n+1]==0x5a5a);
+            checks+=n+ns;
+        }
+        uint16_t sentinel=0x5a5a;
+        assert(bn_gpu_backend_causal_conv_silu_bf16_batch(gpu,&sentinel,state+1,
+            weight,x+1,0,r->dim,r->kernel)==-1);
+        assert(bn_gpu_backend_causal_conv_silu_bf16_batch(gpu,&sentinel,state+1,
+            weight,x+1,r->tokens,r->dim,1)==-1);
+        assert(bn_gpu_backend_causal_conv_silu_bf16_batch(gpu,&sentinel,state+1,
+            weight,x+1,r->tokens,r->dim,5)==-1);
+        assert(bn_gpu_backend_causal_conv_silu_bf16_batch(gpu,out+1,out+1,
+            weight,x+1,r->tokens,r->dim,r->kernel)==-1);
+        assert(bn_gpu_backend_causal_conv_silu_bf16_batch(gpu,out+1,x+1,
+            weight,x+1,r->tokens,r->dim,r->kernel)==-1);
+        assert(sentinel==0x5a5a);
+        gpu->buffer_destroy(gpu->ctx,weight);free(x);free(out);free(state);free(w);
+    }
+    printf("CUDA BF16 causal conv/SiLU PASSED: %zu exact output/history comparisons\n",checks);
+}
+
+static void run_bf16_conv_resident_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->causal_conv_bf16_resident);size_t words=0,calls=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_conv_cases)/sizeof(cuda_bf16_conv_cases[0]);c++) {
+        const BnBF16ConvReference *r=&cuda_bf16_conv_cases[c];
+        size_t n=(size_t)r->tokens*r->dim,ns=(size_t)(r->kernel-1)*r->dim;
+        uint16_t *x=malloc((n+2)*2),*out=malloc((n+2)*2),*history=malloc((ns+2)*2),*before=malloc(ns*2),*w=malloc((size_t)r->dim*r->kernel*2);assert(x&&out&&history&&before&&w);
+        cuda_test_bf16_conv_inputs(x+1,history+1,w,r->dim,r->tokens,r->kernel,r->seed);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,(size_t)r->dim*r->kernel*2,BN_GGUF_TENSOR_BF16,r->dim,r->kernel);assert(weight);
+        for(int mode=0;mode<2;mode++) {
+            cuda_test_bf16_conv_inputs(x+1,history+1,w,r->dim,r->tokens,r->kernel,r->seed);
+            x[0]=x[n+1]=out[0]=out[n+1]=history[0]=history[ns+1]=0x5a5a;
+            BnBackendSession *session=bn_backend_session_create();assert(session);void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+            BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+2,x),ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+2,out);
+            BnGPUResidentView sa=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,ns+2,history),sb=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,ns+2,history);
+            int chunk=mode?(r->tokens>17?8193:(r->tokens+1)/2):r->tokens;
+            for(int offset=0;offset<r->tokens;offset+=chunk) {
+                int take=chunk<r->tokens-offset?chunk:r->tokens-offset;
+                BnGPUCausalConvResidentPlan p={0};p.n_tokens=take;p.dim=r->dim;p.kernel=r->kernel;p.weight=weight;
+                p.x=bn_gpu_resident_view_slice(xv,1+(size_t)offset*r->dim,(size_t)take*r->dim);
+                p.out=bn_gpu_resident_view_slice(ov,1+(size_t)offset*r->dim,(size_t)take*r->dim);
+                p.initial_history=bn_gpu_resident_view_slice(sa,1,ns);p.next_history=bn_gpu_resident_view_slice(sb,1,ns);
+                if(offset==0)for(int reject=0;reject<8;reject++) {
+                    BnGPUCausalConvResidentPlan bad=p;
+                    switch(reject){case 0:bad.n_tokens=0;break;case 1:bad.kernel=1;break;case 2:bad.weight=NULL;break;case 3:bad.out=bad.x;break;case 4:bad.next_history=bad.initial_history;break;case 5:bad.x.type=BN_GGUF_TENSOR_F32;break;case 6:bad.initial_history.request=session;break;default:--bad.out.count;break;}
+                    assert(gpu->causal_conv_bf16_resident(gpu->ctx,request,&bad)==-1);
+                }
+                assert(gpu->resident_read(request,p.initial_history,before)==0);
+                assert(gpu->causal_conv_bf16_resident(gpu->ctx,request,&p)==0);
+                assert(gpu->resident_synchronize(request)==0);
+                assert(gpu->resident_read(request,p.initial_history,history+1)==0);assert(!memcmp(history+1,before,ns*2));
+                assert(gpu->resident_read(request,sb,history)==0);assert(history[0]==0x5a5a&&history[ns+1]==0x5a5a);
+                BnGPUResidentView swap=sa;sa=sb;sb=swap;calls++;
+            }
+            assert(gpu->resident_read(request,ov,out)==0);
+            assert(bf16_output_hash(out+1,n)==r->hash&&bf16_output_hash(history+1,ns)==r->state_hash);
+            assert(out[0]==0x5a5a&&out[n+1]==0x5a5a);
+            bn_backend_session_free(session);words+=n+ns;
+        }
+        gpu->buffer_destroy(gpu->ctx,weight);free(x);free(out);free(history);free(before);free(w);
+    }
+    printf("CUDA resident BF16 convolution PASSED: %zu calls, %zu output/history words\n",calls,words);
+}
+
+#include "cuda_f32_weight_conv_reference.h"
+static void run_f32_weight_conv_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->causal_conv_f32_weight_bf16_resident);
+    size_t words = 0, calls = 0;
+    for (size_t ci = 0; ci < sizeof(cuda_f32_weight_conv_cases) /
+            sizeof(cuda_f32_weight_conv_cases[0]); ci++) {
+        const BnF32WeightConvReference *r = &cuda_f32_weight_conv_cases[ci];
+        size_t n = (size_t)r->tokens * r->dim;
+        size_t ns = (size_t)(r->kernel - 1) * r->dim;
+        size_t nw = (size_t)r->kernel * r->dim;
+        uint16_t *x = malloc((n + 2) * 2), *out = malloc((n + 2) * 2);
+        uint16_t *history = malloc((ns + 2) * 2), *before = malloc(ns * 2);
+        float *w = malloc(nw * sizeof(float));
+        assert(x && out && history && before && w);
+        for (size_t i = 0; i < n; i++)
+            x[i + 1] = cuda_test_bf16_rne((float)((int)((i * 37 + i / 13 +
+                (size_t)r->seed * 11) % 509) - 254) / 128.0f);
+        for (size_t i = 0; i < nw; i++)
+            w[i] = (float)((int)((i * 11 + i / 7 +
+                (size_t)r->seed * 3) % 127) - 63) / 128.0f + 0x1p-17f;
+        void *weight = gpu->buffer_create_quant_only(gpu->ctx, w,
+            nw * sizeof(float), BN_GGUF_TENSOR_F32, r->dim, r->kernel);
+        assert(weight);
+        for (int mode = 0; mode < 3; mode++) {
+            for (size_t i = 0; i < ns; i++)
+                history[i + 1] = cuda_test_bf16_rne((float)((int)((i * 19 +
+                    (size_t)r->seed * 5) % 251) - 125) / 256.0f);
+            for (size_t i = 0; i < n + 2; i++) out[i] = 0x5a5a;
+            x[0] = x[n + 1] = history[0] = history[ns + 1] = 0x5a5a;
+            BnBackendSession *session = bn_backend_session_create(); assert(session);
+            void *request = bn_gpu_backend_resident_request(gpu, session); assert(request);
+            BnGPUResidentView xv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n + 2, x);
+            BnGPUResidentView ov = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n + 2, out);
+            BnGPUResidentView sa = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, ns + 2, history);
+            BnGPUResidentView sb = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, ns + 2, history);
+            int chunk = mode == 0 ? r->tokens : mode == 1 ? (r->tokens + 1) / 2 : 1;
+            for (int offset = 0; offset < r->tokens; offset += chunk) {
+                int take = chunk < r->tokens - offset ? chunk : r->tokens - offset;
+                BnGPUCausalConvResidentPlan p = {0};
+                p.n_tokens = take; p.dim = r->dim; p.kernel = r->kernel; p.weight = weight;
+                p.x = bn_gpu_resident_view_slice(xv, 1 + (size_t)offset * r->dim, (size_t)take * r->dim);
+                p.out = bn_gpu_resident_view_slice(ov, 1 + (size_t)offset * r->dim, (size_t)take * r->dim);
+                p.initial_history = bn_gpu_resident_view_slice(sa, 1, ns);
+                p.next_history = bn_gpu_resident_view_slice(sb, 1, ns);
+                if (offset == 0) {
+                    for (int reject = 0; reject < 8; reject++) {
+                        BnGPUCausalConvResidentPlan bad = p;
+                        switch (reject) {
+                        case 0: bad.n_tokens = 0; break;
+                        case 1: bad.kernel = 5; break;
+                        case 2: bad.weight = NULL; break;
+                        case 3: bad.out = bad.x; break;
+                        case 4: bad.next_history = bad.initial_history; break;
+                        case 5: bad.x.type = BN_GGUF_TENSOR_F32; break;
+                        case 6: bad.initial_history.request = session; break;
+                        default: --bad.out.count; break;
+                        }
+                        assert(gpu->causal_conv_f32_weight_bf16_resident(gpu->ctx, request, &bad) == -1);
+                    }
+                    /* The old product-rounding operation must reject F32 weights. */
+                    assert(gpu->causal_conv_bf16_resident(gpu->ctx, request, &p) == -1);
+                    assert(gpu->resident_read(request, ov, out) == 0);
+                    for (size_t i = 0; i < n + 2; i++) assert(out[i] == 0x5a5a);
+                }
+                assert(gpu->resident_read(request, p.initial_history, before) == 0);
+                assert(gpu->causal_conv_f32_weight_bf16_resident(gpu->ctx, request, &p) == 0);
+                assert(gpu->resident_synchronize(request) == 0);
+                assert(gpu->resident_read(request, p.initial_history, history + 1) == 0);
+                assert(!memcmp(history + 1, before, ns * 2));
+                assert(gpu->resident_read(request, sb, history) == 0);
+                assert(history[0] == 0x5a5a && history[ns + 1] == 0x5a5a);
+                BnGPUResidentView swap = sa; sa = sb; sb = swap; calls++;
+            }
+            assert(gpu->resident_read(request, ov, out) == 0);
+            assert(bf16_output_hash(out + 1, n) == r->out);
+            assert(bf16_output_hash(history + 1, ns) == r->history);
+            assert(out[0] == 0x5a5a && out[n + 1] == 0x5a5a);
+            assert(gpu->resident_read(request, xv, out) == 0 && !memcmp(out, x, (n + 2) * 2));
+            bn_backend_session_free(session); words += n + ns;
+        }
+        gpu->buffer_destroy(gpu->ctx, weight);
+        free(x); free(out); free(history); free(before); free(w);
+    }
+    printf("CUDA resident F32-weight convolution PASSED: %zu calls, %zu exact output/history words\n", calls, words);
+}
+
+#include "cuda_kda_reference.h"
+static void run_kda_recurrent_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->kda_recurrent_bf16_resident);
+    size_t calls = 0, words = 0;
+    for (size_t ci = 0; ci < sizeof(cuda_kda_cases) / sizeof(cuda_kda_cases[0]); ci++) {
+        const BnCudaKDAReference *ref = &cuda_kda_cases[ci];
+        int nt = ref->tokens, heads = ref->heads;
+        size_t hd = (size_t)heads * 128, n = (size_t)nt * hd, ns = hd * 128;
+        uint16_t *x = malloc((3*n+2)*2), *g = malloc((n+2)*2);
+        uint16_t *b = malloc(((size_t)nt*heads+2)*2), *out = malloc((n+2)*2);
+        float *a = malloc((size_t)heads*4), *bias = malloc(hd*4);
+        float *initial = malloc((ns+2)*4), *state = malloc((ns+2)*4), *before = malloc(ns*4);
+        assert(x && g && b && out && a && bias && initial && state && before);
+        for (size_t i = 0; i < 3*n; i++) {
+            float scales[] = {0.0f, 0x1p-20f, 1.0f, 256.0f};
+            float v = (float)((int)((i*37+i/13+(size_t)ref->seed*11)%509)-254)/128.0f;
+            x[i+1] = cuda_test_bf16_rne(v * scales[(i/(3*hd))%4]);
+        }
+        for (size_t i = 0; i < n; i++)
+            g[i+1] = cuda_test_bf16_rne((float)((int)((i*17+(size_t)ref->seed*7)%509)-254)/32.0f);
+        for (size_t i = 0; i < (size_t)nt*heads; i++)
+            b[i+1] = cuda_test_bf16_rne((float)((int)((i*13+(size_t)ref->seed*11)%251)-125)/16.0f);
+        for (int h = 0; h < heads; h++)
+            a[h] = ref->storage ? -((float)((h*7+ref->seed)%31+1)/16.0f+0x1p-19f) :
+                (float)((h*11+ref->seed*5)%29-14)/8.0f+0x1p-17f;
+        for (size_t i = 0; i < hd; i++)
+            bias[i] = (float)((int)((i*7+(size_t)ref->seed*3)%127)-63)/256.0f+0x1p-19f;
+        for (size_t i = 0; i < ns; i++)
+            initial[i+1] = (float)((int)((i*17+i/37+(size_t)ref->seed*19)%251)-125)/4096.0f+0x1p-27f;
+        x[0] = x[3*n+1] = g[0] = g[n+1] = b[0] = b[(size_t)nt*heads+1] = 0x5a5a;
+        initial[0] = initial[ns+1] = 1234.25f;
+        void *aw = gpu->buffer_create_quant_only(gpu->ctx, a, (size_t)heads*4,
+            BN_GGUF_TENSOR_F32, heads, 1);
+        void *bw = gpu->buffer_create_quant_only(gpu->ctx, bias, hd*4,
+            BN_GGUF_TENSOR_F32, heads, 128);
+        assert(aw && bw);
+        for (int mode = 0; mode < 3; mode++) {
+            BnBackendSession *session = bn_backend_session_create(); assert(session);
+            void *request = bn_gpu_backend_resident_request(gpu, session); assert(request);
+            for (size_t i = 0; i < n+2; i++) out[i] = 0x5a5a;
+            BnGPUResidentView xv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, 3*n+2, x);
+            BnGPUResidentView gv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n+2, g);
+            BnGPUResidentView bv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, (size_t)nt*heads+2, b);
+            BnGPUResidentView ov = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n+2, out);
+            BnGPUResidentView sa = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_F32, ns+2, initial);
+            BnGPUResidentView sb = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_F32, ns+2, initial);
+            int chunk = mode == 0 ? nt : mode == 1 ? (nt+1)/2 : 1;
+            for (int offset = 0; offset < nt; offset += chunk) {
+                int take = chunk < nt-offset ? chunk : nt-offset;
+                BnGPUKDARecurrentResidentPlan p = {0};
+                p.n_tokens = take; p.num_heads = heads; p.head_dim = 128;
+                p.q_scale = 0x1.6a09e6p-4f; p.lower_bound = -5;
+                p.parameter_storage = (BnGPUKDAParameterStorage)ref->storage;
+                p.decay_parameter = aw; p.gate_bias = bw;
+                p.x = bn_gpu_resident_view_slice(xv, 1+(size_t)offset*hd*3, (size_t)take*hd*3);
+                p.gate = bn_gpu_resident_view_slice(gv, 1+(size_t)offset*hd, (size_t)take*hd);
+                p.beta_raw = bn_gpu_resident_view_slice(bv, 1+(size_t)offset*heads, (size_t)take*heads);
+                p.out = bn_gpu_resident_view_slice(ov, 1+(size_t)offset*hd, (size_t)take*hd);
+                p.initial_state = bn_gpu_resident_view_slice(sa, 1, ns);
+                p.next_state = bn_gpu_resident_view_slice(sb, 1, ns);
+                if (!offset) {
+                    for (int reject = 0; reject < 13; reject++) {
+                        BnGPUKDARecurrentResidentPlan bad = p;
+                        switch (reject) {
+                        case 0: bad.n_tokens = 0; break;
+                        case 1: bad.num_heads = INT_MAX; break;
+                        case 2: bad.head_dim = 64; break;
+                        case 3: bad.q_scale = NAN; break;
+                        case 4: bad.lower_bound = 0; break;
+                        case 5: bad.parameter_storage = (BnGPUKDAParameterStorage)2; break;
+                        case 6: bad.decay_parameter = NULL; break;
+                        case 7: bad.gate_bias = aw; break;
+                        case 8: bad.out = bad.gate; break;
+                        case 9: bad.next_state = bad.initial_state; break;
+                        case 10: bad.initial_state.request = session; break;
+                        case 11: bad.gate.type = BN_GGUF_TENSOR_F32; break;
+                        default: --bad.beta_raw.count; break;
+                        }
+                        assert(gpu->kda_recurrent_bf16_resident(gpu->ctx, request, &bad) == -1);
+                    }
+                    assert(gpu->resident_read(request, ov, out) == 0);
+                    for (size_t i = 0; i < n+2; i++) assert(out[i] == 0x5a5a);
+                    assert(gpu->resident_read(request, sb, state) == 0);
+                    assert(!memcmp(state, initial, (ns+2)*4));
+                }
+                assert(gpu->resident_read(request, p.initial_state, before) == 0);
+                assert(gpu->kda_recurrent_bf16_resident(gpu->ctx, request, &p) == 0);
+                assert(gpu->resident_synchronize(request) == 0);
+                assert(gpu->resident_read(request, p.initial_state, state+1) == 0);
+                assert(!memcmp(state+1, before, ns*4));
+                assert(gpu->resident_read(request, sb, state) == 0);
+                assert(state[0] == 1234.25f && state[ns+1] == 1234.25f);
+                uint64_t hash = cuda_test_float_bits_hash(state+1, ns);
+                if (hash != ref->states[offset+take-1])
+                    fprintf(stderr, "KDA state case=%zu mode=%d offset=%d take=%d\n", ci, mode, offset, take);
+                assert(hash == ref->states[offset+take-1]);
+                BnGPUResidentView swap = sa; sa = sb; sb = swap;
+                calls++; words += ns+(size_t)take*hd;
+            }
+            assert(gpu->resident_read(request, ov, out) == 0);
+            if (bf16_output_hash(out+1, n) != ref->out)
+                fprintf(stderr, "KDA output case=%zu mode=%d\n", ci, mode);
+            assert(bf16_output_hash(out+1, n) == ref->out);
+            assert(out[0] == 0x5a5a && out[n+1] == 0x5a5a);
+            bn_backend_session_free(session);
+        }
+        gpu->buffer_destroy(gpu->ctx, aw); gpu->buffer_destroy(gpu->ctx, bw);
+        free(x); free(g); free(b); free(out); free(a); free(bias); free(initial); free(state); free(before);
+    }
+    printf("CUDA resident KDA recurrence PASSED: %zu calls, %zu exact state/output words\n", calls, words);
+}
+
+static void run_bf16_conv_prefill_group_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->causal_conv_bf16_prefill_group_resident);
+    size_t checked=0;
+    const size_t cases=sizeof(cuda_bf16_conv_cases)/sizeof(cuda_bf16_conv_cases[0]);
+    for(size_t ci=0;ci<cases;ci++) {
+        const BnBF16ConvReference *ref=&cuda_bf16_conv_cases[ci],*short_ref=NULL;
+        if(ref->tokens!=17 && ref->tokens!=65537)continue;
+        for(size_t j=0;j<cases;j++)if(cuda_bf16_conv_cases[j].tokens==1 &&
+            cuda_bf16_conv_cases[j].dim==ref->dim && cuda_bf16_conv_cases[j].kernel==ref->kernel &&
+            cuda_bf16_conv_cases[j].seed==ref->seed)short_ref=&cuda_bf16_conv_cases[j];
+        assert(short_ref);
+        size_t n=(size_t)ref->tokens*ref->dim,ns=(size_t)(ref->kernel-1)*ref->dim,stride=n+2;
+        uint16_t *x=malloc(stride*2),*history=malloc((ns+2)*2),*weights=malloc((size_t)ref->dim*ref->kernel*2);
+        uint16_t *packed=malloc(2*stride*2),*out=malloc(2*stride*2),*got=malloc((ns+2)*2);assert(x&&history&&weights&&packed&&out&&got);
+        cuda_test_bf16_conv_inputs(x+1,history+1,weights,ref->dim,ref->tokens,ref->kernel,ref->seed);
+        x[0]=x[n+1]=history[0]=history[ns+1]=0x5a5a;
+        memcpy(packed,x,stride*2);memcpy(packed+stride,x,stride*2);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,weights,(size_t)ref->dim*ref->kernel*2,BN_GGUF_TENSOR_BF16,ref->dim,ref->kernel);assert(weight);
+        BnBackendSession *cs=bn_backend_session_create(),*sessions[2];assert(cs);
+        void *coordinator=bn_gpu_backend_resident_request(gpu,cs),*requests[2];assert(coordinator);
+        size_t budget=gpu->resident_group_queue_workspace_size(gpu->ctx,BN_GPU_RESIDENT_GROUP_CONV,2,2);assert(budget);
+        assert(!gpu->resident_group_queue_reserve(gpu->ctx,coordinator,BN_GPU_RESIDENT_GROUP_CONV,2,2,budget));
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,2*stride,packed);
+        BnGPUResidentView ov=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,2*stride,NULL),ins[2],next[2];
+        BnGPUCausalConvSequence rows[2];
+        for(int i=0;i<2;i++) {
+            sessions[i]=bn_backend_session_create();assert(sessions[i]);requests[i]=bn_gpu_backend_resident_request(gpu,sessions[i]);assert(requests[i]);
+            ins[i]=cuda_test_resident_alloc(gpu,requests[i],BN_GGUF_TENSOR_BF16,ns+2,history);
+            next[i]=cuda_test_resident_alloc(gpu,requests[i],BN_GGUF_TENSOR_BF16,ns+2,history);
+            rows[i].request=requests[i];rows[i].initial_history=bn_gpu_resident_view_slice(ins[i],1,ns);
+            rows[i].next_history=bn_gpu_resident_view_slice(next[i],1,ns);
+        }
+        for(int mode=0;mode<2;mode++) {
+            int counts[2]={mode?1:ref->tokens,1};const BnBF16ConvReference *expected[2]={mode?short_ref:ref,short_ref};
+            for(int i=0;i<2;i++) {
+                rows[i].x=bn_gpu_resident_view_slice(xv,(size_t)i*stride+1,(size_t)counts[i]*ref->dim);
+                rows[i].out=bn_gpu_resident_view_slice(ov,(size_t)i*stride+1,(size_t)counts[i]*ref->dim);
+                assert(!gpu->resident_write(requests[i],next[i],history));
+            }
+            for(size_t j=0;j<2*stride;j++)out[j]=0x5a5a;
+            assert(!gpu->resident_write(coordinator,ov,out));
+            BnGPUCausalConvPrefillGroupPlan plan={{2,ref->dim,ref->kernel,weight,rows},counts};
+            if(!mode)assert(gpu->causal_conv_bf16_group_resident(gpu->ctx,coordinator,&plan.group)==-1);
+            for(int invalid=0;invalid<8;invalid++) {
+                BnGPUCausalConvSequence bad_rows[2]={rows[0],rows[1]};int bad_counts[2]={counts[0],counts[1]};
+                BnGPUCausalConvPrefillGroupPlan bad=plan;bad.group.sequences=bad_rows;bad.token_counts=bad_counts;
+                if(invalid==0)bad.token_counts=NULL;
+                if(invalid==1)bad_counts[1]=0;
+                if(invalid==2)bad_rows[1].out=bad_rows[0].out;
+                if(invalid==3)bad_rows[1].request=bad_rows[0].request;
+                if(invalid==4)bad_rows[1].next_history=bad_rows[1].initial_history;
+                if(invalid==5)bad_rows[1].out.count++;
+                if(invalid==6)bad_counts[1]=-1;
+                if(invalid==7)bad_counts[1]=INT_MAX;
+                assert(gpu->causal_conv_bf16_prefill_group_resident(gpu->ctx,coordinator,&bad)==-1);
+            }
+            assert(!gpu->resident_read(coordinator,ov,out));for(size_t j=0;j<2*stride;j++)assert(out[j]==0x5a5a);
+            for(int i=0;i<2;i++){assert(!gpu->resident_read(requests[i],next[i],got));assert(!memcmp(got,history,(ns+2)*2));}
+            for(int repeat=0;repeat<2;repeat++)assert(!gpu->causal_conv_bf16_prefill_group_resident(gpu->ctx,coordinator,&plan));
+            assert(!gpu->resident_read(coordinator,ov,out));
+            for(int i=0;i<2;i++) {
+                size_t count=(size_t)counts[i]*ref->dim,base=(size_t)i*stride;
+                assert(bf16_output_hash(out+base+1,count)==expected[i]->hash && out[base]==0x5a5a);
+                for(size_t j=count+1;j<stride;j++)assert(out[base+j]==0x5a5a);
+                assert(!gpu->resident_read(requests[i],next[i],got));assert(got[0]==0x5a5a&&got[ns+1]==0x5a5a);
+                assert(bf16_output_hash(got+1,ns)==expected[i]->state_hash);
+                assert(!gpu->resident_read(requests[i],ins[i],got));assert(!memcmp(got,history,(ns+2)*2));
+                checked+=count+ns;
+            }
+            assert(!gpu->resident_read(coordinator,xv,out));assert(!memcmp(out,packed,2*stride*2));
+        }
+        for(int i=0;i<2;i++)bn_backend_session_free(sessions[i]);
+        bn_backend_session_free(cs);
+        gpu->buffer_destroy(gpu->ctx,weight);free(x);free(history);free(weights);free(packed);free(out);free(got);
+    }
+    printf("CUDA variable-length convolution groups PASSED: %zu exact output/history words\n",checked);
+}
+
+static void run_bf16_conv_group_reference_case(BnGPUBackend *gpu) {
+    const int batches[]={1,2,3,8,16};size_t checked=0,calls=0,updates=0;
+    assert(gpu->causal_conv_bf16_group_resident&&gpu->causal_conv_bf16_group_reserve);
+    for(size_t c=0;c<sizeof(cuda_bf16_conv_cases)/sizeof(cuda_bf16_conv_cases[0]);c++) {
+        const BnBF16ConvReference *ref=&cuda_bf16_conv_cases[c];if(ref->tokens!=5)continue;
+        size_t n=(size_t)ref->dim*5,ns=(size_t)ref->dim*(ref->kernel-1),stride=n+2;
+        uint16_t*x=malloc((n+2)*2),*history=malloc((ns+2)*2),*weights=malloc((size_t)ref->dim*ref->kernel*2),*before=malloc(ns*2),*got=malloc((ns+2)*2);
+        assert(x&&history&&weights&&before&&got);cuda_test_bf16_conv_inputs(x+1,history+1,weights,ref->dim,5,ref->kernel,ref->seed);
+        x[0]=x[n+1]=history[0]=history[ns+1]=0x5a5a;
+        void*w=gpu->buffer_create_quant_only(gpu->ctx,weights,(size_t)ref->dim*ref->kernel*2,BN_GGUF_TENSOR_BF16,ref->dim,ref->kernel);assert(w);
+        for(size_t b=0;b<sizeof(batches)/sizeof(batches[0]);b++) {
+            int batch=batches[b];uint16_t*packed=malloc((size_t)batch*stride*2),*out=malloc((size_t)batch*stride*2);assert(packed&&out);
+            for(int q=0;q<batch;q++)memcpy(packed+(size_t)q*stride,x,stride*2);
+            for(size_t i=0;i<(size_t)batch*stride;i++)out[i]=0x5a5a;
+            BnBackendSession*cs=bn_backend_session_create();assert(cs);void*coordinator=bn_gpu_backend_resident_request(gpu,cs);assert(coordinator);
+            size_t budget=gpu->causal_conv_bf16_group_workspace_size(gpu->ctx,batch);assert(budget);
+            assert(gpu->causal_conv_bf16_group_reserve(gpu->ctx,coordinator,batch,budget-1)==-1);
+            assert(gpu->causal_conv_bf16_group_reserve(gpu->ctx,coordinator,batch,budget)==0);
+            assert(gpu->causal_conv_bf16_group_reserve(gpu->ctx,coordinator,batch,budget)==0);
+            assert(gpu->causal_conv_bf16_group_reserve(gpu->ctx,coordinator,batch+1,SIZE_MAX)==-1);
+            BnGPUResidentView xv=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,(size_t)batch*stride,packed),ov=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,(size_t)batch*stride,out);
+            BnGPUResidentView foreign=cuda_test_resident_alloc(gpu,coordinator,BN_GGUF_TENSOR_BF16,ns+2,history);
+            BnBackendSession*sessions[16]={0};void*requests[16]={0};BnGPUResidentView states[16][2];
+            for(int q=0;q<batch;q++){sessions[q]=bn_backend_session_create();requests[q]=bn_gpu_backend_resident_request(gpu,sessions[q]);assert(requests[q]);for(int k=0;k<2;k++)states[q][k]=cuda_test_resident_alloc(gpu,requests[q],BN_GGUF_TENSOR_BF16,ns+2,history);}
+            /* Stagger admission so simultaneously active rows carry distinct
+             * trajectory positions/histories. Each finishes the frozen 5 steps. */
+            for(int tick=0;tick<7;tick++) {
+                BnGPUCausalConvSequence rows[16]={{0}};int ids[16],steps[16],count=0;
+                for(int q=0;q<batch;q++) {
+                    int step=tick-q%3;if(step<0||step>=5)continue;
+                    int i=count++;ids[i]=q;steps[i]=step;rows[i].request=requests[q];
+                    rows[i].x=bn_gpu_resident_view_slice(xv,(size_t)q*stride+1+(size_t)step*ref->dim,ref->dim);
+                    rows[i].out=bn_gpu_resident_view_slice(ov,(size_t)q*stride+1+(size_t)step*ref->dim,ref->dim);
+                    rows[i].initial_history=bn_gpu_resident_view_slice(states[q][step%2],1,ns);rows[i].next_history=bn_gpu_resident_view_slice(states[q][1-step%2],1,ns);
+                }
+                if(!count)continue;
+                BnGPUCausalConvGroupPlan p={0};p.n_sequences=count;p.dim=ref->dim;p.kernel=ref->kernel;p.weight=w;p.sequences=rows;
+                if(!tick) {
+                    for(int reject=0;reject<11;reject++) {
+                        BnGPUCausalConvSequence badrows[16];memcpy(badrows,rows,(size_t)count*sizeof(*rows));BnGPUCausalConvGroupPlan bad=p;bad.sequences=badrows;
+                        switch(reject){case 0:bad.n_sequences=0;break;case 1:bad.n_sequences=257;break;case 2:bad.kernel=1;break;case 3:bad.weight=NULL;break;case 4:badrows[count-1].next_history=badrows[count-1].initial_history;break;case 5:badrows[count-1].initial_history=bn_gpu_resident_view_slice(foreign,1,ns);break;case 6:badrows[count-1].next_history=bn_gpu_resident_view_slice(foreign,1,ns);break;case 7:badrows[count-1].x.request=cs;break;case 8:--badrows[count-1].out.count;break;case 9:if(count>1)badrows[count-1].out=badrows[0].out;else badrows[0].out=badrows[0].x;break;default:if(count>1)badrows[0].out=badrows[count-1].x;else badrows[0].request=coordinator;break;}
+                        assert(gpu->causal_conv_bf16_group_resident(gpu->ctx,coordinator,&bad)==-1);
+                    }
+                    assert(gpu->resident_read(coordinator,ov,out)==0);for(size_t i=0;i<(size_t)batch*stride;i++)assert(out[i]==0x5a5a);
+                    for(int i=0;i<count;i++){assert(gpu->resident_read(rows[i].request,rows[i].next_history,got+1)==0);assert(!memcmp(got+1,history+1,ns*2));}
+                }
+                assert(gpu->causal_conv_bf16_group_resident(gpu->ctx,coordinator,&p)==0);calls++;updates+=(size_t)count;
+                for(int i=0;i<count;i++) {
+                    int q=ids[i],step=steps[i];
+                    assert(gpu->resident_read(requests[q],rows[i].initial_history,before)==0);
+                    for(int k=0;k<ref->kernel-1;k++) {
+                        int pos=step-(ref->kernel-1)+k;
+                        const uint16_t*expected=pos<0?history+1+(size_t)(pos+ref->kernel-1)*ref->dim:x+1+(size_t)pos*ref->dim;
+                        assert(!memcmp(before+(size_t)k*ref->dim,expected,(size_t)ref->dim*2));
+                    }
+                    assert(gpu->resident_read(requests[q],states[q][1-step%2],got)==0);assert(got[0]==0x5a5a&&got[ns+1]==0x5a5a);
+                    for(int k=0;k<ref->kernel-1;k++) {
+                        int pos=step+1-(ref->kernel-1)+k;
+                        const uint16_t*expected=pos<0?history+1+(size_t)(pos+ref->kernel-1)*ref->dim:x+1+(size_t)pos*ref->dim;
+                        assert(!memcmp(got+1+(size_t)k*ref->dim,expected,(size_t)ref->dim*2));
+                    }
+                    if(step==4)assert(bf16_output_hash(got+1,ns)==ref->state_hash);
+                }
+            }
+            assert(gpu->resident_read(coordinator,ov,out)==0&&gpu->resident_read(coordinator,xv,packed)==0);
+            for(int q=0;q<batch;q++){assert(out[(size_t)q*stride]==0x5a5a&&out[(size_t)q*stride+n+1]==0x5a5a);assert(bf16_output_hash(out+(size_t)q*stride+1,n)==ref->hash);assert(!memcmp(packed+(size_t)q*stride,x,stride*2));checked+=n+ns;bn_backend_session_free(sessions[q]);}
+            bn_backend_session_free(cs);free(packed);free(out);
+        }
+        gpu->buffer_destroy(gpu->ctx,w);free(x);free(history);free(weights);free(before);free(got);
+    }
+    run_bf16_conv_prefill_group_reference_case(gpu);
+    printf("CUDA independent-history convolution groups PASSED: %zu launches, %zu sequence updates, %zu output/history words\n",calls,updates,checked);
+}
+
+#include "cuda_bf16_gdn_conv_chain_reference.h"
+static void run_bf16_gdn_conv_chain_reference_case(BnGPUBackend *gpu) {
+    size_t calls=0,words=0;const size_t ns=48u*128*128;
+    for(size_t c=0;c<sizeof(cuda_bf16_gdn_conv_chain_cases)/sizeof(cuda_bf16_gdn_conv_chain_cases[0]);c++) {
+        const BnBF16GDNConvChainReference *ref=&cuda_bf16_gdn_conv_chain_cases[c];int nt=ref->tokens,dim=10240;
+        size_t n=(size_t)nt*dim,ng=(size_t)nt*48,nh=(size_t)(ref->kernel-1)*dim;
+        uint16_t *x=malloc(n*2),*ba=malloc(ng*4),*out=malloc((size_t)nt*6144*2),*history=malloc(nh*2),*history_before=malloc(nh*2),*w=malloc((size_t)dim*ref->kernel*2),bias[48];
+        float a[48],*state=malloc(ns*4),*before=malloc(ns*4);assert(x&&ba&&out&&history&&history_before&&w&&state&&before);
+        BnBF16GDNPrepReference shape={16,128,48,128,nt,ref->seed,1e-6f,20.0f,0,0,0};cuda_test_gdn_prep_inputs(x,ba,a,bias,&shape);
+        cuda_test_bf16_conv_inputs(x,history,w,dim,nt,ref->kernel,ref->seed);
+        for(size_t i=0;i<ns;i++)state[i]=(float)((int)((i*17+i/37+ref->seed*19)%251)-125)/4096.0f;
+        BnBackendSession *session=bn_backend_session_create();assert(session);void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,(size_t)dim*ref->kernel*2,BN_GGUF_TENSOR_BF16,dim,ref->kernel);
+        void *al=gpu->buffer_create_quant_only(gpu->ctx,a,sizeof(a),BN_GGUF_TENSOR_F32,1,48),*dt=gpu->buffer_create_quant_only(gpu->ctx,bias,sizeof(bias),BN_GGUF_TENSOR_BF16,1,48);assert(weight&&al&&dt);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,x),bav=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,ng*2,ba),cv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,NULL);
+        BnGPUResidentView ha=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nh,history),hb=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,nh,NULL);
+        BnGPUResidentView qv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,(size_t)nt*2048,NULL),kv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,(size_t)nt*2048,NULL),vv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,(size_t)nt*6144,NULL);
+        BnGPUResidentView gv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,NULL),bv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ng,NULL);
+        BnGPUResidentView sa=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns,state),sb=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_F32,ns,NULL),ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,(size_t)nt*6144,NULL);
+        assert(gpu->gdn_prefill_bf16_reserve(gpu->ctx,request,nt)==0);
+        BnBF16GDNDecodeReference decode_shape={0};decode_shape.hk=16;decode_shape.hv=48;decode_shape.seed=ref->seed;
+        for(int step=-1;step<4;step++) {
+            int take=step<0?nt:1;size_t no=(size_t)take*6144;
+            BnGPUCausalConvResidentPlan conv={0};conv.n_tokens=take;conv.dim=dim;conv.kernel=ref->kernel;conv.weight=weight;conv.x=bn_gpu_resident_view_slice(xv,0,(size_t)take*dim);conv.out=bn_gpu_resident_view_slice(cv,0,(size_t)take*dim);conv.initial_history=ha;conv.next_history=hb;
+            if(step>=0){cuda_test_gdn_decode_input(x,ba,&decode_shape,step);assert(gpu->resident_write(request,conv.x,x)==0);assert(gpu->resident_write(request,bn_gpu_resident_view_slice(bav,0,96),ba)==0);}
+            BnGPUGDNPrepareResidentPlan prep={0};prep.n_tokens=take;prep.hk=16;prep.hv=48;prep.dk=prep.dv=128;prep.norm_eps=1e-6f;prep.softplus_threshold=20;prep.a_log=al;prep.dt_bias=dt;prep.x=conv.out;prep.ba=bn_gpu_resident_view_slice(bav,0,(size_t)take*96);prep.q=bn_gpu_resident_view_slice(qv,0,(size_t)take*2048);prep.k=bn_gpu_resident_view_slice(kv,0,(size_t)take*2048);prep.v=bn_gpu_resident_view_slice(vv,0,no);prep.log_decay=bn_gpu_resident_view_slice(gv,0,(size_t)take*48);prep.beta=bn_gpu_resident_view_slice(bv,0,(size_t)take*48);
+            BnGPUGDNPrefillResidentPlan prefill={0};prefill.n_tokens=take;prefill.hk=16;prefill.hv=48;prefill.dk=prefill.dv=128;prefill.q_scale=0x1.6a09e6p-4f;prefill.q=prep.q;prefill.k=prep.k;prefill.v=prep.v;prefill.log_decay=prep.log_decay;prefill.beta=prep.beta;prefill.initial_state=sa;prefill.next_state=sb;prefill.out=bn_gpu_resident_view_slice(ov,0,no);
+            BnGPUGDNDecodeResidentPlan decode={0};decode.hk=16;decode.hv=48;decode.dk=decode.dv=128;decode.q_scale=0x1.6a09e6p-4f;decode.a_log=al;decode.dt_bias=dt;decode.x=conv.out;decode.ba=prep.ba;decode.initial_state=sa;decode.next_state=sb;decode.out=prefill.out;
+            assert(gpu->resident_read(request,sa,before)==0&&gpu->resident_read(request,ha,history_before)==0);
+            assert(gpu->causal_conv_bf16_resident(gpu->ctx,request,&conv)==0);
+            if(step<0){assert(gpu->gdn_prepare_bf16_resident(gpu->ctx,request,&prep)==0);assert(gpu->gdn_prefill_bf16_resident(gpu->ctx,request,&prefill)==0);}
+            else {assert(gpu->gdn_decode_bf16_resident(gpu->ctx,request,&decode)==0);}
+            assert(gpu->resident_synchronize(request)==0);
+            assert(gpu->resident_read(request,sa,state)==0&&gpu->resident_read(request,ha,history)==0);assert(!memcmp(state,before,ns*4)&&!memcmp(history,history_before,nh*2));
+            assert(gpu->resident_read(request,sb,state)==0&&gpu->resident_read(request,hb,history)==0&&gpu->resident_read(request,prefill.out,out)==0);
+            uint64_t oh=bf16_output_hash(out,no),sh=cuda_test_float_bits_hash(state,ns),hh=bf16_output_hash(history,nh);
+            if(oh!=(step<0?ref->prefill_out:ref->out[step])||sh!=(step<0?ref->prefill_state:ref->state[step])||hh!=ref->history[step+1])fprintf(stderr,"conv chain c=%zu step=%d out=%d state=%d history=%d\n",c,step,oh==(step<0?ref->prefill_out:ref->out[step]),sh==(step<0?ref->prefill_state:ref->state[step]),hh==ref->history[step+1]);
+            assert(oh==(step<0?ref->prefill_out:ref->out[step])&&sh==(step<0?ref->prefill_state:ref->state[step])&&hh==ref->history[step+1]);
+            BnGPUResidentView swap=sa;sa=sb;sb=swap;swap=ha;ha=hb;hb=swap;words+=no+ns+nh;calls++;
+        }
+        gpu->buffer_destroy(gpu->ctx,weight);gpu->buffer_destroy(gpu->ctx,al);gpu->buffer_destroy(gpu->ctx,dt);bn_backend_session_free(session);free(x);free(ba);free(out);free(history);free(history_before);free(w);free(state);free(before);
+    }
+    printf("CUDA resident convolution/GDN chain PASSED: %zu calls, %zu output/state/history words\n",calls,words);
+}
+
+#include "cuda_bf16_gdn_gated_norm_reference.h"
+static void cuda_test_gated_norm_inputs(uint16_t *x,uint16_t *z,uint16_t *w,
+    const BnBF16GDNGatedNormReference *r) {
+    const float scales[]={0.0f,0x1p-20f,1.0f,256.0f},gates[]={1.0f,8.0f,0.125f,4.0f};
+    for(size_t i=0;i<(size_t)r->rows*128;i++) {
+        x[i]=cuda_test_bf16_rne((float)((int)((i*37+i/13+r->seed*11)%509)-254)/128.0f*scales[(i/128+r->seed)%4]);
+        z[i]=cuda_test_bf16_rne((float)((int)((i*13+i/17+r->seed*3)%251)-125)/8.0f*gates[(i/128+r->seed)%4]);
+    }
+    for(int j=0;j<128;j++)w[j]=cuda_test_bf16_rne((float)((j*7+r->seed)%31-15)/32.0f+1.0f);
+}
+static void run_gather_rows_resident_case(BnGPUBackend *gpu) {
+    assert(gpu->gather_rows_resident);size_t words=0;
+    const int shapes[][3]={{1,1,1},{3,17,5},{256,256,256},{11,5120,4}};
+    const uint32_t edges[]={0,UINT32_C(0x80000000),UINT32_C(0x7fc12345),UINT32_C(0xffc54321),
+        UINT32_C(0x7f800000),UINT32_C(0xff800000),1,UINT32_C(0x7f7fffff)};
+    for(int kind=0;kind<2;kind++)for(size_t c=0;c<sizeof(shapes)/sizeof(shapes[0]);c++) {
+        int rows=shapes[c][0],cols=shapes[c][1],count=shapes[c][2],type=kind?BN_GGUF_TENSOR_F32:BN_GGUF_TENSOR_BF16;
+        size_t n=(size_t)rows*cols,no=(size_t)count*cols,width=kind?4:2;
+        unsigned char *x=malloc((n+2)*width),*copy=malloc((n+2)*width),*out=malloc((no+2)*width);assert(x&&copy&&out);
+        memset(x,0x5a,(n+2)*width);
+        for(size_t i=0;i<n;i++) {
+            if(kind){uint32_t value=i<8?edges[i]:(uint32_t)i*UINT32_C(2654435761);memcpy(x+(i+1)*width,&value,width);}
+            else {uint16_t value=(uint16_t)i;memcpy(x+(i+1)*width,&value,width);}
+        }
+        memcpy(copy,x,(n+2)*width);
+        int *indices=malloc((size_t)count*sizeof(int)),*saved=malloc((size_t)count*sizeof(int)),*bad_indices=malloc((size_t)count*sizeof(int));assert(indices&&saved&&bad_indices);
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,type,n+2,x),ov=cuda_test_resident_alloc(gpu,request,type,no+2,NULL);
+        for(int mode=0;mode<2;mode++) {
+            for(int i=0;i<count;i++)indices[i]=mode?(i/2)%rows:rows-1-i%rows;
+            memcpy(saved,indices,(size_t)count*sizeof(int));
+            memset(out,0x5a,(no+2)*width);assert(!gpu->resident_write(request,ov,out));
+            BnGPUGatherRowsResidentPlan p={rows,cols,count,indices,bn_gpu_resident_view_slice(xv,1,n),bn_gpu_resident_view_slice(ov,1,no)};
+            for(int reject=0;reject<12;reject++) {
+                BnGPUGatherRowsResidentPlan bad=p;memcpy(bad_indices,indices,(size_t)count*sizeof(int));bad.rows=bad_indices;
+                switch(reject) {
+                    case 0:bad.source_rows=0;break;case 1:bad.row_width=0;break;
+                    case 2:bad.n_rows=0;break;case 3:bad.rows=NULL;break;
+                    case 4:bad_indices[count-1]=-1;break;case 5:bad_indices[count-1]=rows;break;
+                    case 6:bad.out=bad.x;break;case 7:bad.out.count--;break;
+                    case 8:bad.x.type=kind?BN_GGUF_TENSOR_BF16:BN_GGUF_TENSOR_F32;break;
+                    case 9:bad.x.count--;break;case 10:bad.out.request=session;break;
+                    default:bad.source_rows=bad.row_width=INT_MAX;break;
+                }
+                assert(gpu->gather_rows_resident(gpu->ctx,request,&bad)==-1);
+            }
+            assert(!gpu->resident_read(request,ov,out));for(size_t i=0;i<(no+2)*width;i++)assert(out[i]==0x5a);
+            for(int repeat=0;repeat<2;repeat++)assert(!gpu->gather_rows_resident(gpu->ctx,request,&p));
+            /* The host index array is not retained after enqueue. */
+            for(int i=0;i<count;i++)indices[i]=-1;
+            assert(!gpu->resident_read(request,ov,out));assert(!gpu->resident_read(request,xv,x));
+            assert(!memcmp(x,copy,(n+2)*width));
+            for(int i=0;i<count;i++)assert(!memcmp(out+((size_t)i*cols+1)*width,copy+((size_t)saved[i]*cols+1)*width,(size_t)cols*width));
+            for(size_t i=0;i<width;i++)assert(out[i]==0x5a&&out[(no+1)*width+i]==0x5a);
+            words+=no;
+        }
+        bn_backend_session_free(session);free(x);free(copy);free(out);free(indices);free(saved);free(bad_indices);
+    }
+    printf("CUDA resident row gather PASSED: %zu bit-exact words\n",words);
+}
+
+static void run_split_columns_resident_case(BnGPUBackend *gpu) {
+    const int shapes[][3]={{1,2,1},{3,17,1},{3,17,16},{5,16384,10240}};
+    size_t words=0;
+    for(int kind=0;kind<2;kind++)for(size_t c=0;c<sizeof(shapes)/sizeof(shapes[0]);c++) {
+        int rows=shapes[c][0],cols=shapes[c][1],lc=shapes[c][2];
+        size_t n=(size_t)rows*cols,nl=(size_t)rows*lc,nr=n-nl,width=kind?4:2;
+        int type=kind?BN_GGUF_TENSOR_F32:BN_GGUF_TENSOR_BF16;
+        unsigned char *x=malloc((n+2)*width),*left=malloc((nl+2)*width),*right=malloc((nr+2)*width),*copy=malloc((n+2)*width);assert(x&&left&&right&&copy);
+        for(size_t j=0;j<(n+2)*width;j++)x[j]=(unsigned char)(j*37+j/13+19);
+        memcpy(copy,x,(n+2)*width);memset(left,0x5a,(nl+2)*width);memset(right,0x5a,(nr+2)*width);
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,type,n+2,x),lv=cuda_test_resident_alloc(gpu,request,type,nl+2,left),rv=cuda_test_resident_alloc(gpu,request,type,nr+2,right);
+        BnGPUSplitColumnsResidentPlan p={0};p.rows=rows;p.cols=cols;p.left_cols=lc;p.x=bn_gpu_resident_view_slice(xv,1,n);p.left=bn_gpu_resident_view_slice(lv,1,nl);p.right=bn_gpu_resident_view_slice(rv,1,nr);
+        for(int reject=0;reject<8;reject++) {
+            BnGPUSplitColumnsResidentPlan bad=p;
+            switch(reject){case 0:bad.rows=0;break;case 1:bad.left_cols=0;break;case 2:bad.left_cols=cols;break;case 3:bad.left=p.x;break;case 4:--bad.right.count;break;case 5:bad.x.request=session;break;case 6:bad.right.type=kind?BN_GGUF_TENSOR_BF16:BN_GGUF_TENSOR_F32;break;default:bad.right=bad.left;break;}
+            assert(gpu->split_columns_resident(gpu->ctx,request,&bad)==-1);
+        }
+        assert(gpu->split_columns_resident(gpu->ctx,request,&p)==0);
+        assert(gpu->resident_read(request,lv,left)==0&&gpu->resident_read(request,rv,right)==0&&gpu->resident_read(request,xv,x)==0);
+        assert(!memcmp(x,copy,(n+2)*width));
+        for(int row=0;row<rows;row++) {
+            assert(!memcmp(left+((size_t)row*lc+1)*width,x+((size_t)row*cols+1)*width,(size_t)lc*width));
+            assert(!memcmp(right+((size_t)row*(cols-lc)+1)*width,x+((size_t)row*cols+lc+1)*width,(size_t)(cols-lc)*width));
+        }
+        for(size_t j=0;j<width;j++)assert(left[j]==0x5a&&left[(nl+1)*width+j]==0x5a&&right[j]==0x5a&&right[(nr+1)*width+j]==0x5a);
+        words+=n;bn_backend_session_free(session);free(x);free(left);free(right);free(copy);
+    }
+    printf("CUDA resident split columns PASSED: 8 calls, %zu words\n",words);
+}
+
+static void run_bf16_gated_norm_resident_reference_case(BnGPUBackend *gpu) {
+    const int shapes[][4] = {{1,16,3,128},{5,16,3,128},{3,7,5,13},{2,1,3,1}};
+    for (size_t c = 0; c < sizeof(shapes)/sizeof(shapes[0]); c++) {
+        int nt=shapes[c][0], outer=shapes[c][1], inner=shapes[c][2], width=shapes[c][3];
+        size_t n=(size_t)nt*outer*inner*width;
+        uint16_t *x=malloc(n*2), *out=malloc((n+2)*2); assert(x&&out);
+        for(size_t j=0;j<n;j++) x[j]=(uint16_t)(j*37+19);
+        for(size_t j=0;j<n+2;j++) out[j]=0x5a5a;
+        BnBackendSession *session=bn_backend_session_create(); assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session); assert(request);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,x);
+        BnGPUResidentView ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+2,out);
+        BnGPUTransposeAxesResidentPlan p={0};p.n_tokens=nt;p.outer=outer;p.inner=inner;p.width=width;
+        p.x=xv;p.out=bn_gpu_resident_view_slice(ov,1,n);
+        for(int reject=0;reject<5;reject++) {
+            BnGPUTransposeAxesResidentPlan bad=p;
+            switch(reject){case 0:bad.outer=0;break;case 1:bad.out=bad.x;break;case 2:--bad.out.count;break;case 3:bad.x.type=BN_GGUF_TENSOR_F32;break;default:bad.x.request=session;break;}
+            assert(gpu->transpose_axes_bf16_resident(gpu->ctx,request,&bad)==-1);
+        }
+        assert(gpu->transpose_axes_bf16_resident(gpu->ctx,request,&p)==0);
+        assert(gpu->resident_read(request,ov,out)==0);
+        for(int t=0;t<nt;t++)for(int a=0;a<outer;a++)for(int b=0;b<inner;b++)for(int j=0;j<width;j++)
+            assert(out[1+(((size_t)t*inner+b)*outer+a)*width+j]==x[(((size_t)t*outer+a)*inner+b)*width+j]);
+        assert(out[0]==0x5a5a&&out[n+1]==0x5a5a);
+        bn_backend_session_free(session);free(x);free(out);
+    }
+    assert(gpu->gated_rmsnorm_bf16_resident);size_t words=0,calls=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_gdn_gated_norm_cases)/sizeof(cuda_bf16_gdn_gated_norm_cases[0]);c++) {
+        const BnBF16GDNGatedNormReference *r=&cuda_bf16_gdn_gated_norm_cases[c];size_t n=(size_t)r->rows*128;
+        uint16_t *x=malloc((n+16)*2),*z=malloc((n+16)*2),*out=malloc((n+16)*2),w[128];assert(x&&z&&out);
+        cuda_test_gated_norm_inputs(x+8,z+8,w,r);
+        for(size_t i=0;i<8;i++)x[i]=x[n+8+i]=z[i]=z[n+8+i]=0x5a5a;
+        for(size_t i=0;i<n+16;i++)out[i]=0x5a5a;
+        uint64_t xh=bf16_output_hash(x,n+16),zh=bf16_output_hash(z,n+16);
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,sizeof(w),BN_GGUF_TENSOR_BF16,1,128);assert(weight);
+        for(int mode=0;mode<2;mode++) {
+            BnBackendSession *session=bn_backend_session_create();assert(session);void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+            BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,x),zv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,z),ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,out);
+            BnGPUGatedRMSNormResidentPlan p={0};p.rows=r->rows;p.dim=128;p.eps=r->eps;p.activation=(BnGPUGatedNormActivation)r->activation;p.weight=weight;
+            p.x=bn_gpu_resident_view_slice(xv,8,n);p.z=bn_gpu_resident_view_slice(zv,8,n);p.out=bn_gpu_resident_view_slice(ov,8,n);
+            if(mode==0)for(int reject=0;reject<10;reject++) {
+                BnGPUGatedRMSNormResidentPlan bad=p;
+                switch(reject){case 0:bad.rows=0;break;case 1:bad.dim=64;break;case 2:bad.eps=NAN;break;case 3:bad.eps=0;break;case 4:bad.activation=(BnGPUGatedNormActivation)2;break;case 5:bad.weight=NULL;break;case 6:bad.out=bad.x;break;case 7:bad.z.request=session;break;case 8:bad.x.type=BN_GGUF_TENSOR_F32;break;default:--bad.out.count;break;}
+                assert(gpu->gated_rmsnorm_bf16_resident(gpu->ctx,request,&bad)==-1);
+            }
+            assert(gpu->gated_rmsnorm_bf16_resident(gpu->ctx,request,&p)==0);
+            assert(gpu->resident_read(request,ov,out)==0&&gpu->resident_read(request,xv,x)==0&&gpu->resident_read(request,zv,z)==0);
+            uint64_t h=bf16_output_hash(out+8,n);if(h!=r->hash)fprintf(stderr,"gatednorm c=%zu mode=%d rows=%d seed=%d act=%d hash=%016llx expected=%016llx\n",c,mode,r->rows,r->seed,r->activation,(unsigned long long)h,(unsigned long long)r->hash);
+            assert(h==r->hash&&bf16_output_hash(x,n+16)==xh&&bf16_output_hash(z,n+16)==zh);
+            for(size_t i=0;i<8;i++)assert(out[i]==0x5a5a&&out[n+8+i]==0x5a5a);
+            bn_backend_session_free(session);words+=n;calls++;
+        }
+        gpu->buffer_destroy(gpu->ctx,weight);free(x);free(z);free(out);
+    }
+    printf("CUDA resident BF16 gated RMSNorm PASSED: %zu calls, %zu output words\n",calls,words);
+}
+
+#include "cuda_mhc_checks.h"
+#include "cuda_mhc_fused_checks.h"
+#include "cuda_clamped_swiglu_checks.h"
+#include "cuda_glm_output_norm_reference.h"
+static void run_glm_output_norm_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->gated_rmsnorm_f32_weight_bf16_resident);
+    size_t calls = 0, words = 0;
+    for (size_t ci = 0; ci < sizeof(cuda_glm_output_norm_cases) /
+            sizeof(cuda_glm_output_norm_cases[0]); ci++) {
+        const BnCudaGLMOutputNormReference *ref = &cuda_glm_output_norm_cases[ci];
+        size_t n = (size_t)ref->rows * 128;
+        uint16_t *x = malloc((n+16)*2), *z = malloc((n+16)*2), *out = malloc((n+16)*2);
+        float w[128]; uint16_t wb[128];
+        assert(x && z && out);
+        float scales[] = {0.0f, 0x1p-20f, 1.0f, 256.0f};
+        float gate_scales[] = {1.0f, 8.0f, 0.125f, 4.0f};
+        for (size_t i = 0; i < n; i++) {
+            size_t row = i / 128, scale = (row + ref->seed) % 4;
+            float value = (float)((int)((i*37+i/13+(size_t)ref->seed*11)%509)-254)/128.0f;
+            float gate = (float)((int)((i*13+i/17+(size_t)ref->seed*3)%251)-125)/8.0f;
+            x[i+8] = cuda_test_bf16_rne(value * scales[scale]);
+            z[i+8] = cuda_test_bf16_rne(gate * gate_scales[scale]);
+        }
+        for (size_t i = 0; i < 8; i++)
+            x[i] = x[n+8+i] = z[i] = z[n+8+i] = 0x5a5a;
+        for (int i = 0; i < 128; i++) {
+            w[i] = (float)((i*7+ref->seed)%31-15)/32.0f+1.0f+0x1p-17f;
+            wb[i] = cuda_test_bf16_rne(w[i]);
+        }
+        uint64_t xh = bf16_output_hash(x, n+16), zh = bf16_output_hash(z, n+16);
+        void *weight = gpu->buffer_create_quant_only(gpu->ctx, w, sizeof(w), BN_GGUF_TENSOR_F32, 1, 128);
+        void *wrong_type = gpu->buffer_create_quant_only(gpu->ctx, wb, sizeof(wb), BN_GGUF_TENSOR_BF16, 1, 128);
+        void *wrong_shape = gpu->buffer_create_quant_only(gpu->ctx, w, sizeof(w), BN_GGUF_TENSOR_F32, 128, 1);
+        assert(weight && wrong_type && wrong_shape);
+        for (int mode = 0; mode < 2; mode++) {
+            BnBackendSession *session = bn_backend_session_create(); assert(session);
+            void *request = bn_gpu_backend_resident_request(gpu, session); assert(request);
+            for (size_t i = 0; i < n+16; i++) out[i] = 0x5a5a;
+            BnGPUResidentView xv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n+16, x);
+            BnGPUResidentView zv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n+16, z);
+            BnGPUResidentView ov = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n+16, out);
+            int chunk = !mode ? ref->rows : ref->rows > 257 ? 257 : (ref->rows+1)/2;
+            for (int offset = 0; offset < ref->rows; offset += chunk) {
+                int take = chunk < ref->rows-offset ? chunk : ref->rows-offset;
+                BnGPUGatedRMSNormResidentPlan p = {0};
+                p.rows = take; p.dim = 128; p.eps = ref->eps;
+                p.activation = BN_GPU_GATED_NORM_SIGMOID; p.profile = BN_GPU_GATED_NORM_GLM_R2;
+                p.weight = weight;
+                p.x = bn_gpu_resident_view_slice(xv, 8+(size_t)offset*128, (size_t)take*128);
+                p.z = bn_gpu_resident_view_slice(zv, 8+(size_t)offset*128, (size_t)take*128);
+                p.out = bn_gpu_resident_view_slice(ov, 8+(size_t)offset*128, (size_t)take*128);
+                if (!offset) {
+                    for (int reject = 0; reject < 15; reject++) {
+                        BnGPUGatedRMSNormResidentPlan bad = p;
+                        switch (reject) {
+                        case 0: bad.rows = 0; break;
+                        case 1: bad.dim = 64; break;
+                        case 2: bad.eps = NAN; break;
+                        case 3: bad.eps = 0; break;
+                        case 4: bad.activation = BN_GPU_GATED_NORM_SILU; break;
+                        case 5: bad.profile = BN_GPU_GATED_NORM_FLA; break;
+                        case 6: bad.profile = BN_GPU_GATED_NORM_COMPILED_R2; break;
+                        case 7: bad.weight = NULL; break;
+                        case 8: bad.weight = wrong_type; break;
+                        case 9: bad.weight = wrong_shape; break;
+                        case 10: bad.out = bad.x; break;
+                        case 11: bad.out = bad.z; break;
+                        case 12: bad.z.request = session; break;
+                        case 13: bad.x.type = BN_GGUF_TENSOR_F32; break;
+                        default: --bad.out.count; break;
+                        }
+                        assert(gpu->gated_rmsnorm_f32_weight_bf16_resident(gpu->ctx, request, &bad) == -1);
+                    }
+                    /* The legacy BF16-weight operation does not accept GLM_R2. */
+                    assert(gpu->gated_rmsnorm_bf16_resident(gpu->ctx, request, &p) == -1);
+                    assert(gpu->resident_read(request, ov, out) == 0);
+                    for (size_t i = 0; i < n+16; i++) assert(out[i] == 0x5a5a);
+                }
+                assert(gpu->gated_rmsnorm_f32_weight_bf16_resident(gpu->ctx, request, &p) == 0);
+                calls++;
+            }
+            assert(gpu->resident_read(request, ov, out) == 0);
+            uint64_t hash = bf16_output_hash(out+8, n);
+            if (hash != ref->hash) fprintf(stderr, "GLM output norm case=%zu mode=%d rows=%d\n", ci, mode, ref->rows);
+            assert(hash == ref->hash);
+            for (size_t i = 0; i < 8; i++) assert(out[i] == 0x5a5a && out[n+8+i] == 0x5a5a);
+            assert(gpu->resident_read(request, xv, x) == 0 && gpu->resident_read(request, zv, z) == 0);
+            assert(bf16_output_hash(x, n+16) == xh && bf16_output_hash(z, n+16) == zh);
+            bn_backend_session_free(session); words += n;
+        }
+        gpu->buffer_destroy(gpu->ctx, weight); gpu->buffer_destroy(gpu->ctx, wrong_type);
+        gpu->buffer_destroy(gpu->ctx, wrong_shape); free(x); free(z); free(out);
+    }
+    printf("CUDA GLM F32-weight output RMS/sigmoid PASSED: %zu calls, %zu exact output words\n", calls, words);
+}
+
+#include "cuda_compiled_gated_norm_reference.h"
+static void run_compiled_gated_norm_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->resident_gated_norm_profiles & (1u << BN_GPU_GATED_NORM_COMPILED_R2));
+    const int shapes[] = {1,2,3,8,48,192,377,753,6144};
+    void *weight = gpu->buffer_create_quant_only(gpu->ctx,cuda_compiled_gated_weight,
+        sizeof(cuda_compiled_gated_weight),BN_GGUF_TENSOR_BF16,1,128);
+    assert(weight);size_t words=0;
+    for(size_t c=0;c<sizeof(shapes)/sizeof(shapes[0]);c++) {
+        size_t n=(size_t)shapes[c]*128;
+        uint16_t *x=malloc((n+16)*2),*z=malloc((n+16)*2),*out=malloc((n+16)*2);
+        assert(x&&z&&out);
+        for(size_t j=0;j<n+16;j++)x[j]=z[j]=out[j]=0x5a5a;
+        for(int row=0;row<shapes[c];row++) {
+            memcpy(x+8+(size_t)row*128,cuda_compiled_gated_x[row%8],256);
+            memcpy(z+8+(size_t)row*128,cuda_compiled_gated_z[row%8],256);
+        }
+        uint64_t xhash=bf16_output_hash(x,n+16),zhash=bf16_output_hash(z,n+16);
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,x);
+        BnGPUResidentView zv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,z);
+        BnGPUResidentView ov=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,out);
+        BnGPUGatedRMSNormResidentPlan p={0};p.rows=shapes[c];p.dim=128;p.eps=1e-6f;
+        p.weight=weight;p.profile=BN_GPU_GATED_NORM_COMPILED_R2;
+        p.x=bn_gpu_resident_view_slice(xv,8,n);p.z=bn_gpu_resident_view_slice(zv,8,n);
+        p.out=bn_gpu_resident_view_slice(ov,8,n);
+        for(int reject=0;reject<4;reject++) {
+            BnGPUGatedRMSNormResidentPlan bad=p;
+            if(reject==0)bad.profile=(BnGPUGatedNormProfile)-1;
+            else if(reject==1)bad.profile=(BnGPUGatedNormProfile)2;
+            else if(reject==2)bad.activation=BN_GPU_GATED_NORM_SIGMOID;
+            else bad.out=bad.x;
+            assert(gpu->gated_rmsnorm_bf16_resident(gpu->ctx,request,&bad)==-1);
+        }
+        assert(!gpu->resident_read(request,ov,out));
+        for(size_t j=0;j<n+16;j++)assert(out[j]==0x5a5a);
+        assert(!gpu->gated_rmsnorm_bf16_resident(gpu->ctx,request,&p));
+        assert(!gpu->resident_read(request,ov,out));
+        for(int row=0;row<shapes[c];row++)
+            assert(!memcmp(out+8+(size_t)row*128,cuda_compiled_gated_out[row%8],256));
+        for(size_t j=0;j<8;j++)assert(out[j]==0x5a5a&&out[n+8+j]==0x5a5a);
+        assert(!gpu->resident_read(request,xv,x)&&!gpu->resident_read(request,zv,z));
+        assert(bf16_output_hash(x,n+16)==xhash&&bf16_output_hash(z,n+16)==zhash);
+        words+=n;bn_backend_session_free(session);free(x);free(z);free(out);
+    }
+    gpu->buffer_destroy(gpu->ctx,weight);
+    printf("CUDA compiled R2 gated RMSNorm PASSED: %zu exact words\n",words);
+}
+
+static void cuda_test_bf16_residual_inputs(uint16_t *x, uint16_t *r, size_t n, int seed) {
+    for (size_t i = 0; i < n; i++) {
+        x[i] = cuda_test_bf16_rne((float)((int)((i * 37 + (size_t)seed * 11) % 509) - 254) / 256.0f);
+        r[i] = cuda_test_bf16_rne((float)((int)((i * 13 + i / 17 + (size_t)seed * 3) % 251) - 125) / 512.0f);
+    }
+}
+
+#include "cuda_bf16_add3_norm_reference.h"
+
+#include "cuda_compiled_norm_reference.h"
+#include "cuda_looped_add_norm_reference.h"
+static void run_looped_add_norm_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->resident_rmsnorm_reductions & (1u << BN_GPU_RMSNORM_REDUCTION_TILED_5120_LOOPED_ADD_FMA));
+    const int counts[]={1,2,3,4,17,129,513};size_t words=0;
+    for (int fixture=0;fixture<2;fixture++) {
+    const uint16_t *gamma=fixture?cuda_looped_add_norm_edge_weight:cuda_looped_add_norm_weight;
+    const uint16_t (*xref)[5120]=fixture?cuda_looped_add_norm_edge_x:cuda_looped_add_norm_x;
+    const uint16_t (*rref)[5120]=fixture?cuda_looped_add_norm_edge_residual:cuda_looped_add_norm_residual;
+    const uint16_t (*yref)[5120]=fixture?cuda_looped_add_norm_edge_out:cuda_looped_add_norm_out;
+    const uint16_t (*sref)[5120]=fixture?cuda_looped_add_norm_edge_sum:cuda_looped_add_norm_sum;
+    void *weight=gpu->buffer_create_quant_only(gpu->ctx,gamma,
+        sizeof(cuda_looped_add_norm_weight),BN_GGUF_TENSOR_BF16,1,5120);assert(weight);
+    for(size_t c=0;c<sizeof(counts)/sizeof(counts[0]);c++) {
+        int nt=counts[c];size_t n=(size_t)nt*5120;
+        uint16_t *x=malloc((n+16)*2),*r=malloc((n+16)*2),*y=malloc((n+16)*2),*sum=malloc((n+16)*2);
+        assert(x&&r&&y&&sum);
+        for(size_t i=0;i<n+16;i++)x[i]=r[i]=y[i]=sum[i]=0x5a5a;
+        for(int t=0;t<nt;t++) {
+            memcpy(x+8+(size_t)t*5120,xref[t%4],5120*2);
+            memcpy(r+8+(size_t)t*5120,rref[t%4],5120*2);
+        }
+        uint64_t xh=bf16_output_hash(x,n+16),rh=bf16_output_hash(r,n+16);
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,x);
+        BnGPUResidentView rv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,r);
+        BnGPUResidentView yv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,y);
+        BnGPUResidentView sv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,sum);
+        BnGPUAddRMSNormResidentPlan p={0};p.n_tokens=nt;p.dim=5120;p.eps=1e-6f;p.weight_offset=1;
+        p.reduction=BN_GPU_RMSNORM_REDUCTION_TILED_5120_LOOPED_ADD_FMA;p.weight=weight;
+        p.x=bn_gpu_resident_view_slice(xv,8,n);p.residual=bn_gpu_resident_view_slice(rv,8,n);
+        p.out=bn_gpu_resident_view_slice(yv,8,n);p.residual_out=bn_gpu_resident_view_slice(sv,8,n);
+        for(int reject=0;reject<6;reject++) {
+            BnGPUAddRMSNormResidentPlan bad=p;
+            if(reject==0)bad.dim=4096;
+            else if(reject==1)bad.eps=1e-5f;
+            else if(reject==2)bad.weight_offset=0;
+            else if(reject==3)bad.reduction=(BnGPURMSNormReduction)99;
+            else if(reject==4)bad.out=bad.x;
+            else bad.residual_out=bad.out;
+            assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,request,&bad)==-1);
+        }
+        assert(!gpu->resident_read(request,yv,y)&&!gpu->resident_read(request,sv,sum));
+        for(size_t i=0;i<n+16;i++)assert(y[i]==0x5a5a&&sum[i]==0x5a5a);
+        assert(!gpu->add_rmsnorm_bf16_resident(gpu->ctx,request,&p));
+        assert(!gpu->resident_read(request,yv,y)&&!gpu->resident_read(request,sv,sum));
+        for(int t=0;t<nt;t++) {
+            assert(!memcmp(y+8+(size_t)t*5120,yref[t%4],5120*2));
+            assert(!memcmp(sum+8+(size_t)t*5120,sref[t%4],5120*2));
+        }
+        for(size_t i=0;i<8;i++)assert(y[i]==0x5a5a&&y[n+8+i]==0x5a5a&&sum[i]==0x5a5a&&sum[n+8+i]==0x5a5a);
+        assert(!gpu->resident_read(request,xv,x)&&!gpu->resident_read(request,rv,r));
+        assert(bf16_output_hash(x,n+16)==xh&&bf16_output_hash(r,n+16)==rh);
+        words+=n*2;bn_backend_session_free(session);free(x);free(r);free(y);free(sum);
+    }
+    gpu->buffer_destroy(gpu->ctx,weight);
+    }
+    printf("CUDA looped residual RMSNorm PASSED: %zu exact norm/sum words\n",words);
+}
+
+#include "cuda_general_tiled_norm_reference.h"
+#include "cuda_fused_persistent_norm_reference.h"
+static void run_general_tiled_norm_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->resident_rmsnorm_reductions & (1u << BN_GPU_RMSNORM_REDUCTION_TILED_5120_PERSISTENT_FUSED_SQUARES));
+    size_t words = 0;
+    const size_t general_count=sizeof(cuda_general_norm_cases)/sizeof(cuda_general_norm_cases[0]);
+    const size_t fused_count=sizeof(cuda_fused_persistent_norm_cases)/sizeof(cuda_fused_persistent_norm_cases[0]);
+    for (size_t c=0;c<2*general_count+fused_count;c++) {
+        BnGeneralNormReference fused={0};
+        if(c>=2*general_count) {
+            const BnFusedPersistentNormReference *f=&cuda_fused_persistent_norm_cases[c-2*general_count];
+            fused=(BnGeneralNormReference){f->seed,f->tokens,f->kind,f->reduction,f->norm,f->residual};
+        }
+        const BnGeneralNormReference *ref;
+        if(c<general_count) ref=&cuda_general_norm_cases[c];
+        else if(c<2*general_count) {
+            fused=cuda_general_norm_cases[c-general_count];
+            if(fused.kind>1||fused.reduction!=BN_GPU_RMSNORM_REDUCTION_TILED_5120_PERSISTENT)continue;
+            fused.reduction=BN_GPU_RMSNORM_REDUCTION_TILED_5120_PERSISTENT_FUSED_SQUARES;
+            ref=&fused;
+        } else ref=&fused;
+        size_t n=(size_t)ref->tokens*5120;
+        uint16_t *host[4],*out=malloc((n+2)*2),*sum=malloc((n+2)*2);
+        assert(out&&sum);
+        for(int input=0;input<4;input++) {
+            size_t count=input==3?5120:n;host[input]=malloc(count*2);assert(host[input]);
+            for(size_t i=0;i<count;i++) {
+                int seed=ref->seed;
+                float value=(float)((int)((i*37+i/13+input*173+seed*11)%1009)-504)/128.0f;
+                if(seed==1&&input<3&&i%16==0)value=input==0?16777216.0f:input==1?-16777216.0f:0.00390625f;
+                if(seed==2)value*=0.000030517578125f;
+                if(seed==3)value*=128.0f;
+                if(seed==4)value=ldexpf((float)((int)(i%127)-63),-60+(int)(i%61));
+                if(seed==5){unsigned u=(unsigned)(i*2654435761u+input*2246822519u+12345u);value=ldexpf((float)((int)(u%255)-127)/128.0f,(int)((u>>8)%81)-40);}
+                if(seed==6){value=ldexpf((float)((int)(i%127)-63),(int)(i%101)-50);if(input==1)value=-value;if(input==2)value=0.0009765625f;}
+                if(seed==7)value=ldexpf((float)((int)(i%63)-31)/32.0f,(int)(i%121)-60);
+                if(input==3)value=(float)((int)(i%63)-31)/32.0f;
+                host[input][i]=cuda_test_bf16_rne(value);
+            }
+        }
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView v[5];
+        for(size_t i=0;i<n+2;i++)out[i]=sum[i]=0x5a5a;
+        for(int i=0;i<5;i++)v[i]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,i<3?n:n+2,i<3?host[i]:i==3?out:sum);
+        void *w=gpu->buffer_create_quant_only(gpu->ctx,host[3],5120*2,BN_GGUF_TENSOR_BF16,1,5120);assert(w);
+        BnGPURMSNormResidentPlan p={0};p.n_tokens=ref->tokens;p.dim=5120;p.eps=1e-6f;p.weight_offset=1;
+        p.reduction=(BnGPURMSNormReduction)ref->reduction;p.weight=w;p.x=v[0];p.out=bn_gpu_resident_view_slice(v[3],1,n);
+        BnGPUAddRMSNormResidentPlan a={0};a.n_tokens=p.n_tokens;a.dim=p.dim;a.eps=p.eps;a.weight_offset=1;a.reduction=p.reduction;a.weight=w;a.x=v[0];a.residual=v[1];a.out=p.out;a.residual_out=bn_gpu_resident_view_slice(v[4],1,n);
+        BnGPUAdd3RMSNormResidentPlan b={0};b.n_tokens=p.n_tokens;b.dim=p.dim;b.eps=p.eps;b.weight_offset=1;b.reduction=p.reduction;b.weight=w;b.x=v[0];b.residual=v[1];b.addend=v[2];b.out=p.out;b.residual_out=a.residual_out;
+        for(int bad=0;bad<7;bad++) {
+            BnGPURMSNormResidentPlan bp=p;BnGPUAddRMSNormResidentPlan ba=a;BnGPUAdd3RMSNormResidentPlan bb=b;
+            if(bad==0)bp.dim=ba.dim=bb.dim=5116;
+            if(bad==1)bp.eps=ba.eps=bb.eps=0.0f;
+            if(bad==2)bp.weight_offset=ba.weight_offset=bb.weight_offset=0;
+            if(bad==3)bp.weight_groups=ba.weight_groups=bb.weight_groups=2;
+            if(bad==4)bp.out=ba.out=bb.out=v[0];
+            if(bad==5){--bp.out.count;--ba.out.count;--bb.out.count;}
+            if(bad==6)bp.reduction=ba.reduction=bb.reduction=99;
+            assert(gpu->rmsnorm_bf16_resident(gpu->ctx,request,&bp)==-1);
+            assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,request,&ba)==-1);
+            assert(gpu->add3_rmsnorm_bf16_resident(gpu->ctx,request,&bb)==-1);
+        }
+        int status=ref->kind==0?gpu->rmsnorm_bf16_resident(gpu->ctx,request,&p):ref->kind==1?gpu->add_rmsnorm_bf16_resident(gpu->ctx,request,&a):gpu->add3_rmsnorm_bf16_resident(gpu->ctx,request,&b);
+        assert(status==0&&gpu->resident_read(request,v[3],out)==0);
+        uint64_t hash=bf16_output_hash(out+1,n);
+        if(hash!=ref->norm)fprintf(stderr,"tiled norm mismatch seed%d nt%d kind%d\n",ref->seed,ref->tokens,ref->kind);
+        assert(hash==ref->norm);words+=n;
+        if(ref->kind>0){assert(gpu->resident_read(request,v[4],sum)==0);assert(bf16_output_hash(sum+1,n)==ref->residual);}
+        assert(out[0]==0x5a5a&&out[n+1]==0x5a5a);
+        if(ref->kind>0)assert(sum[0]==0x5a5a&&sum[n+1]==0x5a5a);
+        uint16_t *readback=malloc(n*2);assert(readback);
+        for(int i=0;i<3;i++) {
+            assert(!gpu->resident_read(request,v[i],readback));
+            assert(!memcmp(readback,host[i],n*2));
+        }
+        free(readback);
+        bn_backend_session_free(session);gpu->buffer_destroy(gpu->ctx,w);
+        for(int i=0;i<4;i++)free(host[i]);
+        free(out);free(sum);
+    }
+    printf("CUDA general tiled norm PASSED: %zu exact norm words, original cubin references\n",words);
+}
+
+static void run_tiled_norm_5120_reference_case(BnGPUBackend *gpu) {
+    size_t words = 0;
+    for (size_t c=0;c<sizeof(cuda_compiled_norm_cases)/sizeof(cuda_compiled_norm_cases[0]);c++) {
+        const BnCompiledNormReference *ref=&cuda_compiled_norm_cases[c];
+        size_t n=(size_t)ref->tokens*5120;
+        uint16_t *host[4],*out=malloc(n*2),*sum=malloc(n*2);
+        assert(out&&sum);
+        for(int input=0;input<4;input++) {
+            size_t count=input==3?5120:n;host[input]=malloc(count*2);assert(host[input]);
+            for(size_t i=0;i<count;i++) {
+                int seed=ref->seed;
+                float value=(float)((int)((i*37+i/13+input*173+seed*11)%1009)-504)/128.0f;
+                if(seed==1&&input<3&&i%16==0)value=input==0?16777216.0f:input==1?-16777216.0f:0.00390625f;
+                if(seed==2)value*=0.000030517578125f;
+                if(seed==3)value*=128.0f;
+                if(seed==4)value=ldexpf((float)((int)(i%127)-63),-60+(int)(i%61));
+                if(seed==5){unsigned u=(unsigned)(i*2654435761u+input*2246822519u+12345u);value=ldexpf((float)((int)(u%255)-127)/128.0f,(int)((u>>8)%81)-40);}
+                if(seed==6){value=ldexpf((float)((int)(i%127)-63),(int)(i%101)-50);if(input==1)value=-value;if(input==2)value=0.0009765625f;}
+                if(seed==7)value=ldexpf((float)((int)(i%63)-31)/32.0f,(int)(i%121)-60);
+                if(input==3)value=(float)((int)(i%63)-31)/32.0f;
+                host[input][i]=cuda_test_bf16_rne(value);
+            }
+        }
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView v[5];
+        for(int i=0;i<5;i++)v[i]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,i<3?host[i]:NULL);
+        void *w=gpu->buffer_create_quant_only(gpu->ctx,host[3],5120*2,BN_GGUF_TENSOR_BF16,1,5120);assert(w);
+        BnGPURMSNormResidentPlan p={0};p.n_tokens=ref->tokens;p.dim=5120;p.eps=1e-6f;p.weight_offset=1;
+        p.reduction=BN_GPU_RMSNORM_REDUCTION_TILED_5120_FMA;p.weight=w;p.x=v[0];p.out=v[3];
+        BnGPUAddRMSNormResidentPlan a={0};a.n_tokens=p.n_tokens;a.dim=p.dim;a.eps=p.eps;a.weight_offset=1;a.reduction=p.reduction;a.weight=w;a.x=v[0];a.residual=v[1];a.out=v[3];a.residual_out=v[4];
+        BnGPUAdd3RMSNormResidentPlan b={0};b.n_tokens=p.n_tokens;b.dim=p.dim;b.eps=p.eps;b.weight_offset=1;b.reduction=p.reduction;b.weight=w;b.x=v[0];b.residual=v[1];b.addend=v[2];b.out=v[3];b.residual_out=v[4];
+        for(int bad=0;bad<7;bad++) {
+            BnGPURMSNormResidentPlan bp=p;BnGPUAddRMSNormResidentPlan ba=a;BnGPUAdd3RMSNormResidentPlan bb=b;
+            if(bad==0)bp.dim=ba.dim=bb.dim=5116;
+            if(bad==1)bp.eps=ba.eps=bb.eps=0.0f;
+            if(bad==2)bp.weight_offset=ba.weight_offset=bb.weight_offset=0;
+            if(bad==3)bp.weight_groups=ba.weight_groups=bb.weight_groups=2;
+            if(bad==4)bp.out=ba.out=bb.out=v[0];
+            if(bad==5){--bp.out.count;--ba.out.count;--bb.out.count;}
+            if(bad==6)bp.reduction=ba.reduction=bb.reduction=99;
+            assert(gpu->rmsnorm_bf16_resident(gpu->ctx,request,&bp)==-1);
+            assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx,request,&ba)==-1);
+            assert(gpu->add3_rmsnorm_bf16_resident(gpu->ctx,request,&bb)==-1);
+        }
+        for(int variant=0;variant<(ref->kind==0?3:2);variant++) {
+            p.reduction=a.reduction=b.reduction=variant==0
+                ? BN_GPU_RMSNORM_REDUCTION_TILED_5120_FMA
+                : ref->kind==1 ? BN_GPU_RMSNORM_REDUCTION_TILED_5120_PERSISTENT
+                : variant==2 ? BN_GPU_RMSNORM_REDUCTION_TILED_5120_LOOPED
+                : BN_GPU_RMSNORM_REDUCTION_TILED_5120_LOOPED_ADD_FMA;
+        int status=ref->kind==0?gpu->rmsnorm_bf16_resident(gpu->ctx,request,&p):ref->kind==1?gpu->add_rmsnorm_bf16_resident(gpu->ctx,request,&a):gpu->add3_rmsnorm_bf16_resident(gpu->ctx,request,&b);
+        assert(status==0&&gpu->resident_read(request,v[3],out)==0);
+        uint64_t hash=bf16_output_hash(out,n);
+        if(hash!=ref->norm)fprintf(stderr,"tiled norm mismatch seed%d nt%d kind%d\n",ref->seed,ref->tokens,ref->kind);
+        assert(hash==ref->norm);words+=n;
+        if(ref->kind==2){assert(gpu->resident_read(request,v[4],sum)==0);assert(bf16_output_hash(sum,n)==ref->residual);}
+        }
+        bn_backend_session_free(session);gpu->buffer_destroy(gpu->ctx,w);
+        for(int i=0;i<4;i++)free(host[i]);
+        free(out);free(sum);
+    }
+    printf("CUDA tiled F32/FMA norm PASSED: %zu exact norm words, original cubin references\n",words);
+}
+
+static void run_bf16_add3_norm_reference_case(BnGPUBackend *gpu) {
+    assert(gpu->add3_rmsnorm_bf16_resident);
+    size_t words = 0;
+    for (size_t c = 0; c < sizeof(cuda_bf16_add3_norm_cases) / sizeof(cuda_bf16_add3_norm_cases[0]); c++) {
+        const BnBF16Add3NormReference *ref = &cuda_bf16_add3_norm_cases[c];
+        size_t n = (size_t)ref->tokens * ref->dim;
+        size_t nw = (size_t)ref->groups * ref->dim;
+        uint16_t *x=malloc(n*2), *r=malloc(n*2), *z=malloc(n*2), *w=malloc(nw*2);
+        uint16_t *y=malloc((n+2)*2), *sum=malloc((n+2)*2);
+        assert(x&&r&&z&&w&&y&&sum);
+        for(size_t i=0;i<n;i++) {
+            x[i]=cuda_test_bf16_rne((float)((int)((i*37+i/13+ref->seed)%509)-254)/64.0f);
+            r[i]=cuda_test_bf16_rne((float)((int)((i*23+i/17+ref->seed*7)%503)-251)/128.0f);
+            z[i]=cuda_test_bf16_rne((float)((int)((i*11+i/19+ref->seed*3)%499)-249)/4096.0f);
+            if(ref->seed&&i%16==0) {
+                x[i]=cuda_test_bf16_rne(16777216.0f);r[i]=cuda_test_bf16_rne(-16777216.0f);
+                z[i]=cuda_test_bf16_rne((float)(i%31+1)/256.0f);
+            }
+        }
+        for(size_t i=0;i<nw;i++)w[i]=cuda_test_bf16_rne((ref->offset?-1.0f:.25f)+(float)((i*7+ref->seed)%31+1)/64.0f);
+        for(size_t i=0;i<n+2;i++)y[i]=sum[i]=0x5a5a;
+        void *weight=gpu->buffer_create_quant_only(gpu->ctx,w,nw*2,BN_GGUF_TENSOR_BF16,ref->groups,ref->dim);
+        BnBackendSession *session=bn_backend_session_create();assert(weight&&session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,x);
+        BnGPUResidentView rv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,r);
+        BnGPUResidentView zv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n,z);
+        BnGPUResidentView yv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+2,y);
+        BnGPUResidentView sv=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+2,sum);
+        BnGPUAdd3RMSNormResidentPlan plan={0};
+        plan.n_tokens=ref->tokens;plan.dim=ref->dim;plan.weight_offset=ref->offset;
+        plan.reduction=BN_GPU_RMSNORM_REDUCTION_CONTIGUOUS_F32;plan.eps=1e-6f;
+        plan.weight=weight;plan.weight_groups=ref->groups;plan.x=xv;plan.residual=rv;plan.addend=zv;
+        plan.out=bn_gpu_resident_view_slice(yv,1,n);plan.residual_out=bn_gpu_resident_view_slice(sv,1,n);
+        for(int bad_case=0;bad_case<17;bad_case++) {
+            BnGPUAdd3RMSNormResidentPlan bad=plan;
+            switch(bad_case) {
+                case 0:bad.n_tokens=0;break;
+                case 1:bad.dim=2047;break;
+                case 2:bad.eps=NAN;break;
+                case 3:bad.weight_offset=2;break;
+                case 4:bad.weight=NULL;break;
+                case 5:bad.reduction=BN_GPU_RMSNORM_REDUCTION_DEFAULT;break;
+                case 6:bad.out=bad.addend;break;
+                case 7:bad.residual_out=bad.out;break;
+                case 8:bad.out=bad.residual;break;
+                case 9:bad.residual_out=bad.x;break;
+                case 10:--bad.addend.count;break;
+                case 11:bad.addend.type=BN_GGUF_TENSOR_F32;break;
+                case 12:bad.addend.request=session;break;
+                case 13:bad.weight_groups=-1;break;
+                case 14:bad.weight_groups=ref->tokens+1;break;
+                case 15:bad.residual_out=bn_gpu_resident_view_slice(yv,2,n);break;
+                default:bad.dim=130564;break;
+            }
+            assert(gpu->add3_rmsnorm_bf16_resident(gpu->ctx,request,&bad)==-1);
+        }
+        assert(gpu->resident_read(request,yv,y)==0&&gpu->resident_read(request,sv,sum)==0);
+        for(size_t i=0;i<n+2;i++)assert(y[i]==0x5a5a&&sum[i]==0x5a5a);
+        assert(gpu->add3_rmsnorm_bf16_resident(gpu->ctx,request,&plan)==0);
+        assert(gpu->resident_read(request,yv,y)==0&&gpu->resident_read(request,sv,sum)==0);
+        assert(y[0]==0x5a5a&&y[n+1]==0x5a5a&&sum[0]==0x5a5a&&sum[n+1]==0x5a5a);
+        uint64_t yh=bf16_output_hash(y+1,n),sh=bf16_output_hash(sum+1,n);
+        if(yh!=ref->norm||sh!=ref->residual)fprintf(stderr,"add3 reference failed dim%d nt%d groups%d seed%d norm%d sum%d\n",ref->dim,ref->tokens,ref->groups,ref->seed,yh==ref->norm,sh==ref->residual);
+        assert(yh==ref->norm&&sh==ref->residual);words+=2*n;
+        bn_backend_session_free(session);gpu->buffer_destroy(gpu->ctx,weight);
+        free(x);free(r);free(z);free(w);free(y);free(sum);
+    }
+    printf("CUDA retained F32 add3/norm PASSED: %zu exact BF16 words\n",words);
+}
+
+static void run_bf16_add_norm_reference_case(BnGPUBackend *gpu) {
+    assert(bn_gpu_backend_can_add_rmsnorm_bf16_batch(gpu));
+    size_t words = 0;
+    for (size_t c = 0; c < sizeof(cuda_bf16_add_norm_cases) / sizeof(cuda_bf16_add_norm_cases[0]); c++) {
+        const BnBF16AddNormReference *r = &cuda_bf16_add_norm_cases[c];
+        size_t n = (size_t)r->dim * r->tokens;
+        uint16_t *x = malloc((n + 2) * 2), *res = malloc((n + 2) * 2);
+        uint16_t *y = malloc((n + 2) * 2), *z = malloc((n + 2) * 2), *w = malloc((size_t)r->dim * 2);
+        assert(x && res && y && z && w);
+        for (int j = 0; j < r->dim; j++) w[j] = cuda_test_bf16_rne(
+            (float)((j * 7 + r->seed) % 31 - 15) / (r->offset ? 4096.0f : 32.0f) + (r->offset ? 0.0f : 1.0f));
+        void *norm = gpu->buffer_create_quant_only(gpu->ctx, w, (size_t)r->dim * 2, BN_GGUF_TENSOR_BF16, 1, r->dim);
+        assert(norm);
+        for (int alias = 0; alias < 4; alias++) {
+            cuda_test_bf16_residual_inputs(x + 1, res + 1, n, r->seed);
+            x[0] = x[n + 1] = res[0] = res[n + 1] = y[0] = y[n + 1] = z[0] = z[n + 1] = 0x5a5a;
+            uint16_t *out = alias == 0 ? y : alias == 2 ? res : x;
+            uint16_t *rr = alias == 1 ? res : alias == 2 ? x : z;
+            assert(bn_gpu_backend_add_rmsnorm_bf16_batch(gpu, out + 1, rr + 1, norm,
+                x + 1, res + 1, r->tokens, r->dim, 1e-6f, r->offset) == 0);
+            assert(out[0] == 0x5a5a && out[n + 1] == 0x5a5a && rr[0] == 0x5a5a && rr[n + 1] == 0x5a5a);
+            uint64_t h = bf16_output_hash(out + 1, n), hr = bf16_output_hash(rr + 1, n);
+            if (h != r->hash || hr != r->residual_hash)
+                fprintf(stderr, "BF16 add/norm mismatch dim=%d nt=%d offset=%d alias=%d norm=%d residual=%d\n",
+                    r->dim, r->tokens, r->offset, alias, h == r->hash, hr == r->residual_hash);
+            assert(h == r->hash && hr == r->residual_hash); words += 2 * n;
+        }
+        assert(gpu->add_rmsnorm_bf16_resident);
+        cuda_test_bf16_residual_inputs(x + 1, res + 1, n, r->seed);
+        for (size_t i = 0; i < n + 2; i++) y[i] = z[i] = 0x5a5a;
+        BnBackendSession *session = bn_backend_session_create(); assert(session);
+        void *request = bn_gpu_backend_resident_request(gpu, session); assert(request);
+        BnGPUResidentView xv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n, x + 1);
+        BnGPUResidentView rv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n, res + 1);
+        BnGPUResidentView yv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n + 2, y);
+        BnGPUResidentView zv = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16, n + 2, z);
+        BnGPUAddRMSNormResidentPlan plan = {0};
+        plan.n_tokens = r->tokens; plan.dim = r->dim; plan.weight_offset = r->offset;
+        plan.eps = 1e-6f; plan.weight = norm; plan.x = xv; plan.residual = rv;
+        plan.out = bn_gpu_resident_view_slice(yv, 1, n);
+        plan.residual_out = bn_gpu_resident_view_slice(zv, 1, n);
+        for (int reject = 0; reject < 10; reject++) {
+            BnGPUAddRMSNormResidentPlan bad = plan;
+            switch (reject) {
+                case 0: bad.n_tokens = 0; break;
+                case 1: bad.eps = NAN; break;
+                case 2: bad.weight_offset = 2; break;
+                case 3: bad.weight = NULL; break;
+                case 4: bad.out = bad.x; break;
+                case 5: bad.residual_out = bad.out; break;
+                case 6: --bad.out.count; break;
+                case 7: bad.x.type = BN_GGUF_TENSOR_F32; break;
+                case 8: bad.residual.request = session; break;
+                default: bad.residual_out = bad.residual; break;
+            }
+            assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx, request, &bad) == -1);
+        }
+        assert(gpu->resident_read(request, yv, y) == 0);
+        assert(gpu->resident_read(request, zv, z) == 0);
+        for (size_t i = 0; i < n + 2; i++) assert(y[i] == 0x5a5a && z[i] == 0x5a5a);
+        assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx, request, &plan) == 0);
+        assert(gpu->resident_read(request, yv, y) == 0);
+        assert(gpu->resident_read(request, zv, z) == 0);
+        assert(y[0] == 0x5a5a && y[n + 1] == 0x5a5a && z[0] == 0x5a5a && z[n + 1] == 0x5a5a);
+        assert(bf16_output_hash(y + 1, n) == r->hash);
+        assert(bf16_output_hash(z + 1, n) == r->residual_hash);
+        words += 2 * n;
+        bn_backend_session_free(session);
+        for (size_t i = 0; i < n; i++) y[i + 1] = z[i + 1] = 0x5a5a;
+        assert(bn_gpu_backend_add_rmsnorm_bf16_batch(gpu, y + 1, z + 1, norm, x + 1, res + 1, 0, r->dim, 1e-6f, r->offset) == -1);
+        assert(bn_gpu_backend_add_rmsnorm_bf16_batch(gpu, y + 1, z + 1, norm, x + 1, res + 1, r->tokens, r->dim, NAN, r->offset) == -1);
+        assert(bn_gpu_backend_add_rmsnorm_bf16_batch(gpu, y + 1, y + 1, norm, x + 1, res + 1, r->tokens, r->dim, 1e-6f, r->offset) == -1);
+        if (n > 1) assert(bn_gpu_backend_add_rmsnorm_bf16_batch(gpu, y + 1, y + 2, norm, x + 1, res + 1, r->tokens, r->dim, 1e-6f, r->offset) == -1);
+        for (size_t i = 0; i < n; i++) assert(y[i + 1] == 0x5a5a && z[i + 1] == 0x5a5a);
+        gpu->buffer_destroy(gpu->ctx, norm); free(x); free(res); free(y); free(z); free(w);
+    }
+    uint16_t x[4] = {0x8000,0x8000,0,0}, r[4] = {0x8000,0,0x8000,0}, w[4] = {0x3f80,0x3f80,0x3f80,0x3f80}, y[4], z[4];
+    void *norm = gpu->buffer_create_quant_only(gpu->ctx,w,sizeof(w),BN_GGUF_TENSOR_BF16,1,4);assert(norm);
+    assert(bn_gpu_backend_add_rmsnorm_bf16_batch(gpu,y,z,norm,x,r,1,4,1e-6f,0)==0);
+    for(int j=0;j<4;j++) {assert(y[j]==(j?0:0x8000)&&z[j]==(j?0:0x8000));}
+    gpu->buffer_destroy(gpu->ctx,norm);
+    printf("CUDA BF16 add/RMSNorm PASSED: %zu reference words checked\n", words);
+}
+
+/* Exercise the complete request-owned FFN, optionally connected directly to
+ * residual normalization. No intermediate readback feeds a subsequent stage. */
+static void cuda_test_resident_ffn(BnGPUBackend *gpu, const BnGPUBF16FFNWeights *weights,
+    const uint16_t *input, uint16_t *output, int nt, int dim, int hidden,
+    void *norm, const uint16_t *residual, uint16_t *residual_output, int offset) {
+    assert(gpu->dense_ffn_bf16_resident && gpu->linear_bf16_reserve);
+    size_t count = (size_t)nt * dim, full = (size_t)nt * hidden;
+    size_t cap = count > full ? count : full;
+    uint16_t *host = malloc((cap + 16) * sizeof(*host)); assert(host);
+    for (size_t i = 0; i < cap + 16; i++) host[i] = 0x5a5a;
+    BnBackendSession *session = bn_backend_session_create(); assert(session);
+    void *request = bn_gpu_backend_resident_request(gpu, session); assert(request);
+    BnGPUResidentView buffers[7];
+    size_t sizes[] = {count, full, full, count, count, count, count};
+    unsigned nb = norm ? 7 : 4;
+    for (unsigned i = 0; i < nb; i++)
+        buffers[i] = cuda_test_resident_alloc(gpu, request, BN_GGUF_TENSOR_BF16,
+                                              sizes[i] + 16, host);
+    BnGPUResidentView xv = bn_gpu_resident_view_slice(buffers[0], 8, count);
+    assert(gpu->resident_write(request, xv, input) == 0);
+    BnGPUFFNResidentPlan plan = {0};
+    plan.n_tokens = nt; plan.dim = dim; plan.hidden_dim = hidden; plan.weights = *weights;
+    plan.x = norm ? bn_gpu_resident_view_slice(buffers[4], 8, count) : xv;
+    plan.gate = bn_gpu_resident_view_slice(buffers[1], 8, full);
+    plan.up = bn_gpu_resident_view_slice(buffers[2], 8, full);
+    plan.out = bn_gpu_resident_view_slice(buffers[3], 8, count);
+    /* Neither A8 scratch nor a GEMM handle has been reserved yet. */
+    assert(gpu->dense_ffn_bf16_resident(gpu->ctx, request, &plan) == -1);
+    assert(gpu->linear_bf16_reserve(gpu->ctx, request, cap) == 0);
+    for (int reject = 0; reject < 13; reject++) {
+        BnGPUFFNResidentPlan bad = plan;
+        switch (reject) {
+            case 0: bad.n_tokens = 0; break;
+            case 1: bad.dim = -1; break;
+            case 2: bad.hidden_dim++; break;
+            case 3: bad.weights.down.raw = bad.weights.down.decoded = NULL; break;
+            case 4: bad.weights.up.type = BN_GGUF_TENSOR_F32; break;
+            case 5: bad.x.type = BN_GGUF_TENSOR_F32; break;
+            case 6: bad.x.request = session; break;
+            case 7: bad.out = bad.x; break;
+            case 8: bad.up = bad.gate; break;
+            case 9: --bad.gate.count; break;
+            case 10: bad.out.offset++; break;
+            case 11: bad.gate = bad.x; break;
+            default: bad.n_tokens = INT_MAX; break;
+        }
+        assert(gpu->dense_ffn_bf16_resident(gpu->ctx, request, &bad) == -1);
+    }
+    for (unsigned j = 1; j < nb; j++) {
+        assert(gpu->resident_read(request, buffers[j], host) == 0);
+        for (size_t i = 0; i < sizes[j] + 16; i++) assert(host[i] == 0x5a5a);
+    }
+    if (norm) {
+        BnGPUAddRMSNormResidentPlan np = {0};
+        np.n_tokens = nt; np.dim = dim; np.eps = 1e-6f; np.weight_offset = offset;
+        np.weight = norm; np.x = xv; np.out = plan.x;
+        np.residual = bn_gpu_resident_view_slice(buffers[5], 8, count);
+        np.residual_out = bn_gpu_resident_view_slice(buffers[6], 8, count);
+        assert(gpu->resident_write(request, np.residual, residual) == 0);
+        assert(gpu->add_rmsnorm_bf16_resident(gpu->ctx, request, &np) == 0);
+    }
+    assert(gpu->dense_ffn_bf16_resident(gpu->ctx, request, &plan) == 0);
+    /* The first read fences both normalization (when present) and the FFN. */
+    for (unsigned j = 0; j < nb; j++) {
+        assert(gpu->resident_read(request, buffers[j], host) == 0);
+        for (size_t i = 0; i < 8; i++)
+            assert(host[i] == 0x5a5a && host[8 + sizes[j] + i] == 0x5a5a);
+        if (j == 0) assert(memcmp(host + 8, input, count * sizeof(*input)) == 0);
+        if (j == 3) memcpy(output, host + 8, count * sizeof(*output));
+        if (norm && j == 5) assert(memcmp(host + 8, residual, count * sizeof(*residual)) == 0);
+        if (norm && j == 6) memcpy(residual_output, host + 8, count * sizeof(*residual_output));
+    }
+    bn_backend_session_free(session); free(host);
+}
+
+#include "cuda_compiled_silu_reference.h"
+static void run_compiled_silu_ffn_case(BnGPUBackend *gpu) {
+    assert(gpu->resident_ffn_activation_profiles&(1u<<BN_GPU_BF16_FFN_SILU_COMPILED));
+    const int dim=256, counts[]={1,5,129,1025};
+    uint16_t *matrix=calloc((size_t)dim*dim,2);assert(matrix);
+    BnGPUBF16FFNWeights weights={0};
+    BnGPUBF16LinearWeight *w[]={&weights.gate,&weights.up,&weights.down};
+    for(int which=0;which<3;which++) {
+        memset(matrix,0,(size_t)dim*dim*2);
+        for(int i=0;i<dim;i++) {
+            if(which==2)matrix[(size_t)i*dim+i]=0x3f80;
+            else matrix[(size_t)i*dim]=cuda_compiled_silu_edges[i%2][which];
+        }
+        w[which]->type=BN_GGUF_TENSOR_BF16;
+        w[which]->decoded=gpu->buffer_create_quant_only(gpu->ctx,matrix,(size_t)dim*dim*2,BN_GGUF_TENSOR_BF16,dim,dim);
+        assert(w[which]->decoded);
+    }
+    size_t words=0;
+    for(size_t c=0;c<sizeof(counts)/sizeof(counts[0]);c++) {
+        int nt=counts[c];size_t n=(size_t)nt*dim;
+        uint16_t *host=malloc((n+16)*2),*input=calloc(n,2);assert(host&&input);
+        for(int t=0;t<nt;t++)input[(size_t)t*dim]=0x3f80;
+        for(size_t i=0;i<n+16;i++)host[i]=0x5a5a;
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *request=bn_gpu_backend_resident_request(gpu,session);assert(request);
+        BnGPUResidentView allocation[4],view[4];
+        for(int i=0;i<4;i++){allocation[i]=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+16,host);view[i]=bn_gpu_resident_view_slice(allocation[i],8,n);}
+        assert(!gpu->resident_write(request,view[0],input)&&!gpu->linear_bf16_reserve(gpu->ctx,request,n));
+        BnGPUFFNResidentPlan p={0};p.n_tokens=nt;p.dim=p.hidden_dim=dim;p.weights=weights;
+        p.x=view[0];p.gate=view[1];p.up=view[2];p.out=view[3];p.activation_profile=BN_GPU_BF16_FFN_SILU_COMPILED;
+        for(int bad=0;bad<4;bad++) {
+            BnGPUFFNResidentPlan b=p;
+            if(bad==0)b.activation_profile=(BnGPUBF16FFNActivationProfile)99;
+            if(bad==1)b.out=b.x;
+            if(bad==2)--b.gate.count;
+            if(bad==3)b.up=b.gate;
+            assert(gpu->dense_ffn_bf16_resident(gpu->ctx,request,&b)==-1);
+        }
+        for(int i=1;i<4;i++){assert(!gpu->resident_read(request,allocation[i],host));for(size_t j=0;j<n+16;j++)assert(host[j]==0x5a5a);}
+        assert(!gpu->dense_ffn_bf16_resident(gpu->ctx,request,&p));
+        for(int i=0;i<4;i++) {
+            assert(!gpu->resident_read(request,allocation[i],host));
+            for(int j=0;j<8;j++)assert(host[j]==0x5a5a&&host[n+8+j]==0x5a5a);
+            if(i==0)assert(!memcmp(host+8,input,n*2));
+            if(i==1||i==3)for(size_t j=0;j<n;j++)assert(host[j+8]==cuda_compiled_silu_edges[j%2][2]);
+            if(i==2)for(size_t j=0;j<n;j++)assert(host[j+8]==cuda_compiled_silu_edges[j%2][1]);
+        }
+        words+=n;bn_backend_session_free(session);free(host);free(input);
+    }
+    for(int i=0;i<3;i++)gpu->buffer_destroy(gpu->ctx,w[i]->decoded);
+    free(matrix);printf("CUDA compiled SiLU resident FFN PASSED: %zu exact words\n",words);
+}
+
+static void run_bf16_residual_ffn_reference_case(BnGPUBackend *gpu) {
+    assert(bn_gpu_backend_can_dense_ffn_bf16_add_norm(gpu));
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_bf16_residual_ffn_cases)/sizeof(cuda_bf16_residual_ffn_cases[0]);c++) {
+        const BnBF16ResidualFFNReference*r=&cuda_bf16_residual_ffn_cases[c];
+        BnGPUBF16FFNWeights weights={0};BnGPUBF16LinearWeight*ws[]={&weights.gate,&weights.up,&weights.down};int types[]={r->gate,r->up,r->down};
+        for(int j=0;j<3;j++){int rows=j<2?r->hidden:r->dim,cols=j<2?r->dim:r->hidden;size_t bytes=signed_mmq_fixture_bytes(types[j],(size_t)rows*cols);void*data=malloc(bytes);assert(data);signed_mmq_fixture_weights(data,types[j],(size_t)rows*cols,j==1?1-r->seed:r->seed);ws[j]->type=types[j];ws[j]->raw=gpu->buffer_create_quant_only(gpu->ctx,data,bytes,types[j],rows,cols);free(data);assert(ws[j]->raw);BnBackendBF16MatmulPlan p;assert(bn_backend_quant_bf16_matmul_plan(types[j],rows,cols,r->tokens,&p)==0);if(p.decoded_weight_bytes){ws[j]->decoded=bn_gpu_backend_buffer_create_bf16_decoded(gpu,ws[j]->raw);assert(ws[j]->decoded);gpu->buffer_destroy(gpu->ctx,ws[j]->raw);ws[j]->raw=NULL;}}
+        size_t n=(size_t)r->tokens*r->dim;uint16_t*x=malloc((n+2)*2),*res=malloc((n+2)*2),*y=malloc((n+2)*2),*z=malloc((n+2)*2),*w=malloc((size_t)r->dim*2);assert(x&&res&&y&&z&&w);
+        for(int j=0;j<r->dim;j++)w[j]=cuda_test_bf16_rne(r->offset?(-1.0f+(float)(1+(j*7+r->seed)%5)/128.0f):(1.0f/64.0f+(float)((j*7+r->seed)%9-4)/1024.0f));
+        void*norm=gpu->buffer_create_quant_only(gpu->ctx,w,(size_t)r->dim*2,BN_GGUF_TENSOR_BF16,1,r->dim);assert(norm);
+        for(int alias=0;alias<4;alias++){cuda_test_bf16_residual_inputs(x+1,res+1,n,r->seed);x[0]=x[n+1]=res[0]=res[n+1]=y[0]=y[n+1]=z[0]=z[n+1]=0x5a5a;uint16_t*out=alias==0?y:alias==2?res:x;uint16_t*rr=alias==1?res:alias==2?x:z;
+            assert(bn_gpu_backend_dense_ffn_bf16_add_norm(gpu,out+1,rr+1,&weights,norm,x+1,res+1,r->tokens,r->dim,r->hidden,1e-6f,r->offset)==0);assert(out[0]==0x5a5a&&out[n+1]==0x5a5a&&rr[0]==0x5a5a&&rr[n+1]==0x5a5a);uint64_t h=bf16_output_hash(out+1,n),hr=bf16_output_hash(rr+1,n);
+            if(h!=r->hash||hr!=r->residual_hash)fprintf(stderr,"BF16 residual FFN mismatch case=%zu alias=%d output=%d residual=%d\n",c,alias,h==r->hash,hr==r->residual_hash);
+            assert(h==r->hash&&hr==r->residual_hash);words+=2*n;
+        }
+        cuda_test_bf16_residual_inputs(x+1,res+1,n,r->seed);
+        cuda_test_resident_ffn(gpu, &weights, x+1, y+1, r->tokens, r->dim, r->hidden,
+                               norm, res+1, z+1, r->offset);
+        assert(bf16_output_hash(y+1,n)==r->hash && bf16_output_hash(z+1,n)==r->residual_hash);
+        words+=2*n;
+        for(size_t i=0;i<n;i++)y[i+1]=z[i+1]=0x5a5a;
+        assert(bn_gpu_backend_dense_ffn_bf16_add_norm(gpu,y+1,y+1,&weights,norm,x+1,res+1,r->tokens,r->dim,r->hidden,1e-6f,r->offset)==-1);
+        BnGPUBF16FFNWeights bad=weights;bad.down.raw=NULL;bad.down.decoded=NULL;
+        assert(bn_gpu_backend_dense_ffn_bf16_add_norm(gpu,y+1,z+1,&bad,norm,x+1,res+1,r->tokens,r->dim,r->hidden,1e-6f,r->offset)==-1);
+        for(size_t i=0;i<n;i++)assert(y[i+1]==0x5a5a&&z[i+1]==0x5a5a);
+        gpu->buffer_destroy(gpu->ctx,norm);for(int j=0;j<3;j++){if(ws[j]->raw)gpu->buffer_destroy(gpu->ctx,ws[j]->raw);if(ws[j]->decoded)gpu->buffer_destroy(gpu->ctx,ws[j]->decoded);}free(x);free(res);free(y);free(z);free(w);
+    }
+    printf("CUDA resident BF16 add/norm/FFN PASSED: %zu reference words checked\n",words);
+}
+
+static void run_bf16_ffn_reference_cases(BnGPUBackend *gpu,
+    const BnBF16FFNReference *references, size_t n_references) {
+    assert(bn_gpu_backend_can_dense_ffn_bf16(gpu));
+    size_t words = 0;
+    for (size_t c = 0; c < n_references; c++) {
+        const BnBF16FFNReference *r = &references[c];
+        BnGPUBF16FFNWeights weights = {0};
+        BnGPUBF16LinearWeight *projections[] = {&weights.gate, &weights.up, &weights.down};
+        int types[] = {r->gate, r->up, r->down};
+        for (int j = 0; j < 3; j++) {
+            int rows = j < 2 ? r->hidden : r->dim;
+            int cols = j < 2 ? r->dim : r->hidden;
+            size_t bytes = signed_mmq_fixture_bytes(types[j], (size_t)rows * cols);
+            void *data = malloc(bytes); assert(data);
+            signed_mmq_fixture_weights(data, types[j], (size_t)rows * cols,
+                j == 1 ? 1 - r->seed : r->seed);
+            projections[j]->type = types[j];
+            projections[j]->raw = gpu->buffer_create_quant_only(gpu->ctx, data,
+                bytes, types[j], rows, cols); free(data);
+            assert(projections[j]->raw);
+            BnBackendBF16MatmulPlan plan;
+            assert(bn_backend_quant_bf16_matmul_plan(types[j], rows, cols,
+                r->tokens, &plan) == 0);
+            if (plan.decoded_weight_bytes) {
+                projections[j]->decoded = bn_gpu_backend_buffer_create_bf16_decoded(
+                    gpu, projections[j]->raw);
+                assert(projections[j]->decoded);
+                gpu->buffer_destroy(gpu->ctx, projections[j]->raw);
+                projections[j]->raw = NULL;
+            }
+        }
+        size_t count = (size_t)r->tokens * r->dim;
+        uint16_t *x = malloc((count + 2) * sizeof(*x));
+        uint16_t *out = malloc((count + 2) * sizeof(*out));
+        float *input = malloc(count * sizeof(*input)); assert(x && out && input);
+        signed_mmq_fixture_input(input, count, r->seed);
+        for (int alias = 0; alias < 2; alias++) {
+            for (size_t i = 0; i < count; i++) x[i + 1] = cuda_test_bf16_rne(input[i] / 32.0f);
+            x[0] = x[count + 1] = out[0] = out[count + 1] = 0x5a5a;
+            uint16_t *result = alias ? x : out;
+            assert(bn_gpu_backend_dense_ffn_bf16(gpu, result + 1, &weights,
+                x + 1, r->tokens, r->dim, r->hidden) == 0);
+            assert(result[0] == 0x5a5a && result[count + 1] == 0x5a5a);
+            uint64_t actual = bf16_output_hash(result + 1, count);
+            if (actual != r->hash)
+                fprintf(stderr, "BF16 FFN mismatch case=%zu dim=%d hidden=%d types=%d/%d/%d nt=%d seed=%d alias=%d\n",
+                    c, r->dim, r->hidden, r->gate, r->up, r->down, r->tokens, r->seed, alias);
+            assert(actual == r->hash);
+            words += count;
+        }
+        for (size_t i = 0; i < count; i++) x[i+1] = cuda_test_bf16_rne(input[i] / 32.0f);
+        cuda_test_resident_ffn(gpu, &weights, x+1, out+1, r->tokens, r->dim, r->hidden,
+                               NULL, NULL, NULL, 0);
+        uint64_t resident_hash = bf16_output_hash(out+1, count);
+        if (resident_hash != r->hash)
+            fprintf(stderr, "Resident FFN mismatch case=%zu dim=%d hidden=%d types=%d/%d/%d nt=%d\n",
+                    c,r->dim,r->hidden,r->gate,r->up,r->down,r->tokens);
+        assert(resident_hash == r->hash); words += count;
+        uint16_t sentinel = 0x5a5a;
+        BnGPUBF16FFNWeights bad = weights; bad.down.raw = NULL; bad.down.decoded = NULL;
+        assert(bn_gpu_backend_dense_ffn_bf16(gpu, &sentinel, &bad, x,
+            r->tokens, r->dim, r->hidden) == -1);
+        assert(bn_gpu_backend_dense_ffn_bf16(gpu, &sentinel, &weights, x,
+            0, r->dim, r->hidden) == -1);
+        assert(bn_gpu_backend_dense_ffn_bf16(gpu, &sentinel, &weights, x,
+            r->tokens, r->dim, r->hidden + 1) == -1);
+        if (weights.gate.decoded) {
+            bad = weights; bad.gate.decoded = NULL;
+            assert(bn_gpu_backend_dense_ffn_bf16(gpu, &sentinel, &bad, x,
+                r->tokens, r->dim, r->hidden) == -1);
+        }
+        if (!weights.gate.decoded && weights.up.decoded) {
+            // A compatible BF16 layout must not replace required A8 arithmetic.
+            bad = weights; bad.gate.raw = NULL; bad.gate.decoded = weights.up.decoded;
+            assert(bn_gpu_backend_dense_ffn_bf16(gpu, &sentinel, &bad, x,
+                r->tokens, r->dim, r->hidden) == -1);
+        }
+        bad = weights;
+        bad.up.type = r->up == BN_GGUF_TENSOR_Q3_K ? BN_GGUF_TENSOR_IQ4_XS : BN_GGUF_TENSOR_Q3_K;
+        assert(bn_gpu_backend_dense_ffn_bf16(gpu, &sentinel, &bad, x,
+            r->tokens, r->dim, r->hidden) == -1);
+        bad = weights; bad.gate.type = BN_GGUF_TENSOR_F32;
+        assert(bn_gpu_backend_dense_ffn_bf16(gpu, &sentinel, &bad, x,
+            r->tokens, r->dim, r->hidden) == -1);
+        assert(sentinel == 0x5a5a);
+        for (int j = 0; j < 3; j++) {
+            if (projections[j]->decoded) gpu->buffer_destroy(gpu->ctx, projections[j]->decoded);
+            if (projections[j]->raw) gpu->buffer_destroy(gpu->ctx, projections[j]->raw);
+        }
+        free(x); free(out); free(input);
+    }
+    assert(bn_gpu_backend_dense_ffn_bf16(gpu, NULL, NULL, NULL, 1, 256, 256) == -1);
+    printf("CUDA resident BF16 FFN PASSED: %zu reference words checked\n", words);
+}
+
+
+#include "cuda_stacked_ffn_reference.h"
+static void run_bf16_stacked_ffn_reference_case(BnGPUBackend *gpu) {
+    if(!gpu->buffer_create_bf16_stacked_pair||
+       !(gpu->resident_ffn_layouts&(1u<<BN_GPU_BF16_FFN_STACKED_DECODED))) {
+        puts("CUDA stacked BF16 FFN unsupported");return;
+    }
+    const int dim=32,hidden=64;size_t compared=0;
+    uint16_t gate[64*32],up[64*32],down[32*64];
+    for(int i=0;i<hidden;i++)for(int j=0;j<dim;j++) {
+        gate[i*dim+j]=cuda_test_bf16_rne((float)((i*3+j*5)%17-8)/16.0f);
+        up[i*dim+j]=cuda_test_bf16_rne((float)((i*7+j*11)%19-9)/16.0f);
+    }
+    for(int i=0;i<dim;i++)for(int j=0;j<hidden;j++)
+        down[i*hidden+j]=cuda_test_bf16_rne((float)((i*13+j*3)%23-11)/32.0f);
+    for(size_t c=0;c<sizeof(cuda_stacked_ffn_cases)/sizeof(cuda_stacked_ffn_cases[0]);c++) {
+        int nt=cuda_stacked_ffn_cases[c].tokens;
+        size_t input=(size_t)nt*dim,full=(size_t)nt*hidden;
+        uint16_t *host=malloc((2*full+16)*2),*x=malloc(input*2);assert(host&&x);
+        for(size_t i=0;i<2*full+16;i++)host[i]=0x5a5a;
+        for(int t=0;t<nt;t++)for(int j=0;j<dim;j++)x[(size_t)t*dim+j]=
+            cuda_test_bf16_rne((float)((t*5+j*7)%13-6)/8.0f);
+        void *wg=gpu->buffer_create_quant_only(gpu->ctx,gate,sizeof(gate),BN_GGUF_TENSOR_BF16,hidden,dim);
+        void *wu=gpu->buffer_create_quant_only(gpu->ctx,up,sizeof(up),BN_GGUF_TENSOR_BF16,hidden,dim);
+        void *wd=gpu->buffer_create_quant_only(gpu->ctx,down,sizeof(down),BN_GGUF_TENSOR_BF16,dim,hidden);
+        assert(wg&&wu&&wd);void *parent=NULL,*gv=NULL,*uv=NULL;
+        assert(gpu->buffer_create_bf16_stacked_pair(gpu->ctx,wg,wu,&parent,&parent,&uv)==-1&&!parent&&!uv);
+        assert(gpu->buffer_create_bf16_stacked_pair(gpu->ctx,wg,wd,&parent,&gv,&uv)==-1&&!parent&&!gv&&!uv);
+        assert(!gpu->buffer_create_bf16_stacked_pair(gpu->ctx,wg,wu,&parent,&gv,&uv)&&parent&&gv&&uv);
+        assert(parent!=gv&&parent!=uv&&gv!=uv);
+        /* The parent copy owns its payload independently of both old buffers. */
+        gpu->buffer_destroy(gpu->ctx,wg);gpu->buffer_destroy(gpu->ctx,wu);
+        BnBackendSession *session=bn_backend_session_create();assert(session);
+        void *r=bn_gpu_backend_resident_request(gpu,session);assert(r);
+        BnGPUResidentView all[4];size_t sizes[]={input,2*full,full,input};
+        for(int j=0;j<4;j++)all[j]=cuda_test_resident_alloc(gpu,r,BN_GGUF_TENSOR_BF16,sizes[j]+16,host);
+        BnGPUFFNResidentPlan plan={0};plan.n_tokens=nt;plan.dim=dim;plan.hidden_dim=hidden;
+        plan.weights.gate=(BnGPUBF16LinearWeight){NULL,gv,BN_GGUF_TENSOR_BF16};
+        plan.weights.up=(BnGPUBF16LinearWeight){NULL,uv,BN_GGUF_TENSOR_BF16};
+        plan.weights.down=(BnGPUBF16LinearWeight){NULL,wd,BN_GGUF_TENSOR_BF16};
+        plan.x=bn_gpu_resident_view_slice(all[0],8,input);
+        plan.gate=bn_gpu_resident_view_slice(all[1],8,full);
+        plan.gate_up_out=bn_gpu_resident_view_slice(all[1],8,2*full);
+        plan.up=bn_gpu_resident_view_slice(all[2],8,full);plan.out=bn_gpu_resident_view_slice(all[3],8,input);
+        plan.activation_profile=BN_GPU_BF16_FFN_SILU_COMPILED;plan.layout=BN_GPU_BF16_FFN_STACKED_DECODED;plan.gate_up=parent;
+        assert(!gpu->resident_write(r,plan.x,x));assert(!gpu->linear_bf16_reserve(gpu->ctx,r,full));
+        for(int bad=0;bad<11;bad++) {
+            BnGPUFFNResidentPlan b=plan;
+            switch(bad) {
+                case 0:b.layout=(BnGPUBF16FFNLayout)99;break;
+                case 1:b.layout=BN_GPU_BF16_FFN_SEPARATE;break;
+                case 2:b.gate_up=NULL;break;
+                case 3:b.activation_profile=BN_GPU_BF16_FFN_SILU_FUSED;break;
+                case 4:b.gate_up_out.count--;break;
+                case 5:b.gate_up_out.offset++;break;
+                case 6:b.gate_up_out=bn_gpu_resident_view_slice(all[3],8,2*full);break;
+                case 7:b.up=bn_gpu_resident_view_slice(plan.gate_up_out,full,full);break;
+                case 8:b.weights.up.decoded=gv;break;
+                case 9:b.gate_up=wd;break;
+                default:b.weights.up.type=BN_GGUF_TENSOR_F32;break;
+            }
+            assert(gpu->dense_ffn_bf16_resident(gpu->ctx,r,&b)==-1);
+        }
+        for(int j=1;j<4;j++) {
+            assert(!gpu->resident_read(r,all[j],host));
+            for(size_t i=0;i<sizes[j]+16;i++)assert(host[i]==0x5a5a);
+        }
+        assert(!gpu->dense_ffn_bf16_resident(gpu->ctx,r,&plan));
+        assert(!gpu->resident_read(r,plan.out,host));assert(bf16_output_hash(host,input)==cuda_stacked_ffn_cases[c].hash);
+        compared+=input;
+        for(int j=0;j<4;j++) {
+            assert(!gpu->resident_read(r,all[j],host));
+            for(int k=0;k<8;k++)assert(host[k]==0x5a5a&&host[sizes[j]+8+k]==0x5a5a);
+            if(!j)assert(!memcmp(host+8,x,input*2));
+        }
+        /* Destroying one view must not free the shared parent allocation. */
+        gpu->buffer_destroy(gpu->ctx,gv);
+        BnGPUBF16LinearResidentPlan linear={0};linear.weight=plan.weights.up;linear.n_tokens=nt;
+        linear.rows=hidden;linear.cols=dim;linear.x=plan.x;linear.out=plan.up;
+        assert(!gpu->linear_bf16_resident(gpu->ctx,r,&linear));assert(!gpu->resident_read(r,plan.up,host));
+        for(int t=0;t<nt;t++)for(int i=0;i<hidden;i++) {
+            float value=0;
+            for(int j=0;j<dim;j++)value+=(float)((t*5+j*7)%13-6)/8.0f*(float)((i*7+j*11)%19-9)/16.0f;
+            assert(host[(size_t)t*hidden+i]==cuda_test_bf16_rne(value));
+        }
+        bn_backend_session_free(session);gpu->buffer_destroy(gpu->ctx,uv);
+        gpu->buffer_destroy(gpu->ctx,parent);gpu->buffer_destroy(gpu->ctx,wd);free(host);free(x);
+    }
+    printf("CUDA stacked BF16 FFN reference PASSED: %zu words\n",compared);
+}
+
+static void run_bf16_ffn_reference_case(BnGPUBackend *gpu) {
+    run_bf16_ffn_reference_cases(gpu, cuda_bf16_ffn_cases,
+        sizeof(cuda_bf16_ffn_cases) / sizeof(cuda_bf16_ffn_cases[0]));
+}
+
+static void run_bf16_dispatch_reference_cases(BnGPUBackend *gpu,
+    const BnBF16DispatchReference *references, size_t count) {
+    assert(bn_gpu_backend_can_matmul_quant_bf16(gpu));
+    size_t words = 0;
+    for (size_t c = 0; c < count; c++) {
+        const BnBF16DispatchReference *r = &references[c];
+        size_t nw = (size_t)r->rows * r->cols;
+        size_t nx = (size_t)r->tokens * r->cols;
+        size_t ny = (size_t)r->tokens * r->rows;
+        size_t capacity = nx > ny ? nx : ny;
+        size_t bytes = signed_mmq_fixture_bytes(r->type, nw);
+        void *data = malloc(bytes);
+        uint16_t *input = malloc((capacity + 2) * sizeof(*input));
+        uint16_t *out = malloc((ny + 16) * sizeof(*out));
+        float *reference_input = malloc(nx * sizeof(*reference_input));
+        assert(data && input && out && reference_input);
+        signed_mmq_fixture_weights(data, r->type, nw, r->seed);
+        signed_mmq_fixture_input(reference_input, nx, r->seed);
+        void *raw = gpu->buffer_create_quant_only(gpu->ctx, data, bytes,
+            r->type, r->rows, r->cols);
+        assert(raw);
+        BnBackendBF16MatmulPlan plan;
+        assert(bn_backend_quant_bf16_matmul_plan(r->type, r->rows, r->cols,
+            r->tokens, &plan) == 0);
+        void *decoded = plan.decoded_weight_bytes
+            ? bn_gpu_backend_buffer_create_bf16_decoded(gpu, raw) : NULL;
+        assert(!plan.decoded_weight_bytes || decoded);
+        for (int alias = 0; alias < 2; alias++) {
+            for (size_t i = 0; i < nx; i++) input[i + 1] = cuda_test_bf16_rne(reference_input[i]);
+            input[0] = input[capacity + 1] = out[0] = out[ny + 1] = 0x5a5a;
+            uint16_t *result = alias ? input : out;
+            assert(bn_gpu_backend_matmul_quant_bf16(gpu, result + 1, raw,
+                decoded, input + 1, r->rows, r->cols, r->tokens) == 0);
+            assert(result[0] == 0x5a5a && result[alias ? capacity + 1 : ny + 1] == 0x5a5a);
+            uint64_t actual = bf16_output_hash(result + 1, ny);
+            if (actual != r->hash && actual != r->alternate_hash)
+                fprintf(stderr, "BF16 dispatch mismatch type=%d rows=%d cols=%d nt=%d seed=%d alias=%d\n",
+                    r->type, r->rows, r->cols, r->tokens, r->seed, alias);
+            /* cuBLAS versions can choose distinct FP32 reduction orders. Each
+             * accepted digest covers the entire output from an independent
+             * unchanged Torch run; no elementwise error allowance is used. */
+            assert(actual == r->hash || actual == r->alternate_hash);
+            words += ny;
+        }
+        if ((r->type==BN_GGUF_TENSOR_IQ4_NL || r->type==BN_GGUF_TENSOR_IQ4_XS) &&
+            plan.kind==BN_BACKEND_BF16_MATMUL_A8_MMVQ &&
+            (r->tokens==4 || r->tokens==8 || r->tokens==16)) {
+            /* The full matrix just passed an unchanged independent digest.
+             * Prefixes retain identical token inputs across precision-plan bounds,
+             * including 2/3, 5/6/7 and 9..15 tokens, without new goldens. */
+            int first=r->tokens==4?2:r->tokens==8?5:9;
+            for(int nt=first;nt<r->tokens;nt++) {
+                size_t n=(size_t)nt*r->rows;
+                uint16_t *tail=malloc((n+2)*sizeof(*tail));assert(tail);
+                tail[0]=tail[n+1]=0x5a5a;
+                for(size_t j=0;j<nx;j++)input[j+1]=cuda_test_bf16_rne(reference_input[j]);
+                assert(!bn_gpu_backend_matmul_quant_bf16(gpu,tail+1,raw,NULL,input+1,
+                    r->rows,r->cols,nt));
+                assert(tail[0]==0x5a5a && tail[n+1]==0x5a5a);
+                assert(!memcmp(tail+1,out+1,n*sizeof(*tail)));
+                words+=n;free(tail);
+            }
+        }
+        if (r->rows == 33 && r->cols == 768 && r->seed == 0 &&
+            r->tokens == 7 && (r->type == BN_GGUF_TENSOR_Q4_K ||
+                               r->type == BN_GGUF_TENSOR_Q5_K ||
+                               r->type == BN_GGUF_TENSOR_Q6_K)) {
+            /* Repeat rows whose entire output passed the unchanged original
+             * digest above. Cover both sides of the occupancy dispatch bound
+             * and a masked final row/token tile without generating goldens.
+             * Q6_K additionally exercises alternating halfword-aligned rows. */
+            const int wide_rows[] = {12287, 12288, 17409};
+            size_t row_bytes = bytes / (size_t)r->rows;
+            for (size_t shape = 0; shape < sizeof(wide_rows) / sizeof(wide_rows[0]); shape++) {
+                int nr = wide_rows[shape];
+                size_t n = (size_t)nr * r->tokens, wb = (size_t)nr * row_bytes;
+                unsigned char *repeated = malloc(wb);
+                uint16_t *actual = malloc((n + 2) * sizeof(*actual));
+                assert(repeated && actual);
+                for (int row = 0; row < nr; row++)
+                    memcpy(repeated + (size_t)row * row_bytes,
+                        (const unsigned char *)data + (size_t)(row % r->rows) * row_bytes,
+                        row_bytes);
+                for (size_t i = 0; i < nx; i++) input[i + 1] = cuda_test_bf16_rne(reference_input[i]);
+                actual[0] = actual[n + 1] = 0x5a5a;
+                void *wide = gpu->buffer_create_quant_only(gpu->ctx, repeated, wb,
+                    r->type, nr, r->cols);
+                assert(wide);
+                assert(bn_gpu_backend_matmul_quant_bf16(gpu, actual + 1, wide,
+                    NULL, input + 1, nr, r->cols, r->tokens) == 0);
+                assert(actual[0] == 0x5a5a && actual[n + 1] == 0x5a5a);
+                for (int t = 0; t < r->tokens; t++)
+                    for (int row = 0; row < nr; row++)
+                        assert(actual[1 + (size_t)t * nr + row] ==
+                            out[1 + (size_t)t * r->rows + row % r->rows]);
+                words += n;
+                gpu->buffer_destroy(gpu->ctx, wide);
+                free(actual); free(repeated);
+            }
+        }
+        if (r->tokens == 129 && (r->type == BN_GGUF_TENSOR_Q4_K ||
+            r->type == BN_GGUF_TENSOR_Q5_K || r->type == BN_GGUF_TENSOR_Q6_K)) {
+            /* The full output above passed its frozen independent digest.
+             * Its prefixes check both sides of the 64-token tile boundary,
+             * including the masked final tile and output guards. */
+            uint16_t *tail = malloc(((size_t)65 * r->rows + 2) * sizeof(*tail));
+            assert(tail);
+            for (int nt = 63; nt <= 65; nt++) {
+                size_t n = (size_t)nt * r->rows;
+                for (size_t j = 0; j < (size_t)nt * r->cols; j++)
+                    input[j + 1] = cuda_test_bf16_rne(reference_input[j]);
+                tail[0] = tail[n + 1] = 0x5a5a;
+                assert(bn_gpu_backend_matmul_quant_bf16(gpu, tail + 1, raw,
+                    decoded, input + 1, r->rows, r->cols, nt) == 0);
+                assert(tail[0] == 0x5a5a && tail[n + 1] == 0x5a5a);
+                assert(memcmp(tail + 1, out + 1, n * sizeof(*tail)) == 0);
+                words += n;
+            }
+            free(tail);
+        }
+        {
+            BnBackendSession *session = bn_backend_session_create();
+            assert(session);
+            void *request = bn_gpu_backend_resident_request(gpu, session);
+            assert(request);
+            for (size_t j = 0; j < nx; j++) input[j + 1] = cuda_test_bf16_rne(reference_input[j]);
+            size_t guard = plan.decoded_weight_bytes ? 8 : 1;
+            for (size_t j = 0; j < ny + 2 * guard; j++) out[j] = 0x5a5a;
+            BnGPUResidentView xv = cuda_test_resident_alloc(gpu, request,
+                BN_GGUF_TENSOR_BF16, nx, input + 1);
+            BnGPUResidentView yv = cuda_test_resident_alloc(gpu, request,
+                BN_GGUF_TENSOR_BF16, ny + 2 * guard, out);
+            BnGPUA8LinearResidentPlan rp = {0};
+            rp.n_tokens = r->tokens; rp.rows = r->rows; rp.cols = r->cols;
+            rp.weight.raw = raw; rp.weight.decoded = decoded; rp.weight.type = r->type; rp.x = xv;
+            rp.out = bn_gpu_resident_view_slice(yv, guard, ny);
+            assert(gpu->linear_a8_bf16_resident(gpu->ctx, request, &rp) == -1);
+            assert(gpu->linear_bf16_resident(gpu->ctx, request, &rp) == -1);
+            if (plan.decoded_weight_bytes)
+                assert(gpu->linear_bf16_reserve(gpu->ctx, request, 0) == 0);
+            else
+                assert(gpu->linear_a8_bf16_reserve(gpu->ctx, request, nx) == 0);
+            BnGPUA8LinearResidentPlan bad = rp;
+            bad.out = bad.x;
+            assert(gpu->linear_bf16_resident(gpu->ctx, request, &bad) == -1);
+            bad = rp; bad.x.request = session;
+            assert(gpu->linear_bf16_resident(gpu->ctx, request, &bad) == -1);
+            if (plan.decoded_weight_bytes) {
+                bad = rp; bad.weight.decoded = NULL;
+                assert(gpu->linear_bf16_resident(gpu->ctx, request, &bad) == -1);
+                assert(gpu->linear_a8_bf16_resident(gpu->ctx, request, &rp) == -1);
+                bad = rp; bad.out = bn_gpu_resident_view_slice(yv, guard - 1, ny);
+                assert(gpu->linear_bf16_resident(gpu->ctx, request, &bad) == -1);
+                BnGPUResidentView misaligned;
+                assert(gpu->resident_alloc(request, BN_GGUF_TENSOR_BF16, nx + 1, &misaligned) == 0);
+                bad = rp; bad.x = bn_gpu_resident_view_slice(misaligned, 1, nx);
+                assert(gpu->linear_bf16_resident(gpu->ctx, request, &bad) == -1);
+            }
+            assert(gpu->linear_bf16_resident(gpu->ctx, request, &rp) == 0);
+            assert(gpu->resident_read(request, yv, out) == 0);
+            uint64_t actual = bf16_output_hash(out + guard, ny);
+            if (actual != r->hash && actual != r->alternate_hash)
+                fprintf(stderr,"resident BF16 mismatch c=%zu type=%d rows=%d cols=%d nt=%d decoded=%d hash=%016llx expected=%016llx\n",c,r->type,r->rows,r->cols,r->tokens,!!plan.decoded_weight_bytes,(unsigned long long)actual,(unsigned long long)r->hash);
+            assert(actual == r->hash || actual == r->alternate_hash);
+            for (size_t j = 0; j < guard; j++) assert(out[j] == 0x5a5a && out[ny + guard + j] == 0x5a5a);
+            if (r->rows==33 && r->cols==5120 && r->seed==0 && r->tokens==16 &&
+                (r->type==BN_GGUF_TENSOR_IQ4_NL || r->type==BN_GGUF_TENSOR_IQ4_XS)) {
+                /* The source output passed its frozen independent whole-matrix
+                 * digest above. Repeating its rows and taking token prefixes
+                 * qualifies ordered MMA with request scratch, including masked
+                 * final rows and an incomplete eight-token tile. A8-only requests
+                 * above already checked the unchanged fallback. */
+                assert(!gpu->linear_bf16_reserve(gpu->ctx,request,nx));
+                const int widths[]={17409,17409,4097},nts[]={4,8,16};
+                size_t row_bytes=bytes/(size_t)r->rows;
+                for(int shape=0;shape<3;shape++) {
+                    int nr=widths[shape],nt=nts[shape];size_t n=(size_t)nr*nt,nb=(size_t)nr*row_bytes;
+                    unsigned char *repeated=malloc(nb);uint16_t *wide_actual=malloc((n+2)*sizeof(*wide_actual));assert(repeated&&wide_actual);
+                    for(int row=0;row<nr;row++)memcpy(repeated+(size_t)row*row_bytes,
+                        (const unsigned char *)data+(size_t)(row%r->rows)*row_bytes,row_bytes);
+                    void *wide=gpu->buffer_create_quant_only(gpu->ctx,repeated,nb,r->type,nr,r->cols);assert(wide);
+                    for(size_t j=0;j<n+2;j++)wide_actual[j]=0x5a5a;
+                    BnGPUResidentView wide_y=cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,n+2,wide_actual);
+                    BnGPUBF16LinearResidentPlan wide_plan={0};wide_plan.n_tokens=nt;wide_plan.rows=nr;wide_plan.cols=r->cols;
+                    wide_plan.weight.type=r->type;wide_plan.weight.raw=wide;
+                    wide_plan.x=bn_gpu_resident_view_slice(xv,0,(size_t)nt*r->cols);
+                    wide_plan.out=bn_gpu_resident_view_slice(wide_y,1,n);
+                    assert(!gpu->linear_bf16_resident(gpu->ctx,request,&wide_plan));
+                    assert(!gpu->resident_read(request,wide_y,wide_actual));assert(wide_actual[0]==0x5a5a&&wide_actual[n+1]==0x5a5a);
+                    for(int t=0;t<nt;t++)for(int row=0;row<nr;row++)
+                        assert(wide_actual[1+(size_t)t*nr+row]==out[guard+(size_t)t*r->rows+row%r->rows]);
+                    words+=n;gpu->buffer_destroy(gpu->ctx,wide);free(wide_actual);free(repeated);
+                }
+            }
+            bn_backend_session_free(session);
+            words += ny;
+        }
+        uint16_t sentinel = 0x5a5a;
+        assert(bn_gpu_backend_matmul_quant_bf16(gpu, &sentinel, raw, decoded,
+            input, r->rows + 1, r->cols, r->tokens) == -1);
+        assert(bn_gpu_backend_matmul_quant_bf16(gpu, &sentinel, raw, decoded,
+            input, r->rows, r->cols, 0) == -1);
+        if (decoded) {
+            assert(bn_gpu_backend_matmul_quant_bf16(gpu, &sentinel, raw, NULL,
+                input, r->rows, r->cols, r->tokens) == -1);
+            assert(bn_gpu_backend_matmul_quant_bf16(gpu, &sentinel, raw, raw,
+                input, r->rows, r->cols, r->tokens) == -1);
+            gpu->buffer_destroy(gpu->ctx, decoded);
+        }
+        assert(sentinel == 0x5a5a);
+        gpu->buffer_destroy(gpu->ctx, raw);
+        free(data); free(input); free(out); free(reference_input);
+    }
+    assert(bn_gpu_backend_matmul_quant_bf16(gpu, NULL, NULL, NULL, NULL, 1, 1, 1) == -1);
+    printf("CUDA BF16 quantized dispatch PASSED: %zu reference words checked\n", words);
+}
+
+static void run_resident_bf16_request_isolation(BnGPUBackend *gpu) {
+    BnBackendSession *sessions[2]={NULL,NULL};void *requests[2]={NULL,NULL},*weights[2]={NULL,NULL};
+    BnGPUBF16LinearResidentPlan plans[2]={{0},{0}};uint64_t expected[2]={0,0};
+    uint16_t *outputs[2]={NULL,NULL};BnGPUResidentView output_views[2];size_t ny=33u*17;
+    for(int seed=0;seed<2;seed++) {
+        const BnBF16DispatchReference *ref=NULL;
+        for(size_t c=0;c<sizeof(cuda_bf16_iq3_cases)/sizeof(cuda_bf16_iq3_cases[0]);c++) {
+            const BnBF16DispatchReference *candidate=&cuda_bf16_iq3_cases[c];
+            if(candidate->rows==33&&candidate->cols==256&&candidate->tokens==17&&candidate->seed==seed){ref=candidate;break;}
+        }
+        assert(ref);expected[seed]=ref->hash;size_t nw=33u*256,nx=17u*256;
+        size_t bytes=signed_mmq_fixture_bytes(ref->type,nw);void *data=malloc(bytes);assert(data);
+        signed_mmq_fixture_weights(data,ref->type,nw,seed);
+        void *raw=gpu->buffer_create_quant_only(gpu->ctx,data,bytes,ref->type,33,256);assert(raw);free(data);
+        weights[seed]=bn_gpu_backend_buffer_create_bf16_decoded(gpu,raw);assert(weights[seed]);
+        gpu->buffer_destroy(gpu->ctx,raw);
+        sessions[seed]=bn_backend_session_create();assert(sessions[seed]);
+        requests[seed]=bn_gpu_backend_resident_request(gpu,sessions[seed]);assert(requests[seed]);
+        assert(gpu->linear_bf16_reserve(gpu->ctx,requests[seed],0)==0);
+        float *input=malloc(nx*sizeof(float));uint16_t *x=malloc(nx*2);outputs[seed]=malloc((ny+16)*2);assert(input&&x&&outputs[seed]);
+        signed_mmq_fixture_input(input,nx,seed);for(size_t j=0;j<nx;j++)x[j]=cuda_test_bf16_rne(input[j]);
+        for(size_t j=0;j<ny+16;j++)outputs[seed][j]=0x5a5a;
+        BnGPUResidentView xv=cuda_test_resident_alloc(gpu,requests[seed],BN_GGUF_TENSOR_BF16,nx,x);
+        output_views[seed]=cuda_test_resident_alloc(gpu,requests[seed],BN_GGUF_TENSOR_BF16,ny+16,outputs[seed]);
+        BnGPUBF16LinearResidentPlan *plan=&plans[seed];plan->n_tokens=17;plan->rows=33;plan->cols=256;
+        plan->weight.type=ref->type;plan->weight.decoded=weights[seed];plan->x=xv;
+        plan->out=bn_gpu_resident_view_slice(output_views[seed],8,ny);free(input);free(x);
+    }
+    assert(gpu->linear_bf16_resident(gpu->ctx,requests[0],&plans[0])==0);
+    assert(gpu->linear_bf16_resident(gpu->ctx,requests[1],&plans[1])==0);
+    assert(gpu->resident_read(requests[0],output_views[0],outputs[0])==0);
+    assert(bf16_output_hash(outputs[0]+8,ny)==expected[0]);
+    assert(gpu->linear_bf16_resident(gpu->ctx,requests[0],&plans[0])==0);
+    bn_backend_session_free(sessions[0]);sessions[0]=NULL;
+    assert(gpu->resident_read(requests[1],output_views[1],outputs[1])==0);
+    assert(bf16_output_hash(outputs[1]+8,ny)==expected[1]);
+    assert(gpu->linear_bf16_resident(gpu->ctx,requests[1],&plans[1])==0);
+    assert(gpu->resident_read(requests[1],output_views[1],outputs[1])==0);
+    assert(bf16_output_hash(outputs[1]+8,ny)==expected[1]);
+    for(int i=0;i<2;i++){for(size_t j=0;j<8;j++)assert(outputs[i][j]==0x5a5a&&outputs[i][ny+8+j]==0x5a5a);bn_backend_session_free(sessions[i]);gpu->buffer_destroy(gpu->ctx,weights[i]);free(outputs[i]);}
+    BnGPUBackend *other=bn_gpu_cuda_create();assert(other);BnBackendSession *session=bn_backend_session_create();assert(session);
+    void *request=bn_gpu_backend_resident_request(other,session);assert(request);
+    assert(other->linear_bf16_reserve(other->ctx,request,0)==0);
+    bn_gpu_cuda_destroy(other);bn_backend_session_free(session);
+    puts("CUDA resident BF16 GEMM request isolation/lifetime PASSED");
+}
+
+static void run_bf16_dispatch_reference_case(BnGPUBackend *gpu) {
+    run_bf16_dispatch_reference_cases(gpu, cuda_bf16_dispatch_cases,
+        sizeof(cuda_bf16_dispatch_cases) / sizeof(cuda_bf16_dispatch_cases[0]));
+}
+
+static void run_bf16_q3_reference_case(BnGPUBackend *gpu) {
+    run_bf16_dispatch_reference_cases(gpu, cuda_bf16_q3_cases,
+        sizeof(cuda_bf16_q3_cases) / sizeof(cuda_bf16_q3_cases[0]));
+}
+
+static void run_bf16_prepared_weight_conversion(BnGPUBackend *gpu) {
+    /* Every finite FP16 scale crossed with every signed Q8 code. CPU scalar
+     * FP16 expansion/multiplication is exact in F32, then one BF16 RNE. */
+    size_t count = 65536u * 256u;
+    BnBlockQ8_0 *blocks = malloc(65536u * 8u * sizeof(*blocks));
+    uint16_t *ones = malloc(count * 2), *out = malloc(count * 2);
+    assert(blocks && ones && out);
+    for (unsigned scale = 0; scale < 65536; scale++) {
+        uint16_t finite = (scale & 0x7c00u) == 0x7c00u ? 0 : (uint16_t)scale;
+        for (int segment = 0; segment < 8; segment++) {
+            BnBlockQ8_0 *b = &blocks[scale * 8u + segment]; b->d = finite;
+            for (int j = 0; j < 32; j++) b->qs[j] = (int8_t)(segment * 32 + j - 128);
+        }
+    }
+    for (size_t i = 0; i < count; i++) ones[i] = 0x3f80;
+    void *raw = gpu->buffer_create_quant_only(gpu->ctx, blocks,
+        65536u * 8u * sizeof(*blocks), BN_GGUF_TENSOR_Q8_0, 65536, 256);
+    assert(raw);
+    void *decoded = bn_gpu_backend_buffer_create_bf16_decoded(gpu, raw); assert(decoded);
+    gpu->buffer_destroy(gpu->ctx, raw);
+    assert(!bn_gpu_backend_rmsnorm_bf16_batch(gpu, out, decoded, ones, 1, (int)count, 0, 0));
+    for (size_t i = 0; i < count; i++) {
+        const BnBlockQ8_0 *b = &blocks[i / 32];
+        assert(out[i] == cuda_test_bf16_rne(bn_fp16_to_fp32(b->d) * (float)b->qs[i % 32]));
+    }
+    gpu->buffer_destroy(gpu->ctx, decoded); free(blocks); free(ones); free(out);
+    float values[8192]; uint16_t x[8192], y[8192];
+    for (unsigned i = 0; i < 8192; i++) {
+        uint32_t bits = ((i * 2654435761u) & 0x7f7fffffu) | ((i & 1u) << 31);
+        memcpy(&values[i], &bits, sizeof(bits)); x[i] = 0x3f80;
+    }
+    raw = gpu->buffer_create_quant_only(gpu->ctx, values, sizeof(values), BN_GGUF_TENSOR_F32, 1, 8192);
+    assert(raw); decoded = bn_gpu_backend_buffer_create_bf16_decoded(gpu, raw); assert(decoded);
+    gpu->buffer_destroy(gpu->ctx, raw);
+    assert(!bn_gpu_backend_rmsnorm_bf16_batch(gpu, y, decoded, x, 1, 8192, 0, 0));
+    for (int i = 0; i < 8192; i++) assert(y[i] == cuda_test_bf16_rne(values[i]));
+    gpu->buffer_destroy(gpu->ctx, decoded);
+    puts("CUDA Q8/F32 BF16 prepared weights PASSED: 16777216/8192 words");
+}
+
+static void run_bf16_matrix_reference_case(BnGPUBackend *gpu) {
+    run_bf16_prepared_weight_conversion(gpu);
+    assert(bn_gpu_backend_can_matmul_bf16(gpu));
+    assert(bn_gpu_backend_can_bf16_decode(gpu));
+    size_t words = 0;
+    for (size_t c = 0; c < sizeof(cuda_bf16_matrix_cases) /
+                                  sizeof(cuda_bf16_matrix_cases[0]); c++) {
+        const BnBF16MatrixReference *r = &cuda_bf16_matrix_cases[c];
+        size_t nw = (size_t)r->rows * r->cols;
+        size_t nx = (size_t)r->tokens * r->cols;
+        size_t ny = (size_t)r->tokens * r->rows;
+        size_t capacity = nx > ny ? nx : ny;
+        uint16_t *w = malloc(nw * sizeof(*w));
+        uint16_t *x = malloc((capacity + 2) * sizeof(*x));
+        uint16_t *y = malloc((ny + 2) * sizeof(*y));
+        assert(w && x && y);
+        for (size_t i = 0; i < nw; i++)
+            w[i] = cuda_test_bf16_rne((float)((int)(i * 13 % 31) - 15) / 16.0f);
+        void *weight = gpu->buffer_create_quant_only(gpu->ctx, w,
+            nw * sizeof(*w), BN_GGUF_TENSOR_BF16, r->rows, r->cols);
+        assert(weight);
+        for (int alias = 0; alias < 2; alias++) {
+            for (size_t i = 0; i < nx; i++)
+                x[i + 1] = cuda_test_bf16_rne((float)((int)(i * 7 % 31) - 15) / 8.0f);
+            x[0] = x[capacity + 1] = y[0] = y[ny + 1] = 0x5a5a;
+            uint16_t *result = alias ? x : y;
+            assert(bn_gpu_backend_matmul_bf16(gpu, result + 1, weight,
+                x + 1, r->rows, r->cols, r->tokens) == 0);
+            assert(result[0] == 0x5a5a);
+            assert(result[alias ? capacity + 1 : ny + 1] == 0x5a5a);
+            for (size_t i = 0; i < ny; i++)
+                assert(result[i + 1] == cuda_bf16_matrix_expected[r->start + i]);
+            words += ny;
+        }
+        uint16_t sentinel = 0x5a5a;
+        assert(bn_gpu_backend_matmul_bf16(gpu, &sentinel, weight, x,
+            r->rows + 1, r->cols, r->tokens) == -1);
+        assert(bn_gpu_backend_matmul_bf16(gpu, &sentinel, weight, x,
+            r->rows, r->cols, 0) == -1);
+        assert(bn_gpu_backend_matmul_bf16(gpu, &sentinel, weight, NULL,
+            r->rows, r->cols, r->tokens) == -1);
+        if (r->rows > 1)
+            assert(bn_gpu_backend_matmul_bf16(gpu, &sentinel, weight, x,
+                r->rows, r->cols, INT_MAX) == -1);
+        assert(sentinel == 0x5a5a);
+        assert(!bn_gpu_backend_buffer_create_bf16_decoded(gpu, weight));
+        /* Direct BF16 uses GEMM even for decode-sized resident batches. */
+        BnBackendSession *dense_session = bn_backend_session_create();
+        assert(dense_session);
+        void *dense_request = bn_gpu_backend_resident_request(gpu, dense_session);
+        assert(dense_request && !gpu->linear_bf16_reserve(gpu->ctx, dense_request, 0));
+        for (size_t i = 0; i < nx; i++)
+            x[i] = cuda_test_bf16_rne((float)((int)(i * 7 % 31) - 15) / 8.0f);
+        uint16_t *guarded = malloc((ny + 16) * sizeof(*guarded));
+        assert(guarded);
+        for (size_t i = 0; i < ny + 16; i++) guarded[i] = 0x5a5a;
+        BnGPUResidentView dense_x = cuda_test_resident_alloc(gpu, dense_request,
+            BN_GGUF_TENSOR_BF16, nx, x);
+        BnGPUResidentView dense_storage = cuda_test_resident_alloc(gpu, dense_request,
+            BN_GGUF_TENSOR_BF16, ny + 16, guarded);
+        BnGPUBF16LinearResidentPlan dense = {0};
+        dense.n_tokens = r->tokens; dense.rows = r->rows; dense.cols = r->cols;
+        dense.weight.type = BN_GGUF_TENSOR_BF16;
+        dense.x = dense_x; dense.out = bn_gpu_resident_view_slice(dense_storage, 8, ny);
+        assert(gpu->linear_bf16_resident(gpu->ctx, dense_request, &dense) == -1);
+        dense.weight.decoded = weight;
+        BnGPUBF16LinearResidentPlan invalid_dense = dense;
+        invalid_dense.out = bn_gpu_resident_view_slice(dense_storage, 1, ny);
+        assert(gpu->linear_bf16_resident(gpu->ctx, dense_request, &invalid_dense) == -1);
+        assert(!gpu->resident_read(dense_request, dense_storage, guarded));
+        for (size_t i = 0; i < ny + 16; i++) assert(guarded[i] == 0x5a5a);
+        assert(gpu->linear_a8_bf16_resident(gpu->ctx, dense_request, &dense) == -1);
+        assert(!gpu->linear_bf16_resident(gpu->ctx, dense_request, &dense));
+        assert(!gpu->resident_read(dense_request, dense_storage, guarded));
+        for (size_t i = 0; i < ny; i++)
+            assert(guarded[i + 8] == cuda_bf16_matrix_expected[r->start + i]);
+        for (size_t i = 0; i < 8; i++)
+            assert(guarded[i] == 0x5a5a && guarded[ny + 8 + i] == 0x5a5a);
+        words += ny;
+        free(guarded);
+        bn_backend_session_free(dense_session);
+        gpu->buffer_destroy(gpu->ctx, weight);
+        free(w); free(x); free(y);
+    }
+    for (size_t c = 0; c < sizeof(cuda_bf16_decode_cases) /
+                                  sizeof(cuda_bf16_decode_cases[0]); c++) {
+        const BnBF16DecodeReference *r = &cuda_bf16_decode_cases[c];
+        size_t n = (size_t)r->rows * r->cols;
+        size_t bytes = signed_mmq_fixture_bytes(r->type, n);
+        void *raw = malloc(bytes);
+        uint16_t *x = malloc(n * sizeof(*x));
+        uint16_t *out = malloc((n + 2) * sizeof(*out));
+        assert(raw && x && out);
+        signed_mmq_fixture_weights(raw, r->type, n, r->seed);
+        void *source = gpu->buffer_create_quant_only(gpu->ctx, raw, bytes,
+            r->type, r->rows, r->cols);
+        assert(source);
+        void *decoded = bn_gpu_backend_buffer_create_bf16_decoded(gpu, source);
+        assert(decoded);
+        /* The new layout owns its storage independently of the source. */
+        gpu->buffer_destroy(gpu->ctx, source);
+        free(raw);
+        for (size_t i = 0; i < n; i++) x[i] = 0x3f80;
+        out[0] = out[n + 1] = 0x5a5a;
+        /* RMSNorm(ones, eps=0) has scale exactly one. It exposes every
+         * decoded weight through a public operation, including signed zero. */
+        assert(bn_gpu_backend_rmsnorm_bf16_batch(gpu, out + 1, decoded,
+            x, 1, (int)n, 0.0f, 0.0f) == 0);
+        assert(out[0] == 0x5a5a && out[n + 1] == 0x5a5a);
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (size_t i = 0; i < n; i++) {
+            hash = (hash ^ (out[i + 1] & 255)) * UINT64_C(1099511628211);
+            hash = (hash ^ (out[i + 1] >> 8)) * UINT64_C(1099511628211);
+        }
+        assert(hash == r->hash);
+        words += n;
+        gpu->buffer_destroy(gpu->ctx, decoded);
+        free(x); free(out);
+    }
+    assert(!bn_gpu_backend_buffer_create_bf16_decoded(gpu, NULL));
+    assert(!bn_gpu_backend_buffer_create_bf16_decoded(NULL, NULL));
+    assert(bn_gpu_backend_matmul_bf16(NULL, NULL, NULL, NULL, 1, 1, 1) == -1);
+    printf("CUDA BF16 matrix references PASSED: %zu words checked\n", words);
+}
+
+static void run_bf16_rmsnorm_reference_case(BnGPUBackend *gpu) {
+    assert(bn_gpu_backend_can_rmsnorm_bf16_batch(gpu));
+    size_t exact = 0, words = 0;
+    for (size_t c = 0; c < sizeof(cuda_bf16_norm_cases) /
+                                  sizeof(cuda_bf16_norm_cases[0]); c++) {
+        const BnCudaBF16NormReference *r = &cuda_bf16_norm_cases[c];
+        size_t count = (size_t)r->dim * r->tokens;
+        uint16_t *input = malloc((count + 2) * sizeof(*input));
+        uint16_t *out = malloc((count + 2) * sizeof(*out));
+        uint16_t *weight = malloc((size_t)r->dim * sizeof(*weight));
+        assert(input && out && weight);
+        for (int i = 0; i < r->dim; i++)
+            weight[i] = cuda_test_bf16_rne(
+                (float)((i * 7 + r->seed) % 31 - 15) /
+                (r->weight_offset ? 4096.0f : 32.0f) +
+                (r->weight_offset ? 0.0f : 1.0f));
+        void *norm = gpu->buffer_create_quant_only(gpu->ctx, weight,
+            (size_t)r->dim * sizeof(*weight), BN_GGUF_TENSOR_BF16, 1, r->dim);
+        assert(norm);
+        for (int alias = 0; alias < 2; alias++) {
+            for (size_t i = 0; i < count; i++)
+                input[i + 1] = cuda_test_bf16_rne(
+                    (float)((int)((i * 37 + (size_t)r->seed * 11) % 509) - 254) / 256.0f);
+            input[0] = input[count + 1] = out[0] = out[count + 1] = 0x5a5a;
+            uint16_t *result = alias ? input : out;
+            assert(bn_gpu_backend_rmsnorm_bf16_batch(gpu, result + 1, norm,
+                input + 1, r->tokens, r->dim, 1e-6f, r->weight_offset) == 0);
+            assert(result[0] == 0x5a5a && result[count + 1] == 0x5a5a);
+            for (size_t i = 0; i < count; i++) {
+                uint16_t expected = cuda_bf16_norm_expected[r->start + i];
+                int difference = abs((int)result[i + 1] - (int)expected);
+                /* Independent Torch FP32 reduction can differ in its final
+                 * rounding bit. Preserve the reference values and permit at
+                 * most one BF16 ULP; real-model replay is checked separately. */
+                assert(difference <= 1);
+                exact += difference == 0;
+                words++;
+            }
+        }
+        BnBackendSession *session = bn_backend_session_create(); assert(session);
+        void *request = bn_gpu_backend_resident_request(gpu, session); assert(request);
+        for (size_t i = 0; i < count; i++) input[i+1] = cuda_test_bf16_rne(
+            (float)((int)((i*37+(size_t)r->seed*11)%509)-254)/256.0f);
+        BnGPUResidentView xv = cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,count+2,input);
+        uint16_t *native = malloc((count+2)*sizeof(*native)); assert(native);
+        for (size_t i = 0; i < count+2; i++) native[i]=0x5a5a;
+        BnGPUResidentView yv = cuda_test_resident_alloc(gpu,request,BN_GGUF_TENSOR_BF16,count+2,native);
+        BnGPURMSNormResidentPlan plan={0};plan.n_tokens=r->tokens;plan.dim=r->dim;
+        plan.weight=norm;plan.eps=1e-6f;plan.weight_offset=r->weight_offset;
+        plan.x=bn_gpu_resident_view_slice(xv,1,count);plan.out=bn_gpu_resident_view_slice(yv,1,count);
+        assert(gpu->rmsnorm_bf16_resident);
+        for (int reject=0; reject<10; reject++) {
+            BnGPURMSNormResidentPlan bad=plan;
+            switch(reject) {
+                case 0:bad.n_tokens=0;break;case 1:bad.dim=0;break;
+                case 2:bad.eps=NAN;break;case 3:bad.weight_offset=2;break;
+                case 4:bad.weight=NULL;break;case 5:bad.out=bad.x;break;
+                case 6:--bad.out.count;break;case 7:bad.x.type=BN_GGUF_TENSOR_F32;break;
+                case 8:bad.x.request=session;break;default:bad.n_tokens=INT_MAX;bad.dim=2;break;
+            }
+            assert(gpu->rmsnorm_bf16_resident(gpu->ctx,request,&bad)==-1);
+        }
+        assert(gpu->resident_read(request,yv,native)==0);
+        for(size_t i=0;i<count+2;i++)assert(native[i]==0x5a5a);
+        assert(gpu->rmsnorm_bf16_resident(gpu->ctx,request,&plan)==0);
+        assert(gpu->resident_read(request,yv,native)==0);
+        assert(native[0]==0x5a5a&&native[count+1]==0x5a5a);
+        /* Same qualified arithmetic as the host entry point, exact, including
+         * the existing independent-reference bound (not a new tolerance). */
+        assert(!memcmp(native+1,out+1,count*sizeof(*out)));
+        for(size_t i=0;i<count;i++) {
+            int diff=abs((int)native[i+1]-(int)cuda_bf16_norm_expected[r->start+i]);
+            assert(diff<=1);exact+=diff==0;words++;
+        }
+        assert(gpu->resident_read(request,xv,native)==0);
+        assert(!memcmp(native,input,(count+2)*sizeof(*input)));
+        free(native);bn_backend_session_free(session);
+        gpu->buffer_destroy(gpu->ctx, norm);
+        free(weight); free(out); free(input);
+    }
+    uint16_t one = 0x3f80, short_weight = 0x3f00;
+    void *short_norm = gpu->buffer_create_quant_only(gpu->ctx, &short_weight,
+        sizeof(short_weight), BN_GGUF_TENSOR_BF16, 1, 1);
+    float wrong_weight = 0.5f;
+    void *wrong_norm = gpu->buffer_create_quant_only(gpu->ctx, &wrong_weight,
+        sizeof(wrong_weight), BN_GGUF_TENSOR_F32, 1, 1);
+    assert(short_norm && wrong_norm);
+    BnGPUBackend absent = {0};
+    uint16_t guard[] = {0x1234, 0x5678, 0xabcd, 0x4321};
+    const uint16_t saved[] = {0x1234, 0x5678, 0xabcd, 0x4321};
+#define BF16_REJECT(g, w, x, nt, dim, eps, offset) do { \
+    assert(bn_gpu_backend_rmsnorm_bf16_batch(g, guard + 1, w, x, nt, dim, eps, offset) == -1); \
+    assert(memcmp(guard, saved, sizeof(guard)) == 0); \
+} while (0)
+    BF16_REJECT(NULL, short_norm, &one, 1, 1, 1e-6f, 0);
+    BF16_REJECT(&absent, short_norm, &one, 1, 1, 1e-6f, 0);
+    BF16_REJECT(gpu, NULL, &one, 1, 1, 1e-6f, 0);
+    BF16_REJECT(gpu, wrong_norm, &one, 1, 1, 1e-6f, 0);
+    BF16_REJECT(gpu, short_norm, &one, 1, 2, 1e-6f, 0);
+    BF16_REJECT(gpu, short_norm, NULL, 1, 1, 1e-6f, 0);
+    BF16_REJECT(gpu, short_norm, &one, 0, 1, 1e-6f, 0);
+    BF16_REJECT(gpu, short_norm, &one, 1, 0, 1e-6f, 0);
+    BF16_REJECT(gpu, short_norm, &one, INT_MAX, INT_MAX, 1e-6f, 0);
+    BF16_REJECT(gpu, short_norm, &one, 1, 1, -1.0f, 0);
+    BF16_REJECT(gpu, short_norm, &one, 1, 1, NAN, 0);
+    BF16_REJECT(gpu, short_norm, &one, 1, 1, INFINITY, 0);
+    BF16_REJECT(gpu, short_norm, &one, 1, 1, 1e-6f, -1);
+    BF16_REJECT(gpu, short_norm, &one, 1, 1, 1e-6f, 2);
+#undef BF16_REJECT
+    assert(bn_gpu_backend_rmsnorm_bf16_batch(gpu, NULL, short_norm,
+        &one, 1, 1, 1e-6f, 0) == -1);
+    enum { rows = 65537 };
+    uint16_t *large = malloc((size_t)rows * sizeof(*large));
+    assert(large);
+    for (int i = 0; i < rows; i++) large[i] = one;
+    assert(bn_gpu_backend_rmsnorm_bf16_batch(gpu, large, short_norm,
+        large, rows, 1, 0.0f, 0) == 0);
+    for (int i = 0; i < rows; i++) assert(large[i] == short_weight);
+    free(large);
+    gpu->buffer_destroy(gpu->ctx, short_norm);
+    gpu->buffer_destroy(gpu->ctx, wrong_norm);
+
+    uint16_t minus_zero = 0x8000, signs[] = {0x3f80, 0xbf80}, result[2];
+    void *zero_norm = gpu->buffer_create_quant_only(gpu->ctx, &minus_zero,
+        sizeof(minus_zero), BN_GGUF_TENSOR_BF16, 1, 1);
+    assert(zero_norm);
+    assert(bn_gpu_backend_rmsnorm_bf16_batch(gpu, result, zero_norm,
+        signs, 2, 1, 0.0f, 0) == 0);
+    assert(result[0] == 0x8000 && result[1] == 0x0000);
+    gpu->buffer_destroy(gpu->ctx, zero_norm);
+    /* This result crosses a BF16 rounding boundary only when 1+w stays FP32.
+     * Rounding the effective gamma to BF16 first would return 0x3f22. */
+    uint16_t offset_weights[] = {0x3b70, 0x0000}; /* 15/4096, 0 */
+    uint16_t offset_input[] = {0x3f80, 0x4000}, offset_result[2]; /* 1, 2 */
+    void *offset_norm = gpu->buffer_create_quant_only(gpu->ctx, offset_weights,
+        sizeof(offset_weights), BN_GGUF_TENSOR_BF16, 1, 2);
+    assert(offset_norm);
+    assert(bn_gpu_backend_rmsnorm_bf16_batch(gpu, offset_result, offset_norm,
+        offset_input, 1, 2, 1e-6f, 1) == 0);
+    assert(offset_result[0] == 0x3f23);
+    gpu->buffer_destroy(gpu->ctx, offset_norm);
+    printf("CUDA BF16 RMSNorm PASSED: %zu/%zu exact reference words, <=1 ULP\n", exact, words);
+}
+
 static void run_rmsnorm_batch_reference_case(BnGPUBackend *gpu) {
     assert(bn_gpu_backend_can_rmsnorm_batch(gpu));
     float frequencies[16] = {0};
@@ -3911,20 +9317,29 @@ static void run_prepared_rope_reference_case(BnGPUBackend *gpu) {
     printf("CUDA fused and separate RoPE reference PASSED\n");
 }
 
-static void run_prefix_attention_reference_cases(BnGPUBackend *gpu, int smoke) {
+static void run_prefix_attention_reference_set(BnGPUBackend *gpu, int smoke,
+        const BnCUDAPrefixAttentionReference *refs, size_t count, int gqa) {
     if (!bn_gpu_backend_has_cap(gpu, BN_GPU_CAP_PREFILL_PREFIX_KV)) {
         printf("CUDA prefix attention reference skipped: capability unavailable\n");
         return;
     }
     size_t words = 0, tested = 0;
-    const size_t count = sizeof(cuda_prefix_attention_refs) / sizeof(cuda_prefix_attention_refs[0]);
+    const char *case_text = getenv("BN_TEST_PREFIX_CASE_INDEX");
+    long selected_case = -1;
+    if (case_text) {
+        char *end = NULL;
+        selected_case = strtol(case_text, &end, 10);
+        assert(end && *end == '\0' && selected_case >= 0 &&
+               (size_t)selected_case < count);
+    }
     for (size_t ci = 0; ci < count; ci++) {
-        const BnCUDAPrefixAttentionReference *r = &cuda_prefix_attention_refs[ci];
+        if (selected_case >= 0 && ci != (size_t)selected_case) continue;
+        const BnCUDAPrefixAttentionReference *r = &refs[ci];
         if (smoke && ci != 0 && !(r->pos==512 && r->nk==2 &&
                 r->seed==23 && !r->unit && !r->window &&
                 (r->nt==2 || r->nt==3 || r->nt==4 || r->nt==34 || r->nt==512)))
             continue;
-        const int hs = 256, nh = r->nk * 16, dim = nh * hs, kd = r->nk * hs;
+        const int hs = 256, nh = r->nk * gqa, dim = nh * hs, kd = r->nk * hs;
         const int keys = r->pos + r->nt, seq = keys + 3, stride = kd + 16;
         const size_t base = (size_t)seq * stride + 7;
         const size_t nc = (size_t)2 * seq * stride, nq = (size_t)r->nt * dim;
@@ -3973,6 +9388,12 @@ static void run_prefix_attention_reference_cases(BnGPUBackend *gpu, int smoke) {
         if (r->normalize_v) assert(cuda_test_float_bits_hash(vo+1,nk)==r->vhash);
         assert(vo[0]==12345.0f && vo[nk+1]==12345.0f);
         uint64_t hash = cuda_test_float_bits_hash(out+1,nq);
+        const char *dump_path = getenv("BN_TEST_PREFIX_OUTPUT_PATH");
+        if (dump_path && (ci == 0 || selected_case >= 0)) {
+            FILE *dump = fopen(dump_path, "wb");
+            assert(dump && fwrite(out + 1, sizeof(float), nq, dump) == nq);
+            assert(fclose(dump) == 0);
+        }
         if (hash != r->hash) fprintf(stderr,"prefix case=%zu nt=%d pos=%d hash=%016llx expected=%016llx\n",
             ci,r->nt,r->pos,(unsigned long long)hash,(unsigned long long)r->hash);
         assert(hash==r->hash);
@@ -4038,6 +9459,265 @@ static void run_prefix_attention_reference_cases(BnGPUBackend *gpu, int smoke) {
         gpu->free_activations(gpu->ctx);
     }
     printf("CUDA prefix attention reference PASSED: %zu cases, %zu words\n",tested,words);
+}
+
+static void run_prefix_attention_reference_cases(BnGPUBackend *gpu, int smoke) {
+    run_prefix_attention_reference_set(gpu, smoke, cuda_prefix_attention_refs,
+        sizeof(cuda_prefix_attention_refs) / sizeof(cuda_prefix_attention_refs[0]), 16);
+}
+
+static void run_dense_gqa6_prefix_integration(BnGPUBackend *gpu) {
+    enum { hd = 256, nh = 6, dim = nh * hd, nt = 9, pos = 32,
+           hidden = 32, stride = hd + 16, seq = 64, base = 7 };
+    const size_t nq = (size_t)nt * dim, nk = (size_t)nt * hd;
+    const size_t nc = (size_t)seq * stride;
+    float *identity = calloc((size_t)dim * dim, sizeof(float));
+    float *select = calloc((size_t)hd * dim, sizeof(float));
+    float *zero = calloc((size_t)dim * hidden, sizeof(float));
+    float *x = malloc(nq * sizeof(float)), *reference = malloc(nq * sizeof(float));
+    float *out = malloc((nq + 2) * sizeof(float));
+    float *k = malloc(nk * sizeof(float)), *v = malloc(nk * sizeof(float));
+    float *ko = malloc(nk * sizeof(float)), *vo = malloc(nk * sizeof(float));
+    float norm[dim], frequency = 0.0f;
+    uint16_t *kc = malloc(nc * 2), *vc = malloc(nc * 2), *got = malloc(nc * 2);
+    assert(identity && select && zero && x && reference && out && k && v && ko && vo && kc && vc && got);
+    for (int j = 0; j < dim; j++) { identity[(size_t)j * dim + j] = 1.0f; norm[j] = 1.0f; }
+    for (int j = 0; j < hd; j++) select[(size_t)j * dim + j] = 1.0f;
+    for (size_t i = 0; i < nq; i++) x[i] = ((i * 17 + i / dim) % 7 < 3) ? -1.0f : 1.0f;
+    for (int t = 0; t < nt; t++) for (int j = 0; j < hd; j++)
+        k[t * hd + j] = v[t * hd + j] = x[t * dim + j];
+    for (size_t i = 0; i < nc; i++) kc[i] = vc[i] = 0x3555;
+    for (int t = 0; t < pos; t++) for (int j = 0; j < hd; j++) {
+        size_t i = base + (size_t)t * stride + j;
+        kc[i] = bn_fp32_to_fp16(sinf((float)(t * hd + j)));
+        vc[i] = bn_fp32_to_fp16(cosf((float)(t * hd + j)));
+    }
+    BnGPUActivationPlan ap = {0};
+    ap.dim = ap.xb2_elements = dim; ap.hb_elements = hidden;
+    ap.vocab_size = 32; ap.n_layers = ap.attention_layer_count = 1;
+    ap.n_heads = nh; ap.seq_len = seq; ap.head_size = hd; ap.kv_dim = stride;
+    ap.kv_f16 = 1; ap.rope_frequencies = &frequency; ap.rope_frequency_count = 1;
+    assert(gpu->init_activations(gpu->ctx, &ap) == 0);
+    assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE, kc, nc * 2, 0) == 0);
+    assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE, vc, nc * 2, 0) == 0);
+    BnGPUAttentionPrefillPlan p = {0};
+    p.n_tokens = nt; p.n_heads = nh; p.n_kv_heads = 1; p.head_size = hd;
+    p.q_row_stride = dim; p.pos0 = pos; p.rope_dims = 2; p.norm_eps = 0.0f;
+    p.attention_scale = 0.0625f; p.kv_cache_off = base + pos * stride;
+    p.kv_cache_stride = stride;
+    assert(bn_gpu_backend_prefill_attention_prepared(gpu, reference, ko, x, k, v, NULL, NULL, &p) == 0);
+    void *q = gpu->buffer_create(gpu->ctx, identity, (size_t)dim * dim * 4, 0, dim, dim);
+    void *kw = gpu->buffer_create(gpu->ctx, select, (size_t)hd * dim * 4, 0, hd, dim);
+    void *wo = gpu->buffer_create(gpu->ctx, identity, (size_t)dim * dim * 4, 0, dim, dim);
+    void *gate = gpu->buffer_create(gpu->ctx, zero, (size_t)dim * hidden * 4, 0, hidden, dim);
+    void *down = gpu->buffer_create(gpu->ctx, zero, (size_t)dim * hidden * 4, 0, dim, hidden);
+    void *nw = gpu->buffer_create(gpu->ctx, norm, sizeof(norm), 0, dim, 1);
+    void *pair = gpu->buffer_create_prefill_qk_pair(gpu->ctx, q, kw);
+    assert(q && kw && wo && gate && down && nw && pair);
+    /* The public F32 projection uses TF32 on this shape. Compare the
+     * composition of qualified attention and public projection, rather
+     * than assuming an identity matrix preserves arbitrary float bits. */
+    assert(gpu->matmul(gpu->ctx, out + 1, wo, reference,
+                       dim, dim, nt, 0) == 0);
+    for (size_t i = 0; i < nq; i++) reference[i] = out[i + 1] + x[i];
+    out[0] = out[nq + 1] = 12345.0f;
+    assert(gpu->prefill_dense_layer(gpu->ctx, out + 1, pair, kw, wo,
+        gate, gate, down, nw, nw, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        x, ko, vo, nt, dim, hidden, nh, 1, hd, nh, hd,
+        dim + hd, 0, hd, 0, dim, dim, 0, 0, 0, 0,
+        BN_MODEL_ACTIVATION_SILU, 0, 0, 0.0f, pos, 2, 0,
+        base + pos * stride, stride, 0.0625f, 1.0f, 0, 0) == 0);
+    if (memcmp(out + 1, reference, nq * sizeof(float)) != 0) {
+        for (size_t i = 0; i < nq; i++) {
+            if (out[i + 1] != reference[i]) {
+                fprintf(stderr, "dense prefix mismatch at %zu: got %.9g expected %.9g\n",
+                        i, out[i + 1], reference[i]);
+                break;
+            }
+        }
+    }
+    assert(memcmp(out + 1, reference, nq * sizeof(float)) == 0);
+    assert(memcmp(ko, k, nk * sizeof(float)) == 0 && memcmp(vo, v, nk * sizeof(float)) == 0);
+    assert(out[0] == 12345.0f && out[nq + 1] == 12345.0f);
+    assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE, got, nc * 2, 0) == 0);
+    assert(memcmp(got, kc, nc * 2) == 0);
+    assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE, got, nc * 2, 0) == 0);
+    assert(memcmp(got, vc, nc * 2) == 0);
+    void *buffers[] = {pair, q, kw, wo, gate, down, nw};
+    for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++) gpu->buffer_destroy(gpu->ctx, buffers[i]);
+    gpu->free_activations(gpu->ctx);
+    free(identity); free(select); free(zero); free(x); free(reference); free(out);
+    free(k); free(v); free(ko); free(vo); free(kc); free(vc); free(got);
+    printf("CUDA dense GQA6 prefix integration PASSED\n");
+}
+
+static void run_gqa6_prefix_attention_reference_cases(BnGPUBackend *shared, int gemm) {
+    BnBackendRuntimePolicy policy = {0};
+    assert(bn_backend_runtime_policy_clone(&policy, &shared->runtime_policy) == 0);
+    assert(bn_backend_runtime_policy_set(&policy,
+        "BN_CUDA_ENABLE_GQA6_PREFIX", "1", 1) == 0);
+    assert(bn_backend_runtime_policy_set(&policy,
+        "BN_CUDA_ENABLE_PREFILL_QK_PAIR", "1", 1) == 0);
+    if (gemm) assert(bn_backend_runtime_policy_set(&policy,
+        "BN_CUDA_ENABLE_DENSE_PREFIX_CHAIN", "1", 1) == 0);
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(gpu);
+    if (!gemm) run_dense_gqa6_prefix_integration(gpu);
+    if (gemm)
+        run_prefix_attention_reference_set(gpu, 0, cuda_gqa6_prefix_gemm_refs,
+            sizeof(cuda_gqa6_prefix_gemm_refs) / sizeof(cuda_gqa6_prefix_gemm_refs[0]), 6);
+    else
+        run_prefix_attention_reference_set(gpu, 0, cuda_gqa6_prefix_refs,
+            sizeof(cuda_gqa6_prefix_refs) / sizeof(cuda_gqa6_prefix_refs[0]), 6);
+    bn_gpu_cuda_destroy(gpu);
+}
+
+
+#include "cuda_f32_prepared_attention_reference.h"
+static void run_f32_prepared_attention_reference_cases(BnGPUBackend *gpu) {
+    size_t words=0;
+    const size_t cases=sizeof(cuda_f32_prepared_attention_reference)/sizeof(cuda_f32_prepared_attention_reference[0]);
+    for(size_t ci=0;ci<cases;ci++) {
+        const BnCudaF32PreparedAttentionReference *r=&cuda_f32_prepared_attention_reference[ci];
+        int nt=r->tokens,nh=r->heads,nk=r->kv_heads,seed=r->seed,rd=seed?128:64;
+        int dim=nh*256,kv=nk*256,stride=2*dim+7,cs=kv+11;
+        size_t nr=(size_t)nt*stride,nq=(size_t)nt*dim,nkey=(size_t)nt*kv,ncache=(size_t)1280*kv*2;
+        float *raw=malloc((nr+2)*4),*key=malloc((nkey+2)*4),*value=malloc((nkey+2)*4),*out=malloc((nq+2)*4),*ko=malloc((nkey+2)*4);
+        float *wq=calloc((size_t)nh*256,4),*wk=calloc((size_t)nk*256,4),*kc=malloc(ncache*4),*vc=malloc(ncache*4),*check=malloc(ncache*4);
+        assert(raw&&key&&value&&out&&ko&&wq&&wk&&kc&&vc&&check);
+        for(size_t i=0;i<ncache;i++)kc[i]=vc[i]=12345.f;
+        for(int t=0;t<r->pos;t++)for(int h=0;h<nk;h++)for(int d=0;d<256;d++) {
+            size_t i=((size_t)t*nk+h)*256+d,at=17+(size_t)t*cs+h*256+d;
+            kc[at]=(float)((int)((i*31+7)%257)-128)/133.f;
+            vc[at]=(float)((int)((i*19+3)%263)-131)/129.f;
+        }
+        gated_mmf_fixture(raw+1,key+1,value+1,wq,wk,nt,nh,nk,seed);
+        void *qw=gpu->buffer_create(gpu->ctx,wq,(size_t)nh*256*4,BN_GGUF_TENSOR_F32,nh,256);
+        void *kw=gpu->buffer_create(gpu->ctx,wk,(size_t)nk*256*4,BN_GGUF_TENSOR_F32,nk,256);assert(qw&&kw);
+        float frequencies[141]={0};BnGPURopeFrequencyPlan recipe={13,rd/2,rd,10000000.f,NULL,BN_GPU_ROPE_FACTOR_NONE};
+        BnGPUActivationPlan a={0};a.dim=a.hb_elements=a.xb2_elements=dim;a.vocab_size=32;a.n_layers=a.attention_layer_count=1;a.n_heads=nh;a.seq_len=1280;a.head_size=256;a.kv_dim=kv*2;
+        a.rope_frequencies=frequencies;a.rope_frequency_count=13+rd/2;a.rope_frequency_plans=&recipe;a.rope_frequency_plan_count=1;
+        assert(gpu->init_activations(gpu->ctx,&a)==0);
+        assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_KEY_CACHE,kc,ncache*4,0)==0);
+        assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_VALUE_CACHE,vc,ncache*4,0)==0);
+        BnGPUAttentionPrefillPlan p={0};p.n_tokens=nt;p.n_heads=nh;p.n_kv_heads=nk;p.head_size=256;p.q_row_stride=stride;p.q_gated=1;p.qk_norm_per_head=seed!=0;p.reference_rmsnorm_order=1;p.rope_dims=rd;p.rope_freq_offset=13;p.norm_eps=1e-6f;p.attention_scale=0.0625f;p.attention_window=seed?3:0;p.pos0=r->pos;p.kv_cache_off=17+(size_t)r->pos*cs;p.kv_cache_stride=cs;
+        for(int alias=0;alias<2;alias++) {
+            gated_mmf_fixture(raw+1,key+1,value+1,wq,wk,nt,nh,nk,seed);
+            raw[0]=raw[nr+1]=key[0]=key[nkey+1]=value[0]=value[nkey+1]=out[0]=out[nq+1]=ko[0]=ko[nkey+1]=12345.f;
+            float *result=alias?raw+1:out+1,*keys=alias?key+1:ko+1;
+            int rc=bn_gpu_backend_prefill_attention_prepared(gpu,result,keys,raw+1,key+1,value+1,qw,kw,&p);
+            if(rc)fprintf(stderr,"F32 prepared attention rejected case=%zu nt=%d pos=%d\n",ci,nt,r->pos);
+            assert(rc==0);
+            uint64_t oh=cuda_test_float_bits_hash(result,nq),kh=cuda_test_float_bits_hash(keys,nkey);
+            if(oh!=r->output||kh!=r->key)fprintf(stderr,"F32 prepared case=%zu alias=%d output=%016llx/%016llx key=%016llx/%016llx\n",ci,alias,(unsigned long long)oh,(unsigned long long)r->output,(unsigned long long)kh,(unsigned long long)r->key);
+            assert(oh==r->output&&kh==r->key);
+            assert(raw[0]==12345.f&&raw[nr+1]==12345.f&&key[0]==12345.f&&key[nkey+1]==12345.f&&value[0]==12345.f&&value[nkey+1]==12345.f&&out[0]==12345.f&&out[nq+1]==12345.f&&ko[0]==12345.f&&ko[nkey+1]==12345.f);
+            assert(gpu->read_activation(gpu->ctx,BN_GPU_VALUE_KEY_CACHE,check,ncache*4,0)==0);assert(memcmp(check,kc,ncache*4)==0);
+            assert(gpu->read_activation(gpu->ctx,BN_GPU_VALUE_VALUE_CACHE,check,ncache*4,0)==0);assert(memcmp(check,vc,ncache*4)==0);
+            words+=nq+nkey;
+        }
+        gpu->free_activations(gpu->ctx);gpu->buffer_destroy(gpu->ctx,qw);gpu->buffer_destroy(gpu->ctx,kw);
+        free(raw);free(key);free(value);free(out);free(ko);free(wq);free(wk);free(kc);free(vc);free(check);
+    }
+    printf("CUDA F32 prepared attention reference PASSED: %zu cases, %zu words\n",cases,words);
+}
+
+static void run_gated_mmf_reference_cases(BnGPUBackend *gpu) {
+    size_t cases = sizeof(cuda_gated_mmf_reference) / sizeof(cuda_gated_mmf_reference[0]);
+    size_t words = 0, numeric_cases = 0;
+    for (size_t c = 0; c < cases; c++) {
+        const BnCudaGatedMmfReference *r = &cuda_gated_mmf_reference[c];
+        int nt = r->nt, nh = r->nh, nk = r->nk, seed = r->seed;
+        int dim = nh * 256, kv = nk * 256, stride = 2 * dim + 7;
+        int rd = seed ? 128 : 64;
+        size_t nr = (size_t)nt * stride, nq = (size_t)nt * dim, nkey = (size_t)nt * kv;
+        float *raw = malloc((nr + 2) * sizeof(float));
+        float *key = malloc((nkey + 2) * sizeof(float));
+        float *value = malloc((nkey + 2) * sizeof(float));
+        float *out = malloc((nq + 2) * sizeof(float));
+        float *ko = malloc((nkey + 2) * sizeof(float));
+        float *wq = calloc((size_t)nh * 256, sizeof(float));
+        float *wk = calloc((size_t)nk * 256, sizeof(float));
+        assert(raw && key && value && out && ko && wq && wk);
+        gated_mmf_fixture(raw + 1, key + 1, value + 1, wq, wk, nt, nh, nk, seed);
+        void *qw = gpu->buffer_create(gpu->ctx, wq, (size_t)nh * 256 * sizeof(float),
+            BN_GGUF_TENSOR_F32, nh, 256);
+        void *kw = gpu->buffer_create(gpu->ctx, wk, (size_t)nk * 256 * sizeof(float),
+            BN_GGUF_TENSOR_F32, nk, 256);
+        assert(qw && kw);
+        float frequencies[141] = {0};
+        BnGPURopeFrequencyPlan recipe = {13, rd / 2, rd, 10000000.0f, NULL, BN_GPU_ROPE_FACTOR_NONE};
+        BnGPUActivationPlan a = {0};
+        a.dim = a.hb_elements = a.xb2_elements = dim; a.vocab_size = 32;
+        a.n_layers = a.attention_layer_count = 1; a.n_heads = nh;
+        a.seq_len = 256; a.head_size = 256; a.kv_dim = kv;
+        a.rope_frequencies = frequencies; a.rope_frequency_count = 13 + rd / 2;
+        a.rope_frequency_plans = &recipe; a.rope_frequency_plan_count = 1;
+        assert(gpu->init_activations(gpu->ctx, &a) == 0);
+        unsigned char guard[32], cache[32]; memset(guard, 0x5a, sizeof(guard));
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE, guard, sizeof(guard), 0) == 0);
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE, guard, sizeof(guard), 0) == 0);
+        BnGPUAttentionPrefillPlan p = {0};
+        p.n_tokens = nt; p.n_heads = nh; p.n_kv_heads = nk; p.head_size = 256;
+        p.q_row_stride = stride; p.q_gated = 1; p.qk_norm_per_head = seed != 0;
+        p.reference_rmsnorm_order = 1; p.rope_dims = rd; p.rope_freq_offset = 13;
+        p.norm_eps = 1e-6f; p.attention_scale = 0.0625f;
+        p.attention_window = seed ? 3 : 0;
+        if (nt < 4) {
+            /* The pinned F32 oracle chooses MMVF for <=3 columns. This
+             * adapter must reject that distinct contract before any writes. */
+            for (size_t i = 0; i < nq + 2; i++) out[i] = 12345.0f;
+            for (size_t i = 0; i < nkey + 2; i++) ko[i] = 12345.0f;
+            assert(bn_gpu_backend_prefill_attention_prepared(gpu, out + 1, ko + 1,
+                raw + 1, key + 1, value + 1, seed ? qw : NULL, seed ? kw : NULL, &p) != 0);
+            for (size_t i = 0; i < nq + 2; i++) assert(out[i] == 12345.0f);
+            for (size_t i = 0; i < nkey + 2; i++) assert(ko[i] == 12345.0f);
+            assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE, cache, sizeof(cache), 0) == 0);
+            assert(memcmp(cache, guard, sizeof(cache)) == 0);
+            assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE, cache, sizeof(cache), 0) == 0);
+            assert(memcmp(cache, guard, sizeof(cache)) == 0);
+            gpu->free_activations(gpu->ctx); gpu->buffer_destroy(gpu->ctx, qw); gpu->buffer_destroy(gpu->ctx, kw);
+            free(raw); free(key); free(value); free(out); free(ko); free(wq); free(wk);
+            continue;
+        }
+        numeric_cases++;
+        for (int alias = 0; alias < 2; alias++) {
+            gated_mmf_fixture(raw + 1, key + 1, value + 1, wq, wk, nt, nh, nk, seed);
+            raw[0] = raw[nr + 1] = key[0] = key[nkey + 1] = value[0] = value[nkey + 1] = 12345.0f;
+            out[0] = out[nq + 1] = ko[0] = ko[nkey + 1] = 12345.0f;
+            float *result = alias ? raw + 1 : out + 1;
+            float *keys = alias ? key + 1 : ko + 1;
+            assert(bn_gpu_backend_prefill_attention_prepared(gpu, result, keys,
+                raw + 1, key + 1, value + 1, seed ? qw : NULL, seed ? kw : NULL, &p) == 0);
+            uint64_t oh = cuda_test_float_bits_hash(result, nq);
+            uint64_t kh = cuda_test_float_bits_hash(keys, nkey);
+            if (oh != r->out_hash || kh != r->key_hash) fprintf(stderr,
+                "gated MMF case=%zu alias=%d output=%016llx/%016llx key=%016llx/%016llx\n",
+                c, alias, (unsigned long long)oh, (unsigned long long)r->out_hash,
+                (unsigned long long)kh, (unsigned long long)r->key_hash);
+            assert(oh == r->out_hash && kh == r->key_hash);
+            assert(raw[0] == 12345.0f && raw[nr + 1] == 12345.0f &&
+                key[0] == 12345.0f && key[nkey + 1] == 12345.0f &&
+                value[0] == 12345.0f && value[nkey + 1] == 12345.0f &&
+                out[0] == 12345.0f && out[nq + 1] == 12345.0f &&
+                ko[0] == 12345.0f && ko[nkey + 1] == 12345.0f);
+            p.n_tokens = 1;
+            assert(bn_gpu_backend_prefill_attention_prepared(gpu, result, keys,
+                raw + 1, key + 1, value + 1, seed ? qw : NULL, seed ? kw : NULL, &p) != 0);
+            assert(cuda_test_float_bits_hash(result, nq) == oh &&
+                cuda_test_float_bits_hash(keys, nkey) == kh);
+            p.n_tokens = nt; words += nq + nkey;
+        }
+        assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE, cache, sizeof(cache), 0) == 0);
+        assert(memcmp(cache, guard, sizeof(cache)) == 0);
+        assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE, cache, sizeof(cache), 0) == 0);
+        assert(memcmp(cache, guard, sizeof(cache)) == 0);
+        gpu->free_activations(gpu->ctx); gpu->buffer_destroy(gpu->ctx, qw); gpu->buffer_destroy(gpu->ctx, kw);
+        free(raw); free(key); free(value); free(out); free(ko); free(wq); free(wk);
+    }
+    printf("CUDA gated MMF reference PASSED: %zu numeric cases, %zu MMVF preflight cases, %zu words\n",
+        numeric_cases, cases - numeric_cases, words);
 }
 
 static void run_prepared_attention_reference_case(BnGPUBackend *gpu) {
@@ -4801,6 +10481,12 @@ static void run_ssm_projection_state_reference_case(BnGPUBackend *gpu) {
         {5120, 64, 8, UINT64_C(0x55c7657312cfdf2c)},
         {5120, 64, 17, UINT64_C(0x858af8792b7d5ded)},
         {8192, 64, 9, UINT64_C(0x49cf1a641e3b27f4)},
+        /* Independent CUDA graph extensions across the stacked-prefill
+         * threshold; the original reference values above are unchanged. */
+        {256, 4, 64, UINT64_C(0x31ddacbec3c64973)},
+        {256, 4, 129, UINT64_C(0x50622edb387c3607)},
+        {5120, 48, 64, UINT64_C(0x346b724a3484d663)},
+        {5120, 48, 129, UINT64_C(0xc65289dd3a32d610)},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
         int dim = cases[c].dim, hv = cases[c].heads, nt = cases[c].tokens;
@@ -4867,12 +10553,19 @@ static void run_ssm_projection_state_reference_case(BnGPUBackend *gpu) {
                 1, h, hv, h, 4, 0,
                 BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32,
                 BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32, 0, 0, 0, 0,
-                0, 0, 1e-6f, &did_ffn) == 0);
+                0, 0, 1e-6f, BN_GPU_SSM_QK_NORM_CLAMPED_L2, &did_ffn) == 0);
             assert(!did_ffn);
             got[0] = got[ns + 1] = -12345.0f;
             assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE,
                 got + 1, ns * sizeof(float), 0) == 0);
-            assert(cuda_test_float_bits_hash(got + 1, ns) == cases[c].hash);
+            uint64_t actual = cuda_test_float_bits_hash(got + 1, ns);
+            if (actual != cases[c].hash)
+                fprintf(stderr,
+                    "CUDA SSM projection state mismatch: dim=%d heads=%d "
+                    "tokens=%d stacked=%d got=%016llx expected=%016llx\n",
+                    dim, hv, nt, stacked, (unsigned long long)actual,
+                    (unsigned long long)cases[c].hash);
+            assert(actual == cases[c].hash);
             assert(got[0] == -12345.0f && got[ns + 1] == -12345.0f);
         }
         for (size_t i = 0; i < sizeof(buffers) / sizeof(buffers[0]); i++)
@@ -4944,7 +10637,7 @@ static void run_ssm_gateup_layout_type(BnGPUBackend *gpu, int type) {
         assert(gpu->prefill_ssm_layer(gpu->ctx,out,q,z,ab,ab,NULL,NULL,so,norm,conv,bias,bias,sn,
             stacked?stack:gate,stacked?NULL:up,down,norm,alias?out:x,nt,d,qkv,h,1,h,1,h,4,0,
             0,0,0,0,0,hid,type,type,BN_GGUF_TENSOR_Q6_K,
-            BN_MODEL_ACTIVATION_SILU,0,1e-6f,&did)==0);assert(did);
+            BN_MODEL_ACTIVATION_SILU,0,1e-6f,BN_GPU_SSM_QK_NORM_CLAMPED_L2,&did)==0);assert(did);
         if(!variant)memcpy(ref,out,n*sizeof(float));
         else {
             if (memcmp(ref, out, n * sizeof(float)) != 0) {
@@ -5065,6 +10758,317 @@ static void run_ssm_delta_reference_case(BnGPUBackend *gpu) {
     free(state); free(out);
 }
 
+static void run_gdn_decode_order_reference_cases(BnGPUBackend *shared) {
+    /* Independent GGML df18bee11 CUDA: reference_cuda_gdn_decode.c.
+     * Hash includes every output and final nonzero state; legacy goldens stay. */
+    const struct { int nt, nk, nv; uint64_t hash; } cases[] = {
+{1, 1, 1, UINT64_C(0xe7341587bdf784ca)},
+{4, 1, 1, UINT64_C(0xdd385f55a50b65ab)},
+{9, 1, 1, UINT64_C(0x234b23e33bae9285)},
+{1, 2, 6, UINT64_C(0x6e416e31afeb574d)},
+{4, 2, 6, UINT64_C(0x91d0a3e8bc93e2f8)},
+{9, 2, 6, UINT64_C(0x6cd658484503e800)},
+{1, 16, 48, UINT64_C(0xa84bbf67f9dcb1c7)},
+{4, 16, 48, UINT64_C(0xd6e9fa6bb168453a)},
+{9, 16, 48, UINT64_C(0x9d94151bd584d2e8)},
+    };
+    BnBackendRuntimePolicy policy = {0};
+    assert(bn_backend_runtime_policy_clone(&policy, &shared->runtime_policy) == 0);
+    assert(bn_backend_runtime_policy_set(&policy, "BN_CUDA_ENABLE_GDN_DECODE_ORDER", "1", 1) == 0);
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(gpu);
+    size_t checked = 0;
+    for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); c++)
+    for (int fused = 0; fused < 2; fused++) {
+        int nt = cases[c].nt, nk = cases[c].nk, nv = cases[c].nv;
+        int kd = nk * 128, vd = nv * 128;
+        size_t ns = (size_t)nv * 128 * 128, ny = (size_t)nt * vd;
+        float *q = malloc((size_t)kd * sizeof(float)), *k = malloc((size_t)kd * sizeof(float));
+        float *v = malloc((size_t)vd * sizeof(float));
+        float *guard = malloc((ny + ns + 2) * sizeof(float));
+        assert(q && k && v && guard);
+        float *out = guard + 1, *state = out + ny;
+        guard[0] = guard[ny + ns + 1] = 12345.0f;
+        for (size_t i = 0; i < ns; i++) state[i] = ((int)((i * 29 + 5) % 101) - 50) / 1021.0f;
+        float alpha[48], beta[48], raw[96] = {0}, zero[48] = {0}, prepared_a[48];
+        for (int h = 0; h < nv; h++) prepared_a[h] = -1.0f;
+        for (int h = 0; h < nv; h++) { alpha[h] = 0.5f; beta[h] = 0.5f; }
+        BnGPUActivationPlan plan = {0}; float rope = 1.0f;
+        plan.dim = plan.vocab_size = plan.hb_elements = plan.xb2_elements = vd;
+        plan.n_layers = plan.n_heads = 1; plan.seq_len = nt;
+        plan.kv_dim = plan.head_size = 2;
+        plan.rope_frequencies = &rope; plan.rope_frequency_count = 1;
+        plan.uses_hybrid_ssm = 1; plan.ssm_layer_count = 2;
+        plan.ssm_time_step_rank = nv; plan.ssm_state_size = 128;
+        plan.ssm_inner_size = vd; plan.ssm_group_count = nk; plan.ssm_conv_kernel = 4;
+        assert(gpu->init_activations(gpu->ctx, &plan) == 0);
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE, state, ns * sizeof(float), 17 * sizeof(float)) == 0);
+        float sentinel = 12345.0f, device_guards[2];
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE, &sentinel, sizeof(float), 16 * sizeof(float)) == 0);
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE, &sentinel, sizeof(float), (17 + ns) * sizeof(float)) == 0);
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_ALPHA, alpha, (size_t)nv * sizeof(float), 0) == 0);
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_BETA, beta, (size_t)nv * sizeof(float), 0) == 0);
+        BnGPUOp op = {0}; op.op_code = BN_GPU_CODE_SSM_DELTA;
+        op.buf_in = BN_GPU_VALUE_XB; op.buf_aux = BN_GPU_VALUE_HB;
+        op.buf_out = BN_GPU_VALUE_LOGITS; op.rows = nv;
+        op.p[0] = op.p[1] = 128; op.p[2] = nk; op.p[3] = f32_bits(0x1.6a09e6p-4f); op.p[4] = 17 * sizeof(float);
+        void *dt = gpu->buffer_create(gpu->ctx, zero, (size_t)nv * sizeof(float), 0, nv, 1);
+        void *wa = gpu->buffer_create(gpu->ctx, prepared_a, (size_t)nv * sizeof(float), 0, nv, 1);
+        assert(dt && wa);
+        BnGPUOp ops[2] = {0};
+        ops[0].op_code = BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT;
+        ops[0].buf_in = BN_GPU_VALUE_SCRATCH; ops[0].W_buf = dt;
+        ops[0].p[0] = nv; ops[0].p[1] = nv;
+        ops[0].p[6] = (uint32_t)(uintptr_t)wa;
+        ops[0].p[7] = (uint32_t)((uintptr_t)wa >> 32);
+        ops[1] = op;
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SCRATCH, raw, (size_t)2 * nv * sizeof(float), 0) == 0);
+        for (int t = 0; t < nt; t++) {
+            for (int j = 0; j < kd; j++) {
+                size_t i = (size_t)t * kd + j;
+                q[j] = ((int)((i * 37 + 3) % 31) - 15) / 259.0f;
+                k[j] = ((int)((i * 19 + 7) % 29) - 14) / 257.0f;
+            }
+            for (int j = 0; j < vd; j++) {
+                size_t i = (size_t)t * vd + j;
+                v[j] = ((int)((i * 13 + 11) % 23) - 11) / 131.0f;
+            }
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_XB, q, (size_t)kd * sizeof(float), 0) == 0);
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_HB, k, (size_t)kd * sizeof(float), 0) == 0);
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_V, v, (size_t)vd * sizeof(float), 0) == 0);
+            assert(gpu->execute(gpu->ctx, fused ? ops : &op, fused ? 2 : 1, BN_GPU_VALUE_LOGITS, out + (size_t)t * vd, vd) == 0);
+        }
+        assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE, state, ns * sizeof(float), 17 * sizeof(float)) == 0);
+        assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE, device_guards, sizeof(float), 16 * sizeof(float)) == 0);
+        assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE, device_guards + 1, sizeof(float), (17 + ns) * sizeof(float)) == 0);
+        assert(device_guards[0] == sentinel && device_guards[1] == sentinel);
+        uint64_t hash = cuda_test_float_bits_hash(out, ny + ns);
+        if (hash != cases[c].hash) fprintf(stderr, "GDN decode case %zu got %016llx expected %016llx\n", c, (unsigned long long)hash, (unsigned long long)cases[c].hash);
+        assert(hash == cases[c].hash);
+        assert(guard[0] == 12345.0f && guard[ny + ns + 1] == 12345.0f);
+        checked += ny + ns;
+        gpu->buffer_destroy(gpu->ctx, dt); gpu->buffer_destroy(gpu->ctx, wa);
+        gpu->free_activations(gpu->ctx); free(q); free(k); free(v); free(guard);
+    }
+    bn_gpu_cuda_destroy(gpu);
+    printf("CUDA GDN decode order reference PASSED: 18 cases, %zu words\n", checked);
+}
+
+static void run_gdn_state_order_reference_cases(BnGPUBackend *shared) {
+    const struct { int nt, nk, nv; uint64_t hash; } cases[] = {
+        {1, 1, 1, UINT64_C(0x559c488cfaf47105)},
+        {9, 1, 1, UINT64_C(0x67b6e3f727117b9b)},
+        {33, 1, 1, UINT64_C(0x0a08a731a515ded1)},
+        {1, 2, 6, UINT64_C(0x9dbc255c9bfc20e5)},
+        {9, 2, 6, UINT64_C(0x8e6e92edf0000807)},
+        {33, 2, 6, UINT64_C(0xeafd7f158f6ee567)},
+        {1, 16, 48, UINT64_C(0xdbf9aa7366aecba5)},
+        {9, 16, 48, UINT64_C(0x209fac71ad887071)},
+        {33, 16, 48, UINT64_C(0x438f03109505c029)},
+    };
+    BnBackendRuntimePolicy policy = {0};
+    assert(bn_backend_runtime_policy_clone(&policy, &shared->runtime_policy) == 0);
+    if (!getenv("BN_TEST_GDN_LEGACY_ORDER"))
+        assert(bn_backend_runtime_policy_set(&policy,
+            "BN_CUDA_ENABLE_DENSE_PREFIX_CHAIN", "1", 1) == 0);
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(gpu && gpu->ssm_delta_gate_batch);
+    size_t checked = 0;
+    for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); c++) {
+        int nt = cases[c].nt, nk = cases[c].nk, nv = cases[c].nv;
+        int kd = nk * 128, vd = nv * 128, width = 2 * kd + vd;
+        size_t ns = (size_t)nv * 128 * 128, ny = (size_t)nt * vd;
+        float *qkv = malloc((size_t)nt * width * sizeof(float));
+        float *state = malloc((ns + 2) * sizeof(float));
+        float *out = malloc((ny + 2) * sizeof(float)), *z = malloc(ny * sizeof(float));
+        float *ab = calloc((size_t)nt * nv, sizeof(float));
+        float norm[128], zero[48] = {0}, prepared_a[48];
+        assert(qkv && state && out && z && ab);
+        for (int j = 0; j < 128; j++) norm[j] = 1.0f;
+        /* This API consumes prepared A=-exp(log_A), not raw log_A.
+         * With raw alpha=0 and dt bias=0, A=-1 yields decay=0.5. */
+        for (int j = 0; j < nv; j++) prepared_a[j] = -1.0f;
+        for (int t = 0; t < nt; t++) {
+            for (int j = 0; j < kd; j++) {
+                size_t i = (size_t)t * kd + j;
+                qkv[(size_t)t * width + j] = ((int)((i * 37 + 3) % 31) - 15) * 0.015625f;
+                qkv[(size_t)t * width + kd + j] = ((int)((i * 19 + 7) % 29) - 14) * 0.015625f;
+            }
+            for (int j = 0; j < vd; j++) {
+                size_t i = (size_t)t * vd + j;
+                qkv[(size_t)t * width + 2 * kd + j] = ((int)((i * 13 + 11) % 23) - 11) * 0.0078125f;
+                z[i] = 1.0f;
+            }
+        }
+        for (size_t i = 0; i < ns; i++)
+            state[i + 1] = ((int)((i * 29 + 5) % 101) - 50) * 0.0009765625f;
+        state[0] = state[ns + 1] = out[0] = out[ny + 1] = 12345.0f;
+        void *nw = gpu->buffer_create(gpu->ctx, norm, sizeof(norm), 0, 128, 1);
+        void *zw = gpu->buffer_create(gpu->ctx, zero, (size_t)nv * sizeof(float), 0, nv, 1);
+        void *aw = gpu->buffer_create(gpu->ctx, prepared_a, (size_t)nv * sizeof(float), 0, nv, 1);
+        assert(nw && zw && aw);
+        assert(gpu->ssm_delta_gate_batch(gpu->ctx, out + 1, state + 1, qkv, z,
+            ab, ab, nw, zw, aw, nt, nk, 128, nv, 128,
+            1.0f/sqrtf(128.0f), 1e-6f, 0) == 0);
+        uint64_t hash = cuda_test_float_bits_hash(state + 1, ns);
+        const char *dump_path = getenv("BN_TEST_GDN_STATE_PATH");
+        if (dump_path && c == 0) {
+            FILE *dump = fopen(dump_path, "wb");
+            assert(dump && fwrite(state + 1, sizeof(float), ns, dump) == ns);
+            assert(fclose(dump) == 0);
+        }
+        if (hash != cases[c].hash)
+            fprintf(stderr, "GDN state nt=%d nk=%d nv=%d hash=%016llx expected=%016llx\n",
+                nt, nk, nv, (unsigned long long)hash, (unsigned long long)cases[c].hash);
+        assert(hash == cases[c].hash);
+        assert(state[0] == 12345.0f && state[ns + 1] == 12345.0f);
+        assert(out[0] == 12345.0f && out[ny + 1] == 12345.0f);
+        for (size_t i = 0; i < ny; i++) assert(isfinite(out[i + 1]));
+        checked += ns;
+        gpu->buffer_destroy(gpu->ctx, nw); gpu->buffer_destroy(gpu->ctx, zw);
+        gpu->buffer_destroy(gpu->ctx, aw);
+        free(qkv); free(state); free(out); free(z); free(ab);
+    }
+    bn_gpu_cuda_destroy(gpu);
+    printf("CUDA GDN state reduction reference PASSED: 9 cases, %zu words\n", checked);
+}
+
+static void run_ssm_qk_rms_reference_case(BnGPUBackend *gpu) {
+    /* Independent GGML CUDA RMS_NORM + SCALE: reference_cuda_gdn_norm.c. */
+    const struct { int hd; float eps; uint64_t hash; } cases[] = {
+        {1, 1e-6f, UINT64_C(0xb87c0d60e44cfc61)},
+        {7, 1e-6f, UINT64_C(0x0562fbf0f885ad1b)},
+        {16, 1e-6f, UINT64_C(0xb4ced2aff1ca0852)},
+        {128, 1e-6f, UINT64_C(0x95aa0ffdb42f61dd)},
+        {256, 1e-6f, UINT64_C(0xaf4ed164bd799b27)},
+        {1024, 1e-6f, UINT64_C(0x4a36a807c8518279)},
+        {1536, 1e-6f, UINT64_C(0xb9ef3f45990466bb)},
+        {1, 1e-5f, UINT64_C(0x4844d60074b4ba79)},
+        {7, 1e-5f, UINT64_C(0x667ca18f4ab6205b)},
+        {16, 1e-5f, UINT64_C(0x133853d20f265d75)},
+        {128, 1e-5f, UINT64_C(0x71b00c8e3ba3de86)},
+        {256, 1e-5f, UINT64_C(0x5b58315450ccde9b)},
+        {1024, 1e-5f, UINT64_C(0x76b97d042e8319be)},
+        {1536, 1e-5f, UINT64_C(0xabba7c45fde82d52)},
+    };
+    for (unsigned c = 0; c < sizeof(cases)/sizeof(cases[0]); c++) {
+        int hd = cases[c].hd, n = 4 * hd, capacity = n + 4;
+        BnGPUActivationPlan plan = {0};
+        float rope = 1.0f;
+        plan.dim = plan.vocab_size = plan.hb_elements = plan.xb2_elements = capacity;
+        plan.n_layers = plan.n_heads = 1; plan.seq_len = 2;
+        plan.kv_dim = plan.head_size = 2;
+        plan.rope_frequencies = &rope; plan.rope_frequency_count = 1;
+        assert(gpu->init_activations(gpu->ctx, &plan) == 0);
+        float *q = malloc((size_t)capacity * sizeof(float));
+        float *k = malloc((size_t)capacity * sizeof(float));
+        float *out = malloc((size_t)capacity * sizeof(float));
+        float *kout = malloc((size_t)capacity * sizeof(float));
+        assert(q && k && out && kout);
+        for (int i = 0; i < capacity; i++) q[i] = k[i] = 12345.0f;
+        const float scales[] = {0.0f, 1e-8f, 1.0f, 1e10f};
+        for (int h = 0; h < 4; h++) for (int d = 0; d < hd; d++) {
+            float v = sinf((float)(h * hd + d + 1) * 0.13f) * scales[h];
+            q[1 + h * hd + d] = k[3 + h * hd + d] = v;
+        }
+        BnGPUOp op = {0};
+        op.op_code = BN_GPU_CODE_SSM_L2NORM;
+        op.buf_in = BN_GPU_VALUE_XB; op.buf_aux = BN_GPU_VALUE_HB;
+        op.rows = 4; op.p[0] = hd; op.p[1] = 1; op.p[2] = 3;
+        op.p[3] = f32_bits(cases[c].eps);
+        // Switch topology parameters within the same allocation generation.
+        // The final RMS repeat must also remain correct after legacy L2.
+        const int modes[] = {BN_GPU_SSM_QK_NORM_RMS_SCALED,
+                             BN_GPU_SSM_QK_NORM_CLAMPED_L2,
+                             BN_GPU_SSM_QK_NORM_RMS_SCALED};
+        for (unsigned m = 0; m < 3; m++) {
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_XB, q,
+                (size_t)capacity * sizeof(float), 0) == 0);
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_HB, k,
+                (size_t)capacity * sizeof(float), 0) == 0);
+            op.p[4] = modes[m];
+            assert(gpu->execute(gpu->ctx, &op, 1, BN_GPU_VALUE_XB, out, capacity) == 0);
+            assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_HB, kout,
+                (size_t)capacity * sizeof(float), 0) == 0);
+            if (m != 1) {
+                uint64_t hash = cuda_test_float_bits_hash(out + 1, n);
+                if (hash != cases[c].hash)
+                    fprintf(stderr, "CUDA GDN hd=%d case=%u hash=%016llx expected=%016llx\n",
+                        hd, c, (unsigned long long)hash, (unsigned long long)cases[c].hash);
+                assert(hash == cases[c].hash);
+                assert(memcmp(out + 1, kout + 3, (size_t)n*sizeof(float)) == 0);
+            }
+            assert(out[0] == 12345.0f && kout[0] == 12345.0f &&
+                   kout[1] == 12345.0f && kout[2] == 12345.0f);
+            for (int i = n+1; i < capacity; i++) assert(out[i] == 12345.0f);
+            assert(kout[n+3] == 12345.0f);
+        }
+        free(kout); free(out); free(k); free(q);
+        gpu->free_activations(gpu->ctx);
+    }
+    printf("CUDA GDN RMS reference cases PASSED\n");
+}
+
+static void run_ssm_conv_rms_reference_case(BnGPUBackend *gpu) {
+    // Independent strided GGML CUDA graph: reference_cuda_gdn_convnorm.c.
+    const struct { int hd; float eps; uint64_t hash; } cases[] = {
+        {7, 1e-6f, UINT64_C(0xd209fd14d3aa556c)},
+        {128, 1e-6f, UINT64_C(0xc7208109e08fde45)},
+        {1024, 1e-6f, UINT64_C(0x10766cab5604f76f)},
+        {7, 1e-5f, UINT64_C(0xf30b2c3a892fe8a0)},
+        {128, 1e-5f, UINT64_C(0xa740c0a29afb61d7)},
+        {1024, 1e-5f, UINT64_C(0x3be9dd8813cd8aeb)},
+    };
+    assert(gpu->ssm_conv_l2norm_batch);
+    for (unsigned c = 0; c < sizeof(cases)/sizeof(cases[0]); c++) {
+        int hd = cases[c].hd, width = 5*hd, count = 3*width;
+        float *x = malloc((size_t)(count+2)*sizeof(float));
+        float *raw = malloc((size_t)count*sizeof(float));
+        float *state = calloc((size_t)width+2, sizeof(float));
+        float *weights = calloc((size_t)width*2, sizeof(float));
+        assert(x && raw && state && weights);
+        x[0] = x[count+1] = state[0] = state[width+1] = 12345.0f;
+        for (int t = 0; t < 3; t++) for (int i = 0; i < width; i++)
+            raw[t*width+i] = x[1+t*width+i] = sinf((float)(t*width+i+1)*0.13f) *
+                (t == 0 ? 1e-8f : t == 1 ? 1.0f : 1e4f);
+        for (int i = 0; i < width; i++) weights[2*i+1] = 1.0f;
+        void *weight = gpu->buffer_create(gpu->ctx, weights,
+            (size_t)width*2*sizeof(float), BN_GGUF_TENSOR_F32, width, 2);
+        assert(weight);
+        assert(gpu->ssm_conv_l2norm_batch(gpu->ctx, x+1, state+1, weight,
+            3, width, 2, 2, hd, cases[c].eps, BN_GPU_SSM_QK_NORM_RMS_SCALED) == 0);
+        uint64_t hash = cuda_test_float_bits_hash(x+1, count);
+        if (hash != cases[c].hash)
+            fprintf(stderr, "CUDA conv RMS hd=%d hash=%016llx expected=%016llx\n",
+                hd, (unsigned long long)hash, (unsigned long long)cases[c].hash);
+        assert(hash == cases[c].hash);
+        assert(memcmp(state+1, raw+2*width, (size_t)width*sizeof(float)) == 0);
+        assert(x[0] == 12345.0f && x[count+1] == 12345.0f &&
+               state[0] == 12345.0f && state[width+1] == 12345.0f);
+        gpu->buffer_destroy(gpu->ctx, weight);
+        free(weights);free(state);free(raw);free(x);
+    }
+    printf("CUDA SSM conv RMS reference cases PASSED\n");
+}
+
+static void run_ssm_qk_rms_reference_modes(void) {
+    for (int mode = 0; mode < 3; mode++) {
+        BnBackendRuntimePolicy policy = {0};
+        assert(bn_backend_runtime_policy_set(&policy, mode == 2 ?
+            "BN_CUDA_ENABLE_GRAPH_EXEC" : "BN_CUDA_DISABLE_GRAPH_EXEC", "1", 1) == 0);
+        if (mode == 0)
+            assert(bn_backend_runtime_policy_set(&policy,
+                "BN_CUDA_DISABLE_STREAM_EXEC", "1", 1) == 0);
+        BnGPUBackend *backend = bn_gpu_cuda_create_with_policy(&policy);
+        assert(backend);
+        bn_backend_runtime_policy_free(&policy);
+        run_ssm_qk_rms_reference_case(backend);
+        bn_gpu_cuda_destroy(backend);
+    }
+}
+
 static void run_ssm_l2_epsilon_case(BnGPUBackend *gpu) {
     const int widths[] = {128, 1024};
     const float epsilons[] = {1e-8f, 1e-6f, 1e-3f};
@@ -5110,6 +11114,84 @@ static void run_ssm_l2_epsilon_case(BnGPUBackend *gpu) {
         free(q); free(k); free(out);
         gpu->free_activations(gpu->ctx);
     }
+}
+
+/* Nonzero keys in retained convolution history make the normalization
+ * choice observable in recurrent state even with zero output projections.
+ * Independent oracle: reference_cuda_gdn_prefill_norm.c. */
+static void run_ssm_prefill_norm_reference_cases(void) {
+    const struct { int nt; float eps; uint64_t hash; } cases[] = {
+        {2, 1e-6f, UINT64_C(0x3e77ed9f76bd789f)},
+        {9, 1e-6f, UINT64_C(0x3e77ed9f76bd789f)},
+        {2, 1e-3f, UINT64_C(0xcb794238b787d629)},
+        {9, 1e-3f, UINT64_C(0xcb794238b787d629)},
+    };
+    enum {dim=256, h=128, qkv=384, ns=h*h};
+    for (int scan = 0; scan < 2; scan++) {
+        BnBackendRuntimePolicy policy = {0};
+        if (!scan) assert(bn_backend_runtime_policy_set(&policy,
+            "BN_CUDA_DISABLE_SSM_PREFILL_SCAN", "1", 1) == 0);
+        BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy); assert(gpu);
+        bn_backend_runtime_policy_free(&policy);
+        for (unsigned c = 0; c < sizeof(cases)/sizeof(cases[0]); c++) {
+            int nt = cases[c].nt;
+            BnGPUActivationPlan plan = {0}; float rope = 1;
+            plan.dim = plan.xb2_elements = dim; plan.hb_elements = h;
+            plan.vocab_size = 32; plan.n_layers = plan.n_heads = 1;
+            plan.seq_len = nt+1; plan.head_size = plan.kv_dim = 2;
+            plan.rope_frequencies = &rope; plan.rope_frequency_count = 1;
+            plan.uses_hybrid_ssm = plan.ssm_layer_count = 1;
+            plan.ssm_state_size = plan.ssm_inner_size = h;
+            plan.ssm_time_step_rank = plan.ssm_group_count = 1;
+            plan.ssm_conv_kernel = 2;
+            assert(gpu->init_activations(gpu->ctx, &plan) == 0);
+            float x[9*dim], out[9*dim+2], initial[qkv], conv[qkv*2];
+            float *zeros = calloc(ns, sizeof(float));
+            float *got = malloc((ns+2)*sizeof(float)); assert(zeros && got);
+            for (int i = 0; i < nt*dim; i++) x[i] = 1.0f;
+            for (int i = 0; i < qkv; i++) {
+                initial[i] = sinf((float)(i+1)*0.13f)*(i<2*h?0.001f:0.125f);
+                conv[2*i] = 1.0f; conv[2*i+1] = 0.0f;
+            }
+            void *buffers[] = {
+                ssm_gateup_test_buffer(gpu,qkv,dim,0),
+                ssm_gateup_test_buffer(gpu,h,dim,0),
+                ssm_gateup_test_buffer(gpu,1,dim,0),
+                ssm_gateup_test_buffer(gpu,1,dim,0),
+                ssm_gateup_test_buffer(gpu,dim,h,0),
+                ssm_gateup_test_buffer(gpu,dim,1,1),
+                gpu->buffer_create(gpu->ctx,conv,sizeof(conv),BN_GGUF_TENSOR_F32,qkv,2),
+                ssm_gateup_test_buffer(gpu,1,1,0),
+                ssm_gateup_test_buffer(gpu,1,1,0),
+                ssm_gateup_test_buffer(gpu,h,1,1),
+            };
+            for (unsigned i=0;i<sizeof(buffers)/sizeof(buffers[0]);i++)assert(buffers[i]);
+            for (int mode = 0; mode < 2; mode++) {
+                assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_SSM_STATE,zeros,ns*sizeof(float),0)==0);
+                assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_SSM_CONV_STATE,initial,sizeof(initial),0)==0);
+                out[0]=out[nt*dim+1]=got[0]=got[ns+1]=12345.0f;
+                int did=0;
+                assert(gpu->prefill_ssm_layer(gpu->ctx,out+1,buffers[0],buffers[1],
+                    buffers[2],buffers[3],NULL,NULL,buffers[4],buffers[5],buffers[6],
+                    buffers[7],buffers[8],buffers[9],NULL,NULL,NULL,NULL,x,nt,dim,qkv,h,
+                    1,h,1,h,2,0,0,0,0,0,0,0,0,0,0,0,0,cases[c].eps,
+                    mode ? BN_GPU_SSM_QK_NORM_RMS_SCALED : BN_GPU_SSM_QK_NORM_CLAMPED_L2,&did)==0);
+                assert(!did);
+                assert(gpu->read_activation(gpu->ctx,BN_GPU_VALUE_SSM_STATE,got+1,ns*sizeof(float),0)==0);
+                uint64_t hash=cuda_test_float_bits_hash(got+1,ns);
+                if(mode && hash!=cases[c].hash)
+                    fprintf(stderr,"SSM norm scan=%d case=%u hash=%016llx expected=%016llx\n",
+                        scan,c,(unsigned long long)hash,(unsigned long long)cases[c].hash);
+                if(mode)assert(hash==cases[c].hash);else assert(hash!=cases[c].hash);
+                assert(memcmp(out+1,x,(size_t)nt*dim*sizeof(float))==0);
+                assert(out[0]==12345.0f && out[nt*dim+1]==12345.0f && got[0]==12345.0f && got[ns+1]==12345.0f);
+            }
+            for(unsigned i=0;i<sizeof(buffers)/sizeof(buffers[0]);i++)gpu->buffer_destroy(gpu->ctx,buffers[i]);
+            free(got);free(zeros);gpu->free_activations(gpu->ctx);
+        }
+        bn_gpu_cuda_destroy(gpu);
+    }
+    printf("CUDA fused prefill normalization state reference PASSED\n");
 }
 
 static void run_ssm_gate_composition_case(BnGPUBackend *gpu) {
@@ -5300,6 +11382,88 @@ static void run_gelu_gate_accuracy_case(BnGPUBackend *gpu) {
         }
     }
     gpu->free_activations(gpu->ctx);
+}
+
+static void run_moe_shared_math_reference_cases(BnGPUBackend *gpu) {
+    size_t words=0,cases=sizeof(cuda_moe_shared_math_reference)/sizeof(cuda_moe_shared_math_reference[0]);
+    for(size_t ci=0;ci<cases;ci++) {
+        const BnCudaMoeSharedMathReference *r=&cuda_moe_shared_math_reference[ci];
+        int dim=r->dim,rows=r->rows,capacity=dim>rows?dim:rows;
+        float *x=malloc((size_t)dim*4),*w=malloc((size_t)dim*4),*v=malloc((size_t)rows*4);
+        float *prior=malloc((size_t)rows*4),*guard=malloc(((size_t)rows+2)*4);assert(x&&w&&v&&prior&&guard);
+        for(int d=0;d<dim;d++){x[d]=(float)((d*37+r->seed)%251-125)/(r->mode?33.0f:259.0f);w[d]=(float)((d*19+r->seed*3)%257-128)/1319.0f;}
+        for(int d=0;d<rows;d++){v[d]=(float)((d*13+r->seed)%257-128)/67.0f;prior[d]=(float)((d*11+r->seed)%239-119)/157.0f;}
+        BnGPUActivationPlan plan={0};plan.dim=plan.hb_elements=plan.xb2_elements=capacity;
+        plan.vocab_size=rows;plan.n_layers=plan.n_heads=plan.seq_len=plan.head_size=1;
+        assert(gpu->init_activations(gpu->ctx,&plan)==0);
+        void *weight=r->mode?NULL:gpu->buffer_create(gpu->ctx,w,(size_t)dim*4,BN_GGUF_TENSOR_F32,1,dim);
+        assert(r->mode||weight);
+        int host=bn_transformer_gpu_moe_shared_host_reference_enabled(gpu,1);
+        BnGPUOp ops[32]={{0}};int input=r->mode?BN_GPU_VALUE_HB:BN_GPU_VALUE_XB;
+        for(int i=0;i<31;i++){ops[i].op_code=BN_GPU_CODE_COPY;ops[i].buf_in=input;ops[i].buf_out=BN_GPU_VALUE_SCRATCH;ops[i].p[2]=dim;}
+        BnGPUOp *op=&ops[31];
+        if(r->mode) {
+            op->op_code=BN_GPU_CODE_SILU_GATE;op->buf_in=BN_GPU_VALUE_HB;op->buf_aux=BN_GPU_VALUE_HB2;op->p[0]=rows;
+            op->flags=BN_GPU_OP_FLAG_REFERENCE_SILU|(host?BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION:0);
+        } else {
+            op->op_code=BN_GPU_CODE_WEIGHTED_ADD_SIGMOID;op->W_buf=weight;
+            op->buf_in=BN_GPU_VALUE_LOGITS;op->buf_aux=BN_GPU_VALUE_XB2;op->p[0]=rows;op->p[2]=r->reset;
+            op->p[3]=dim;op->p[4]=r->complement;op->p[5]=host?BN_GPU_WEIGHTED_ADD_SIGMOID_REFERENCE_DOT:0;
+        }
+        for(int pass=0;pass<3;pass++) {
+            for(int i=0;i<rows+2;i++)guard[i]=12345.0f;
+            assert(gpu->write_activation(gpu->ctx,input,x,(size_t)dim*4,0)==0);
+            assert(gpu->write_activation(gpu->ctx,r->mode?BN_GPU_VALUE_HB2:BN_GPU_VALUE_XB2,v,(size_t)rows*4,0)==0);
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_LOGITS,prior,(size_t)rows*4,0)==0);
+            assert(gpu->execute(gpu->ctx,pass?ops:op,pass?32:1,r->mode?BN_GPU_VALUE_HB:BN_GPU_VALUE_LOGITS,guard+1,rows)==0);
+            uint64_t hash=cuda_test_float_bits_hash(guard+1,rows);
+            if(hash!=r->hash)fprintf(stderr,"MoE shared math case=%zu mode=%d pass=%d got=%016llx expected=%016llx\n",ci,r->mode,pass,(unsigned long long)hash,(unsigned long long)r->hash);
+            assert(hash==r->hash);assert(guard[0]==12345.0f&&guard[rows+1]==12345.0f);words+=(size_t)rows;
+        }
+        if(weight)gpu->buffer_destroy(gpu->ctx,weight);
+        gpu->free_activations(gpu->ctx);free(x);free(w);free(v);free(prior);free(guard);
+    }
+    printf("CUDA MoE shared math reference PASSED: %zu cases, %zu words\n",cases,words);
+}
+
+static void run_moe_weighted_sum_reference_cases(BnGPUBackend *gpu) {
+    size_t words=0,cases=sizeof(cuda_moe_weighted_sum_reference)/sizeof(cuda_moe_weighted_sum_reference[0]);
+    for(size_t ci=0;ci<cases;ci++) {
+        const BnCudaMoeWeightedSumReference *r=&cuda_moe_weighted_sum_reference[ci];
+        size_t n=(size_t)r->dim*r->k,outputs=(size_t)r->dim*r->nt;
+        float *x=malloc(n*sizeof(float)),*guard=malloc((outputs+2)*sizeof(float));assert(x&&guard);
+        BnGPUActivationPlan plan={0};plan.dim=plan.vocab_size=plan.xb2_elements=r->dim;
+        plan.hb_elements=n;plan.n_layers=plan.n_heads=plan.seq_len=plan.head_size=1;
+        assert(gpu->init_activations(gpu->ctx,&plan)==0);
+        for(int pass=0;pass<3;pass++) {
+            for(size_t i=0;i<outputs+2;i++)guard[i]=12345.0f;
+            for(int t=0;t<r->nt;t++) {
+                BnGPUOp ops[64]={{0}};int count=0;
+                for(int pad=0;pass&&pad<32;pad++) {
+                    ops[count].op_code=BN_GPU_CODE_COPY;ops[count].buf_in=BN_GPU_VALUE_HB;
+                    ops[count].buf_out=BN_GPU_VALUE_SCRATCH;ops[count++].p[2]=r->dim;
+                }
+                for(int s=0;s<r->k;s++) {
+                    for(int d=0;d<r->dim;d++)x[(size_t)s*r->dim+d]=(float)((d*37+s*19+t*11+r->seed)%251-125)/259.0f;
+                    BnGPUOp *copy=&ops[count++];copy->op_code=BN_GPU_CODE_COPY;copy->buf_in=BN_GPU_VALUE_HB;
+                    copy->buf_out=BN_GPU_VALUE_XB2;copy->p[0]=s*r->dim;copy->p[2]=r->dim;
+                    BnGPUOp *add=&ops[count++];add->op_code=BN_GPU_CODE_WEIGHTED_ADD;
+                    add->buf_in=BN_GPU_VALUE_LOGITS;add->buf_aux=BN_GPU_VALUE_XB2;add->p[0]=r->dim;
+                    add->p[1]=f32_bits((float)((t*3+s*5+r->seed)%23+1)/29.0f);add->p[2]=s==0;
+                    if(bn_transformer_gpu_moe_fused_weighted_sum_enabled(gpu,r->k,0)) {
+                        add->p[3]=f32_bits(1.0f);add->p[4]=BN_GPU_WEIGHTED_ADD_SEPARATE_SCALE|BN_GPU_WEIGHTED_ADD_FMA;
+                    }
+                }
+                assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_HB,x,n*sizeof(float),0)==0);
+                assert(gpu->execute(gpu->ctx,ops,count,BN_GPU_VALUE_LOGITS,guard+1+(size_t)t*r->dim,r->dim)==0);
+            }
+            uint64_t hash=cuda_test_float_bits_hash(guard+1,outputs);
+            if(hash!=r->hash)fprintf(stderr,"MoE weighted sum case=%zu pass=%d got=%016llx expected=%016llx\n",ci,pass,(unsigned long long)hash,(unsigned long long)r->hash);
+            assert(hash==r->hash);assert(guard[0]==12345.0f&&guard[outputs+1]==12345.0f);words+=outputs;
+        }
+        gpu->free_activations(gpu->ctx);free(x);free(guard);
+    }
+    printf("CUDA MoE weighted sum reference PASSED: %zu cases, %zu words\n",cases,words);
 }
 
 static void run_sigmoid_gate_accuracy_case(BnGPUBackend *gpu) {
@@ -5650,6 +11814,246 @@ static void run_hc_combine_reference_cases(BnGPUBackend *gpu) {
     printf("CUDA HC combine reference PASSED: %zu cases, %zu words\n", cases, words);
 }
 
+/* Pointer geometry across token rows and the portable CUDA y-grid boundary.
+ * Gates are zero, so sigmoid is exactly 1/2 and post scatter exactly one.
+ * Binary-fraction inputs give independent, exact CPU arithmetic references. */
+static void *hc_chain_test_weight(BnGPUBackend *gpu,int rows,int cols,int type,int seed) {
+    size_t count=(size_t)rows*cols;
+    size_t bytes=type==BN_GGUF_TENSOR_Q8_0?count/32*34:count*sizeof(float);
+    uint8_t *data=malloc(bytes);assert(data);
+    if(type==BN_GGUF_TENSOR_Q8_0) {
+        for(size_t b=0;b<bytes/34;b++) {
+            uint16_t scale=(uint16_t)(0x1800+(b+seed)%17*37);memcpy(data+b*34,&scale,2);
+            for(int j=0;j<32;j++)data[b*34+2+j]=(uint8_t)((int)((b*19+j*23+seed)%255)-127);
+        }
+    } else for(size_t j=0;j<count;j++)((float *)data)[j]=sinf((float)(j+seed)*0.17f)*0.02f;
+    void *buffer=gpu->buffer_create(gpu->ctx,data,bytes,type,rows,cols);assert(buffer);
+    free(data);return buffer;
+}
+
+/* Coherence against the established staged GPU API, with all its intermediate
+ * rounding preserved. Independent Q8/HC references qualify those primitives. */
+static void run_hc_prefill_chain_cases(BnGPUBackend *shared) {
+    size_t words=0;int cases=0;const int tokens[4]={4,9,129,1047};
+    for(int fused=0;fused<2;fused++) {
+        BnBackendRuntimePolicy policy={0};
+        assert(bn_backend_runtime_policy_clone(&policy,&shared->runtime_policy)==0);
+        assert(bn_backend_runtime_policy_set(&policy,"BN_CUDA_ENABLE_FUSED_HC_MEAN",fused?"1":"0",1)==0);
+        BnGPUBackend *gpu=bn_gpu_cuda_create_with_policy(&policy);
+        bn_backend_runtime_policy_free(&policy);assert(gpu&&gpu->hyper_connection_prefill_batch);
+        for(int shape=0;shape<9;shape++) {
+            int actual=shape==8,quant=shape>=4;
+            int nt=actual?33:tokens[shape%4],dim=actual?2560:quant?64:32;
+            int streams=quant?4:3,rank=actual?320:quant?32:17,wide=dim*streams;
+            int type=quant?BN_GGUF_TENSOR_Q8_0:BN_GGUF_TENSOR_F32;
+            size_t nx=(size_t)nt*wide,nlow=(size_t)nt*rank,nout=(size_t)nt*dim,ni=(size_t)nt*streams;
+            float *x=malloc(nx*4),*nw=malloc((size_t)wide*4),*norm=malloc(nx*4);
+            float *low=malloc(nlow*4),*gates=malloc(nx*4),*expected=malloc(nout*4),*ei=malloc(ni*4);
+            float *got=malloc((nout+2)*4),*gi=malloc((ni+2)*4);
+            assert(x&&nw&&norm&&low&&gates&&expected&&ei&&got&&gi);
+            for(size_t j=0;j<nx;j++)x[j]=sinf((float)(j%7919)*0.13f);
+            for(int j=0;j<wide;j++)nw[j]=1.f+cosf((float)j*0.09f)*0.1f;
+            void *norm_w=gpu->buffer_create(gpu->ctx,nw,(size_t)wide*4,BN_GGUF_TENSOR_F32,wide,1);assert(norm_w);
+            void *down=hc_chain_test_weight(gpu,rank,wide,type,3);
+            void *up=hc_chain_test_weight(gpu,wide,rank,type,19);
+            void *iw=hc_chain_test_weight(gpu,streams,wide,BN_GGUF_TENSOR_F32,37);
+            assert(bn_gpu_backend_rmsnorm_grouped_batch(gpu,norm,norm_w,x,nt,streams,dim,1e-6f)==0);
+            assert(bn_gpu_backend_matmul(gpu,low,down,norm,rank,wide,nt,type)==0);
+            assert(bn_gpu_backend_hyper_connection_scaled_silu_batch(gpu,low,(int)nlow,1.f/streams)==0);
+            assert(bn_gpu_backend_matmul(gpu,gates,up,low,wide,rank,nt,type)==0);
+            assert(bn_gpu_backend_hyper_connection_mix_batch(gpu,expected,norm,gates,nt,dim,streams)==0);
+            assert(bn_gpu_backend_matmul(gpu,ei,iw,norm,streams,wide,nt,BN_GGUF_TENSOR_F32)==0);
+            for(size_t j=0;j<nout+2;j++)got[j]=12345.f;
+            for(size_t j=0;j<ni+2;j++)gi[j]=-12345.f;
+            assert(bn_gpu_backend_hyper_connection_prefill_batch(gpu,got+1,gi+1,x,norm_w,down,up,iw,3,dim,streams,rank,1e-6f)==-1);
+            for(size_t j=0;j<nout+2;j++)assert(got[j]==12345.f);
+            for(size_t j=0;j<ni+2;j++)assert(gi[j]==-12345.f);
+            assert(bn_gpu_backend_hyper_connection_prefill_batch(gpu,got+1,gi+1,x,norm_w,down,up,iw,nt,dim,streams,rank,1e-6f)==0);
+            assert(memcmp(got+1,expected,nout*4)==0&&memcmp(gi+1,ei,ni*4)==0);
+            assert(got[0]==12345.f&&got[nout+1]==12345.f&&gi[0]==-12345.f&&gi[ni+1]==-12345.f);
+            words+=nout+ni;cases++;
+            gpu->buffer_destroy(gpu->ctx,iw);gpu->buffer_destroy(gpu->ctx,up);
+            gpu->buffer_destroy(gpu->ctx,down);gpu->buffer_destroy(gpu->ctx,norm_w);
+            free(gi);free(got);free(ei);free(expected);free(gates);free(low);free(norm);free(nw);free(x);
+        }
+        bn_gpu_cuda_destroy(gpu);
+    }
+    printf("CUDA HC prefill chain coherence PASSED: %d cases, %zu words\n",cases,words);
+}
+
+static void run_hc_batched_launch_cases(BnGPUBackend *shared) {
+    size_t words = 0;
+    for (int fused = 0; fused <= 1; fused++) {
+        BnBackendRuntimePolicy policy = {0};
+        assert(bn_backend_runtime_policy_clone(&policy, &shared->runtime_policy) == 0);
+        assert(bn_backend_runtime_policy_set(&policy,"BN_CUDA_ENABLE_FUSED_HC_MEAN",fused?"1":"0",1)==0);
+        assert(bn_backend_runtime_policy_set(&policy,"BN_CUDA_ENABLE_FUSED_HC_POST",fused?"1":"0",1)==0);
+        BnGPUBackend *gpu=bn_gpu_cuda_create_with_policy(&policy);
+        bn_backend_runtime_policy_free(&policy);assert(gpu);
+        for(int shape=0;shape<2;shape++) {
+            int nt=shape?65537:257,dim=shape?3:259,streams=3;
+            size_t count=(size_t)nt*dim,wide=count*streams;
+            float *norm=malloc(wide*4),*gate=calloc(wide,4);
+            float *out=malloc((count+2)*4),*res=malloc((wide+2)*4);
+            float *block=malloc(count*4),*inject=calloc((size_t)nt*streams,4);
+            assert(norm&&gate&&out&&res&&block&&inject);
+            for(size_t j=0;j<wide;j++)norm[j]=(float)(j%17+1)/32.f;
+            out[0]=out[count+1]=res[0]=res[wide+1]=12345.f;
+            assert(bn_gpu_backend_hyper_connection_mix_batch(gpu,out+1,norm,gate,nt,dim,streams)==0);
+            for(int t=0;t<nt;t++)for(int j=0;j<dim;j++) {
+                float sum=0.f;
+                for(int k=0;k<streams;k++)sum+=norm[((size_t)t*streams+k)*dim+j]*0.5f;
+                float expected=sum*(1.f/streams);
+                assert(memcmp(out+1+(size_t)t*dim+j,&expected,4)==0);
+            }
+            assert(out[0]==12345.f&&out[count+1]==12345.f);
+            for(size_t j=0;j<count;j++)block[j]=(float)(j%13+1)/64.f;
+            for(size_t j=0;j<wide;j++)res[j+1]=(float)((int)(j%19)-9)/128.f;
+            assert(bn_gpu_backend_hyper_connection_combine_batch(gpu,res+1,block,inject,nt,dim,streams)==0);
+            for(size_t j=0;j<wide;j++) {
+                size_t row=j/((size_t)dim*streams),col=j%dim;
+                float expected=(float)((int)(j%19)-9)/128.f+block[row*dim+col];
+                assert(memcmp(res+j+1,&expected,4)==0);
+            }
+            assert(res[0]==12345.f&&res[wide+1]==12345.f);
+            words+=count+wide;
+            free(inject);free(block);free(res);free(out);free(gate);free(norm);
+        }
+        bn_gpu_cuda_destroy(gpu);
+    }
+    printf("CUDA HC batched launch reference PASSED: 4 cases, %zu words\n",words);
+}
+
+static void run_hc_fused_mean_reference_cases(BnGPUBackend *shared) {
+    BnBackendRuntimePolicy policy = {0};
+    assert(bn_backend_runtime_policy_clone(&policy, &shared->runtime_policy) == 0);
+    assert(bn_backend_runtime_policy_set(&policy, "BN_CUDA_ENABLE_FUSED_HC_MEAN", "1", 1) == 0);
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(gpu);
+    size_t words = 0;
+    size_t cases = sizeof(cuda_hc_fused_mean_reference) / sizeof(cuda_hc_fused_mean_reference[0]);
+    for (size_t ci = 0; ci < cases; ci++) {
+        const BnCudaHCFusedMeanReference *r = &cuda_hc_fused_mean_reference[ci];
+        size_t count = (size_t)r->dim * r->streams * r->nt;
+        size_t outputs = (size_t)r->dim * r->nt;
+        float *x = malloc(count * sizeof(float)), *gate = malloc(count * sizeof(float));
+        float *guard = malloc((outputs + 2) * sizeof(float));
+        assert(x && gate && guard);
+        guard[0] = guard[outputs + 1] = 12345.0f;
+        for (size_t i = 0; i < count; i++) {
+            x[i] = (float)((int)((i * 37 + r->seed * 11) % 251) - 125) / 259.0f * r->magnitude;
+            gate[i] = (float)((int)((i * 19 + r->seed * 13) % 257) - 128) / 33.0f * r->magnitude;
+        }
+        assert(bn_gpu_backend_hyper_connection_mix_batch(gpu, guard + 1, x, gate, r->nt, r->dim, r->streams) == 0);
+        uint64_t hash = cuda_test_float_bits_hash(guard + 1, outputs);
+        if (hash != r->hash) fprintf(stderr, "fused HC case %zu got %016llx expected %016llx\n", ci, (unsigned long long)hash, (unsigned long long)r->hash);
+        assert(hash == r->hash);
+        BnConfig cfg = {0};
+        cfg.dim = r->dim; cfg.hidden_dim = r->dim; cfg.n_layers = 1;
+        cfg.n_heads = r->dim / 64; cfg.n_kv_heads = 1; cfg.head_size = 64;
+        cfg.kv_dim = 64; cfg.seq_len = 8; cfg.vocab_size = 16;
+        cfg.hyper_connection_count = r->streams; cfg.hyper_connection_rank = r->dim;
+        cfg.rope_theta = BN_DEFAULT_ROPE_THETA;
+        assert(init_test_activations(gpu, &cfg) == 0);
+        BnGPUOp op = {0};
+        op.op_code = BN_GPU_CODE_HC_GATED_REDUCE;
+        op.buf_in = BN_GPU_VALUE_HC_NORM; op.buf_aux = BN_GPU_VALUE_HC_GATE;
+        op.buf_out = BN_GPU_VALUE_X; op.p[0] = r->dim; op.p[1] = r->streams;
+        op.p[2] = (uint32_t)bn_transformer_gpu_hyper_host_reference_order(gpu, 0);
+        size_t wide = (size_t)r->dim * r->streams;
+        for (int t = 0; t < r->nt; t++) {
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_HC_NORM,
+                x + t * wide, wide * sizeof(float), 0) == 0);
+            assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_HC_GATE,
+                gate + t * wide, wide * sizeof(float), 0) == 0);
+            assert(gpu->execute(gpu->ctx, &op, 1, BN_GPU_VALUE_X,
+                guard + 1 + (size_t)t * r->dim, r->dim) == 0);
+        }
+        assert(cuda_test_float_bits_hash(guard + 1, outputs) == r->hash);
+        gpu->free_activations(gpu->ctx);
+        assert(guard[0] == 12345.0f && guard[outputs + 1] == 12345.0f);
+        words += 2 * outputs;
+        free(guard); free(gate); free(x);
+    }
+    bn_gpu_cuda_destroy(gpu);
+    printf("CUDA fused HC mean reference PASSED: %zu cases, %zu words\n", cases, words);
+}
+
+static void run_hc_fused_post_reference_cases(BnGPUBackend *shared) {
+    BnBackendRuntimePolicy policy = {0};
+    assert(bn_backend_runtime_policy_clone(&policy, &shared->runtime_policy) == 0);
+    assert(bn_backend_runtime_policy_set(&policy, "BN_CUDA_ENABLE_FUSED_HC_POST", "1", 1) == 0);
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(gpu);
+    size_t words = 0;
+    size_t cases = sizeof(cuda_hc_fused_post_reference) / sizeof(cuda_hc_fused_post_reference[0]);
+    for (size_t ci = 0; ci < cases; ci++) {
+        const BnCudaHCFusedPostReference *r = &cuda_hc_fused_post_reference[ci];
+        size_t count = (size_t)r->dim * r->streams * r->nt;
+        size_t outputs = count;
+        float *x = malloc(count * sizeof(float));
+        float *gate = malloc((size_t)r->streams * r->nt * sizeof(float));
+        float *block = malloc((size_t)r->dim * r->nt * sizeof(float));
+        float *guard = malloc((outputs + 2) * sizeof(float));
+        assert(x && gate && block && guard);
+        guard[0] = guard[outputs + 1] = 12345.0f;
+        for (size_t i = 0; i < count; i++) {
+            x[i] = (float)((int)((i * 37 + r->seed * 11) % 251) - 125) / 259.0f * r->magnitude;
+
+        }
+        for (size_t i = 0; i < (size_t)r->dim * r->nt; i++)
+            block[i] = (float)((int)((i * 43 + r->seed * 7) % 241) - 120) / 263.0f * r->magnitude;
+        for (size_t i = 0; i < (size_t)r->streams * r->nt; i++)
+            gate[i] = (float)((int)((i * 19 + r->seed * 13) % 257) - 128) / 33.0f * r->magnitude;
+        memcpy(guard + 1, x, count * sizeof(float));
+        assert(bn_gpu_backend_hyper_connection_combine_batch(gpu, guard + 1, block, gate, r->nt, r->dim, r->streams) == 0);
+        uint64_t hash = cuda_test_float_bits_hash(guard + 1, outputs);
+        if (hash != r->hash) fprintf(stderr, "fused HC case %zu got %016llx expected %016llx\n", ci, (unsigned long long)hash, (unsigned long long)r->hash);
+        assert(hash == r->hash);
+        BnConfig cfg = {0};
+        cfg.dim = r->dim; cfg.hidden_dim = r->dim; cfg.n_layers = 1;
+        cfg.n_heads = r->dim / 64; cfg.n_kv_heads = 1; cfg.head_size = 64;
+        cfg.kv_dim = 64; cfg.seq_len = 8; cfg.vocab_size = 16;
+        cfg.hyper_connection_count = r->streams; cfg.hyper_connection_rank = r->dim;
+        cfg.rope_theta = BN_DEFAULT_ROPE_THETA;
+        assert(init_test_activations(gpu, &cfg) == 0);
+        BnGPUOp op = {0};
+        op.op_code = BN_GPU_CODE_HC_COMBINE;
+        op.buf_in = BN_GPU_VALUE_HC_RESIDUAL; op.buf_aux = BN_GPU_VALUE_XB;
+        op.buf_out = BN_GPU_VALUE_HC_RESIDUAL; op.p[0] = r->dim; op.p[1] = r->streams;
+        size_t wide = (size_t)r->dim * r->streams;
+        BnGPUOp captured[32] = {0};
+        for (int j = 0; j < 31; j++) {
+            captured[j].op_code = BN_GPU_CODE_COPY;
+            captured[j].buf_in = BN_GPU_VALUE_HC_RESIDUAL;
+            captured[j].buf_out = BN_GPU_VALUE_SCRATCH;
+            captured[j].p[2] = r->dim;
+        }
+        captured[31] = op;
+        for (int pass = 0; pass < 3; pass++) {
+            for (int t = 0; t < r->nt; t++) {
+                assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_HC_RESIDUAL,
+                    x + t * wide, wide * sizeof(float), 0) == 0);
+                assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_HC_INJECT,
+                    gate + (size_t)t * r->streams, (size_t)r->streams * sizeof(float), 0) == 0);
+                assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_XB,
+                    block + (size_t)t * r->dim, (size_t)r->dim * sizeof(float), 0) == 0);
+                assert(gpu->execute(gpu->ctx, pass ? captured : &op, pass ? 32 : 1, BN_GPU_VALUE_HC_RESIDUAL,
+                    guard + 1 + (size_t)t * wide, (int)wide) == 0);
+            }
+            assert(cuda_test_float_bits_hash(guard + 1, outputs) == r->hash);
+        }
+        gpu->free_activations(gpu->ctx);
+        assert(guard[0] == 12345.0f && guard[outputs + 1] == 12345.0f);
+        words += 4 * outputs;
+        free(guard); free(gate); free(block); free(x);
+    }
+    bn_gpu_cuda_destroy(gpu);
+    printf("CUDA fused HC post reference PASSED: %zu cases, %zu words\n", cases, words);
+}
+
 static void run_hc_mixer_reference_cases(BnGPUBackend *gpu) {
     size_t words = 0;
     const size_t cases = sizeof(cuda_hc_mixer_reference) /
@@ -5752,6 +12156,8 @@ static void run_hc_rmsnorm_reference_cases(BnGPUBackend *gpu) {
         op.p[2] = f32_bits(1e-6f);
         guard[0] = guard[count + 1] = 12345.0f;
         for (int pass = 0; pass < 3; pass++) {
+            op.p[3] = (uint32_t)bn_transformer_gpu_hyper_host_reference_order(
+                gpu, pass != 1);
             assert(gpu->write_activation(
                 gpu->ctx, BN_GPU_VALUE_HC_RESIDUAL, input,
                 count * sizeof(float), 0) == 0);
@@ -5769,6 +12175,48 @@ static void run_hc_rmsnorm_reference_cases(BnGPUBackend *gpu) {
     }
     printf("CUDA HC RMSNorm reference PASSED: %zu cases, %zu words\n",
            cases, words);
+}
+
+#include "cuda_signed_sqrt_batch_reference.h"
+static void run_signed_sqrt_batch_reference_cases(BnGPUBackend *gpu,
+                                                 int force_legacy) {
+    size_t words = 0;
+    const size_t cases = sizeof(cuda_signed_sqrt_batch_reference) /
+                         sizeof(cuda_signed_sqrt_batch_reference[0]);
+    for (size_t c = 0; c < cases; c++) {
+        const BnCudaSignedSqrtBatchReference *r = &cuda_signed_sqrt_batch_reference[c];
+        size_t wide = (size_t)r->dim * 4;
+        float *key = malloc(wide * sizeof(float));
+        float *query = malloc(wide * sizeof(float));
+        float *value = malloc((size_t)r->dim * sizeof(float));
+        float *out = malloc(3 * (wide + 4) * sizeof(float));
+        assert(key && query && value && out);
+        const int rows[] = {0, r->tokens / 2, r->tokens - 1};
+        for (int j = 0; j < 3; j++) {
+            for (size_t i = 0; i < wide; i++) {
+                size_t at = (size_t)rows[j] * wide + i;
+                key[i] = (float)((int)((at*37+r->seed)%251)-125)/193.f;
+                query[i] = (float)((int)((at*71+r->seed+19)%257)-128)/239.f;
+            }
+            for (int i = 0; i < r->dim; i++) {
+                size_t at = (size_t)rows[j] * r->dim + i;
+                value[i] = (float)((int)((at*29+r->seed+11)%263)-131)/127.f;
+            }
+            float *token_out = out + (size_t)j * (wide + 4);
+            assert(gpu->signed_sqrt_gate(gpu->ctx, token_out, token_out + 4,
+                       key, query, value, r->dim, 4,
+                       force_legacy ? 512 : 0, r->tokens) == 0);
+        }
+        uint64_t hash = cuda_test_float_bits_hash(out, 3 * (wide + 4));
+        if (hash != r->hash)
+            fprintf(stderr, "signed-root batch case=%zu tokens=%d dim=%d got=%016llx expected=%016llx\n",
+                    c, r->tokens, r->dim, (unsigned long long)hash,
+                    (unsigned long long)r->hash);
+        assert(hash == r->hash);
+        words += 3 * (wide + 4);
+        free(key); free(query); free(value); free(out);
+    }
+    printf("CUDA signed-root batch geometry PASSED: %zu cases, %zu words\n", cases, words);
 }
 
 static void run_signed_sqrt_gate_reference_cases(BnGPUBackend *gpu) {
@@ -5806,7 +12254,8 @@ static void run_signed_sqrt_gate_reference_cases(BnGPUBackend *gpu) {
             assert(gpu->signed_sqrt_gate(
                 gpu->ctx, gate + (size_t)token * streams,
                 gated + key_off, key + key_off, query + key_off,
-                value + value_off, dim, streams, r->reduction_threads) == 0);
+                value + value_off, dim, streams, r->reduction_threads,
+                r->tokens) == 0);
         }
         assert(cuda_test_float_bits_hash(
                    gate, (size_t)r->tokens * streams) == r->gate_hash);
@@ -6814,6 +13263,9 @@ static void run_f32_matrix_reference_case(BnGPUBackend *gpu) {
         {257, 33, 16, UINT64_C(0x20ca70aa9f6a0459)},
         {257, 33, 17, UINT64_C(0x5eea3408ac10f6fb)},
         {257, 33, 129, UINT64_C(0x413c6ef9852d3f92)},
+        /* Pinned df18bee11 CUDA, reference_cuda_hc_f32.c. */
+        {10240, 4, 1, UINT64_C(0x1f408a295ddd73c5)},
+        {2560, 48, 1, UINT64_C(0x6071482cae8dc53e)},
     };
     for (size_t c = 0; c < sizeof(cases)/sizeof(cases[0]); c++) {
         int cols = cases[c].cols, rows = cases[c].rows, tokens = cases[c].tokens;
@@ -6852,6 +13304,14 @@ static void run_f32_matrix_reference_case(BnGPUBackend *gpu) {
             op.type = BN_GGUF_TENSOR_F32;
             op.rows = rows;
             op.cols = cols;
+            assert(gpu->execute(gpu->ctx, &op, 1, BN_GPU_VALUE_LOGITS,
+                out + 1, rows) == 0);
+            assert(cuda_test_float_bits_hash(out + 1, count) == cases[c].hash);
+            assert(out[0] == -12345.0f && out[count + 1] == -12345.0f);
+            op.flags = bn_transformer_gpu_hyper_projection_matvec_flags(
+                gpu, BN_GGUF_TENSOR_F32, 0);
+            if (op.flags & BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION)
+                op.flags |= BN_GPU_OP_FLAG_REFERENCE_WIDE_ACCUMULATION;
             assert(gpu->execute(gpu->ctx, &op, 1, BN_GPU_VALUE_LOGITS,
                 out + 1, rows) == 0);
             assert(cuda_test_float_bits_hash(out + 1, count) == cases[c].hash);
@@ -7159,6 +13619,30 @@ static void run_standalone_ffn_reference_case(BnGPUBackend *gpu) {
                     c, quant_only, alias, (unsigned long long)got, (unsigned long long)r->hash);
                 assert(got == r->hash);
                 assert(output[0] == -12345.0f && output[count + 1] == -12345.0f);
+                if (r->mode == 0 && quant_only && alias) {
+                    /* The split-expert callback must preserve the same
+                     * independent FFN contract, including stacked storage. */
+                    int *ids = malloc((size_t)nt * sizeof(int));
+                    float *weights = malloc((size_t)nt * sizeof(float));
+                    assert(ids && weights);
+                    for (int t = 0; t < nt; t++) { ids[t] = t; weights[t] = 1.0f; }
+                    BnGPUMoEPrefillExpert expert = {0};
+                    expert.gate_buf = bg; expert.up_buf = bu; expert.down_buf = bd;
+                    expert.use_gateup_split = r->stacked;
+                    int offset = 0;
+                    assert(gpu->execute(gpu->ctx, graph, 32, -1, NULL, 0) == 0);
+                    assert(gpu->moe_ffn_batch(gpu->ctx, output + 1, &expert, 1,
+                        &offset, &nt, ids, weights, input, nt, dim, hidden,
+                        r->gate_type, r->up_type, r->down_type, 0,
+                        NULL, NULL, NULL, NULL, 0, 0, 0, 0) == 0);
+                    uint64_t split_hash = cuda_test_float_bits_hash(output + 1, count);
+                    if (split_hash != r->hash) fprintf(stderr,
+                        "split expert FFN case=%zu hash=%016llx expected=%016llx\n",
+                        c, (unsigned long long)split_hash, (unsigned long long)r->hash);
+                    assert(split_hash == r->hash);
+                    assert(output[0] == -12345.0f && output[count + 1] == -12345.0f);
+                    free(ids); free(weights);
+                }
             }
             gpu->buffer_destroy(gpu->ctx, bg);
             if (bu) gpu->buffer_destroy(gpu->ctx, bu);
@@ -7249,6 +13733,122 @@ static void run_moe_residual_order_reference_case(BnGPUBackend *gpu) {
     free(down); free(gate); free(router); free(shared_weight);
     free(shared_down); free(shared_gate); free(norm);
     printf("CUDA MoE residual order reference cases PASSED\n");
+}
+
+static void run_split_expert_stream_case(void) {
+    /* Q4_K gate/up select streamed MMQ above five tokens; surrounding
+     * standalone kernels must order with them after graph execution.
+     * Matrices select x[0] exactly: output = silu(x[0]) * x[0]. */
+    const int lengths[] = {9, 17, 33};
+    const int dim = 2560, hidden = 640;
+    for (int c = 0; c < 3; c++) {
+        BnGPUBackend *gpu = bn_gpu_cuda_create();
+        assert(gpu && gpu->moe_ffn_batch);
+        int nt = lengths[c];
+        size_t count = (size_t)nt * dim, matrix = (size_t)dim * hidden;
+        BnBlockQ4K *gu = calloc(matrix / BN_QK_K, sizeof(*gu));
+        float *down = calloc(matrix, sizeof(float));
+        float *input = calloc(count, sizeof(float));
+        float *output = malloc((count + 2) * sizeof(float));
+        int *ids = malloc((size_t)nt * sizeof(int));
+        float *weights = malloc((size_t)nt * sizeof(float));
+        assert(gu && down && input && output && ids && weights);
+        gu[0].d = bn_fp32_to_fp16(1.0f);
+        gu[0].scales[0] = gu[0].qs[0] = 1;
+        float x = c == 0 ? 1.0f : c == 1 ? 0.5f : 0.25f;
+        for (int t = 0; t < nt; t++) {
+            input[(size_t)t * dim] = x;
+            ids[t] = t;
+            weights[t] = 1.0f;
+        }
+        for (int d = 0; d < dim; d++) down[(size_t)d * hidden] = 1.0f;
+        void *g = gpu->buffer_create_quant_only(gpu->ctx, gu,
+            matrix / BN_QK_K * sizeof(*gu), BN_GGUF_TENSOR_Q4_K, hidden, dim);
+        void *d = gpu->buffer_create(gpu->ctx, down, matrix * sizeof(float),
+            BN_GGUF_TENSOR_F32, dim, hidden);
+        assert(g && d);
+        BnGPUActivationPlan plan = {0};
+        plan.dim = plan.vocab_size = 1;
+        plan.n_layers = plan.seq_len = plan.n_heads = plan.head_size = 1;
+        plan.hb_elements = plan.xb2_elements = 1;
+        assert(gpu->init_activations(gpu->ctx, &plan) == 0);
+        assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_X,
+            input, sizeof(float), 0) == 0);
+        BnGPUOp copy = {0};
+        copy.op_code = BN_GPU_CODE_COPY;
+        copy.buf_in = BN_GPU_VALUE_X; copy.buf_out = BN_GPU_VALUE_XB;
+        copy.p[2] = 1;
+        assert(gpu->execute(gpu->ctx, &copy, 1, -1, NULL, 0) == 0);
+        BnGPUMoEPrefillExpert expert = {0};
+        expert.gate_buf = expert.up_buf = g; expert.down_buf = d;
+        int offset = 0;
+        output[0] = output[count + 1] = -12345.0f;
+        assert(gpu->moe_ffn_batch(gpu->ctx, output + 1, &expert, 1,
+            &offset, &nt, ids, weights, input, nt, dim, hidden,
+            BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K,
+            BN_GGUF_TENSOR_F32, BN_MODEL_ACTIVATION_SILU,
+            NULL, NULL, NULL, NULL, 0, 0, 0, 0) == 0);
+        float expected = x * x / (1.0f + expf(-x));
+        for (size_t i = 0; i < count; i++) {
+            if (!isfinite(output[i + 1]) || fabsf(output[i + 1] - expected) > 1e-3f) {
+                fprintf(stderr, "split expert stream nt=%d index=%zu got=%g expected=%g\n",
+                    nt, i, output[i + 1], expected);
+                assert(0);
+            }
+        }
+        assert(output[0] == -12345.0f && output[count + 1] == -12345.0f);
+        gpu->buffer_destroy(gpu->ctx, g); gpu->buffer_destroy(gpu->ctx, d);
+        bn_gpu_cuda_destroy(gpu);
+        free(gu); free(down); free(input); free(output); free(ids); free(weights);
+    }
+    printf("CUDA split expert graph-to-prefill stream PASSED\n");
+}
+
+#include "cuda_q8_stacked_ffn_reference.h"
+static void fill_q8_stacked_ffn_weights(uint8_t *w,size_t bytes,int seed) {
+    for(size_t b=0;b<bytes/34;b++) {
+        uint16_t d=(uint16_t)(0x1800+((b+seed)%17)*37);memcpy(w+b*34,&d,2);
+        for(int i=0;i<32;i++)w[b*34+2+i]=(uint8_t)((int)((b*19+i*23+seed)%255)-127);
+    }
+}
+static void run_q8_stacked_ffn_reference_cases(BnGPUBackend *gpu) {
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_q8_stacked_ffn_reference)/sizeof(cuda_q8_stacked_ffn_reference[0]);c++) {
+        const BnCudaQ8StackedFFNReference *r=&cuda_q8_stacked_ffn_reference[c];
+        size_t bytes=(size_t)r->dim*r->hidden/32*34,nx=(size_t)r->tokens*r->dim;
+        uint8_t *gate=malloc(bytes),*up=malloc(bytes),*down=malloc(bytes),*stack=malloc(2*bytes);
+        float *x=malloc(nx*4),*storage=malloc((nx+4)*4),*zero=calloc((size_t)r->dim,4);
+        assert(gate&&up&&down&&stack&&x&&storage&&zero);
+        fill_q8_stacked_ffn_weights(gate,bytes,r->seed);fill_q8_stacked_ffn_weights(up,bytes,r->seed+13);fill_q8_stacked_ffn_weights(down,bytes,r->seed+29);
+        memcpy(stack,gate,bytes);memcpy(stack+bytes,up,bytes);
+        for(size_t i=0;i<nx;i++)x[i]=(float)((int)((i*37+r->seed+11)%251)-125)/259.0f;
+        for(int device=0;device<2;device++) {
+            /* A fresh grouped context exposes shared-batch scratch sizing. */
+            BnGPUBackend *g=device?bn_gpu_cuda_create():gpu;assert(g);
+            void *bg=g->buffer_create(g->ctx,gate,bytes,BN_GGUF_TENSOR_Q8_0,r->hidden,r->dim);
+            void *bu=g->buffer_create(g->ctx,up,bytes,BN_GGUF_TENSOR_Q8_0,r->hidden,r->dim);
+            void *bd=g->buffer_create(g->ctx,down,bytes,BN_GGUF_TENSOR_Q8_0,r->dim,r->hidden);
+            void *bs=g->buffer_create(g->ctx,stack,2*bytes,BN_GGUF_TENSOR_Q8_0,2*r->hidden,r->dim);
+            void *bz=g->buffer_create(g->ctx,zero,(size_t)r->dim*4,BN_GGUF_TENSOR_F32,1,r->dim);assert(bg&&bu&&bd&&bs&&bz);
+            for(int stacked=0;stacked<2;stacked++) {
+                for(size_t i=0;i<nx+4;i++)storage[i]=12345.0f;
+                float *out=storage+2;int rc;
+                if(!device)rc=g->dense_ffn_batch(g->ctx,out,stacked?bs:bg,stacked?NULL:bu,bd,x,r->tokens,r->dim,r->hidden,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q8_0,BN_MODEL_ACTIVATION_SILU);
+                else {
+                    BnGPUMoEPrefillExpert expert={0};expert.gate_buf=bg;expert.up_buf=bu;expert.down_buf=bd;
+                    int offset=0,count=1,id=0;float weight=0.0f;
+                    rc=g->moe_ffn_batch(g->ctx,out,&expert,1,&offset,&count,&id,&weight,x,r->tokens,r->dim,r->hidden,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q8_0,BN_MODEL_ACTIVATION_SILU,stacked?bs:bg,stacked?NULL:bu,bd,bz,r->hidden,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q8_0);
+                }
+                assert(rc==0);uint64_t hash=cuda_test_float_bits_hash(out,nx),expected=device?r->half:r->full;
+                if(hash!=expected)fprintf(stderr,"Q8 stacked FFN case=%zu nt=%d device=%d stacked=%d got=%016llx expected=%016llx\n",c,r->tokens,device,stacked,(unsigned long long)hash,(unsigned long long)expected);
+                assert(hash==expected);assert(storage[0]==12345.0f&&storage[1]==12345.0f&&storage[nx+2]==12345.0f&&storage[nx+3]==12345.0f);words+=nx;
+            }
+            g->buffer_destroy(g->ctx,bg);g->buffer_destroy(g->ctx,bu);g->buffer_destroy(g->ctx,bd);g->buffer_destroy(g->ctx,bs);g->buffer_destroy(g->ctx,bz);
+            if(device)bn_gpu_cuda_destroy(g);
+        }
+        free(gate);free(up);free(down);free(stack);free(x);free(storage);free(zero);
+    }
+    printf("CUDA Q8 logical gate/up geometry reference PASSED: %zu cases, %zu words\n",sizeof(cuda_q8_stacked_ffn_reference)/sizeof(cuda_q8_stacked_ffn_reference[0]),words);
 }
 
 static void run_shared_batch_reference_case(BnGPUBackend *shared_gpu) {
@@ -7494,6 +14094,52 @@ static void run_shared_gate_reference_case(BnGPUBackend *gpu) {
         gpu->free_activations(gpu->ctx); free(data);
     }
     printf("CUDA shared gate reference PASSED\n");
+}
+
+#include "cuda_router_order_reference.h"
+static void run_router_order_reference_cases(BnGPUBackend *gpu) {
+    size_t words=0;
+    for(size_t c=0;c<sizeof(cuda_router_order_reference)/sizeof(cuda_router_order_reference[0]);c++) {
+        const BnCudaRouterOrderReference *r=&cuda_router_order_reference[c];
+        float *router=calloc((size_t)r->experts*32,4),input[32]={1.0f};assert(router);
+        for(int e=0;e<r->experts;e++) {
+            float value=(float)((e*37+r->seed*11)%257-128)/37.0f;
+            if(r->mode==1)value=0.25f+(float)((e*19+r->seed)%97)*0x1p-26f;
+            if(r->mode==2)value=e%32==0?2.0f-(float)(e/32)*0.015625f:(float)((e*13+r->seed)%101-50)/97.0f;
+            router[(size_t)e*32]=value;
+        }
+        BnGPUActivationPlan plan={0};plan.dim=32;plan.hb_elements=r->experts;
+        plan.xb2_elements=plan.vocab_size=2*r->k+4;
+        plan.n_layers=plan.n_heads=plan.seq_len=1;
+        assert(gpu->init_activations(gpu->ctx,&plan)==0);
+        void *w=gpu->buffer_create(gpu->ctx,router,(size_t)r->experts*32*4,BN_GGUF_TENSOR_F32,r->experts,32);assert(w);
+        BnConfig config={0};config.n_experts=r->experts;config.n_experts_active=r->k;
+        config.moe_norm_topk_prob=r->normalize;
+        config.policy_flags=BN_MODEL_ARCH_POLICY_MOE_SEPARATE_ROUTER_TOPK;
+        BnGPUOp ops[33]={{0}};
+        for(int i=0;i<31;i++){ops[i].op_code=BN_GPU_CODE_COPY;ops[i].buf_in=BN_GPU_VALUE_XB;ops[i].buf_out=BN_GPU_VALUE_SCRATCH;ops[i].p[2]=32;}
+        BnGPUOp *op=&ops[31];op->op_code=BN_GPU_CODE_MOE_ROUTE_TOPK;
+        op->W_buf=w;op->type=BN_GGUF_TENSOR_F32;op->cols=32;op->rows=r->experts;
+        op->buf_in=BN_GPU_VALUE_XB;op->buf_out=BN_GPU_VALUE_XB2;op->buf_aux=BN_GPU_VALUE_HB;
+        op->p[0]=r->experts;op->p[1]=r->k;op->p[2]=f32_bits(r->scaled?0.75f:1.0f);
+        op->flags=bn_transformer_gpu_moe_backend_route_flags(gpu,&config);
+        ops[32].op_code=BN_GPU_CODE_COPY;ops[32].buf_in=BN_GPU_VALUE_XB2;
+        ops[32].buf_out=BN_GPU_VALUE_LOGITS;ops[32].p[1]=2;ops[32].p[2]=2*r->k;
+        for(int pass=0;pass<3;pass++) {
+            float out[2*BN_MAX_MOE_K+4];for(int i=0;i<2*r->k+4;i++)out[i]=12345.0f;
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_XB,input,sizeof(input),0)==0);
+            assert(gpu->write_activation(gpu->ctx,BN_GPU_VALUE_LOGITS,out,(size_t)(2*r->k+4)*4,0)==0);
+            assert(gpu->execute(gpu->ctx,pass?ops:ops+31,pass?33:2,BN_GPU_VALUE_LOGITS,out,2*r->k+4)==0);
+            uint64_t wh=cuda_test_float_bits_hash(out+2,r->k),ih=UINT64_C(14695981039346656037);
+            for(int i=0;i<r->k;i++)ih=(ih^(uint32_t)(int)out[2+r->k+i])*UINT64_C(1099511628211);
+            if(wh!=r->weights||ih!=r->ids)fprintf(stderr,"router order case=%zu pass=%d experts=%d k=%d norm=%d mode=%d weights=%016llx/%016llx ids=%016llx/%016llx\n",c,pass,r->experts,r->k,r->normalize,r->mode,(unsigned long long)wh,(unsigned long long)r->weights,(unsigned long long)ih,(unsigned long long)r->ids);
+            assert(wh==r->weights&&ih==r->ids);
+            assert(out[0]==12345.0f&&out[1]==12345.0f&&out[2*r->k+2]==12345.0f&&out[2*r->k+3]==12345.0f);
+            words+=(size_t)2*r->k;
+        }
+        gpu->buffer_destroy(gpu->ctx,w);gpu->free_activations(gpu->ctx);free(router);
+    }
+    printf("CUDA backend router order reference PASSED: %zu cases, %zu words\n",sizeof(cuda_router_order_reference)/sizeof(cuda_router_order_reference[0]),words);
 }
 
 static void run_router512_reference_cases(BnGPUBackend *gpu) {
@@ -7918,6 +14564,54 @@ static void run_combined_router_reference_case(void) {
     printf("CUDA combined routing reference PASSED\n");
 }
 
+#include "cuda_q8_partial_rows_reference.h"
+static void run_q8_partial_rows_reference_cases(BnGPUBackend *gpu) {
+    size_t words = 0;
+    size_t cases = sizeof(cuda_q8_partial_rows_reference) / sizeof(cuda_q8_partial_rows_reference[0]);
+    for (size_t ci = 0; ci < cases; ci++) {
+        const BnCudaQ8PartialRowsReference *r = &cuda_q8_partial_rows_reference[ci];
+        size_t blocks = (size_t)r->rows * r->cols / 32;
+        size_t nx = (size_t)r->tokens * r->cols, ny = (size_t)r->tokens * r->rows;
+        BnBlockQ8_0 *w = malloc(blocks * sizeof(*w));
+        float *x = malloc(nx * sizeof(*x));
+        float *out[2] = { malloc((ny + 2) * sizeof(float)), malloc((ny + 2) * sizeof(float)) };
+        assert(w && x && out[0] && out[1]);
+        for (size_t j = 0; j < blocks; j++) {
+            w[j].d = (uint16_t)(0x2c00 + ((j + r->seed) % 17) * 37);
+            for (int i = 0; i < 32; i++)
+                w[j].qs[i] = (int8_t)((int)((j * 17 + i * 13 + r->seed) % 255) - 127);
+        }
+        for (size_t i = 0; i < nx; i++)
+            x[i] = (float)((int)((i * 37 + r->seed + 11) % 257) - 128) / 259.f;
+        void *weight = gpu->buffer_create(gpu->ctx, w, blocks * sizeof(*w), BN_GGUF_TENSOR_Q8_0, r->rows, r->cols);
+        assert(weight);
+        for (int call = 0; call < 2; call++) {
+            for (int j = 0; j < 2; j++)
+                for (size_t i = 0; i < ny + 2; i++) out[j][i] = -12345.f;
+            if (call == 0)
+                assert(gpu->matmul(gpu->ctx, out[0] + 1, weight, x, r->rows, r->cols, r->tokens, BN_GGUF_TENSOR_Q8_0) == 0);
+            else {
+                BnGPUMatvecOp ops[2] = {
+                    {out[0] + 1, weight, r->rows, r->cols, BN_GGUF_TENSOR_Q8_0},
+                    {out[1] + 1, weight, r->rows, r->cols, BN_GGUF_TENSOR_Q8_0}
+                };
+                assert(gpu->matmul_batch(gpu->ctx, ops, 2, x, r->tokens, r->cols) == 0);
+            }
+            for (int j = 0; j <= call; j++) {
+                uint64_t actual = cuda_test_float_bits_hash(out[j] + 1, ny);
+                if (actual != r->hash)
+                    fprintf(stderr, "Q8 partial-row case=%zu rows=%d cols=%d nt=%d call=%d got=%016llx expected=%016llx\n", ci, r->rows, r->cols, r->tokens, call, (unsigned long long)actual, (unsigned long long)r->hash);
+                assert(actual == r->hash);
+                assert(out[j][0] == -12345.f && out[j][ny + 1] == -12345.f);
+                words += ny;
+            }
+        }
+        gpu->buffer_destroy(gpu->ctx, weight);
+        free(w); free(x); free(out[0]); free(out[1]);
+    }
+    printf("CUDA Q8 partial-row reference PASSED: %zu cases, %zu words\n", cases, words);
+}
+
 static void run_q8_mmq_reference_case(BnGPUBackend *gpu) {
     /* Full-output hashes from independent ggml_mul_mat CUDA graphs at
      * llama.cpp 3d3d7c81813067fc8c185da017e0af03b4269b1e, Blackwell.
@@ -7963,7 +14657,15 @@ static void run_q8_mmq_reference_case(BnGPUBackend *gpu) {
                 assert(gpu->matmul_batch(gpu->ctx, ops, 2, input, tokens, cols) == 0);
             }
             for (int i = 0; i <= call; i++) {
-                assert(cuda_test_float_bits_hash(output[i]+1, (int)count) == cases[c].hash);
+                uint64_t actual = cuda_test_float_bits_hash(output[i]+1, (int)count);
+                if (actual != cases[c].hash)
+                    fprintf(stderr,
+                        "CUDA dense Q8 MMQ mismatch: rows=%d cols=%d tokens=%d "
+                        "call=%d output=%d got=%016llx expected=%016llx\n",
+                        rows, cols, tokens, call, i,
+                        (unsigned long long)actual,
+                        (unsigned long long)cases[c].hash);
+                assert(actual == cases[c].hash);
                 assert(output[i][0] == -12345.0f && output[i][count+1] == -12345.0f);
             }
         }
@@ -8058,7 +14760,14 @@ static void run_q8_routed_reference_case(int calibrated) {
             buffers[0], buffers[1], buffers[2], indices, route, NULL, input,
             tokens[c], dim, hidden, experts, k, BN_GGUF_TENSOR_Q8_0,
             BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, 0) == 0);
-        assert(cuda_test_float_bits_hash(output + 1, count) == expected[c]);
+        uint64_t actual = cuda_test_float_bits_hash(output + 1, count);
+        if (actual != expected[c])
+            fprintf(stderr,
+                "CUDA routed Q8 reference mismatch: calibrated=%d tokens=%d "
+                "got=%016llx expected=%016llx\n",
+                calibrated, tokens[c], (unsigned long long)actual,
+                (unsigned long long)expected[c]);
+        assert(actual == expected[c]);
         assert(output[0] == -12345.0f);
         for (int i = count + 1; i < max_tokens * dim + 2; i++)
             assert(output[i] == -12345.0f);
@@ -8106,6 +14815,14 @@ static void run_q8_routed_reference_case(int calibrated) {
             buffers[0], buffers[1], buffers[2], input, nt, dim, hidden,
             experts, k, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0,
             BN_GGUF_TENSOR_Q8_0, 0, 1, 1.0f) == 0);
+        if (memcmp(output, combined, (size_t)nt * dim * sizeof(float)) != 0) {
+            float max_diff = 0;
+            for (int j = 0; j < nt * dim; j++)
+                max_diff = fmaxf(max_diff, fabsf(output[j] - combined[j]));
+            fprintf(stderr,
+                "CUDA combined Q8 mismatch: calibrated=%d tokens=%d max_diff=%g\n",
+                calibrated, nt, max_diff);
+        }
         assert(memcmp(output, combined, (size_t)nt * dim * sizeof(float)) == 0);
     }
     gpu->buffer_destroy(gpu->ctx, router);
@@ -8318,6 +15035,343 @@ static void run_moe_routed_dense_residual_case(BnGPUBackend *gpu) {
     printf("CUDA MoE routed dense-residual composition PASSED\n");
 }
 
+static void run_activation_reset_case(BnGPUBackend *gpu) {
+    enum { dim = 256, heads = 4, head_size = 128, inner = heads * head_size };
+    float rope = 1.0f;
+    BnGPUActivationPlan plan = {0};
+    plan.dim = dim; plan.vocab_size = 32;
+    plan.n_layers = plan.n_heads = plan.attention_layer_count = 1;
+    plan.seq_len = 8; plan.kv_dim = plan.head_size = 2;
+    plan.rope_frequencies = &rope; plan.rope_frequency_count = 1;
+    plan.uses_hybrid_ssm = plan.ssm_layer_count = 1;
+    plan.ssm_state_size = head_size; plan.ssm_inner_size = inner;
+    plan.ssm_time_step_rank = heads; plan.ssm_group_count = 1;
+    plan.ssm_conv_kernel = 4;
+    assert(gpu->reset_activations);
+    assert(gpu->init_activations(gpu->ctx, &plan) == 0);
+    const int buffers[] = { BN_GPU_VALUE_KEY_CACHE, BN_GPU_VALUE_VALUE_CACHE,
+        BN_GPU_VALUE_SSM_STATE, BN_GPU_VALUE_SSM_CONV_STATE };
+    const size_t counts[] = {16, 16, (size_t)head_size * inner,
+        (size_t)3 * (2 * head_size + inner)};
+    float *data = malloc(counts[2] * sizeof(float));
+    assert(data);
+    for (size_t i = 0; i < counts[2]; i++) data[i] = (float)(i % 17 + 1);
+    for (size_t b = 0; b < sizeof(buffers) / sizeof(buffers[0]); b++)
+        assert(gpu->write_activation(gpu->ctx, buffers[b], data,
+            counts[b] * sizeof(float), 0) == 0);
+    assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_X, data,
+        dim * sizeof(float), 0) == 0);
+    for (int repeat = 0; repeat < 2; repeat++) {
+        assert(gpu->reset_activations(gpu->ctx) == 0);
+        for (size_t b = 0; b < sizeof(buffers) / sizeof(buffers[0]); b++) {
+            assert(gpu->read_activation(gpu->ctx, buffers[b], data,
+                counts[b] * sizeof(float), 0) == 0);
+            for (size_t i = 0; i < counts[b]; i++) assert(data[i] == 0.0f);
+        }
+        /* Reset preserves allocated working buffers; only persistent request
+         * state needs clearing. No weight upload or activation reallocation. */
+        assert(gpu->read_activation(gpu->ctx, BN_GPU_VALUE_X, data,
+            dim * sizeof(float), 0) == 0);
+        for (int i = 0; i < dim; i++) assert(data[i] == (float)(i % 17 + 1));
+    }
+    free(data);
+    gpu->free_activations(gpu->ctx);
+    printf("CUDA activation reset PASSED\n");
+}
+
+#ifdef BN_ENABLE_CUDA
+static void run_weight_pool_case(void) {
+    char *enabled[] = { "BN_CUDA_ENABLE_WEIGHT_POOL=1", NULL };
+    char *disabled[] = { NULL };
+    BnBackendRuntimePolicy policy = {0};
+    assert(bn_backend_runtime_policy_init(&policy, enabled) == 0);
+    BnGPUBackend *gpu = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(gpu);
+    BnCudaWeightPoolStats stats;
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.limit_bytes == 16u * 1024u * 1024u);
+    assert(stats.limit_entries == 64 && stats.idle_entries == 0);
+    assert(bn_gpu_cuda_weight_pool_stats(NULL, &stats) == -1);
+    assert(bn_gpu_cuda_trim_weight_pool(NULL) == -1);
+
+    /* Reuse must upload new contents rather than retain the previous weight. */
+    for (int iteration = 0; iteration < 2; iteration++) {
+        float data[32], input[8], output[4];
+        for (int i = 0; i < 32; i++) data[i] = (float)(iteration + 1);
+        for (int i = 0; i < 8; i++) input[i] = 1.0f;
+        void *buffer = gpu->buffer_create_quant_only(
+            gpu->ctx, data, sizeof(data), BN_GGUF_TENSOR_F32, 4, 8);
+        assert(buffer);
+        assert(gpu->matvec(gpu->ctx, output, buffer, input, 4, 8,
+                           BN_GGUF_TENSOR_F32) == 0);
+        for (int i = 0; i < 4; i++)
+            assert(output[i] == 8.0f * (float)(iteration + 1));
+        gpu->buffer_destroy(gpu->ctx, buffer);
+    }
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.hits == 1 && stats.misses == 1);
+    assert(stats.idle_entries == 1 && stats.idle_bytes == 128);
+    assert(stats.synchronizations == 2 && stats.sync_failures == 0);
+    assert(bn_gpu_cuda_trim_weight_pool(gpu) == 0);
+
+    /* Entry pressure: all 65 handles are simultaneously owned before release. */
+    float small[32] = {0};
+    void *handles[65];
+    for (int i = 0; i < 65; i++) {
+        handles[i] = gpu->buffer_create_quant_only(
+            gpu->ctx, small, sizeof(small), BN_GGUF_TENSOR_F32, 4, 8);
+        assert(handles[i]);
+    }
+    for (int i = 0; i < 65; i++) gpu->buffer_destroy(gpu->ctx, handles[i]);
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.idle_entries == 64 && stats.idle_bytes == 64 * sizeof(small));
+    assert(stats.evictions == 2); /* explicit trim plus entry-pressure eviction */
+    assert(bn_gpu_cuda_trim_weight_pool(gpu) == 0);
+
+    /* Byte pressure and LRU: a recent 8 MiB entry survives a 12 MiB eviction. */
+    const size_t mib = 1024u * 1024u;
+    float *large = calloc(20u * mib / sizeof(float), sizeof(float));
+    assert(large);
+    void *older = gpu->buffer_create_quant_only(
+        gpu->ctx, large, 12u * mib, BN_GGUF_TENSOR_F32, 3072, 1024);
+    void *newer = gpu->buffer_create_quant_only(
+        gpu->ctx, large, 8u * mib, BN_GGUF_TENSOR_F32, 2048, 1024);
+    assert(older && newer);
+    gpu->buffer_destroy(gpu->ctx, older);
+    gpu->buffer_destroy(gpu->ctx, newer);
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.idle_entries == 1 && stats.idle_bytes == 8u * mib);
+    size_t hits = stats.hits;
+    newer = gpu->buffer_create_quant_only(
+        gpu->ctx, large, 8u * mib, BN_GGUF_TENSOR_F32, 2048, 1024);
+    assert(newer);
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.hits == hits + 1 && stats.idle_bytes == 0);
+    gpu->buffer_destroy(gpu->ctx, newer);
+    void *oversized = gpu->buffer_create_quant_only(
+        gpu->ctx, large, 20u * mib, BN_GGUF_TENSOR_F32, 5120, 1024);
+    assert(oversized);
+    gpu->buffer_destroy(gpu->ctx, oversized);
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.idle_bytes == 8u * mib && stats.idle_entries == 1);
+    free(large);
+
+    /* A second backend never observes or trims the first backend's pool. */
+    assert(bn_backend_runtime_policy_init(&policy, disabled) == 0);
+    BnGPUBackend *other = bn_gpu_cuda_create_with_policy(&policy);
+    bn_backend_runtime_policy_free(&policy);
+    assert(other);
+    assert(bn_gpu_cuda_weight_pool_stats(other, &stats) == 0);
+    assert(stats.limit_bytes == 0 && stats.idle_entries == 0);
+    assert(bn_gpu_cuda_trim_weight_pool(other) == 0);
+    bn_gpu_cuda_destroy(other);
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.idle_bytes == 8u * mib && stats.sync_failures == 0);
+    assert(bn_gpu_cuda_trim_weight_pool(gpu) == 0);
+    assert(bn_gpu_cuda_weight_pool_stats(gpu, &stats) == 0);
+    assert(stats.idle_bytes == 0 && stats.idle_entries == 0);
+    assert(bn_gpu_cuda_trim_weight_pool(gpu) == 0);
+    bn_gpu_cuda_destroy(gpu);
+    printf("CUDA bounded weight pool PASSED\n");
+}
+#endif
+
+/* With one selected key, softmax returns V exactly; sigmoid(0) is 1/2.
+ * Powers of two give a closed-form bitwise oracle independent of kernel math. */
+static BnGPUResidentView qsa_unit_alloc(BnGPUBackend *gpu, void *request,
+                                       int type, size_t count) {
+    BnGPUResidentView v;
+    assert(gpu->resident_alloc(request,type,count,&v)==0);
+    return v;
+}
+#include "cuda_paged_kv_append_reference.h"
+static void run_paged_kv_append_case(BnGPUBackend *gpu) {
+    assert(gpu->paged_kv_append_bf16_resident);
+    const int shapes[][3]={{1,1,8},{17,16,512},{33,32,128},{129,7,2048},
+        {4097,16,512},{257,16,512},{1,65536,8},{3,1,65536},{32,16,8},{65,32,512}};
+    size_t checked=0;
+    for(size_t ci=0;ci<sizeof(shapes)/sizeof(shapes[0]);ci++) {
+        int nt=shapes[ci][0],page=shapes[ci][1],width=shapes[ci][2];
+        int blocks=(nt+8+page-1)/page+1,capacity=blocks*page;
+        size_t rows=(size_t)nt*width,cache=(size_t)capacity*width;
+        uint16_t *k=malloc(rows*2),*v=malloc(rows*2),*kc=malloc(cache*2),*vc=malloc(cache*2);
+        uint16_t *after=malloc(((cache>rows?cache:rows)+16)*2);
+        int32_t *slots=malloc(((size_t)nt+2)*4);assert(k&&v&&kc&&vc&&after&&slots);
+        for(size_t i=0;i<rows;i++){k[i]=(uint16_t)(i*17+ci*31);v[i]=(uint16_t)(i*37+ci*13+0x8000);}
+        for(size_t i=0;i<cache;i++){kc[i]=(uint16_t)(i*5+7);vc[i]=(uint16_t)(i*11+19);}
+        slots[0]=INT32_C(0x12345678);slots[nt+1]=INT32_C(0x23456789);
+        for(int i=0;i<nt;i++) {
+            int slot=i?capacity-i:0;
+            if(i&&i%11==0)slot=-1;else if(i&&i%13==0)slot=INT_MIN;
+            else if(i&&i%17==0)slot=capacity;else if(i&&i%19==0)slot=INT_MAX;
+            slots[i+1]=slot;
+        }
+        void *r=gpu->resident_request_create(gpu->ctx),*other=gpu->resident_request_create(gpu->ctx);assert(r&&other);
+        BnGPUResidentView roots[4];BnGPUPagedKVAppendResidentPlan p={0};
+        p.n_tokens=nt;p.num_cache_blocks=blocks;p.page_size=page;p.row_width=width;
+        p.k=cuda_test_attention_view(gpu,r,rows,k,&roots[0]);p.v=cuda_test_attention_view(gpu,r,rows,v,&roots[1]);
+        p.k_cache=cuda_test_attention_view(gpu,r,cache,kc,&roots[2]);p.v_cache=cuda_test_attention_view(gpu,r,cache,vc,&roots[3]);
+        BnGPUResidentView slot_root=qsa_unit_alloc(gpu,r,BN_GGUF_TENSOR_I32,(size_t)nt+2);
+        assert(gpu->resident_write(r,slot_root,slots)==0);p.slots=bn_gpu_resident_view_slice(slot_root,1,nt);
+        assert(gpu->paged_kv_append_bf16_resident(NULL,r,&p)==-1);
+        assert(gpu->paged_kv_append_bf16_resident(gpu->ctx,NULL,&p)==-1);
+        assert(gpu->paged_kv_append_bf16_resident(gpu->ctx,r,NULL)==-1);
+        assert(gpu->paged_kv_append_bf16_resident(gpu->ctx,other,&p)==-1);
+        for(int reject=0;reject<11;reject++) {
+            BnGPUPagedKVAppendResidentPlan b=p;
+            switch(reject) {
+                case 0:b.n_tokens=0;break;case 1:b.num_cache_blocks=0;break;
+                case 2:b.page_size=0;break;case 3:b.page_size=65537;break;
+                case 4:b.num_cache_blocks=INT_MAX;b.page_size=2;break;
+                case 5:b.row_width=0;break;case 6:b.row_width=7;break;
+                case 7:b.row_width=65544;break;case 8:b.row_width=9;break;
+                case 9:b.k_cache=b.v_cache;break;default:b.k_cache=b.k;break;
+            }
+            assert(gpu->paged_kv_append_bf16_resident(gpu->ctx,r,&b)==-1);
+        }
+        for(int i=0;i<5;i++)for(int kind=0;kind<6;kind++) {
+            BnGPUPagedKVAppendResidentPlan b=p;
+            BnGPUResidentView *vs[]={&b.k,&b.v,&b.slots,&b.k_cache,&b.v_cache};
+            switch(kind) {
+                case 0:vs[i]->request=other;break;case 1:vs[i]->type=BN_GGUF_TENSOR_F32;break;
+                case 2:vs[i]->count--;break;case 3:vs[i]->count++;break;
+                case 4:vs[i]->slot=UINT32_MAX;break;
+                default:if(i==2)vs[i]->offset=SIZE_MAX;else vs[i]->offset++;break;
+            }
+            assert(gpu->paged_kv_append_bf16_resident(gpu->ctx,r,&b)==-1);
+        }
+        for(int pass=0;pass<4;pass++) {
+            if(pass) {
+                if(pass==2)p.v=p.k; /* Read-only alias is permitted. */
+                if(pass==3){for(int i=0;i<nt;i++)slots[i+1]=-1;assert(!gpu->resident_write(r,slot_root,slots));}
+                assert(!gpu->paged_kv_append_bf16_resident(gpu->ctx,r,&p));
+                for(int i=0;i<nt;i++)if(slots[i+1]>=0&&slots[i+1]<capacity) {
+                    memcpy(kc+(size_t)slots[i+1]*width,k+(size_t)i*width,(size_t)width*2);
+                    memcpy(vc+(size_t)slots[i+1]*width,(pass==2?k:v)+(size_t)i*width,(size_t)width*2);
+                }
+            }
+            cuda_test_attention_read(gpu,r,roots[2],after);assert(!memcmp(after+8,kc,cache*2));
+            if(pass==1)assert(bf16_output_hash(after+8,cache)==cuda_paged_kv_append_hashes[ci][0]);
+            cuda_test_attention_read(gpu,r,roots[3],after);assert(!memcmp(after+8,vc,cache*2));
+            if(pass==1)assert(bf16_output_hash(after+8,cache)==cuda_paged_kv_append_hashes[ci][1]);
+            checked+=cache*2;
+        }
+        cuda_test_attention_read(gpu,r,roots[0],after);assert(!memcmp(after+8,k,rows*2));
+        cuda_test_attention_read(gpu,r,roots[1],after);assert(!memcmp(after+8,v,rows*2));
+        int32_t *slot_after=malloc(((size_t)nt+2)*4);assert(slot_after&&!gpu->resident_read(r,slot_root,slot_after));
+        assert(!memcmp(slot_after,slots,((size_t)nt+2)*4));free(slot_after);
+        gpu->resident_request_destroy(other);gpu->resident_request_destroy(r);
+        free(k);free(v);free(kc);free(vc);free(after);free(slots);
+    }
+    printf("CUDA paged KV append PASSED: 10 shapes, %zu exact BF16 cache words\n",checked);
+}
+
+static void run_qsa_resident_closed_form(BnGPUBackend *gpu) {
+    if (!gpu->qsa_attention_bf16_prepare || !gpu->qsa_attention_bf16_workspace_size ||
+        !gpu->qsa_attention_bf16_resident) {
+        puts("CUDA resident paged QSA unavailable on this architecture");
+        return;
+    }
+    const int cap=1025;
+    const size_t tokens_width=24u*256, count=(size_t)cap*tokens_width;
+    size_t bytes=77;
+    assert(gpu->qsa_attention_bf16_workspace_size(gpu->ctx,0,&bytes)==-1&&bytes==77);
+    assert(gpu->qsa_attention_bf16_workspace_size(gpu->ctx,cap,&bytes)==0&&bytes&&bytes%4==0);
+    assert(gpu->qsa_attention_bf16_prepare(gpu->ctx)==0);
+    assert(gpu->qsa_attention_bf16_prepare(gpu->ctx)==0);
+    void *request=gpu->resident_request_create(gpu->ctx);assert(request);
+    BnGPUResidentView q=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_BF16,count);
+    BnGPUResidentView out=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_BF16,count);
+    BnGPUResidentView k=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_BF16,2u*8192);
+    BnGPUResidentView v=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_BF16,2u*8192);
+    assert(gpu->resident_zero(request,q)==0&&gpu->resident_zero(request,k)==0);
+    uint16_t *values=malloc(2u*8192*sizeof(*values)),*actual=malloc(count*sizeof(*actual));
+    int32_t *indices=malloc((size_t)cap*2052*sizeof(*indices)),*requests=malloc((size_t)cap*sizeof(*requests));
+    assert(values&&actual&&indices&&requests);
+    for(int page=0;page<2;page++)for(int token=0;token<16;token++)
+        for(int kv=0;kv<2;kv++)for(int d=0;d<256;d++) {
+            int exponent=(page?3:1)+kv+(token&1);
+            values[((page*16+token)*2+kv)*256+d]=(uint16_t)((127+exponent)<<7);
+        }
+    assert(gpu->resident_write(request,v,values)==0);free(values);
+    for(int row=0;row<cap;row++) {
+        requests[row]=row%2;
+        if(row%5==2)requests[row]=-1;else if(row%11==5)requests[row]=2;
+        for(int col=0;col<2052;col++)indices[(size_t)row*2052+col]=-1;
+        int token=row%16;
+        if(row%7==3)token=INT_MIN;else if(row%13==4)token=16;
+        indices[(size_t)row*2052]=token;
+        indices[(size_t)row*2052+2051]=row%3==2?0:1;
+    }
+    BnGPUResidentView ids_root=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_I32,(size_t)cap*2052+1);
+    BnGPUResidentView req_root=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_I32,(size_t)cap+1);
+    BnGPUResidentView table_root=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_I32,3);
+    BnGPUResidentView ids=bn_gpu_resident_view_slice(ids_root,1,(size_t)cap*2052);
+    BnGPUResidentView req=bn_gpu_resident_view_slice(req_root,1,(size_t)cap);
+    BnGPUResidentView table=bn_gpu_resident_view_slice(table_root,1,2);
+    const int32_t pages[]={1,0};
+    assert(gpu->resident_write(request,ids,indices)==0&&gpu->resident_write(request,req,requests)==0);
+    assert(gpu->resident_write(request,table,pages)==0);
+    size_t scratch_count=bytes/4;
+    BnGPUResidentView scratch=qsa_unit_alloc(gpu,request,BN_GGUF_TENSOR_F32,scratch_count+8);
+    BnGPUResidentView work=bn_gpu_resident_view_slice(scratch,4,scratch_count);
+    const uint32_t sentinel[]={0x3eaaaaab,0x3f7fffff,0xbf234567,0x01234567};uint32_t got[4];
+    BnGPUResidentView first=bn_gpu_resident_view_slice(scratch,0,4);
+    BnGPUResidentView last=bn_gpu_resident_view_slice(scratch,scratch_count+4,4);
+    assert(gpu->resident_write(request,first,sentinel)==0&&gpu->resident_write(request,last,sentinel)==0);
+    const int sizes[]={1,13,17,33,65,129,257,1025,64,128,1025};
+    size_t checked=0;
+    for(size_t c=0;c<sizeof(sizes)/sizeof(*sizes);c++) {
+        int n=sizes[c];BnGPUQSAAttentionResidentPlan p={0};
+        p.n_tokens=n;p.use_prefill_config=(int)c%2;p.num_cache_blocks=2;p.num_requests=2;p.table_width=1;
+        p.q=bn_gpu_resident_view_slice(q,0,(size_t)n*tokens_width);p.gate=p.q;
+        p.k_cache=k;p.v_cache=v;p.indices=bn_gpu_resident_view_slice(ids,0,(size_t)n*2052);
+        p.block_table=table;p.token_to_req=bn_gpu_resident_view_slice(req,0,(size_t)n);
+        p.out=bn_gpu_resident_view_slice(out,0,(size_t)n*tokens_width);p.workspace=work;
+        assert(gpu->qsa_attention_bf16_resident(gpu->ctx,request,&p)==0);
+        assert(gpu->resident_read(request,p.out,actual)==0);
+        for(int row=0;row<n;row++)for(int head=0;head<24;head++)for(int d=0;d<256;d++) {
+            int token=indices[(size_t)row*2052];uint16_t expected=0;
+            if(indices[(size_t)row*2052+2051]&&requests[row]>=0&&requests[row]<2&&token>=0&&token<16) {
+                int page=1-requests[row],exponent=(page?3:1)+head/12+(token&1)-1;
+                expected=(uint16_t)((127+exponent)<<7);
+            }
+            assert(actual[((size_t)row*24+head)*256+d]==expected);checked++;
+        }
+        assert(gpu->resident_read(request,first,got)==0&&!memcmp(got,sentinel,sizeof(got)));
+        assert(gpu->resident_read(request,last,got)==0&&!memcmp(got,sentinel,sizeof(got)));
+    }
+    free(actual);free(indices);free(requests);gpu->resident_request_destroy(request);
+    printf("CUDA resident paged QSA closed-form PASSED: 11 reuse cases, %zu BF16 words\n",checked);
+}
+
+#ifdef BN_ENABLE_CUDA
+#include "glm_contract_checks.h"
+#endif
+
+#ifdef BN_ENABLE_CUDA
+static void run_bf16_memory_queries(BnGPUBackend *g) {
+    assert(g->embedding_bf16_workspace_size&&g->attention_bf16_workspace_size&&g->linear_bf16_input_workspace_size);
+    size_t before,total,after;
+    assert(!g->memory_info(g->ctx,&before,&total));
+    assert(g->embedding_bf16_workspace_size(g->ctx)==sizeof(int));
+    assert(!g->embedding_bf16_workspace_size(NULL));
+    assert(g->linear_bf16_input_workspace_size(g->ctx,32)==36);
+    assert(!g->linear_bf16_input_workspace_size(g->ctx,0)&&!g->linear_bf16_input_workspace_size(g->ctx,33));
+    assert(!g->linear_bf16_input_workspace_size(g->ctx,SIZE_MAX));
+    assert(g->attention_bf16_workspace_size(g->ctx,17,24,512)==4u*(17u*24+8u*24*257));
+    assert(g->attention_bf16_workspace_size(g->ctx,17,24,8192)==4u*(17u*24+128u*24*257));
+    assert(g->attention_bf16_workspace_size(g->ctx,17,24,8193)==g->attention_bf16_workspace_size(g->ctx,17,24,8192));
+    assert(!g->attention_bf16_workspace_size(g->ctx,0,24,512));
+    assert(!g->attention_bf16_workspace_size(g->ctx,513,24,512));
+    assert(!g->attention_bf16_workspace_size(g->ctx,17,65536,512));
+    assert(!g->attention_bf16_workspace_size(g->ctx,17,24,INT_MAX));
+    assert(!g->memory_info(g->ctx,&after,&total)&&after==before);
+    puts("CUDA BF16 payload queries: independent byte counts, split saturation, invalid/overflow bounds, no allocation PASSED");
+}
+#endif
+
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
 #ifndef BN_ENABLE_CUDA
@@ -8328,6 +15382,442 @@ int main(int argc, char **argv) {
     if (!gpu) {
         printf("CUDA backend test skipped: no CUDA device\n");
         return 0;
+    }
+    if(argc==1||(argc==2&&strcmp(argv[1],"--bf16-memory-plans")==0)) {
+        run_bf16_memory_queries(gpu);
+        if(argc==2){bn_gpu_cuda_destroy(gpu);return 0;}
+    }
+    if(argc==1||(argc==2&&strcmp(argv[1],"--scaled-rows-reference")==0)) {
+        run_scaled_rows_reference(gpu);
+        if(argc==2){bn_gpu_cuda_destroy(gpu);return 0;}
+    }
+    if(argc==1||(argc==2&&strcmp(argv[1],"--f16-grouped-output-reference")==0)) {
+        run_f16_grouped_output_reference(gpu);
+        if(argc==2){bn_gpu_cuda_destroy(gpu);return 0;}
+    }
+    if (argc == 1 || (argc == 2 && (strcmp(argv[1], "--native-attention-reference") == 0 || strcmp(argv[1], "--native-attention-reference-bounded") == 0))) {
+        run_native_attention_reference(gpu,argc==2&&strcmp(argv[1],"--native-attention-reference-bounded")==0);
+        if(argc==2){bn_gpu_cuda_destroy(gpu);return 0;}
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-candidate-use-reference") == 0)) {
+        run_native_candidate_use_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-candidates-reference") == 0)) {
+        run_native_candidates_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-topk-reference") == 0)) {
+        run_native_topk_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-index-reference") == 0)) {
+        run_native_index_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-swa-ring-reference") == 0)) {
+        run_native_swa_ring_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-paged-latents-reference") == 0)) {
+        run_native_paged_latents_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-latent-keys-reference") == 0)) {
+        run_native_latent_keys_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-compress-reference") == 0)) {
+        run_native_compress_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-rope-reference") == 0)) {
+        run_native_rope_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-frequency-reference") == 0)) {
+        run_native_frequency_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-qkv-reference") == 0)) {
+        run_native_qkv_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--decode-exl3-reference") == 0)) {
+        run_decode_exl3_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--f32-add-reference") == 0)) {
+        run_f32_add_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--f16-ffn-reference") == 0)) {
+        run_f16_ffn_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--f16-linear-reference") == 0)) {
+        run_f16_linear_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && (strcmp(argv[1], "--fused-exl3-reference") == 0 || strcmp(argv[1], "--fused-exl3-small-reference") == 0))) {
+        run_fused_exl3_reference(gpu,argc==2 && strcmp(argv[1],"--fused-exl3-small-reference")==0);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-moe-reference") == 0)) {
+        run_native_moe_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--folded-exl3-reference") == 0)) {
+        run_folded_exl3_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-router-reference") == 0)) {
+        run_native_router_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-embedding-head-reference") == 0)) {
+        run_native_embedding_head_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-hc4-reference") == 0)) {
+        run_native_hc4_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-ple-reference") == 0)) {
+        run_native_ple_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--native-norm-reference") == 0)) {
+        run_native_norm_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--raw-rows-reference") == 0)) {
+        run_raw_rows_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--f16-rows-reference") == 0)) {
+        run_f16_rows_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--exl3-ffn-reference") == 0)) {
+        run_exl3_ffn_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--exl3-projection-reference") == 0)) {
+        run_exl3_projection_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--paged-kv-append") == 0)) {
+        run_paged_kv_append_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--qsa-resident-reference") == 0)) {
+        run_qsa_resident_closed_form(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--ple-gate-reference") == 0)) {
+        run_ple_gate_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--ple-conv-reference") == 0)) {
+        run_ple_conv_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--resident-upload-reference") == 0)) {
+#ifdef BN_CAPTURE_UPLOAD_LIFECYCLE
+        assert(cudaProfilerStart() == cudaSuccess);
+#endif
+        run_resident_upload_reference(gpu);
+#ifdef BN_CAPTURE_UPLOAD_LIFECYCLE
+        assert(cudaProfilerStop() == cudaSuccess);
+#endif
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--resident-zero") == 0)) {
+        run_resident_zero(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--resident-resize") == 0)) {
+        run_resident_resize(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-decode-reference") == 0)) {
+        run_bf16_gdn_decode_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-prep-reference") == 0)) {
+        run_bf16_gdn_prep_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 2 && strcmp(argv[1], "--bf16-gdn-cancellation-reference") == 0) {
+        run_bf16_gdn_cancellation_reference_case(gpu);
+        bn_gpu_cuda_destroy(gpu); return 0;
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-prefill-resident-reference") == 0)) {
+        run_bf16_gdn_cancellation_reference_case(gpu);
+        run_bf16_gdn_prefill_resident_reference_case(gpu);
+
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-cp-resident-reference") == 0)) {
+        run_bf16_gdn_cp_resident_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-prepare-resident-reference") == 0)) {
+        run_bf16_gdn_prepare_resident_reference_case(gpu);
+        run_bf16_gdn_composed_reference_case(gpu,argc==1);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-projection-gdn-reference") == 0)) {
+        run_bf16_gdn_decode_group_reference_case(gpu,2);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-decode-shared-rows-reference") == 0)) {
+        run_bf16_gdn_decode_group_reference_case(gpu,1);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-decode-group-reference") == 0)) {
+        run_bf16_gdn_decode_group_reference_case(gpu,0);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-decode-batch-reference") == 0)) {
+        run_bf16_gdn_decode_batch_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if(argc==1||(argc==2&&strcmp(argv[1],"--bf16-gdn-decode-profiles-reference")==0)) {
+        run_bf16_gdn_decode_profiles_reference_case(gpu);
+        if(argc==2){bn_gpu_cuda_destroy(gpu);return 0;}
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gdn-decode-resident-reference") == 0)) {
+        run_bf16_gdn_decode_resident_reference_case(gpu);
+        if (argc==2) run_bf16_gdn_composed_reference_case(gpu,1);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-conv-group-reference") == 0)) {
+        run_bf16_conv_group_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--kda-recurrent-reference") == 0)) {
+        run_kda_recurrent_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--f32-weight-conv-reference") == 0)) {
+        run_f32_weight_conv_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-conv-resident-reference") == 0)) {
+        run_bf16_conv_resident_reference_case(gpu);
+        run_bf16_gdn_conv_chain_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--gather-rows-reference") == 0)) {
+        run_gather_rows_resident_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--clamped-swiglu-reference") == 0)) {
+        run_clamped_swiglu_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if(argc==1||(argc==2&&!strcmp(argv[1],"--glm-contract-reference"))){run_glm_contract_reference(gpu);if(argc==2){bn_gpu_cuda_destroy(gpu);return 0;}}
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--mhc-fused-reference") == 0)) {
+        run_mhc_fused_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--mhc-reference") == 0)) {
+        run_mhc_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--glm-output-norm-reference") == 0)) {
+        run_glm_output_norm_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-gated-norm-resident-reference") == 0)) {
+        run_split_columns_resident_case(gpu);
+        run_bf16_gated_norm_resident_reference_case(gpu);
+        run_compiled_gated_norm_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-conv-reference") == 0)) {
+        run_bf16_conv_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--general-tiled-norm-reference") == 0)) {
+        run_general_tiled_norm_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--looped-add-norm-reference") == 0)) {
+        run_looped_add_norm_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--tiled-norm-5120-reference") == 0)) {
+        run_tiled_norm_5120_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-add3-resident-reference") == 0)) {
+        run_bf16_add3_norm_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-residual-reference") == 0)) {
+        run_bf16_add_norm_reference_case(gpu);
+        run_bf16_residual_ffn_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if(argc==1||(argc==2&&!strcmp(argv[1],"--bf16-stacked-ffn-reference"))) {
+        run_bf16_stacked_ffn_reference_case(gpu);
+        if(argc==2){bn_gpu_cuda_destroy(gpu);return 0;}
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--compiled-silu-ffn-reference") == 0)) {
+        run_compiled_silu_ffn_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 2 && strcmp(argv[1], "--bf16-ffn-resident-reference") == 0) {
+        run_bf16_residual_ffn_reference_case(gpu);
+        run_bf16_ffn_reference_case(gpu);
+        run_bf16_ffn_reference_cases(gpu, cuda_bf16_q5_ffn_cases,
+            sizeof(cuda_bf16_q5_ffn_cases) / sizeof(cuda_bf16_q5_ffn_cases[0]));
+        run_bf16_ffn_reference_cases(gpu, cuda_bf16_q4q6_ffn_cases,
+            sizeof(cuda_bf16_q4q6_ffn_cases) / sizeof(cuda_bf16_q4q6_ffn_cases[0]));
+        run_bf16_ffn_reference_cases(gpu, cuda_bf16_iq3_ffn_cases,
+            sizeof(cuda_bf16_iq3_ffn_cases) / sizeof(cuda_bf16_iq3_ffn_cases[0]));
+        puts("CUDA request-owned BF16 FFN references PASSED");
+        bn_gpu_cuda_destroy(gpu); return 0;
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-ffn-reference") == 0)) {
+        run_bf16_ffn_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-iq3-reference") == 0)) {
+        run_bf16_dispatch_reference_cases(gpu, cuda_bf16_iq3_cases,
+            sizeof(cuda_bf16_iq3_cases) / sizeof(cuda_bf16_iq3_cases[0]));
+        run_bf16_ffn_reference_cases(gpu, cuda_bf16_iq3_ffn_cases,
+            sizeof(cuda_bf16_iq3_ffn_cases) / sizeof(cuda_bf16_iq3_ffn_cases[0]));
+        run_resident_bf16_request_isolation(gpu);
+        puts("CUDA BF16 IQ3_S dispatch PASSED");
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-q4q6-reference") == 0)) {
+        run_bf16_dispatch_reference_cases(gpu, cuda_bf16_q4q6_cases,
+            sizeof(cuda_bf16_q4q6_cases) / sizeof(cuda_bf16_q4q6_cases[0]));
+        run_bf16_ffn_reference_cases(gpu, cuda_bf16_q4q6_ffn_cases,
+            sizeof(cuda_bf16_q4q6_ffn_cases) / sizeof(cuda_bf16_q4q6_ffn_cases[0]));
+        puts("CUDA BF16 Q4_K/Q6_K dispatch PASSED");
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-q5-reference") == 0)) {
+        run_bf16_dispatch_reference_cases(gpu, cuda_bf16_q5_cases,
+            sizeof(cuda_bf16_q5_cases) / sizeof(cuda_bf16_q5_cases[0]));
+        run_bf16_ffn_reference_cases(gpu, cuda_bf16_q5_ffn_cases,
+            sizeof(cuda_bf16_q5_ffn_cases) / sizeof(cuda_bf16_q5_ffn_cases[0]));
+        printf("CUDA BF16 Q5_K matrix/FFN dispatch PASSED\n");
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-q8-reference") == 0)) {
+        run_bf16_dispatch_reference_cases(gpu, cuda_bf16_q8_cases,
+            sizeof(cuda_bf16_q8_cases) / sizeof(cuda_bf16_q8_cases[0]));
+        printf("CUDA BF16 Q8_0 dispatch PASSED\n");
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-q3-reference") == 0)) {
+        run_bf16_q3_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-dispatch-reference") == 0)) {
+        run_bf16_dispatch_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-rows-reference") == 0)) {
+        run_resident_rows_reference(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-matrix-reference") == 0)) {
+        run_bf16_matrix_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-join-columns") == 0)) {
+        run_join_columns_resident_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-hc-reference") == 0)) {
+        run_bf16_hc_reference_cases(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-grouped-mean-reference") == 0)) {
+        run_bf16_grouped_mean_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-wide-mean-reference") == 0)) {
+        run_bf16_wide_mean_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-f32-mean-reference") == 0)) {
+        run_bf16_f32_mean_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-rotary-reference") == 0)) {
+        run_bf16_rotary_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-qk-group-reference") == 0)) {
+        run_bf16_qk_group_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-qk-prep-reference") == 0)) {
+        run_bf16_qk_prep_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--resident-group-queue") == 0)) {
+        run_resident_group_queue_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-mixed-attention-reference") == 0)) {
+        run_bf16_mixed_attention_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-attention-batch-reference") == 0)) {
+        run_bf16_attention_batch_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-attention-group-reference") == 0)) {
+        run_bf16_attention_group_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-attention-reference") == 0)) {
+        run_bf16_attention_reference_case(gpu);
+        if (argc == 2) { bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-embedding-reference") == 0)) {
+        run_bf16_embedding_reference_case(gpu);
+        run_bf16_q8_embedding_reference_case(gpu);
+        if (argc == 2) { run_bf16_rmsnorm_reference_case(gpu); bn_gpu_cuda_destroy(gpu); return 0; }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--bf16-rmsnorm-reference") == 0)) {
+        run_bf16_rmsnorm_reference_case(gpu);
+        if (argc == 2) {
+            bn_gpu_cuda_destroy(gpu);
+            return 0;
+        }
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--weight-pool") == 0)) {
+        run_weight_pool_case();
+        if (argc == 2) {
+            bn_gpu_cuda_destroy(gpu);
+            return 0;
+        }
+    }
+    if (argc == 2 && strcmp(argv[1], "--ssm-qk-rms-reference") == 0) {
+        run_ssm_l2_epsilon_case(gpu);
+        run_ssm_qk_rms_reference_modes();
+        run_ssm_conv_rms_reference_case(gpu);
+        run_ssm_prefill_norm_reference_cases();
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "--activation-reset") == 0)) {
+        run_activation_reset_case(gpu);
+        if (argc == 2) {
+            bn_gpu_cuda_destroy(gpu);
+            return 0;
+        }
     }
     if (argc == 2 && strcmp(argv[1], "--moe-dense-residual-composition") == 0) {
         run_moe_dense_residual_composition_case(gpu);
@@ -8383,7 +15873,9 @@ int main(int argc, char **argv) {
         return 0;
     }
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION);
-    assert(!(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH));
+    /* Native reference attention was promoted with the resident Qwen graph.
+     * The execution/reference cases below exercise its numerical contract. */
+    assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_NATIVE_GRAPH);
     assert(gpu->caps & BN_GPU_CAP_REFERENCE_ATTENTION_FALLBACK);
     assert(!(gpu->caps & BN_GPU_CAP_DECODE_GRAPH_CACHE));
 
@@ -8403,8 +15895,53 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--q8-partial-rows-reference") == 0) {
+        run_q8_partial_rows_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--q8-stacked-ffn-reference") == 0) {
+        run_q8_stacked_ffn_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--router-order-reference") == 0) {
+        run_router_order_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--router512-reference") == 0) {
         run_router512_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--q5k-fused-reference") == 0) {
+        run_q5k_fused_gateup_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--shared-q8-reference") == 0) {
+        run_shared_q8_matvec_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--q51-matvec-reference") == 0) {
+        run_q51_matvec_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--gathered-qk8-reference") == 0) {
+        run_qk8_gathered_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--gathered-q451-prefill-reference") == 0) {
+        run_q451_gathered_prefill_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--routed-q451-prefill-reference") == 0) {
+        run_q451_prefill_reference_cases(gpu);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
@@ -8460,8 +15997,40 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--moe-shared-math-reference") == 0) {
+        run_moe_shared_math_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--moe-weighted-sum-reference") == 0) {
+        run_moe_weighted_sum_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--hc-prefill-chain") == 0) {
+        run_hc_prefill_chain_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "--hc-batched-launch-reference") == 0) {
+        run_hc_batched_launch_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+
     if (argc == 2 && strcmp(argv[1], "--hc-combine-reference") == 0) {
         run_hc_combine_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--hc-fused-mean-reference") == 0) {
+        run_hc_fused_mean_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--hc-fused-post-reference") == 0) {
+        run_hc_fused_post_reference_cases(gpu);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
@@ -8475,8 +16044,16 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && (strcmp(argv[1], "--signed-sqrt-batch-reference") == 0 ||
+                      strcmp(argv[1], "--signed-sqrt-batch-legacy") == 0)) {
+        run_signed_sqrt_batch_reference_cases(gpu,
+            strcmp(argv[1], "--signed-sqrt-batch-legacy") == 0);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--signed-sqrt-gate-reference") == 0) {
         run_signed_sqrt_gate_reference_cases(gpu);
+        run_signed_sqrt_batch_reference_cases(gpu, 0);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
@@ -8571,6 +16148,11 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--prefill-qk-pair-reference") == 0) {
+        run_prefill_qk_pair_reference_case(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--dense-prefill-reference") == 0) {
         run_dense_prefill_reference_case(gpu);
         bn_gpu_cuda_destroy(gpu);
@@ -8606,6 +16188,11 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--gqa12-order-reference") == 0) {
+        run_gqa12_order_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--decode-f32-attention-reference") == 0) {
         run_decode_attention_f32_reference_cases(gpu);
         bn_gpu_cuda_destroy(gpu);
@@ -8638,6 +16225,7 @@ int main(int argc, char **argv) {
     }
     if (argc == 2 && strcmp(argv[1], "--ssm-projection-state-reference") == 0) {
         run_ssm_projection_state_reference_case(gpu);
+    run_ssm_prefill_norm_reference_cases();
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
@@ -8682,6 +16270,26 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    if (argc == 2 && strcmp(argv[1], "--gdn-decode-order-reference") == 0) {
+        run_gdn_decode_order_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--gdn-state-order-reference") == 0) {
+        run_gdn_state_order_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--gqa6-prefix-gemm-reference") == 0) {
+        run_gqa6_prefix_attention_reference_cases(gpu, 1);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--gqa6-prefix-reference") == 0) {
+        run_gqa6_prefix_attention_reference_cases(gpu, 0);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--prefix-attention-smoke") == 0) {
         run_prefix_attention_reference_cases(gpu, 1);
         bn_gpu_cuda_destroy(gpu);
@@ -8689,6 +16297,16 @@ int main(int argc, char **argv) {
     }
     if (argc == 2 && strcmp(argv[1], "--prefix-attention-reference") == 0) {
         run_prefix_attention_reference_cases(gpu, 0);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--f32-prepared-attention-reference") == 0) {
+        run_f32_prepared_attention_reference_cases(gpu);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--gated-mmf-reference") == 0) {
+        run_gated_mmf_reference_cases(gpu);
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
@@ -8729,6 +16347,11 @@ int main(int argc, char **argv) {
         bn_gpu_cuda_destroy(gpu);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--q8-routed-calibrated-reference") == 0) {
+        run_q8_routed_reference_case(1);
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--moe-residual-order-reference") == 0) {
         run_rmsnorm_batch_reference_case(gpu);
     run_prepared_rope_reference_case(gpu);
@@ -8738,6 +16361,11 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    if (argc == 2 && strcmp(argv[1], "--split-expert-stream-reference") == 0) {
+        run_split_expert_stream_case();
+        bn_gpu_cuda_destroy(gpu);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--shared-batch-reference") == 0) {
         run_shared_batch_reference_case(gpu);
         bn_gpu_cuda_destroy(gpu);
@@ -8761,9 +16389,16 @@ int main(int argc, char **argv) {
     assert(gpu->free_activations != NULL);
     assert(gpu->buffer_f16_cache_extra_bytes != NULL);
     size_t cache_elements = (size_t)1024 * 2560;
+    /* Q6_K may additionally retain a backend-private packed MMQ layout.
+     * The estimate must cover both dequantized caches without assuming that
+     * those are the only backend allocations. A non-K-aligned width below
+     * still checks the exact two-cache accounting contract. */
     assert(bn_gpu_backend_f16_cache_extra_bytes(
-               gpu, BN_GGUF_TENSOR_Q6_K, 1024, 2560) ==
+               gpu, BN_GGUF_TENSOR_Q6_K, 1024, 2560) >=
            cache_elements * (sizeof(uint16_t) + sizeof(float)));
+    assert(bn_gpu_backend_f16_cache_extra_bytes(
+               gpu, BN_GGUF_TENSOR_Q6_K, 1024, 2528) ==
+           (size_t)1024 * 2528 * (sizeof(uint16_t) + sizeof(float)));
     assert(bn_gpu_backend_f16_cache_extra_bytes(
                gpu, BN_GGUF_TENSOR_Q4_K, 1024, 2560) >
            cache_elements * sizeof(uint16_t));
@@ -8809,8 +16444,13 @@ int main(int argc, char **argv) {
     run_hyper_connection_ops_case(gpu);
     run_hc_combine_reference_cases(gpu);
     run_hc_mixer_reference_cases(gpu);
+    run_hc_prefill_chain_cases(gpu);
+    run_hc_batched_launch_cases(gpu);
+    run_hc_fused_mean_reference_cases(gpu);
+    run_hc_fused_post_reference_cases(gpu);
     run_hc_rmsnorm_reference_cases(gpu);
     run_signed_sqrt_gate_reference_cases(gpu);
+    run_signed_sqrt_batch_reference_cases(gpu, 0);
 
     const int rows = 3;
     const int cols = 4;
@@ -9057,18 +16697,22 @@ int main(int argc, char **argv) {
     run_q8_routed_reference_case(0);
     run_q8_routed_reference_case(1);
     run_combined_router_reference_case();
+    run_q8_partial_rows_reference_cases(gpu);
     run_q8_mmq_reference_case(gpu);
     run_f32_matrix_reference_case(gpu);
     run_f32_ffn_entry_reference_case(gpu);
     run_moe_dense_residual_composition_case(gpu);
     run_moe_routed_dense_residual_case(gpu);
+    run_split_expert_stream_case();
     run_shared_batch_reference_case(gpu);
+    run_q8_stacked_ffn_reference_cases(gpu);
     run_rmsnorm_batch_reference_case(gpu);
     run_standalone_ffn_reference_case(gpu);
     run_moe_residual_order_reference_case(gpu);
     run_shared_gate_reference_case(gpu);
     run_router_reference_case(gpu);
     run_router512_reference_cases(gpu);
+    run_router_order_reference_cases(gpu);
     run_router_mmvf_reference_case(gpu);
     run_router_matrix_reference_case(gpu);
     run_buffer_upload_readiness_case(gpu);
@@ -9093,14 +16737,24 @@ int main(int argc, char **argv) {
     run_ssm_alpha_beta_reference_case(gpu);
     run_ssm_gate_composition_case(gpu);
     run_ssm_delta_reference_case(gpu);
+    run_gdn_state_order_reference_cases(gpu);
+    run_gdn_decode_order_reference_cases(gpu);
     run_ssm_conv_reference_case(gpu);
     run_ssm_l2_epsilon_case(gpu);
+    run_ssm_qk_rms_reference_modes();
+    run_ssm_conv_rms_reference_case(gpu);
+    run_moe_shared_math_reference_cases(gpu);
+    run_moe_weighted_sum_reference_cases(gpu);
     run_sigmoid_gate_accuracy_case(gpu);
     run_gelu_gate_accuracy_case(gpu);
     run_q6k_block32_graph_case(gpu);
     run_gated_q_utility_case(gpu);
     run_qk_rope_reference_case(gpu);
     run_prefix_attention_reference_cases(gpu, 0);
+    run_gqa6_prefix_attention_reference_cases(gpu, 0);
+    run_gqa6_prefix_attention_reference_cases(gpu, 1);
+    run_f32_prepared_attention_reference_cases(gpu);
+    run_gated_mmf_reference_cases(gpu);
     run_prepared_attention_reference_case(gpu);
     run_standalone_rope_reference_case(gpu);
     run_raw_attention_mma_reference_case(gpu);
@@ -9120,6 +16774,12 @@ int main(int argc, char **argv) {
     run_q5q6_routed_reference_cases(gpu,1);
     run_q451_routed_reference_cases(gpu,0);
     run_q451_routed_reference_cases(gpu,1);
+    run_q451_prefill_reference_cases(gpu);
+    run_q451_gathered_prefill_reference_cases(gpu);
+    run_qk8_gathered_reference_cases(gpu);
+    run_q5k_fused_gateup_reference_cases(gpu);
+    run_shared_q8_matvec_reference_cases(gpu);
+    run_q51_matvec_reference_cases(gpu);
     run_mxfp4_routed_reference_cases(gpu,0);
     run_mxfp4_reference_case(gpu);
     run_q3k_reference_case(gpu);
@@ -9127,9 +16787,11 @@ int main(int argc, char **argv) {
     run_q8_split_reference_case(gpu);
     run_dense_gateup_reference_case(gpu);
     run_dense_qk_reference_case(gpu);
+    run_prefill_qk_pair_reference_case(gpu);
     run_dense_prefill_reference_case(gpu);
     run_graph_teardown_case();
     run_decode_attention_f32_reference_cases(gpu);
+    run_gqa12_order_reference_cases(gpu);
     run_decode_attention_reference_cases(gpu, 0, 0);
     run_norm_residual_reference_case(gpu);
     run_q5_decode_reference_case(gpu);

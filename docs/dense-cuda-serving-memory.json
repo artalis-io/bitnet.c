@@ -1,0 +1,644 @@
+{
+  "schema": 1,
+  "status": "qualified_for_declared_managed_payload_scope",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "evidence_root": "/tmp/bitnet-goal-dense-admission",
+  "scope": "Common GGUF CLI resource ledger and idle pool now include dense Qwen shared model, packed coordinator and request storage alongside Flash/GLM.",
+  "ownership": [
+    "Backend model preparation owns an allocation-free payload plan covering raw/decoded/stacked/rotary storage, host staging and ownership tables. Stacked preparation includes old/new GPU payload overlap. Explicit peak caps reject before any upload.",
+    "Transformer request/coordinator plans share preparation validation and tensor allocation walks. Backend callbacks own embedding, A8 input and attention workspace byte queries. Scalar view width crosses the backend metadata boundary and remains quant-registry data.",
+    "Combined group-workspace budgets conservatively charge both host and device; these are upper bounds rather than exact per-space measurements.",
+    "The scheduler-owned pure ledger supports staged shared setup, read-only active feasibility and generation-renewed idle replacement with old-retained plus new-preparation overlap. The transformer does not depend on the scheduler.",
+    "The CLI pool keeps capacity rounding and smallest-adequate idle reuse. It proves active feasibility before evicting idle storage. When overlap fits, dense KV grows in place; otherwise idle storage is destroyed before fresh preparation. Active leases are never evicted.",
+    "The prior dense KV quota remains an additional subset constraint. All healthy idle slots remain charged to both aggregate and KV quotas."
+  ],
+  "interfaces": {
+    "flags": [
+      "--serving-host-mb",
+      "--serving-device-mb",
+      "--request-host-mb",
+      "--request-device-mb"
+    ],
+    "profiles": [
+      "dense-bf16",
+      "flash-bf16",
+      "glm-recurrent"
+    ],
+    "host_default_mib": 16384,
+    "device_default": "90 percent of free memory snapshot before model preparation",
+    "scope": "Declared explicit payload; not a physical-memory guarantee"
+  },
+  "numerics": "Existing checkpoint arithmetic, precision buckets, model semantics and policy defaults are unchanged. Dense full-head evidence uses the declared single129 and packed non-CP policies, not arbitrary compiler/autotune equivalence.",
+  "workloads": {
+    "single": {
+      "prompts": 2,
+      "live": 1,
+      "outputs_each": 64,
+      "policy": "bench/policies/qwen38-cuda-single129.json"
+    },
+    "four": {
+      "prompts": 4,
+      "live": 4,
+      "outputs_each": 64,
+      "policy": "bench/policies/qwen38-cuda-packed-noncp.json"
+    },
+    "replacement": {
+      "prompts": 8,
+      "live": 4,
+      "outputs_each": 64,
+      "created": 4,
+      "reused": 4,
+      "policy": "bench/policies/qwen38-cuda-packed-noncp.json"
+    },
+    "pressure": {
+      "prompts": 4,
+      "requested_live": 2,
+      "actual_peak_live": 1,
+      "outputs_each": 64,
+      "device_limit_mib": 29500,
+      "created": 1,
+      "reused": 3,
+      "policy": "bench/policies/qwen38-cuda-single129.json"
+    },
+    "context": 8192,
+    "prefill_chunk": 129,
+    "inputs": "Raw canonical UTF8 text; all IDs, sampled tokens and full logit hashes are compared with preserved independent references after inference."
+  },
+  "validation": {
+    "protected_clean_build": true,
+    "zero_gcc_warnings": true,
+    "standard_suite": true,
+    "full_cuda_suite_and_diagnostic_isolation": true,
+    "host_asan_ubsan_objects": 158,
+    "additional_asan_mock_backend_and_model_layout_suite": true,
+    "asan_model_free_managed_pool": true,
+    "cuda_disabled_c11_model_free_pool": true,
+    "dense_normal_heads": 1152,
+    "dense_asan_heads": 1152,
+    "dense_memcheck_heads": 8,
+    "real_model_request_quote_cases": 6,
+    "real_model_coordinator_quote": true,
+    "normal_and_asan_real_model_pool_driver": true,
+    "model_free_lifetime_cases": [
+      "BUSY preserves idle/live state",
+      "Charged oversized reuse",
+      "In-place growth reserves overlap",
+      "Tight-budget idle eviction",
+      "Failed preparation cleanup",
+      "Failed restart cleanup",
+      "Failed resize cleanup",
+      "KV subset backpressure"
+    ],
+    "early_rejections": [
+      {
+        "name": "host-model-peak",
+        "exit": 1,
+        "stage": "aggregate serving payload budget",
+        "no_admission": true,
+        "command": [
+          "./bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "dense-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-dense-admission/dense-single-reference-prompts.json",
+          "--batch-live",
+          "2",
+          "--prefill-tokens",
+          "129",
+          "--batch-token-budget",
+          "129",
+          "--maxseq",
+          "8192",
+          "-t",
+          "1",
+          "-n",
+          "2",
+          "--serving-host-mb",
+          "106"
+        ]
+      },
+      {
+        "name": "device-model-peak",
+        "exit": 1,
+        "stage": "aggregate serving payload budget",
+        "no_admission": true,
+        "command": [
+          "./bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "dense-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-dense-admission/dense-single-reference-prompts.json",
+          "--batch-live",
+          "2",
+          "--prefill-tokens",
+          "129",
+          "--batch-token-budget",
+          "129",
+          "--maxseq",
+          "8192",
+          "-t",
+          "1",
+          "-n",
+          "2",
+          "--serving-device-mb",
+          "1"
+        ]
+      },
+      {
+        "name": "request-device-peak",
+        "exit": 1,
+        "stage": "request quote/aggregate serving budget",
+        "no_admission": true,
+        "command": [
+          "./bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "dense-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-dense-admission/dense-single-reference-prompts.json",
+          "--batch-live",
+          "2",
+          "--prefill-tokens",
+          "129",
+          "--batch-token-budget",
+          "129",
+          "--maxseq",
+          "8192",
+          "-t",
+          "1",
+          "-n",
+          "2",
+          "--request-device-mb",
+          "1"
+        ]
+      },
+      {
+        "name": "output-array-bound",
+        "exit": 1,
+        "stage": "ByteLevel decoder/serving host preflight",
+        "no_admission": true,
+        "command": [
+          "./bitnet",
+          "--cuda-batch",
+          "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+          "--profile",
+          "dense-bf16",
+          "--batch-prompts",
+          "/tmp/bitnet-goal-dense-admission/dense-single-reference-prompts.json",
+          "--batch-live",
+          "2",
+          "--prefill-tokens",
+          "129",
+          "--batch-token-budget",
+          "129",
+          "--maxseq",
+          "8192",
+          "-t",
+          "1",
+          "-n",
+          "2147483647"
+        ]
+      }
+    ],
+    "flash_regression_heads": 303,
+    "glm_regression_heads": 148,
+    "native_regression_heads": 22,
+    "legacy_qwen_tokens": "192/192"
+  },
+  "cases": {
+    "final-dense-single": {
+      "exact_full_heads": 128,
+      "requests": 2,
+      "live": 1,
+      "outputs": 64,
+      "asan": false,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 75955922,
+        "shared_device_upper": 30249141600,
+        "reserved_host": 77493294,
+        "reserved_device": 30690670088,
+        "peak_reserved_host": 111462910,
+        "peak_reserved_device": 30690670088,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 1,
+        "idle": 1,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 1,
+        "reused": 1,
+        "reserved_kv": 16777216,
+        "peak_kv": 16777216,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 2,
+        "steps": 128,
+        "packed_calls": 128,
+        "fallback_rows": 0,
+        "released": 2,
+        "peak_live": 1
+      }
+    },
+    "final-dense-four": {
+      "exact_full_heads": 256,
+      "requests": 4,
+      "live": 4,
+      "outputs": 64,
+      "asan": false,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 77586886,
+        "shared_device_upper": 30431493516,
+        "reserved_host": 83736374,
+        "reserved_device": 32197607468,
+        "peak_reserved_host": 111528966,
+        "peak_reserved_device": 32197607468,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 4,
+        "idle": 4,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 4,
+        "reused": 0,
+        "reserved_kv": 67108864,
+        "peak_kv": 67108864,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 4,
+        "steps": 64,
+        "packed_calls": 64,
+        "fallback_rows": 0,
+        "released": 4,
+        "peak_live": 4
+      }
+    },
+    "final-dense-reuse": {
+      "exact_full_heads": 512,
+      "requests": 8,
+      "live": 4,
+      "outputs": 64,
+      "asan": false,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 77718998,
+        "shared_device_upper": 30431493516,
+        "reserved_host": 83868486,
+        "reserved_device": 32197607468,
+        "peak_reserved_host": 111661078,
+        "peak_reserved_device": 32197607468,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 4,
+        "idle": 4,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 4,
+        "reused": 4,
+        "reserved_kv": 67108864,
+        "peak_kv": 67108864,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 8,
+        "steps": 128,
+        "packed_calls": 128,
+        "fallback_rows": 0,
+        "released": 8,
+        "peak_live": 4
+      }
+    },
+    "final-dense-device-pressure": {
+      "exact_full_heads": 256,
+      "requests": 4,
+      "live": 2,
+      "outputs": 64,
+      "asan": false,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 30932992000,
+        "shared_host_upper": 76543098,
+        "shared_device_upper": 30249662720,
+        "reserved_host": 78080470,
+        "reserved_device": 30691191208,
+        "peak_reserved_host": 111528966,
+        "peak_reserved_device": 30691191208,
+        "busy": 192,
+        "idle_retained": 1,
+        "slots": 1,
+        "idle": 1,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 1,
+        "reused": 3,
+        "reserved_kv": 16777216,
+        "peak_kv": 16777216,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 4,
+        "steps": 256,
+        "packed_calls": 256,
+        "fallback_rows": 0,
+        "released": 4,
+        "peak_live": 1
+      }
+    },
+    "final-dense-single-asan": {
+      "exact_full_heads": 128,
+      "requests": 2,
+      "live": 1,
+      "outputs": 64,
+      "asan": true,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 75955922,
+        "shared_device_upper": 30249141600,
+        "reserved_host": 77493294,
+        "reserved_device": 30690670088,
+        "peak_reserved_host": 111462910,
+        "peak_reserved_device": 30690670088,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 1,
+        "idle": 1,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 1,
+        "reused": 1,
+        "reserved_kv": 16777216,
+        "peak_kv": 16777216,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 2,
+        "steps": 128,
+        "packed_calls": 128,
+        "fallback_rows": 0,
+        "released": 2,
+        "peak_live": 1
+      }
+    },
+    "final-dense-four-asan": {
+      "exact_full_heads": 256,
+      "requests": 4,
+      "live": 4,
+      "outputs": 64,
+      "asan": true,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 77586886,
+        "shared_device_upper": 30431493516,
+        "reserved_host": 83736374,
+        "reserved_device": 32197607468,
+        "peak_reserved_host": 111528966,
+        "peak_reserved_device": 32197607468,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 4,
+        "idle": 4,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 4,
+        "reused": 0,
+        "reserved_kv": 67108864,
+        "peak_kv": 67108864,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 4,
+        "steps": 64,
+        "packed_calls": 64,
+        "fallback_rows": 0,
+        "released": 4,
+        "peak_live": 4
+      }
+    },
+    "final-dense-reuse-asan": {
+      "exact_full_heads": 512,
+      "requests": 8,
+      "live": 4,
+      "outputs": 64,
+      "asan": true,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 77718998,
+        "shared_device_upper": 30431493516,
+        "reserved_host": 83868486,
+        "reserved_device": 32197607468,
+        "peak_reserved_host": 111661078,
+        "peak_reserved_device": 32197607468,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 4,
+        "idle": 4,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 4,
+        "reused": 4,
+        "reserved_kv": 67108864,
+        "peak_kv": 67108864,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 8,
+        "steps": 128,
+        "packed_calls": 128,
+        "fallback_rows": 0,
+        "released": 8,
+        "peak_live": 4
+      }
+    },
+    "final-dense-device-pressure-asan": {
+      "exact_full_heads": 256,
+      "requests": 4,
+      "live": 2,
+      "outputs": 64,
+      "asan": true,
+      "tool": null,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 30932992000,
+        "shared_host_upper": 76543098,
+        "shared_device_upper": 30249662720,
+        "reserved_host": 78080470,
+        "reserved_device": 30691191208,
+        "peak_reserved_host": 111528966,
+        "peak_reserved_device": 30691191208,
+        "busy": 192,
+        "idle_retained": 1,
+        "slots": 1,
+        "idle": 1,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 1,
+        "reused": 3,
+        "reserved_kv": 16777216,
+        "peak_kv": 16777216,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 4,
+        "steps": 256,
+        "packed_calls": 256,
+        "fallback_rows": 0,
+        "released": 4,
+        "peak_live": 1
+      }
+    },
+    "memcheck-dense-device-pressure": {
+      "exact_full_heads": 8,
+      "requests": 4,
+      "live": 2,
+      "outputs": 2,
+      "asan": false,
+      "tool": "memcheck",
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 30932992000,
+        "shared_host_upper": 76542106,
+        "shared_device_upper": 30249662720,
+        "reserved_host": 78079478,
+        "reserved_device": 30691191208,
+        "peak_reserved_host": 111527974,
+        "peak_reserved_device": 30691191208,
+        "busy": 6,
+        "idle_retained": 1,
+        "slots": 1,
+        "idle": 1,
+        "request_host": 1537372,
+        "request_host_peak": 1537372,
+        "request_device": 441528488,
+        "variable_capacity": 1
+      },
+      "pool": {
+        "created": 1,
+        "reused": 3,
+        "reserved_kv": 16777216,
+        "peak_kv": 16777216,
+        "budget_kv": 8589934592,
+        "evicted": 0,
+        "resized": 0,
+        "discarded": 0
+      },
+      "batch": {
+        "completed": 4,
+        "steps": 8,
+        "packed_calls": 8,
+        "fallback_rows": 0,
+        "released": 4,
+        "peak_live": 1
+      }
+    }
+  },
+  "limitations": [
+    "Input parsing and immutable model/tokenizer loading occur before the serving reservation phase; their setup peaks are not bounded here.",
+    "Host bookkeeping for opaque backend handles, thread stacks, allocator/driver/cuBLAS internals and file mappings is outside these explicit payload quotes. Total RSS/physical VRAM peaks remain unqualified.",
+    "Combined group budgets and replacement overlap are conservative. A free-memory snapshot does not protect against another process allocating later.",
+    "Private request quotas exclude public session arenas, which are charged separately in aggregate admission.",
+    "The legacy dense library pool remains available through its original KV-only API; the common aggregate contract applies to the qualified GGUF CLI path.",
+    "Static queued cohorts do not establish external-arrival/cancellation serving, sustained throughput/TTFT/ITL tails, diverse cold/warm offload efficiency or vLLM parity.",
+    "CPU AVX2/AVX512/NEON and Metal qualification remains required.",
+    "Native DeepSeek now shares the common managed-payload ledger through its own exact-shape CLI pool; native_followup_evidence records this follow-up. Setup/physical peaks and external arrival/performance qualification remain pending."
+  ],
+  "audit_discrepancy": {
+    "cause": "The new baseline harness used exec() in its globals; audit-parent.py rebound p to the parent evidence root. make test consequently overwrote the prior non-numerical baseline.log. Numerical references, source files and manifests were not repinned. The original baseline log bytes are not recoverable from current known backups.",
+    "files": [
+      {
+        "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+        "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+        "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+        "changed": true
+      },
+      {
+        "path": "/tmp/bitnet-goal-resource-admission/baseline-exit.json",
+        "expected": "5bc232b82de377a5655a39a2af9d7ae0fc868de5b9df957e18905cb914606c88",
+        "observed": "5bc232b82de377a5655a39a2af9d7ae0fc868de5b9df957e18905cb914606c88",
+        "changed": false
+      }
+    ]
+  },
+  "harness_recovery": [
+    "A standard architecture check caught a direct quant-registry scalar-width call from the transformer. The call now crosses the backend metadata facade; the final protected clean build and standard suite pass.",
+    "The first dense verifier assumed post-forward positions. The trace stores input positions; the verifier now checks0 for prefill and129+j-1 for decode. The completed first capture is preserved byte-for-byte and all full-head criteria remain strict."
+  ],
+  "native_followup_evidence": "docs/native-cuda-serving-memory.json"
+}

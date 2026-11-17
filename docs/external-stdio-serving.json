@@ -1,0 +1,150 @@
+{
+  "schema": 1,
+  "status": "implemented_with_declared_correctness_coverage",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "evidence_root": "/tmp/bitnet-goal-external-serving",
+  "interfaces": {
+    "gguf": "bitnet --cuda-batch MODEL.gguf --profile dense-bf16|flash-bf16|glm-recurrent --serve-stdio [existing batch options]",
+    "native": "bitnet --native-text MODEL_DIR --serve-stdio [existing native batch options]",
+    "exclusive_input": "--serve-stdio replaces --batch-prompts; it cannot be combined with a static prompt source.",
+    "dense_policy": "bench/policies/qwen38-cuda-dynamic.json",
+    "dense_policy_sha256": "f97b116e9b7317a669b8cbdd525a2c6a40bfd2e8064f6d0f093dc8280cde78a4",
+    "mixed_token_budget": "--mixed-token-budget N: default0; positive batch-live..batch-token-budget caps mixed steps only."
+  },
+  "protocol": {
+    "version": 1,
+    "transport": "One UTF-8 JSON object per stdin line; one JSON event per stdout line; diagnostics on stderr.",
+    "commands": [
+      {
+        "op": "submit",
+        "id": 101,
+        "prompt": "Example prompt",
+        "max_outputs": 5
+      },
+      {
+        "op": "cancel",
+        "id": 101
+      },
+      {
+        "op": "shutdown"
+      }
+    ],
+    "submit": "Nonempty prompt, uint64 id; optional max_outputs defaults to the global -n ceiling. Rejected submissions do not consume a generation. An id can be reused after its terminal event.",
+    "validation": "Strict bounded JSON: unknown/duplicate keys, invalid types, embedded NUL and invalid UTF-8 are rejected.",
+    "bounds": {
+      "pending_records": 64,
+      "ingress_records": 8,
+      "record_bytes": 1048576,
+      "commands_between_steps": 64
+    },
+    "events": [
+      "ready",
+      "accepted",
+      "admitted",
+      "token",
+      "completed",
+      "cancelled",
+      "failed",
+      "rejected",
+      "draining",
+      "stopped"
+    ],
+    "identity": "Accepted generations increase monotonically for the process lifetime. Request id plus generation identifies a trace; internal scheduler slots are recycled only after lease reclamation.",
+    "rejection_reasons": [
+      "invalid_command",
+      "record_too_large",
+      "duplicate_id",
+      "queue_full",
+      "not_pending",
+      "request_limits"
+    ],
+    "timestamps": "Host monotonic milliseconds. submitted_ms is the ingress read-chunk timestamp completing the record; admitted_ms and timestamp_ms come from the existing scheduler. Queued requests use admitted_ms=-1. Token timestamp is recorded after execution, before client delivery; these are not client TTFT/ITL measurements.",
+    "shutdown": "Explicit shutdown emits draining, stops ingress, ignores later records and drains already accepted work while stdin may remain open.",
+    "eof": "EOF drains accepted work and emits stopped; it does not emit the explicit-shutdown draining event.",
+    "cancellation": "Queued requests produce no forward/head. Live cancellation preserves already published output, releases its lease and prevents further scheduled work for that request; healthy sessions may be pooled.",
+    "fatal_io": "Read/write/backend/trace failure stops ingress, aborts the shared scheduler and fails the process. SIGPIPE is handled as output failure.",
+    "trace": "request-ID-generation-G-forward-N.i32le / .f32le with events.jsonl identity and position metadata; existing static trace names remain unchanged."
+  },
+  "ownership": {
+    "ingress": "Main-owned pthread only reads bounded input and timestamps completed records; it never accesses models or sessions.",
+    "scheduler": "Existing BnGenerateBatch remains the only scheduling/admission/publication implementation.",
+    "model": "Shared immutable BnModel; mutable state in BnSession and backend-owned session storage.",
+    "memory": "Existing managed HOST/DEVICE ledger charges bounded serving input/output/prompt buffers and retained tokenizer scratch before serving. Idle sessions remain charged.",
+    "tokenizer": "GGUF scratch preserves existing raw BPE and pinned NFC plus added-token isolation without per-arrival allocation or truncation; scratch quote includes the conservative normalization bound."
+  },
+  "independent_reference": {
+    "dense": "New pinned original vLLM dynamic capture, separate from existing batch4 golds; unobserved and passively observed executions have identical tokens. Twelve whole output heads mapped using original request ids, input ids and positions.",
+    "dense_evidence": "/tmp/bitnet-goal-external-serving/dense-original-dynamic",
+    "policy_derivation": "Original selected normalization kernel configs and PTX determine reduction modes; captured FlashInfer dispatch selects CP for one prefill request and non-CP for multiple. No output fitting.",
+    "producer_sha256": "454b4e7e83517be5dcb571b5ff90dd2698dfa30b07249d1284758074442cfd26",
+    "policy_derivation_sha256": "a16f63cd5db77e5d70a033112da8b96afb7ddfb06762dd1a25b71743d4d3b4fc",
+    "old_reference_scope": "The existing four-request reference remains unchanged. Fresh static one/two-request controls reproduced the first failed comparison, isolating geometry-dependent execution rather than cancellation/session contamination.",
+    "other_profiles": "Existing independent native, Flash and GLM references; numerical values unchanged. GLM loaded cuBLAS and cuBLASLt 13.10.0.20 verified from /proc maps."
+  },
+  "qualification": {
+    "dynamic_normal_and_asan": {
+      "native": 13,
+      "dense": 12,
+      "flash": 9,
+      "glm": 8,
+      "unit": "strict whole output heads per build mode",
+      "coverage": "Real stdin arrivals timestamped during initial execution, queued and live cancellation, two simultaneous independent histories, repeated client id, session reuse, shutdown while input remains open, managed payload caps and actual shared GPU work."
+    },
+    "dense_lifetime_per_mode": {
+      "requests": 84,
+      "full_heads": 84,
+      "created_sessions": 1,
+      "reused_sessions": 83,
+      "rejected_requests": 4,
+      "coverage": "Beyond64 accepted lifetimes; same client id reused, alternating distinct prompts, strict head equality, invalid command/cancel/output ceiling/context rejection and EOF drain. Normal plus ASAN/UBSAN."
+    },
+    "dense_device_pressure_per_mode": {
+      "requests": 32,
+      "full_heads": 32,
+      "configured_live": 2,
+      "peak_live": 1,
+      "busy_returns": 31,
+      "device_limit_bytes": 30932992000,
+      "peak_reserved_device_bytes": 30875039092,
+      "coverage": "Queued requests complete under aggregate device cap; retained idle session remains charged. Normal plus ASAN/UBSAN."
+    },
+    "fatal_io": {
+      "modes": [
+        "normal",
+        "asan_ubsan"
+      ],
+      "cases": [
+        "directory stdin read failure",
+        "broken stdout after admission",
+        "exclusive trace write failure after admission"
+      ],
+      "result": "All6 expected exit1, no sanitizer finding, GPU idle after each exit."
+    },
+    "builds": "Protected clean build, standard and full CUDA suites, diagnostic target isolation: pass with zero warnings; fresh158 host-C ASAN build173commands; ingress/control ASAN/UBSAN and TSAN pass.",
+    "verification_qualifier": "ASAN instruments host C; it does not establish device-kernel memory correctness. Standalone TSAN covers ingress/control tests, not the CUDA backend.",
+    "cuda_memcheck": {
+      "scope": "Same real dynamic Dense cancellation/two-live/reuse schedule using repository policy",
+      "full_heads": 12,
+      "errors": 0,
+      "leaked_bytes": 0,
+      "evidence": "/tmp/bitnet-goal-external-serving/memcheck2-normal-dense",
+      "tool": "/usr/local/cuda-13.5/bin/compute-sanitizer",
+      "initial_tool_failure": "System /usr/bin/compute-sanitizer missing injection library, exited before product launch; failed attempt preserved separately."
+    }
+  },
+  "limitations": [
+    "Correctness qualification is bounded to the declared workloads and numerical profiles; this is not four-family release acceptance.",
+    "More-than64 lifetimes, aggregate device-pressure and fatal-I/O whole-model checks in this phase cover Dense; shared scheduler/control tests supplement them.",
+    "Managed payload reservations are not measured process RSS or physical VRAM peaks, and do not bound immutable loading or opaque driver/library setup allocations.",
+    "Sustained offered-load throughput and client TTFT/ITL tails, matched resident vLLM parity, diverse cold/warm offload transfers/stalls/physical peaks and further CPU/Metal coverage remain unqualified.",
+    "The new Dense policy records a pinned original runtime startup/kernel contract; it is not a universal reference for other kernel/autotune profiles.",
+    "One Dense resident comparison and three512-request local stdio target runs are documented in performance_followup; this is not all-family or general serving parity."
+  ],
+  "historical_integrity": {
+    "status": "passed_with_acknowledged_historical_log_loss",
+    "exception": "/tmp/bitnet-goal-dense-admission/parent-log-discrepancy.json",
+    "scope": "One historical nonnumerical baseline log was lost before this phase; numerical gold files remain preserved."
+  },
+  "performance_followup": "docs/stdio-serving-performance.json"
+}

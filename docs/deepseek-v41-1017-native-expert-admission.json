@@ -1,0 +1,236 @@
+{
+  "exit": 0,
+  "checks": {
+    "asan-test_trellis-build": 0,
+    "asan-test_trellis": 0,
+    "asan-test_moe-build": 0,
+    "asan-test_moe": 0,
+    "probe-build": 0,
+    "admission-build": 0,
+    "admission": 0,
+    "asan-probe-build": 0,
+    "native-l0-e0-m1": 0,
+    "native-l0-e0-m7": 0,
+    "native-l0-e0-m64": 0,
+    "native-l0-e0-m256": 0,
+    "native-l39-e383-m1": 0,
+    "native-l39-e383-m7": 0,
+    "native-l39-e383-m64": 0,
+    "native-l39-e383-m256": 0,
+    "asan-native": 0,
+    "memcheck-native": 0
+  },
+  "runs": [
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 1,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 5120,
+        "intermediate_f16_words_per_repeat": 6912,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    },
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 7,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 35840,
+        "intermediate_f16_words_per_repeat": 48384,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    },
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 64,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 327680,
+        "intermediate_f16_words_per_repeat": 442368,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    },
+    {
+      "execution": {
+        "expert": "l0-e0",
+        "tokens": 256,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 1310720,
+        "intermediate_f16_words_per_repeat": 1769472,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 1,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 5120,
+        "intermediate_f16_words_per_repeat": 6912,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 7,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 35840,
+        "intermediate_f16_words_per_repeat": 48384,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 64,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 327680,
+        "intermediate_f16_words_per_repeat": 442368,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    },
+    {
+      "execution": {
+        "expert": "l39-e383",
+        "tokens": 256,
+        "limit": 10,
+        "repeats": 3,
+        "output_f32_words_per_repeat": 1310720,
+        "intermediate_f16_words_per_repeat": 1769472,
+        "mismatches": 0
+      },
+      "cache": {
+        "native_index_tensors": 190549,
+        "reader_calls": 3,
+        "successful_io_bytes": 13315584,
+        "host_cache_payload_budget": 13315584,
+        "hits": 2,
+        "misses": 1
+      }
+    }
+  ],
+  "admission": {
+    "projection_bindings": 46080,
+    "expert_bindings": 15360,
+    "bundle_payload_bytes": 204527370240,
+    "marker_read_bytes": 184320,
+    "native_index_tensors": 190549,
+    "max_rss_kib": 318332
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "source_sha256": {
+    "include/trellis.h": "e473d2d16f100037dd8786def3d788a461e833af19f9f893b0cd1bed98bc7c3e",
+    "src/trellis.c": "f638d101bce7c96b3e906433a4534a6fdafed3f612f6a1729b11497f8433ce88",
+    "test/test_trellis.c": "c1886aa8dfcf40722c63678a1ed438cb0c58b1745ff1bc3df06da30ac93c02f6",
+    "include/moe.h": "cbe19d9107c0de19f93957fdae99da196de1c0b106c1bb9786049173be02799b",
+    "src/moe_cache.c": "b602d459ece02a5170e6b540b060a389d8a937e988917dcf97efdb83fcdc3315",
+    "src/moe_io.c": "2d49b2c0991b6ded1948878668f01ded1ce724531b9e74c1f0457e9fcc190afa",
+    "src/moe_internal.h": "be97bb21973faa17fb3493230a268392c858898443689f359ee8e4509e970342",
+    "test/test_moe.c": "127cf78365630f44b453643b2683b79f21d88ca63816095006573d300d022842",
+    "Makefile": "1dbde9356da0671733146552b988976e2a5976464c353c7209e522f3b11cdb50",
+    "AGENTS.md": "5d621dcff9dd49330561c59a8ae118da39d142f822d8bc15a1483923d46e7082",
+    "CLAUDE.md": "c0f578233d916aea66383f37c15b8b8ec7b54ee3a3e72a6ac3ddaf9f0c373742"
+  },
+  "artifact_directory": "/tmp/bitnet-goal-exl3-admission",
+  "scope": "Native immutable trellis-source admission over BnSafetensorsIndex and generic reader admission through the existing bounded pinned MoE host cache. Actual checkpoint readers supply all weights/scales to the existing CUDA FFN; frozen files supply only activations and independent expected outputs.",
+  "output_f32_words_exact": 10076160,
+  "intermediate_f16_words_exact": 13602816,
+  "policies": {
+    "decode": "admit=1: promote hits and admit complete misses, preserving pins",
+    "prefill": "admit=0: borrow hits without promotion; stage misses without evicting decode working set",
+    "failure": "Failed partial reads never publish a reservation. When all slots are pinned, caller-owned bounded staging is required; no per-call allocation.",
+    "identity": "Cache binds reader identity/context/callback/dimensions/bytes; generic and legacy cache entry points reject mismatched namespaces."
+  },
+  "admission_scope": "All 40x384x3 text-backbone projections bound and checked one at a time, including dtype, dimensions, payload layout and actual MUL1 scalar. This is not full model construction or decoding of every tensor body. Marker payload reads total184320 bytes; 204527370240 bytes is logical bundle payload represented, not body bytes loaded.",
+  "cache_accounting": "Per actual expert: 13315584 payload bytes. One-slot cache in each GPU test; descriptor/index/allocator metadata, source binding allocation, request buffers and CUDA memory are separate. Cold cache means this RAM cache empty, not cold OS page cache. Reader callbacks count projection bundles, not individual pread system calls.",
+  "sanitizer_link_note": "Initial Clang18 sanitizer link did not find libstdc++ using its default search path. Failure logs retained. Corrected using /usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so explicitly; ASAN/UBSAN synthetic trellis+MoE cache and actual native reader/GPU pipeline all passed. CUDA memcheck actual run zero errors/leaks.",
+  "limitations": [
+    "No native model-level config/architecture construction, routing/grouped reduction, or complete DeepSeek forward/generation admission.",
+    "No production GPU expert cache or combined RAM/VRAM placement scheduler connected in this stage. The checkpoint GPU tests stage one expert using existing request-owned buffers.",
+    "The RAM slab bound covers payload; index/source/allocator metadata and caller staging have separate costs.",
+    "All-projection admission checks metadata plus markers, not all packed payload bodies. Numerical GPU validation samples two experts with deterministic activations.",
+    "GPU numerical equivalence remains the explicit DQ FFN profile, not low-token packed decode, custom large-batch GEMM, or fused-basis reconstruction policy.",
+    "No throughput, storage-cold latency, vLLM parity, new CPU SIMD acceleration, or NEON/Metal/WASM execution claim."
+  ],
+  "test_probe_sha256": {
+    "checkpoint-probe.c": "5a90122ecfc30e171ffd71fc24f30be8126482bfad5aa606ffa86b62455b388f",
+    "admission-probe.c": "e0e0bd918f99ae65af8d4d28f665fcb0d53cc9c48bb39a4142be6385b0a36c14",
+    "qualify.py": "fad3030648ae3425a6936809a4b90c047574e8aad61a5fefc4421245fee0b298"
+  }
+}

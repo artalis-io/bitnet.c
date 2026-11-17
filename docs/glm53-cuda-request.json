@@ -1,0 +1,176 @@
+{
+  "scope": "Explicit whole45-layer GLM request/executor from token IDs through final logits and greedy decode",
+  "whole_goal_complete": false,
+  "ordinary_generation_admitted": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-session",
+  "source_sha256": {
+    "src/transformer/bf16.c": "16770482668236a0bb88df53ffbd33e18489ce496f3aef445dedf6560931615b",
+    "src/transformer/bf16_internal.h": "e44de9d1c851dc45687585eaabbdd48b476076479f3e95acd38389b18b651ae0",
+    "test/test_cuda_glm_request.c": "b1c41f8a09d267978da25856ce6eb5355fa40693bfe232af785949d10ae62350",
+    "test/reference_glm_model.py": "0c2e7d4350030a095517c6cd7abbfe93f89af975ba0c28dc1f596376d3fdc332",
+    "Makefile": "acac721d796ac6ebe151db53648ad313c2cdcc233b46fbe1cc7cd1d7f6c5aec6"
+  },
+  "validation": {
+    "clean": {
+      "exit": 0
+    },
+    "build": {
+      "exit": 0
+    },
+    "standard": {
+      "exit": 0
+    },
+    "benches": {
+      "exit": 0
+    },
+    "native-fast": {
+      "exit": 0
+    },
+    "native-short": {
+      "exit": 0
+    },
+    "reference-short": {
+      "exit": 0
+    },
+    "memcheck": {
+      "exit": 0
+    },
+    "synccheck": {
+      "exit": 0
+    },
+    "cuda": {
+      "exit": 0
+    },
+    "sanitize-build": {
+      "exit": 0
+    },
+    "sanitize": {
+      "exit": 0
+    }
+  },
+  "clean_build_zero_warnings": true,
+  "user_probe_binaries_preserved": true,
+  "previous_operator_sources_preserved": {
+    "prior_bf16_implementation_preserved": true,
+    "prior_bf16_header_preserved": true,
+    "prior_gpu_and_reference_sources_preserved": true,
+    "user_binaries_preserved": true
+  },
+  "independent_comparisons": {
+    "fast": {
+      "exact_elements": 2154760,
+      "greedy": [
+        314,
+        40065
+      ],
+      "frames": [
+        1,
+        1
+      ]
+    },
+    "short": {
+      "exact_elements": 9534760,
+      "greedy": [
+        304,
+        279
+      ],
+      "frames": [
+        9,
+        1
+      ]
+    }
+  },
+  "reference_audit": {
+    "fast": {
+      "manifest_sha256": "0ab5073d1d171a9e100da5cfe0efa19fd8f2a10b44806fdf7e2632283305c469",
+      "matching_layer_files": 360,
+      "maximum_selected_expert": 287,
+      "selected_experts_above255": 29
+    },
+    "short": {
+      "manifest_sha256": "cbff33e2bbc8033effab475dfe3d7b5c83c7ebaf26139cc7494ef8c49ac4f31b",
+      "matching_layer_files": 360,
+      "maximum_selected_expert": 287,
+      "selected_experts_above255": 32
+    }
+  },
+  "execution": {
+    "ownership": "Immutable backend model resources; resident request owns all GPU allocations/bank streams/pins/BLAS; separate host metadata released after device work drains.",
+    "transaction": "Begin copies IDs and scheduler metadata, submits embedding; submit retains exact layer/MoE continuation on BUSY; final successful fence commits every recurrent/history/tail parity and request position together. Partial failure poisons the request; healthy idle restart clears state without allocation.",
+    "workspace_banks": 2,
+    "attention_layers": {
+      "kda": 34,
+      "mla": 11
+    },
+    "ffn_layers": {
+      "dense": 3,
+      "moe": 42
+    },
+    "plain_pre_calls_per_frame": 1,
+    "fused_pre_calls_per_frame": 89,
+    "final_head": "Normalize all prompt rows, rawQ8 head only final sampled row.",
+    "runtime_resident_allocations": 0
+  },
+  "memory": {
+    "max_tokens": 9,
+    "sequence_capacity": 64,
+    "device_payload_bytes": 511946960,
+    "host_metadata_staging_and_pinned_payload_bytes": 141123100,
+    "resident_allocations_at_prepare": 346,
+    "separate_model_nonexpert_payload_bytes": 9916407032,
+    "separate_shared_source_cache_budget_bytes": 134217728,
+    "expert_bank_slots": 2,
+    "expert_bank_capacity": 3,
+    "bank_device_and_pinned_payload_each_bytes": 122683392,
+    "exclusions": [
+      "Already prepared model resources",
+      "Shared source expert cache",
+      "CPU file/mmap/OS page-cache residency",
+      "Driver/context/allocator overhead"
+    ]
+  },
+  "faults_tested": [
+    "Device/host one-byte-short admission without GPU allocation",
+    "Allocation17 failure leaves no GPU or execution resource owner",
+    "Invalid token/count/position before queueing",
+    "Pending transaction rejects restart, begin and premature complete",
+    "Forced expert-bank BUSY retains all previous attention work",
+    "All logits exactly replay after healthy restart",
+    "Failed final fence leaves old logical position/parity and poisons request"
+  ],
+  "forced_busy_regular_counts": {
+    "single_token_frame": 126,
+    "nine_token_prefill": 703
+  },
+  "source_io": {
+    "measurement": "Actual CPU expert-source read bytes; not an isolated GPU DMA stall or residency benchmark.",
+    "single_token_frame_bytes": 5152178176,
+    "nine_token_prefill_bytes": 31662014464
+  },
+  "oracle": {
+    "inputs": "Actual checkpoint token IDs, independent original embedding and all45 original block computations; no injected native activation, routing choice or weight tensor.",
+    "experts": "Full288-expert raw tensor domains; only original router-selected rows populated before unchanged original vector operators. Selected IDs above255 retained. Checkpoint clamp10 explicit.",
+    "arithmetic_profile": "Original rawGGUF operators; fused-recurrent KDA; default deferred/fused mHC; short causal NoPE MLA; original identity-projection materialized K/V; BF16 gamma/RMS and final-row Q8 head; default non-batch-invariant normalization launch.",
+    "repeats": "Every original full-model schedule captured twice; every layer tuple and logits exact across original repeats and independent native execution."
+  },
+  "sanitizer_environment": {
+    "asan_options": "protect_shadow_gap=0:detect_leaks=1:halt_on_error=1",
+    "ubsan_options": "halt_on_error=1",
+    "initial_failure": "Default ASan shadow-gap protection made CUDA device enumeration return error2/out of memory, reproduced by a tiny standalone cudaGetDeviceCount ASan probe before model code. Disabling shadow-gap protection made the probe and actual request sanitizer run pass. Original failed logs retained."
+  },
+  "backend": {
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "compute_capability": "SM120",
+    "runtime_cublas": "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib",
+    "gpu_jobs_serial": true
+  },
+  "limits": [
+    "Whole-model independent cases are prefill1/decode1 and prefill9/decode1; chunked/resumed prefill and long-context whole-model cases remain pending.",
+    "Persistent state exactness is separately covered by component references; current whole-model comparison checks all45 deferred tuples and final heads plus functional decode continuation.",
+    "Long sparse chronological ordering versus original nondeterministic atomic ordering remains unqualified through generation.",
+    "Original default chunk-KDA, whole-plugin/HF merged loader, automatic generation admission, serving concurrency and vLLM performance parity are not claimed.",
+    "Whole-model kernel/transfer/fence trace remains pending; test-only tuple readbacks are outside the engine API."
+  ],
+  "next": "Qualify actual whole-model chunked/resumed and long prefill followed by decode, then integrate ordinary session/generation admission and measure bounded expert placement/performance."
+}

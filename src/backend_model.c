@@ -35,7 +35,13 @@ typedef struct {
 } BnBackendHandle;
 
 struct BnBackendModel {
+    const void *cpu_resources_owner;
+    void *cpu_resources;
+    void (*cpu_resources_release)(void *);
     BnGPUBackend *gpu;
+    const void *gpu_resources_owner;
+    void *gpu_resources;
+    void (*gpu_resources_release)(void *);
     int gpu_disabled;
     BnBackendHandle *handles;
     int n_handles;
@@ -57,6 +63,13 @@ BnBackendModel *bn_backend_model_create(void) {
     if (backend)
         atomic_flag_clear(&backend->cpu_prepared_lock);
     return backend;
+}
+int bn_backend_model_attach_cpu_resources(BnBackendModel *b,const void *owner,void *resources,void (*release)(void *)) {
+    if(!b||!owner||!resources||!release||b->cpu_resources)return -1;
+    b->cpu_resources_owner=owner;b->cpu_resources=resources;b->cpu_resources_release=release;return 0;
+}
+void *bn_backend_model_cpu_resources(const BnBackendModel *b,const void *owner) {
+    return b&&owner&&b->cpu_resources_owner==owner?b->cpu_resources:NULL;
 }
 
 static void backend_cpu_prepared_lock(BnBackendModel *backend) {
@@ -259,8 +272,51 @@ static void backend_model_clear_gpu(BnBackendModel *backend) {
     backend->n_qweights = 0;
 }
 
+int bn_backend_model_attach_gpu_resources(BnBackendModel *backend,
+    const void *owner, void *resources, void (*release)(void *)) {
+    if (!backend || !owner || !resources || !release || backend->gpu_resources)
+        return -1;
+    backend->gpu_resources_owner = owner;
+    backend->gpu_resources = resources;
+    backend->gpu_resources_release = release;
+    return 0;
+}
+
+void *bn_backend_model_gpu_resources(const BnBackendModel *backend,
+    const void *owner) {
+    return backend && owner && backend->gpu_resources_owner == owner
+        ? backend->gpu_resources : NULL;
+}
+
+int bn_backend_model_move_gpu_resources(BnBackendModel *destination,
+    BnBackendModel *source) {
+    if (!destination || !source || destination == source ||
+        destination->gpu || destination->gpu_resources ||
+        destination->n_handles || destination->n_qweights ||
+        source->n_handles || source->n_qweights || !source->gpu_resources)
+        return -1;
+    destination->gpu_resources_owner = source->gpu_resources_owner;
+    destination->gpu_resources = source->gpu_resources;
+    destination->gpu_resources_release = source->gpu_resources_release;
+    destination->gpu = source->gpu;
+    destination->gpu_disabled = source->gpu_disabled;
+    source->gpu_resources_owner = NULL;
+    source->gpu_resources = NULL;
+    source->gpu_resources_release = NULL;
+    backend_model_clear_gpu(source);
+    return 0;
+}
+
 void bn_backend_model_release_gpu(BnBackendModel *backend) {
     if (!backend) return;
+    if (backend->gpu_resources) {
+        void *resources = backend->gpu_resources;
+        void (*release)(void *) = backend->gpu_resources_release;
+        backend->gpu_resources_owner = NULL;
+        backend->gpu_resources = NULL;
+        backend->gpu_resources_release = NULL;
+        release(resources);
+    }
     BnGPUBackend *gpu = backend->gpu;
     if (bn_gpu_backend_can_destroy_buffer(gpu)) {
         int cap_seen = backend->n_qweights + backend->n_handles;
@@ -290,6 +346,11 @@ void bn_backend_model_release_gpu(BnBackendModel *backend) {
 void bn_backend_model_free(BnBackendModel *backend) {
     if (!backend) return;
     bn_backend_model_release_gpu(backend);
+    if(backend->cpu_resources) {
+        void *resources=backend->cpu_resources;void(*release)(void *)=backend->cpu_resources_release;
+        backend->cpu_resources=NULL;backend->cpu_resources_owner=NULL;backend->cpu_resources_release=NULL;
+        release(resources);
+    }
     while (backend->cpu_prepared_tail)
         backend_cpu_prepared_free_entry(backend,
                                         backend->cpu_prepared_tail);

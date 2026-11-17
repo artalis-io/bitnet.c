@@ -3,6 +3,7 @@
 #include "simd_helpers.h"
 #include <immintrin.h>
 #include <string.h>
+#include <math.h>
 
 static inline __m256i q6k_scale_pair(int8_t lo, int8_t hi) {
     return _mm256_set_epi16(hi, hi, hi, hi, hi, hi, hi, hi,
@@ -94,7 +95,7 @@ void bn_quant_q6k_avx2_sdot_range(void *ctx, int row_start, int row_end) {
 
 #define Q6K_TILE_T 8
 
-void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) {
+static void q6k_sdot_matmul(void *ctx, int row_start, int row_end, int tiled) {
     BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;
     int cols = c->cols;
     int rows = c->W->rows;
@@ -183,7 +184,12 @@ void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                         sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(p2, p3));
                     }
                     sumi = _mm256_sub_epi32(sumi, offset);
-                    acc[ti] += d * dx * (float)bn_avx2_hsum_epi32(sumi);
+                    if (tiled) {
+                        float block = d * (float)bn_avx2_hsum_epi32(sumi);
+                        acc[ti] = fmaf(block, dx, acc[ti]);
+                    } else {
+                        acc[ti] += d * dx * (float)bn_avx2_hsum_epi32(sumi);
+                    }
                 }
             }
 
@@ -191,6 +197,15 @@ void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                 c->out[(size_t)(t0 + ti) * rows + row] = acc[ti];
         }
     }
+}
+
+/* Keep GEMV-order dispatch separate from the tiled prefill contract. */
+void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int start, int end) {
+    q6k_sdot_matmul(ctx, start, end, 0);
+}
+
+void bn_quant_q6k_avx2_tiled_matmul_range(void *ctx, int start, int end) {
+    q6k_sdot_matmul(ctx, start, end, 1);
 }
 
 void bn_quant_q6k_x8_gemm_range(void *ctx, int group_start, int group_end) {

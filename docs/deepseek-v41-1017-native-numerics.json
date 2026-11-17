@@ -1,0 +1,113 @@
+{
+  "milestone": "Typed architecture-owned native DeepSeek V4.1 numerical configuration",
+  "status": "Qualified configuration component; whole inference/vLLM goal remains active",
+  "implementation": {
+    "api": "bn_model_arch_native_numerics validates atomically; bn_model_prepare_native_numerics publishes a model-owned immutable profile after anatomy and before backend setup; bn_model_native_numerics returns the borrowed const profile.",
+    "settings": "F32 norm epsilon 1e-20, HC4 epsilon 1e-6 and 20 Sinkhorn iterations with carry-pre, SiLU clamp10, sqrtsoftplus/noaux_tc normalized routing with scale1.5, main theta10000 and compressed theta160000, YaRN factor16 beta32/1 original65536, token IDs and Engram vocabulary parameters.",
+    "rope": "Original main attention is unscaled; compressed attention uses YaRN; attention factor1 and truncate true. These architecture choices are explicit in the typed profile.",
+    "validation": "Supported numeric constants compare by exact decimal identity without strtod/locale/global state or runtime floating arithmetic. Equivalent decimal spellings accepted; unsupported, missing, wrong-type or ambiguous settings rejected before publication. Existing config/anatomy/expert catalog remain valid on failure.",
+    "scope": "Explicit supported checkpoint policy, not a general decimal-to-float converter or executor admission. Legacy BnConfig/weights unchanged. Unsupported numeric policies/extra RoPE settings require separate implementation/qualification."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "asan-native": 0,
+      "differential": 0,
+      "asan-differential": 0
+    },
+    "real_checkpoint": {
+      "float_bits": [
+        507307272,
+        897988541,
+        1092616192,
+        1069547520,
+        1176256512,
+        1209810944,
+        1098907648,
+        1107296256,
+        1065353216,
+        1065353216
+      ],
+      "integers": [
+        4,
+        20,
+        1,
+        1,
+        65536,
+        1048576,
+        0,
+        1,
+        2,
+        16000000,
+        99092,
+        2,
+        0,
+        1,
+        1
+      ]
+    },
+    "reference": "/tmp/bitnet-goal-native-numerics/reference.json",
+    "reference_sha256": "0d86e7f7af1424a7a68fb9dfdedb0ac4f63c8ae7e5a123e73e58399946396b03",
+    "source_configuration_capture": "Selected unchanged original DeepseekV4Config read_cfg assignments plus DeepseekV41Model carry-pre class constant; Python struct.pack independently gives F32 bits. Main/compressed RoPE choice verified from original dsv4.py and util/rope.py; no numerical RoPE kernel capture.",
+    "differential": {
+      "differential": {
+        "cases": 3160,
+        "accepted": 1362,
+        "rejected": 1798,
+        "mismatches": 0
+      },
+      "asan-differential": {
+        "cases": 3160,
+        "accepted": 1362,
+        "rejected": 1798,
+        "mismatches": 0
+      }
+    },
+    "differential_oracle": "Python Decimal exact equality and strict JSON number grammar, including enormous exponent/zero cases, wrong types and near-equal decimal values.",
+    "synthetic": "All four host rounding modes; seven equivalent norm epsilon forms; unsupported norm/HC/YaRN/router/dropout/dtype/flags/token bounds; rejection preserves output; owned profile before backend publication, one-shot setup and teardown callback lifetime.",
+    "diagnostic_warnings": {
+      "asan-probe-build": 3,
+      "asan-unit-build": 3,
+      "cause": "Existing unused static AVX2 helpers in src/moe_cpu_kernels.c under Clang; clean GCC product build has zero warnings."
+    }
+  },
+  "limitations": [
+    "No native transformer execution admission, new numeric GPU kernel, full DeepSeek generation or vLLM parity claim.",
+    "Full Engram hash/token map/prime layout and all core/backend parameter budget assembly remain unfinished.",
+    "Configuration profile supports the validated constant policy. Distinct norm/router/YaRN/HC policies are explicitly rejected.",
+    "CUDA suite was rerun; no new NEON/Metal/WASM execution qualification."
+  ],
+  "source_sha256": {
+    "include/model_anatomy.h": "5a12ce896e193f2023a826b7e9d04b0134d1e6da381f1dcc0227ae26f2447a9a",
+    "include/model_arch.h": "87153943de536cf124ee9e6cb412711c629b79098cbdae74cddde733a96b3f36",
+    "include/model.h": "5f2961fbf543240434cee925567950e9705148d0f5557913f74db80f53adab0f",
+    "include/model_internal.h": "9ae5e83c39ecda15d8f875e9bce6399a558aa208c943570c646923cb862326bb",
+    "src/model_arch.c": "253859042bfb28870c18b3756f7c4609c32e300d1950fd675d367c392c767c67",
+    "src/model.c": "1bea2547907d95c55bfa0c5001f36745d28ccec81aedb45ad40dbe35666b8dfd",
+    "test/native_numerics_checks.h": "23cd1a317670d78367f9f7c1d6891faa93acea51bfe0437768a766499504b247",
+    "test/test_moe.c": "75c1a37f248bde7829fe704b841514c7dc51f64ec86e30f05bc5a9785345bb69",
+    "Makefile": "a258a201f032372874fb318fd3966cc602adb42e3d2e9b5cdbe5932d072464ac"
+  },
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-native-numerics/qualification.json",
+    "reference": "/tmp/bitnet-goal-native-numerics/reference.json",
+    "differential": "/tmp/bitnet-goal-native-numerics/differential-reference.json",
+    "continuation": "/tmp/bitnet-goal-native-numerics/NEXT.txt"
+  }
+}

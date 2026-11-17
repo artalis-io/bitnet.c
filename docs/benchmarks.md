@@ -4,6 +4,384 @@ Benchmark numbers in this repository are local checkpoints. They are useful for
 detecting regressions and comparing implementation choices on the same machine;
 they should not be treated as universal performance claims.
 
+## Prefill diagnosis
+
+Build `make bench_prefill` for CPU, or
+`make BN_ENABLE_CUDA=1 bench_prefill` for optional CUDA. The default compiler
+prefers `/usr/local/cuda/bin/nvcc`, then `nvcc` on PATH; `NVCC=...` still
+overrides it. This is a warm-cache benchmark with FP16 KV. It resets session
+state outside each measurement and performs one
+untimed warmup. Its default repeated `hello` prompt is synthetic and can give
+unrepresentative expert locality. Use a UTF-8 corpus containing at least the
+requested number of tokens for representative measurements:
+
+```bash
+./bench_prefill model.gguf 128 5 16 --prompt-file /path/to/corpus.txt --with-logits
+./bench_prefill model.gguf 128 5 16 --prompt-file /path/to/corpus.txt --with-logits --tokenwise
+./bench_prefill model.gguf 128 1 16 --prompt-file /path/to/corpus.txt --with-logits --profile
+BN_CUDA_DEVICE=0 ./bench_prefill model.gguf 128 5 8 --cuda --prompt-file /path/to/corpus.txt --with-logits
+```
+
+File mode tokenizes the complete text, then selects its first N tokens,
+including BOS when the tokenizer requests it. It rejects insufficient text
+rather than repeating it. Use identical corpus bytes for comparisons and
+record their hash. Without `--with-logits`, both modes omit vocabulary
+projection; with it, both compute logits only for the final token. These
+contracts must match the reference benchmark. Use `--flash` explicitly when
+comparing flash attention. Profiling perturbs execution; collect throughput
+separately with profiling disabled.
+
+CUDA mode fails if backend creation, weight upload or activation initialization
+fails; it never silently reports CPU measurements as CUDA. It uses the
+generation prefill wrapper so KV/SSM handoff follows the serving contract,
+then reads a device activation to include completion of queued GPU work in
+the timed interval. CPU mode retains the direct transformer path. The
+`mode=batch` label identifies the requested mode; entry/stage profiles reveal
+policy fallbacks. CUDA does not imply every operator is device-resident.
+The benchmark opens split GGUF checkpoints through the shard-aware loader.
+It does not yet configure a bounded GPU expert cache or implement an expert
+placement policy; large MoE placement needs separate qualification.
+
+`--profile` captures `BN_PREFILL_PROFILE=1` in the benchmark's CPU runtime,
+including with one thread. The same environment variable enables host prefill
+profiles in other callers that create a threadpool runtime. Summary records
+identify the configured backend, selected `path`, requested `output`, token
+count, dimensions, expert counts, and number of layers executed in fused
+chains. `backend=cuda` does not mean every operator ran on CUDA. `path=decode`
+or `decode_logits` identifies a sequence-policy fallback; each physical batch
+in a microbatched request has its own record. Single-token entry uses forward
+directly and does not emit a batched summary.
+
+All timing fields are host wall milliseconds. `chain` includes complete fused
+layer/model chains and is not counted as `qkv`. `attn_chain` measures fused
+QKV, attention and output projection calls. `ssm` includes SSM projections,
+recurrence and output for unfused SSM blocks. `moe` includes routing, expert
+execution, and its output composition outside fused chains. `gateup`, `act`
+and `down` are subdivisions of `ffn`, not additional totals. `total` includes
+requested final logits; `other` is the remainder after non-overlapping stage
+totals, including setup, auxiliary operations and cleanup. Small negative
+remainders within printed rounding precision are possible. Backend calls
+include their existing synchronization; these fields do not measure GPU
+kernel duration, transfer bytes, overlap or individual synchronization events.
+For MoE, the benchmark also prints existing per-session I/O/compute/cache
+statistics after each timed run; those are not CUDA transfer counters.
+
+### CUDA native-quant qualification
+
+Q8 routed and dense projections must preserve their activation-scale and
+reduction contracts across standalone, combined, and batched entry points.
+The default reference path uses full-warp routed reductions and the existing
+FP32-scale MMQ implementation above eight tokens. Small combined routed
+batches retain activation quantization rather than switching to float-input
+arithmetic below the MMA threshold. Combined routing follows the explicit
+router-fusion policy rather than inferring it from expert weight format.
+
+These experimental paths remain available only through explicit runtime flags:
+
+- `BN_CUDA_ENABLE_NATIVE_QUANT_MMA=1`: alternative dense/routed Q8 MMA with
+  FP16 activation scales.
+- `BN_CUDA_ENABLE_MOE_NATIVE_QUANT_GATEUP_2ROW=1`: half-warp gate/up reduction.
+- `BN_CUDA_ENABLE_MOE_NATIVE_QUANT_DOWN_2ROW=1`: half-warp down reduction.
+
+They are not numerically qualified substitutes for the reference defaults.
+Existing gate/up and down disable flags take precedence over their enable
+flags. The stored independent CUDA output hashes remain unchanged; numerical
+failures must not be resolved by regenerating expected values from this
+implementation. Faster kernels need to preserve the same contracts before
+they become defaults.
+
+The independent F32 SSM projection/state failure is corrected. Input
+normalization and alpha projection matched the reference bit-for-bit; the
+first difference was the final decay exponential. F32 prefill used `expf`
+while the reference library is built with `-use_fast_math` and uses the
+intrinsic exponential. Decode and prefill now use the same explicit
+softplus/decay helper. All 12 original state hashes remain unchanged and pass;
+four independent cases at 64/129 tokens also pass, including the 5120-wide,
+48-value-head model geometry. This does not by itself qualify the full model
+or complete backend. The older checkpoint below records the prior failure.
+
+The reference projection policy also applies at 64 tokens and above. The
+previous size override silently stacked the F32 projection matrices despite
+that policy, changing reduction geometry. Separate device projections now
+preserve the reference contract for those larger batches.
+
+The Q6_K eight-warp decode tail now retains unscaled block sums and folds
+them with explicit fused multiply-add. Scaling each tail block before adding
+it discarded the contraction used by the reference kernel. The parallel
+execution remains enabled. The focused Q6 small-batch/decode reference gate
+passes with its original hashes.
+
+After these corrections, Qwen3.8 27B Q4_K_XL passes the strict eight-prompt
+CUDA comparison: **192/192 sampled continuation token IDs**, all eight first
+IDs and equal output counts. Settings are GPU 0, 24 generated tokens per
+prompt, eight CPU threads, context 512, F32 KV and flash off on both engines,
+with production llama.cpp sampler tracing and loop abort disabled. Log:
+`/tmp/bitnet-goal-qwen38-full-parity.log`. This supersedes the 184/192 result
+in the older checkpoint below. It does not yet establish long/chunked/resumed
+prefill correctness, complete CUDA-suite success, or performance parity.
+
+#### SSM reference generator
+
+`test/reference_ssm_projection.c` builds a standalone GGML CUDA graph and
+does not link this runtime. It computes weighted RMSNorm, independent F32
+alpha/beta projections, softplus, sigmoid, and a gated-delta state update.
+It reproduces all 16 fixture hashes with reference CUDA library SHA256
+`e3330904452e38a9dedc307dedf83e182322a27d6b10dd1df457e02326082840`.
+The graph uses zero Q/K/V and nonzero initial state to isolate projected
+decay. It does not qualify nonzero beta sensitivity or quantized projections.
+
+```bash
+reference_root=/path/to/llama.cpp
+cc -O2 -std=c11 -I"$reference_root/ggml/include" \
+  test/reference_ssm_projection.c -L"$reference_root/build/bin" \
+  -Wl,-rpath,"$reference_root/build/bin" -lggml -lggml-base -lggml-cuda \
+  -o /tmp/reference_ssm_projection
+/tmp/reference_ssm_projection 5120 48 129 /tmp/ssm-reference
+```
+
+The optional prefix writes independent normalization, alpha, softplus, gate
+and decay tensors. State hashes are printed as fixture initializers. Preserve
+the reference implementation and library fingerprint when comparing results.
+
+#### Routed reduction reference
+
+`test/reference_mxfp4_routed.c` builds independent GGML CUDA gate/up and
+Q5_K down projections for the first routed fixture. It applies explicit
+ordered fused and separately rounded reductions on the host to isolate the
+contraction contract. Build it using the SSM generator command above,
+substituting this source and adding `-lm`. With the same reference library,
+it prints `fused=c7f6670bdcc72838 separate=df9207cd3d107e5d`.
+The first value is the unchanged routed golden; the second reproduces the
+prior runtime failure. This checks that fixture's contraction, not general
+end-to-end model correctness. All direct MXFP4/Q5_K routed fixture hashes
+pass after correcting the ordered dispatcher's reduction mode. Other
+per-expert paths retain their existing reduction contract.
+
+The routed MXFP4 graph now honors the reference activation flag through the
+existing AVX2-reference SiLU arithmetic. Its intermediate FP32 activations
+differ, but subsequent Q8 quantization can erase that difference. The test
+therefore checks the intermediate change and cross-mode consistency instead
+of requiring a different final hash. Existing independent output goldens
+remain unchanged. Q4_K and Q5_K block-reference requests retain their
+format-specific dispatcher. Routed MXFP4, Q5_K/Q6_K and Q4_K/Q5_1 focused
+graph tests pass, including flag changes and graph replay.
+
+CUDA graph reuse now includes operation arithmetic flags and routed geometry
+in its layout key. Previously switching from ordered to block-reference
+execution reused a graph with 100 nodes for a 45-node sequence. Decode
+positions and route contents remain dynamic and do not force graph rebuilds.
+The next full-suite failure was the dense Q4_K gate/up projection fixture at
+width 2048 and 17 tokens. The stacked-input shortcut changed MMQ projection
+geometry relative to the independent separate-projection graph. It now
+shares quantized input while issuing separate batched projection views, so
+both stacked and separate weight uploads retain reference geometry. The
+focused dense gate/up suite passes with unchanged goldens. Complete
+CUDA-suite qualification is still pending.
+
+#### Reset and prefill continuation qualification
+
+CUDA now implements the existing `reset_activations` backend hook. Session
+reset previously cleared host KV/SSM state but left device state intact.
+The hook waits for preceding work on the backend/default streams, clears
+device KV and recurrent state, and preserves uploaded weights and allocated
+working buffers. A synthetic regression covers clearing, idempotence and
+preserving working storage.
+
+Build and run the real-model execution-invariance check:
+
+```bash
+make BN_ENABLE_CUDA=1 test_prefill_continuation
+BN_CUDA_DEVICE=0 ./test_prefill_continuation model.gguf docs/inference.md 256 64 --cuda
+```
+
+Arguments select initial prompt length and chunk size. The corpus must contain
+at least prompt-length plus 64 tokens; it is never repeated. The test compares
+whole and chunked prefill, eight decode predictions, a resumed 64-token corpus
+suffix, and eight further predictions. It uses F32 KV, flash off and eight CPU
+threads. After a mismatch it replays the same reference token history to
+isolate numerical/state differences. It checks finite logits and exact greedy
+IDs, reporting maximum/RMS logits differences. This is not an independent
+llama.cpp reference comparison or concurrent-session qualification.
+
+On Qwen3.8 27B Q4_K_XL/GPU 0, the whole-versus-whole reset control at 256
+tokens is bit-identical for all 16 checked logits vectors
+(`/tmp/bitnet-goal-reset-control.log`). The 256-token/64-token-chunk case
+passes 16/16 greedy IDs, including resumed decode
+(`/tmp/bitnet-goal-reset-chunk64.log`). Before the reset fix even the
+whole-versus-whole control failed 15/16 with large logits differences.
+The 1024-token/129-token-chunk case (including a partial final chunk) also
+passes 16/16 IDs across initial and resumed decode
+(`/tmp/bitnet-goal-reset-long-chunk129.log`). A 33-token/9-token-chunk case
+also passes 16/16 IDs, crossing the small-batch projection boundary with a
+partial final chunk (`/tmp/bitnet-goal-reset-short-chunk9.log`). These corpus
+checks supplement,
+but do not replace, independent model-reference comparisons. The standard
+CPU suite passes after these changes; its optional model matrix still skips
+without fixture paths configured. Historical CUDA repeated-run timing below
+predates the reset fix and is not a qualification of correctly reset sessions.
+
+A subsequent short-chunk regression isolated a second lifecycle bug: shared
+scratch could grow after decode graph capture, leaving captured quantization
+pointers stale. Shared scratch storage changes now contribute to the graph
+cache key after reservation. Stable bindings keep replay enabled; a resized
+buffer requires recapture. This is distinct from clearing persistent session
+state. With replay enabled, the current CUDA 33/9, 256/64 and 1024/129 cases
+each pass 16/16 IDs (logs `/tmp/bitnet-goal-storage-continuation-33-9.log`,
+`/tmp/bitnet-goal-storage-continuation-256-64.log`, and
+`/tmp/bitnet-goal-storage-continuation-1024-129.log`). The short case failed
+with stale bindings and passed diagnostically with replay disabled before
+this fix. A contended routed test also exposed activation transfers using the
+private stream when execution explicitly selected the default stream.
+Activation writes/readbacks now use the configured execution stream, avoiding
+that cross-stream input race without adding a global synchronization. Reset,
+routed MXFP4/Q5_K, Q5_K/Q6_K, Q4_K/Q5_1 graph/reference cases and dense gate/up
+references pass after this correction (`/tmp/bitnet-goal-stream-focused.log`).
+Compute Sanitizer completed the graph-enabled 33/9 model check with 16/16
+IDs and **zero memory errors** (`/tmp/bitnet-goal-storage-memcheck.log`).
+The CPU 33/9 corpus check remains failing at 15/16 IDs, with small
+logits differences (`/tmp/bitnet-goal-final-cpu-continuation.log`); internal
+CPU chunked execution is not yet qualified by this check.
+
+The clean build has zero warnings and the standard CPU suite passes
+(`/tmp/bitnet-goal-final-clean-build.log`,
+`/tmp/bitnet-goal-final-cpu-suite.log`). Independent Qwen CUDA comparisons
+retain 192/192 IDs on the eight short prompts and 24/24 IDs on a 4096-byte
+corpus prefix (`/tmp/bitnet-goal-final-qwen38-parity.log`,
+`/tmp/bitnet-goal-final-long-reference.log`). The latter uses context 2048;
+prompt SHA256 is
+`5ba8da8fc2ff5e856a2e5d689785a80fc4691a5352d11290bdea864aa35f37f5`.
+
+The F32 decode-attention failure involved two issues. The test applied its
+flash oracle to a separate KQ/softmax/V pipeline, and the split softmax used a
+block-wide halving reduction instead of GGML's warp-first XOR reduction. The
+latter changes results at 33 keys. The runtime now uses warp-first reduction;
+all original flash hashes remain unchanged and pass. The split path matches
+ten separately generated independent GGML split hashes, including both
+33-key cases (`/tmp/bitnet-goal-split-qualified.log`). Full-suite qualification
+is being rerun; this focused result does not establish complete backend
+success.
+
+`test/reference_decode_attention_split.c` is the standalone split oracle.
+Build it using the SSM reference-generator command above, substituting this
+source and adding `-lm`. Run it with valid-key count and seed, e.g.
+`/tmp/reference_decode_attention_split 33 23`. It uses explicit F32 matmul
+accumulation, a 256-position padded cache, and a masked softmax. It does not
+link this runtime. Provenance: llama.cpp
+`df18bee11e96557b07aa7b12db0976f3c7ac9165`, reference CUDA library SHA256
+`e3330904452e38a9dedc307dedf83e182322a27d6b10dd1df457e02326082840`.
+The ten emitted initializers are recorded in
+`/tmp/bitnet-goal-split-independent-values.log`. The existing flash oracle
+retains its original source/version and expected values; its distinct
+normalization contract is not regenerated from the split implementation.
+
+The clean softmax build has zero warnings and passes the standard CPU suite
+(`/tmp/bitnet-goal-split-clean-build.log`,
+`/tmp/bitnet-goal-split-cpu-suite.log`). The independent short-prompt gate
+retains 192/192 IDs (`/tmp/bitnet-goal-split-qwen38-parity.log`). CUDA chunked
+and resumed tests retain 16/16 IDs in each of the 33/9, 256/64 and 1024/129
+cases (`/tmp/bitnet-goal-split-continuation-*.log`). The longer independent
+prompt now fails at **21/24** IDs, choosing “layer” where the reference
+chooses “operation” (`/tmp/bitnet-goal-split-long-reference.log`); the earlier
+24/24 checkpoint is not a qualification of this newer math path. The CPU
+33/9 check remains 15/16, with a 0.0140915-logit reference margin between the
+two competing tokens (`/tmp/bitnet-goal-cpu-continuation-margin.log`). An
+exact 33-token UTF-8 prefix was decoded and retokenized to verify identical
+input IDs before comparing CPU engines. That independent CPU comparison
+fails at 5/8 continuation IDs (`/tmp/bitnet-goal-cpu-prefix33-reference.log`),
+choosing “High-Level Flow” instead of “High-level flow”. These failures
+remain open; the strict criteria have not been relaxed.
+
+The next complete-suite failure is FP16 windowed head256/GQA2 attention at
+one key, one KV head and window 3
+(`/tmp/bitnet-goal-split-cuda-suite.log`). Its plain dispatch excludes head
+counts supported by the fused-RoPE reference vector path. The dispatch
+correction passes the complete focused head256 reference/window replay
+checks, including plain, in-place, fused-RoPE and captured replay modes
+(`/tmp/bitnet-goal-head-dispatch-focused.log`). Its original golden values
+remain unchanged.
+
+The resulting clean build passes the **complete CPU suite, complete CUDA
+backend suite, and CUDA diagnostic isolation** with zero build warnings:
+`/tmp/bitnet-goal-head-clean-build.log`,
+`/tmp/bitnet-goal-head-cpu-suite.log`, and
+`/tmp/bitnet-goal-head-cuda-suite.log`. This closes the synthetic backend
+suite failures; it does not close the open CPU corpus/long-prompt model
+comparisons or the broader offloading, serving and vLLM performance goals.
+The exact-prefix CPU tokenwise comparison passes 8/8 with both engines using
+one-token batches (`/tmp/bitnet-goal-cpu-prefix33-tokenwise-reference.log`),
+while the batched comparison above fails 5/8. That narrows the remaining CPU
+investigation to prefill execution/contract differences. No production
+batching has been disabled to obtain this result.
+
+### Qwen3.8 27B CUDA checkpoint
+
+Current local build: GPU 0, RTX PRO 6000 Blackwell Max-Q Workstation Edition,
+driver 595.104.02, toolkit 13.4.92, GCC 13.3, SM120a. Same GGUF and
+`docs/inference.md` corpus as the CPU checkpoint below; 128 prompt tokens,
+eight host threads, FP16 KV, flash off, final-token logits included, profiling
+disabled, warm cache, session reset excluded:
+
+| Requested execution | Timed runs | Median ms | Tokens/s |
+| --- | ---: | ---: | ---: |
+| CUDA batch | 5 | 218.188 | 586.649 |
+| CUDA tokenwise prompt control | 3 | 2266.818 | 56.467 |
+
+The tokenwise control omits intermediate vocabulary projections and is not a
+decode-throughput measurement. These numbers demonstrate existing batching
+benefit, not a new kernel speedup or vLLM parity. Reproduce with the corpus
+commands above and `BN_CUDA_DEVICE=0`. Binary SHA256:
+`bitnet=f1b09ad135f3bccdcbffc20ae9b957909766753d4dc0d79c05ec15244baf35c9`,
+`bench_prefill=c27c71be071228f8b4f0a08da22d4e531865fcf3abf2078866ed9f916c31b95c`.
+
+The warning-free clean CUDA build and `make BN_ENABLE_CUDA=1 test` pass.
+Default/calibrated routed Q8, dense Q8 MMQ, independent combined routing,
+and diagnostic-isolation checks pass with unchanged reference hashes.
+Compute Sanitizer memcheck on the routed-Q8 reference cases reports zero
+errors. The complete CUDA kernel suite still fails the F32 SSM case above.
+
+The real-model strict production-reference gate, eight prompts and a
+24-token cap, F32 KV on both runtimes, context 512, flash off, eight threads,
+matches all eight first token IDs and **184/192** continuation prefix tokens
+with no token-count mismatches. The sky prompt diverges after 16/24 tokens;
+the other seven prompts match 24/24. This is a **failed strict gate**.
+A separate prompt made from the first 700 characters of the corpus passes
+an eight-token strict check. Neither result establishes complete model or
+long-context qualification. No vLLM performance comparison was run.
+
+### Qwen3.8 27B prefill diagnosis checkpoint
+
+On the Ryzen Threadripper 9980X with GCC 13.3, the native x86 build using
+`Qwen3.8-27B-UD-Q4_K_XL.gguf` and the first 128 tokens of `docs/inference.md`
+measured the following warm-cache, three-run medians. These runs include final
+logits, FP16 KV, flash off, and no profiling:
+
+| Threads | Prefill ms | Tokens/s |
+| --- | ---: | ---: |
+| 16 | 4969.113 | 25.759 |
+| 32 | 3687.412 | 34.713 |
+
+The corpus SHA256 is
+`d9f0e92bb69cceb8853f99aa1200133fbbbb40bb8f16ca1988477789dd1b77bf`.
+The benchmark binary SHA256 is
+`08bb0e026299d681b3c6fcde280ecad2408679100a7d4ac403ed969ff3920486`
+(base revision `e2fb6b6` plus the prefill observability changes).
+This is a thread-count comparison, not a kernel speedup or vLLM parity claim.
+A matching 32-thread tokenwise control measured 20069.139 ms (6.378 tokens/s)
+in one timed run after warmup, versus 34.713 tokens/s for batched execution.
+The single-run control demonstrates substantial batching benefit; it is not a
+multi-run performance qualification.
+
+A separate profiled 16-thread run reported `path=batch`, zero decode fallback,
+and a 4913.563 ms total: dense FFN 3035.319 ms (61.8%), SSM 1480.841 ms
+(30.1%), QKV 205.579 ms, attention output 112.847 ms, and attention itself
+11.718 ms. Within FFN, gate/up took 1652.649 ms and down 1365.699 ms.
+The unclassified remainder was only 4.456 ms. This identifies FFN and SSM
+execution as the next CPU optimization targets at this prompt length; it
+does not support attributing the gap to an absent batched prefill path.
+Longer prompts require separate attention and recurrence measurements.
+At 32 threads, a separate profile reported 3517.470 ms total, FFN 2053.690 ms,
+and SSM 1183.988 ms; the same two stages remain dominant.
+
 Important variables:
 
 - model family and quant format
@@ -269,6 +647,1569 @@ MoE models are strongly affected by page-cache state and expert locality.
 
 When comparing against llama.cpp, record whether llama.cpp is actually CPU-only
 or whether it routes some work to Metal/GPU even when a CPU-looking flag is used.
+
+### Qualified Flash offload profile (2026-11-06)
+
+Qwen3.8 Flash Next Q4_K_XL, 1047 real corpus tokens, F32 KV, no flash,
+eight CPU threads, physical RTX PRO 6000 Blackwell GPU 1. Expert-cache budgets
+are 2 GiB RAM and a conservative 4 GiB VRAM; base weights, PLE, KV and
+activations are outside those budgets. The filesystem page cache was warm.
+The four qualified flags are fused HC mean/post, dense prefix chaining and
+GDN decode order. Capture covers initial prefill only; all 16 independent
+initial/resumed decode IDs still match after tracing.
+
+Nsight attributes 62.0 of 70.1 profiled host seconds to MoE. GPU kernel time
+sums to about 7.8 seconds, led by Q8 batched projections (4.47 seconds),
+routed K-quant (1.41 seconds) and Q5_1 (1.39 seconds). Initial prefill copies
+about 89.5 GB host-to-device and 26.4 GB device-to-host and makes roughly
+52,000 CUDA allocations. Wide HC intermediates contribute substantially to
+these copies. CUDA API wall times include GPU waits and must not be added
+to kernel times as independent costs.
+
+The grouped expert loop loaded CPU projections and prepared CPU layouts
+before trying the GPU, then the GPU path loaded those projections again.
+CPU loading/preparation now happens only after GPU rejection. A regression
+requires a GPU-cache hit to work with no host weights, and verifies exact
+CPU fallback after a backend partially writes output and rejects execution.
+
+A serialized paired process comparison, with identical harnesses and one
+cold then one reset/warm prefix per version, gives:
+
+| Phase | Before | After | Expert reads before/after |
+| --- | ---: | ---: | ---: |
+| Initial 1047 | 70.215 s | 67.290 s | 87.962 / 43.981 GB |
+| Reset/warm 1047 | 23.180 s | 21.890 s | 87.962 / 43.981 GB |
+| Resumed 64 | 6.277 s | 5.977 s | 47.951 / 23.975 GB |
+
+This is one paired run, with all 16 reference IDs preserved, rather than a
+statistical latency or vLLM parity qualification. The read reduction is exactly
+50%; GPU uploads are unchanged. Both initial and reset/warm prefixes have
+zero GPU cache hits and 14,055 misses, so the large cold/warm difference is
+not GPU expert reuse. The GPU fetch helper also bypasses the configured RAM
+LRU; its counters remain zero. RAM caching, allocation reuse and device-resident
+HC/PLE/MoE intermediates remain follow-up work.
+
+Evidence: `/tmp/bitnet-goal-qualified-flash-profile/initial1047.nsys-rep`,
+its SQLite/CSV reports and `baseline-summary.json`, plus
+`/tmp/bitnet-goal-moe-gpu-first-final/performance.json` and `qualification.json`.
+
+### Linear Q8 schedule construction (2026-11-06)
+
+The same profile exposed a larger cold-start cost inside the gathered Q8
+expert path. Its stream-K schedule planner scanned every grid block for
+every logical tile. For the 1047-token, 512-expert down projection this is
+92,160 tiles with one block per tile: about 8.49 billion interval checks.
+The original CUDA timeline has a 46.867-second GPU-idle gap ending at the
+1,105,924-byte schedule upload. Expert-call instrumentation reports zero
+rejections and 46.2 seconds inside gathered expert callbacks cold versus
+3.8 seconds warm, despite identical expert-cache misses.
+
+When grid size equals tile count, the partition assigns exactly the full
+`[0, K_blocks)` interval to each tile. The planner now emits that interval
+directly, preserving its contents and order while reducing construction from
+quadratic to linear time. Split schedules keep their existing implementation.
+No independent reference values were changed.
+
+With both this change and deferred CPU expert preparation, the identical
+serialized harness measures:
+
+| Phase | Original baseline | Combined changes | Expert reads |
+| --- | ---: | ---: | ---: |
+| Initial 1047 | 70.215 s | 21.463 s | 87.962 / 43.981 GB |
+| Reset/warm 1047 | 23.180 s | 21.534 s | 87.962 / 43.981 GB |
+| Resumed 64 | 6.277 s | 5.532 s | 47.951 / 23.975 GB |
+
+That is 3.27x faster initial prefill in this single paired measurement, with
+all 16 independent initial/resumed IDs preserved. A second CUDA timeline
+has exactly the same kernel-launch counts and transfer bytes as the original;
+total kernel time remains 7.843 seconds. Its largest GPU-idle gap is 44.1 ms.
+The improvement removes CPU planning work; it does not reduce PCIe traffic or
+establish vLLM parity. The budgets, warm filesystem cache and single-pair
+limits from the preceding checkpoint apply.
+
+Evidence: `/tmp/bitnet-goal-mmq-plan-linear-final/performance.json`,
+`trace-comparison.json`, `initial1047.nsys-rep` and `qualification.json`.
+
+### Bounded RAM cache for GPU expert uploads (2026-11-06)
+
+GPU expert uploads now consult the configured pread RAM cache. Decode admits
+whole experts; batched prefill borrows existing hits without admission or LRU
+promotion. Upload leases prevent eviction, and entries become visible only
+after all three projections have loaded successfully. Disabled, undersized or
+fully pinned caches fall back to session staging. GPU RAM-hit counters are
+separate from CPU-cache and VRAM-cache counters. Cache metadata still requires
+serialized execution; this does not qualify concurrent serving. Tokenwise
+prefill using the decode API currently follows decode admission policy.
+
+The same Flash workload and qualified flags as above were measured serially
+with RAM caching disabled and an 8 GiB RAM budget. Each process ran two identical
+requests, each including two 1047-token prefixes, eight decode steps, a 64-token
+resumed prefix and eight more decode steps. Both configurations preserve all
+32 independent IDs. The filesystem page cache was warm; no physical-disk cold
+claim is made. The conservative 4 GiB VRAM expert cache had zero decode hits.
+
+| RAM budget | Request | Mean decode | Median decode | Expert file-read bytes over 16 steps |
+| --- | --- | ---: | ---: | ---: |
+| Disabled | First | 290.949 ms | 294.891 ms | 24,068,096,000 |
+| Disabled | Repeated | 274.251 ms | 273.961 ms | 24,068,096,000 |
+| 8 GiB | First | 367.150 ms | 348.023 ms | 12,963,635,200 |
+| 8 GiB | Repeated | 309.783 ms | 310.360 ms | 12,295,475,200 |
+
+The repeated request saves 48.9% of expert reads, but mean decode is 13.0%
+slower. A 2 GiB trial also saved reads while slowing decode. Use
+`--cache-mb 0` for the cache-disabled control when tuning this workload. RAM caching is a
+placement capability, not a demonstrated latency improvement on this hot-page-
+cache workload. First-touch cost and working-set churn remain optimization
+questions. A temporary pinned-upload wrapper was slower and was not added to
+the runtime. These are single serialized process comparisons, not statistical
+performance qualification or vLLM parity. RAM slab budgets exclude metadata,
+base weights, PLE, KV, activations and the operating system's page cache.
+
+The final clean candidate builds without warnings and passes the standard and
+full CUDA suites, diagnostic isolation and backend-matrix checks. Qwen27 keeps
+192/192 short and 24/24 long IDs; Flash keeps 179/179 short IDs and 16/16 on
+each of eight matched prefill/resume schedules. All 170 initial/resumed state
+captures match exactly: 72,327,168 float words. The separate cross-schedule
+Flash long-prompt CLI mismatch remains unqualified. These checks do not establish
+ARM hardware or concurrent-serving correctness for the new cache path.
+The frozen executable is SHA-256
+`79227cb618e02c086469e90c432f2e05c3e568b7a0405e7bc100a94606e969a5`.
+Qualification: `/tmp/bitnet-goal-ram-direct-qualified/qualification.json`.
+
+Evidence: `/tmp/bitnet-goal-ram-direct-final/repeat-exits.json`,
+`repeat-summary.json`, `repeat-0.log`, `repeat-8192.log` and
+`ram-2048-pinned.log`.
+
+### GPU expert capacity experiment (2026-11-06)
+
+A benchmark-only variant increases the conservative GPU expert cache from 128
+to 1,024 slots, retaining the 32 MiB charge per expert (4 versus 32 GiB budget).
+RAM caching is disabled. Hardware, four qualified flags, F32 KV, corpus and
+repeated-request schedule match the preceding experiment. No runtime defaults
+or arithmetic changed. Both configurations preserve all 32 independent IDs.
+
+| GPU slots | Request | Mean decode | Median decode | GPU hits / calls | Expert-read bytes |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 128 | First | 290.949 ms | 294.891 ms | 0 / 7,680 | 24,068,096,000 |
+| 128 | Repeated | 274.251 ms | 273.961 ms | 0 / 7,680 | 24,068,096,000 |
+| 1,024 | First | 192.899 ms | 192.582 ms | 2,645 / 7,680 | 15,784,755,200 |
+| 1,024 | Repeated | 206.025 ms | 198.599 ms | 2,645 / 7,680 | 15,784,755,200 |
+
+Repeated-request mean decode improves 24.9%, with 34.4% fewer expert reads.
+This is a single serialized process per budget using the previous serialized
+128-slot control, not a statistical latency or vLLM parity result. It isolates
+GPU expert reuse; it does not establish an optimal cache size or remove prefill
+transfer costs. Sampled total GPU usage during the larger-cache run was about
+18 GiB, including other model/session allocations; this is not an allocator
+peak or a measurement of expert buffers alone.
+
+The CLI's `model_moe_entry_bytes()` currently estimates from the first MoE layer
+and charges pread projection bytes differently from mmap projection bytes.
+The benchmark uses an independent conservative slot charge. Audit packed/lazy
+backend allocations and heterogeneous layer formats before treating the CLI's
+budget accounting as equivalent or changing defaults.
+
+Evidence: `/tmp/bitnet-goal-vram-reuse/summary.json`, `32g.log` and `repeat.c`.
+
+### Expert-cache charge audit (2026-11-06)
+
+The CLI previously sized expert slots from the first routed layer. CUDA's
+backend did not supply the borrowed-layout cache-charge callback used there,
+so packed MMQ and gate/up auxiliary layouts were omitted, while a separate
+policy estimate covered some down-projection auxiliary storage.
+
+`bn_gpu_moe_bridge_cache_entry_bytes()` now scans every routed layer, charges
+raw bytes plus the backend's declared packed/lazy layout bound for each owned
+projection, and takes the largest layer as the uniform slot charge. Fused
+gate/up uploads use their combined shape. Mmap-native borrowed layouts retain
+the backend's specific charge. Arithmetic overflow disables cache creation
+rather than producing a wrapped budget. The CLI uses this shared helper.
+
+This charge covers resident expert payloads and declared backend auxiliary
+layouts. It excludes cache metadata, base weights, PLE, KV, activations,
+allocator overhead, backend scratch and the incoming expert upload before LRU
+eviction. It is not a total-process VRAM limit. Borrowed-layout discounts rely
+on the backend's supported native layout being created successfully; an owned
+fallback after allocation failure needs per-handle accounting for a strict
+budget. CUDA currently uses owned expert uploads.
+
+Synthetic coverage includes every projection's extra layout, a larger second
+routed layer, ignored dense layers, pread versus mmap-native charges, absent
+backend callbacks and overflow. The cache capacity experiment above remains a
+separate benchmark with its explicit 32 MiB charge.
+
+The final clean CUDA executable builds without warnings and passes standard,
+full CUDA, diagnostic-isolation and backend-matrix checks. Qwen27 retains
+192/192 short and 24/24 long IDs; Flash retains 179/179 short IDs and 16/16 on
+each of eight matched schedules. All 72,327,168 words across 170 initial/resumed
+state captures agree exactly with the preserved oracle. The known separate
+cross-schedule Flash long CLI mismatch remains unqualified.
+
+A real Flash replay using the new helper selects a 17,715,200-byte slot charge:
+242 entries fit within 4 GiB. Two matched 9/9 requests, including resumed prefill,
+preserve 32/32 independent IDs. This verifies the selected capacity and token
+parity; it does not measure total live CUDA allocations or a strict memory peak.
+The new helper also passes the WASM syntax check; no new ARM/Metal hardware
+qualification is claimed.
+
+Evidence: `/tmp/bitnet-goal-cache-accounting-final/qualification.json`,
+`charged-replay.log`, `charged-replay-exit.json` and `wasm-syntax.log`.
+Frozen executable SHA-256:
+`04f781216f8f71dbc0d014c07bf7c110782ea1cebae86aca1a55ef26c1949a4b`.
+
+### Separate batched-prefill GPU cache policy (2026-11-06)
+
+Batched prefill now borrows GPU expert-cache hits without LRU promotion and
+uploads misses into temporary buffers instead of admitting them. This mirrors
+the RAM lookup-only policy and preserves decode's working set across prompt
+scans. Decode retains normal admission and promotion; fully preloaded resident
+experts remain reusable. Temporary tracking capacity is checked before uploads,
+and partially created buffers are cleaned up on failure.
+
+The regression test fills a two-entry GPU cache, borrows the oldest entry during
+prefill with host weights unavailable, and checks that a later decode admission
+still evicts that entry. A prefill miss neither evicts nor admits; its three
+buffers survive until explicit release. Failures on each upload and missing or
+exhausted temporary ownership leave the original cache and handle count intact.
+
+The cache still requires serialized execution. Tokenwise prefill through the
+decode API retains decode admission policy. Temporary expert allocations are
+outside the resident expert-cache budget; this policy does not enforce a total
+VRAM peak or qualify concurrent serving.
+
+The protected clean candidate passes the standard/full CUDA suites, diagnostic
+isolation, backend matrix and WASM syntax checks. Qwen27 retains 192/192 short
+and 24/24 long IDs; Flash retains 179/179 short IDs and 16/16 on all eight matched
+prefill/resume schedules. All 170 initial/resumed state captures remain exact
+(72,327,168 words). The replay using the new 4 GiB charge passes 32/32 IDs.
+These checks retain the separate cross-schedule Flash long CLI limitation.
+
+Qualification: `/tmp/bitnet-goal-prefill-cache-final/qualification.json`.
+Frozen executable SHA-256:
+`47d3fd80fe5b92b7c8c900b1d68cdbf203c215d58f1b8780de3b0128f52c7b94`.
+
+A serialized paired process comparison uses the same 1,024-slot conservative
+GPU cache (32 GiB budget, 32 MiB charge), RAM cache disabled, physical GPU 1,
+eight CPU threads, F32 KV and the four qualified Flash flags. Each process runs
+two identical requests with two 1047-token prefixes, eight decode steps, a
+64-token resumed prefix and eight more decode steps. The filesystem cache is
+warm. Both processes preserve all 32 independent reference IDs.
+
+| Phase | Admit/promote prefill | Lookup-only prefill | Expert-read bytes before / after |
+| --- | ---: | ---: | ---: |
+| First request, initial 1047 | 20.884 s | 21.176 s | 43,981,209,600 / 43,981,209,600 |
+| Repeated request, reset/warm 1047 | 21.668 s | 20.662 s | 43,981,209,600 / 40,968,908,800 |
+| Repeated request, resumed 64 | 5.264 s | 4.716 s | 23,855,206,400 / 20,989,542,400 |
+| Repeated request, mean decode (16 steps) | 196.657 ms | 196.049 ms | 15,784,755,200 / 15,406,387,200 |
+
+Repeated reset/warm prefill improves 4.6% and resumed prefill 10.4% in this
+single pair; initial cold prefill is 1.4% slower and mean decode is nearly
+unchanged. Repeated reset/warm prefill now borrows 964 cached experts versus
+zero, and resumed prefill borrows 956 versus 37. This is evidence of working-set
+preservation, not statistical latency qualification, a default-capacity tuning
+result or vLLM parity. The 4 GiB charge replay above is a separate configuration;
+these timings must not be attributed to its 242 slots. Whole-process peak VRAM,
+concurrent serving and logical-phase policy for tokenwise prefill remain open.
+
+Evidence: `/tmp/bitnet-goal-prefill-cache-final/performance.json`,
+`performance-exits.json`, `before.log`, `after.log` and `repeat.c`.
+
+### Tokenwise prefill upload policy (2026-11-06)
+
+The session now carries a scoped `moe_cache_prefill` flag at the public generation
+and transformer prefill entry points, including no-logits and all-logits calls.
+The GPU expert bridge honors it when tokenwise execution reaches the ordinary
+expert accessor. Prompt ingestion therefore borrows RAM/VRAM hits without LRU
+promotion and uses temporary GPU uploads for misses even with `--no-prefill`,
+single-token chunks or decode-based transformer fallback. The flag is saved and
+restored on every return, including errors, and cleared by session reset.
+Direct forward calls outside these entry points retain decode admission.
+
+This changes cache admission rather than kernel selection, batching contracts or
+checkpoint routing. The all-logits prefill API also applies this upload policy
+when used for verification. CPU-only expert-cache admission is unchanged; shared
+cache metadata still requires serialized execution. This is not a concurrent
+serving or whole-process memory-peak qualification.
+
+Focused tests cover restored outer scopes after empty/success and invalid-input
+returns, session reset, and normal expert-accessor behavior under the session
+flag. The GPU cache test still requires no admission, eviction or LRU promotion
+while prefill owns temporary uploads, including upload-failure cleanup.
+
+The protected clean candidate builds without warnings and passes standard/full
+CUDA, diagnostic isolation, backend matrix and WASM syntax checks. Qwen27 retains
+192/192 short and 24/24 long IDs; Flash retains 179/179 short IDs and 16/16 on
+each of eight matched schedules. All 170 initial/resumed state captures remain
+exact (72,327,168 words). The new-charge replay preserves 32/32 IDs.
+
+A separately generated pinned llama.cpp oracle uses nine initial corpus tokens,
+eight generated IDs, 64 resumed corpus tokens and eight more generated IDs,
+with prefill chunk size one. Five candidate modes each preserve 16/16 IDs:
+chunk-size-one generation ingestion, forced tokenwise ingestion, forced
+no-logits prefixes, direct transformer last/no-logits calls and direct
+single-token all-logits calls. Every mode also compares GPU cache entries,
+hash slots and LRU/free-list endpoints before and after each ingestion phase;
+all ten comparisons remain unchanged. A control linked with the previously
+qualified bridge fails this invariant at the initial forced-tokenwise prefix,
+while using the current session layout and wrappers. Reference IDs and oracle
+metadata are preserved by hash.
+
+This closes the tokenwise GPU-upload policy gap described in the preceding
+checkpoint. It does not establish a performance improvement, CPU-only cache
+policy, strict total-VRAM bound, concurrent serving or vLLM parity. The separate
+cross-schedule Flash long CLI mismatch remains unqualified.
+
+Evidence: `/tmp/bitnet-goal-tokenwise-phase-final/qualification.json`,
+`phase-exits.json`, `phase-probe.c`, `phase-control-origin.json`,
+`old-control.log`, and `/tmp/bitnet-goal-tokenwise-phase-oracle/result.json`.
+Frozen executable SHA-256:
+`597078429e76fc97b2d2967001cfc931f00a6679f4769aebe7687fed204baf8f`.
+
+### Batch HC token launches without changing arithmetic (2026-11-06)
+
+A new initial-prefill trace of the qualified Flash path retained 16/16 reference
+IDs and exposed 198,933 fused HC mix/combine launches. Their batch callbacks
+already upload complete arrays but launch once for every token. The kernels
+now select token rows through `blockIdx.y`; callbacks tile at 65,535 rows and
+retain each token's original block geometry, stream order and fused/separate
+arithmetic. Graph/decode launches still use a single token row. Host/device
+buffer lifetimes and transfers are unchanged.
+
+A new independent CPU-reference test uses exact binary-fraction inputs and zero
+gates for fused/unfused modes, irregular 257-by-259 shapes, and 65,537 token rows
+crossing the grid-Y tile boundary. All 2,105,392 words agree exactly with guards
+intact. Existing 72 fused-mean and 72 fused-post reference cases also pass. The
+protected clean build has no warnings; standard/full CUDA, diagnostic isolation
+and backend matrix pass. Qwen27 keeps 192/192 short and 24/24 long IDs; Flash
+keeps 179/179 short IDs and 16/16 on all eight matched schedules. All 170 state
+captures remain exact (72,327,168 words), and the new-charge replay keeps 32/32.
+The separate cross-schedule Flash long CLI mismatch remains unqualified.
+
+| Initial 1047-token trace | Before | Batched launches |
+| --- | ---: | ---: |
+| HC mix launches | 99,467 | 97 |
+| HC combine launches | 99,466 | 96 |
+| Combined HC kernel time | 236.526 ms | 8.977 ms |
+| All kernel launches | 304,351 | 105,611 |
+| All kernel time | 7.873 s | 7.604 s |
+| Host-to-device bytes | 89,522,335,108 | 89,522,335,108 |
+| Device-to-host bytes | 26,408,132,096 | 26,408,132,096 |
+
+Every non-HC kernel-launch count and every transfer count/byte total is
+unchanged. About 15.35 GB of DtoH copies have the 1047-by-10240 wide-HC shape;
+shape alone does not identify which callback owns each transfer. Synchronous
+`cudaMemcpy` API wall time remains about 10.8 seconds, and there are still about
+52,000 allocations and frees. API times include waits and must not be added to
+kernel times. Keeping wide intermediates on-device remains the next target.
+
+Three untraced process pairs in alternating order measure initial prefill as:
+
+| Version | Samples (seconds) | Median |
+| --- | --- | ---: |
+| Before | 21.333, 21.257, 21.045 | 21.257 s |
+| Batched launches | 20.888, 21.165, 21.139 | 21.139 s |
+
+The median difference is only 0.6%, with one pair slower: these samples do not
+establish a substantial wall-time speedup despite the launch/GPU-time reduction.
+Each process preserves all 16 independent initial/resumed IDs. Timing interposes
+only the fixture's profiler start/stop window, with no Nsight during measurement.
+A separate single paired process samples seven forward-plus-CPU-argmax/logging
+intervals in each decode phase: mean 340.0 versus 334.7 ms, median 324.5 versus
+321.9 ms. This excludes each phase's final forward and is not pure-kernel or
+statistical decode-latency qualification.
+
+All measurements use physical GPU 1, eight CPU threads, F32 KV, the four qualified
+Flash flags, a warm filesystem cache, 2 GiB RAM cache and conservative 128-slot
+4 GiB GPU cache. Base weights, PLE, KV, activations and temporary uploads are
+outside expert-cache budgets. These results do not establish whole-process
+memory peaks, concurrent throughput/tails, ARM/Metal qualification or vLLM parity.
+
+Evidence: `/tmp/bitnet-goal-hc-launch-final/qualification.json`,
+`trace-comparison.json`, `timings.json`, `decode-comparison.json`,
+`timing-provenance.json` and `initial1047.nsys-rep`; baseline trace/provenance:
+`/tmp/bitnet-goal-current-transfer-profile/`.
+Frozen executable SHA-256:
+`bc09b508cf51045f59a851c525cd743f2c8993363a67ed5f2870ec105e1dd234`.
+
+### Keep HC pre-mix intermediates on-device (2026-11-06)
+
+An optional backend HC prefill operation now composes grouped RMS normalization,
+down projection, scaled SiLU, up projection, stream mixing and injection
+projection. Residuals upload once; normalized rows, low-rank values and gates
+remain in an aligned backend workspace. Only mixed activations and injection
+values return to the host. The existing primitive kernels and projection
+geometry remain unchanged. Both host outputs are staged before commit.
+
+CUDA supports 4–2048 tokens, F32/native-Q8 down/up projections and F32 injection.
+Unsupported shapes/types, single-token calls, output HC without injection, host
+reference execution and debug dump paths retain the staged implementation.
+This is one HC stage, not a fully device-resident layer or inference graph.
+The workspace is temporary backend memory outside expert-cache budgets.
+
+Eighteen fused/unfused coherence cases compare against the established staged
+GPU API: F32 and Q8, irregular ranks, token counts 4/9/129/1047 and the model's
+10240-wide, rank-320 shape. All 414,158 output words agree exactly, with guards
+and unchanged outputs on the tested rejection path. Existing independent
+Q8/HC references, standard/full CUDA, diagnostic isolation, backend matrix and
+WASM syntax checks pass. The protected clean build has no warnings. Qwen27 keeps
+192/192 short and 24/24 long IDs; Flash keeps 179/179 short IDs and 16/16 on all
+eight matched schedules. All 170 initial/resumed state captures remain exact
+(72,327,168 words); the new-charge replay keeps 32/32 IDs. The known separate
+cross-schedule Flash long CLI mismatch remains unqualified.
+
+A real Flash diagnostic records 95 successful initial HC batches and one
+intentional single-token rejection, retaining all 16 initial/resumed IDs.
+Compared with the preceding batched-launch checkpoint:
+
+| Initial 1047-token CUDA trace | Staged HC | Device HC intermediates |
+| --- | ---: | ---: |
+| HtoD bytes | 89,522,335,108 | 72,971,359,108 |
+| DtoH bytes | 26,408,132,096 | 18,005,328,896 |
+| HtoD calls | 54,186 | 53,616 |
+| DtoH calls | 21,640 | 21,260 |
+| Kernel launches | 105,611 | 105,611 |
+| Kernel time | 7.604 s | 7.599 s |
+
+This removes 16.551 GB HtoD and 8.403 GB DtoH (24.954 GB combined), with every
+kernel-launch count preserved. Copy reductions match the four wide and two
+low-rank uploads plus two wide and two low-rank readbacks eliminated per eligible
+HC batch. Synchronous-copy API wall time is still about 10.3 seconds, and roughly
+51,800 allocations/frees remain. API wall times include waits; they are not
+independent costs to add to GPU times.
+
+Three untraced process pairs in AB/BA/AB order give:
+
+| Version | Initial prefill samples (seconds) | Median |
+| --- | --- | ---: |
+| Staged HC | 20.569, 20.818, 21.033 | 20.818 s |
+| Device HC intermediates | 19.602, 19.424, 19.646 | 19.602 s |
+
+Median initial prefill improves 5.8% in these samples, with all three pairs
+faster and all 16 independent IDs preserved per process. The same runs provide
+42 decode-plus-next-argmax/logging intervals per version: mean 333.7 versus
+333.3 ms, median 317.8 versus 322.6 ms. These exclude each phase's final forward
+and do not establish a decode gain or regression. Prefill timing uses the
+fixture's profiler window without Nsight; the CUDA traces are separate runs.
+
+Configuration: physical GPU 1, eight CPU threads, F32 KV, four qualified Flash
+flags, warm filesystem cache, 2 GiB RAM cache and a conservative 128-slot/4 GiB
+GPU expert cache. Base weights, PLE, KV, activations and temporary workspaces
+are outside expert-cache budgets. No statistical throughput/tail, whole-process
+VRAM peak, concurrent-serving, ARM/Metal or vLLM parity qualification is claimed.
+Remaining host/device boundaries include HC post-combine and MoE gathering/
+reduction; transient expert allocation/upload churn also remains.
+
+Evidence: `/tmp/bitnet-goal-hc-chain-final/qualification.json`,
+`trace-comparison.json`, `timings.json`, `timing-provenance.json`,
+`diagnostic.log`, `diagnostic-exit.json` and `initial1047.nsys-rep`.
+Baseline executable/trace: `/tmp/bitnet-goal-hc-launch-final/`.
+Frozen executable SHA-256:
+`86fdf19aa2282a218b0dd27667e31913c964438256c9145b8b976ad1a03f243a`.
+
+### Skip unused packed preparation for gathered experts (2026-11-06)
+
+Explicit gathered-prefill uploads now concatenate split gate/up payloads into
+quant-only CUDA buffers when the quant registry declares the gathered K-quant
+path. Those kernels consume raw rows and do not use the packed MMQ copy built
+by the ordinary stacked-buffer constructor. The GPU policy module owns this
+allocation decision; the bridge composes that policy without format branches.
+
+Ordinary decode, tokenwise prompt forward and resident preload retain their
+packed construction. Existing cached buffers remain reusable during prefill.
+Backends without the optional quant-only constructor use their established
+stacked constructor. The focused regression checks byte-for-byte concatenation,
+constructor selection across gathered/decode/tokenwise calls, cleanup on upload
+failure, and fallback when the optional constructor is absent. No checkpoint
+routing or arithmetic kernels are changed.
+
+The corrected protected clean run passes the architecture check, standard/full
+CUDA suites, diagnostic isolation, backend matrix and WASM syntax checks, with
+zero build warnings. Qwen27 retains 192/192 short and 24/24 long IDs; Flash retains
+179/179 short IDs and 16/16 on all eight matched schedules. All 170 state captures
+remain exact (72,327,168 words), and the new-charge replay retains 32/32 IDs.
+The separate cross-schedule Flash long CLI mismatch remains unqualified.
+
+| Initial 1047-token trace | Packed temporary gate/up | Quant-only temporary gate/up |
+| --- | ---: | ---: |
+| Q4_K packing launches | 13,674 | 0 |
+| Total kernel launches | 105,611 | 91,937 |
+| CUDA allocations | 51,766 | 38,092 |
+| CUDA frees | 51,759 | 38,085 |
+| GPU kernel time | 7.599 s | 7.536 s |
+| HtoD bytes | 72,971,359,108 | 72,971,359,108 |
+| DtoH bytes | 18,005,328,896 | 18,005,328,896 |
+
+Every remaining kernel-launch count and all transfer counts/bytes are identical.
+Allocation/free API wall time drops from about 3.38 to 2.43 s; API times include
+waits and must not be added to kernel times. This avoids auxiliary preparation,
+not raw expert uploads or MoE gathering/reduction transfers.
+
+Three untraced pairs in AB/BA/AB order preserve all 16 independent IDs per process:
+
+| Version | Initial prefill samples (seconds) | Median |
+| --- | --- | ---: |
+| Packed temporary gate/up | 19.560, 19.562, 19.437 | 19.560 s |
+| Quant-only temporary gate/up | 18.701, 18.651, 18.503 | 18.651 s |
+
+Median initial prefill improves 4.6% in these samples. The same runs contain 42
+forward-plus-next-argmax/logging intervals per version: mean 328.1 versus 333.9 ms,
+median 316.4 versus 319.8 ms. Decode samples are slower, so this does not establish
+an overall prefill-and-decode performance gain.
+
+A follow-up repeated-request pair links the prior qualified bridge with the
+current remaining objects as its control. Both processes reset the session and
+retain model caches between two identical requests; both preserve 32/32 IDs.
+The second request's prefill improves 19.385 to 18.561 s, but its 14 measured
+decode intervals give mean 311.3 versus 325.0 ms (4.4% slower), median 313.5
+versus 325.9 ms. The first request's mean is 332.7 versus 325.1 ms. These limited
+samples do not isolate a cause or prove a statistical regression; warmed decode
+remains an explicit follow-up. Ordinary decode's constructor selection is
+unchanged and covered by the focused unit test.
+
+A subsequent ABBA diagnostic uses two identical requests per process and pins
+all eight CPU threads to physical cores 0–7 sharing L3. The control substitutes
+only the previous qualified bridge object; all other objects and CUDA kernels
+are shared. All four processes pass 32/32 independent predictions (128 total).
+At every corresponding decode step, I/O bytes, RAM/VRAM cache hits and misses,
+constructor counts, destructor counts and uploaded payload bytes are identical
+across all four processes. No production source changes accompany this probe.
+
+| Second request, direct forward | Packed control | Quant-only prefill |
+| --- | ---: | ---: |
+| Samples | 32 | 32 |
+| Mean | 322.385 ms | 322.498 ms |
+| Median | 324.611 ms | 324.725 ms |
+| Mean expert I/O | 66.502 ms | 66.338 ms |
+| Mean buffer construction | 166.923 ms | 166.901 ms |
+| Mean buffer destruction | 64.196 ms | 64.400 ms |
+
+Direct timing includes all eight forwards per phase and excludes CPU argmax
+and logging. The mean change is +0.035%; the earlier 4.4% warm slowdown does not
+repeat in this fixed-affinity control. Different affinity and timing boundaries
+prevent combining these samples with the earlier unrestricted measurements or
+attributing their difference to CPU migration. Constructor times include CPU
+concatenation, allocation, upload, packing and synchronization; destructor times
+can include GPU waits. Their approximately 231 ms combined duration identifies
+buffer lifecycle work as the next investigation, without establishing pure
+allocator cost or the benefit of reuse. Evidence and hashes:
+`/tmp/bitnet-goal-decode-work/{results,summary,provenance}.json`.
+
+A temporary allocation interposer then tests exact-size reuse without modifying
+production code. It tracks legacy `cudaMalloc`/`cudaFree`, synchronizes the device
+before retaining an allocation, and bounds inactive storage to 64 entries and
+16 MiB. The experiment uses the same fixed-affinity ABBA layout, two identical
+requests per process and the configuration below. The off control loads the same
+interposer and tracks allocations without retaining them. The interposer covers
+all intercepted legacy allocations, including scratch, so these results do not
+establish the gain from a weight-only backend pool.
+
+A first variant rejects admission when full. It improves first-request prefill
+18.767 to 17.421 s but leaves repeated prefill (18.562 to 18.523 s) and warmed
+decode (322.916 to 322.910 ms) effectively unchanged. Inactive allocations from
+earlier phases occupy the pool; only 22,070 of 157,518 allocation requests reuse
+storage. This is not the policy selected for further implementation.
+
+The second variant evicts the oldest inactive allocations to admit current
+shapes. Two independent enabled processes have identical allocation counters:
+149,472 reuses and 8,046 underlying allocations (94.9% reuse), 6,847 evictions,
+peak inactive storage 16,774,692 bytes, zero synchronization errors and zero
+tracking overflows. All four ABBA processes pass 32/32 independent predictions
+(128 total). Per-step expert read bytes, RAM/VRAM hits and misses, constructor
+counts, destructor counts and uploaded payload bytes are identical across them.
+
+| LRU allocation diagnostic | Reuse off | Reuse on | Change |
+| --- | ---: | ---: | ---: |
+| First prefill, mean of two processes | 18.891 s | 15.774 s | -16.5% |
+| Second prefill, mean of two processes | 18.561 s | 15.657 s | -15.6% |
+| Warm direct forward, 32 samples/version | 315.921 ms | 204.722 ms | -35.2% |
+| Warm direct-forward median | 317.243 ms | 205.833 ms | |
+| Mean expert I/O | 65.718 ms | 66.051 ms | |
+| Mean buffer construction | 163.123 ms | 106.192 ms | |
+| Mean buffer destruction | 62.464 ms | 7.858 ms | |
+
+The result supports implementing backend-owned allocation reuse with explicit
+ownership, bounded inactive storage, error cleanup and synchronization before
+reuse. It is not production qualification or vLLM parity. The interposer retains
+idle allocations until process exit and supports this single-visible-device
+experiment; a library implementation must release its own pool at backend
+destruction. The 16 MiB is separate from the expert-residency budget and does not
+bound total VRAM. No claim about cold filesystem I/O, concurrent executors,
+bit-exact recurrent state or other models follows from these token checks.
+Sources, logs, input hashes and summaries:
+`/tmp/bitnet-goal-allocation-probe/` and
+`/tmp/bitnet-goal-allocation-lru-probe/`.
+
+The standard baseline tests pass. The separately linked full CUDA suite also
+passes with the LRU interposer enabled, including its independent reference-word
+checks; diagnostic isolation passes separately. The CUDA suite records 170,730
+allocation reuses, peak inactive storage exactly 16 MiB, zero synchronization
+errors and zero tracking overflows. These checks support the prototype but do
+not replace model/state qualification of the eventual backend-owned pool.
+Test logs and hashes are retained in the latter directory's `checks.json`.
+
+Configuration matches the preceding checkpoint: physical GPU 1, eight CPU
+threads, F32 KV, four qualified Flash flags, warm filesystem cache, 2 GiB RAM
+cache and conservative 128-slot/4 GiB GPU expert cache. Timing uses profiler
+markers without Nsight; traces are separate runs. Decode intervals include CPU
+argmax/logging and exclude each phase's final forward. No vLLM parity, concurrent
+throughput/tail, strict total-VRAM or ARM/Metal qualification follows.
+
+Evidence: `/tmp/bitnet-goal-raw-gateup-checked/qualification.json`,
+`trace-comparison.json`, `timings.json`, `warm-comparison.json`, `warm.c`,
+`initial1047.nsys-rep` and the clean/standard/backend-matrix logs.
+Baseline: `/tmp/bitnet-goal-hc-chain-final/`.
+Frozen executable SHA-256:
+`7b063381b1076361e2f7b614eb5123aeb2b1239a4b23a7a0f024e5f67b794b2b`.
+
+### Backend-owned CUDA weight allocation reuse (2026-11-06)
+
+`BN_CUDA_ENABLE_WEIGHT_POOL=1` enables a backend-local inactive allocation pool.
+Leave the variable unset to disable it; policy flags use presence semantics and
+are captured when the backend is created. Raw weights and their owned packed,
+FP16 and FP32 layouts share exact-size storage after destruction. Activation and
+scratch allocations keep their existing paths. The pool retains at most 64
+allocations and 16 MiB of requested inactive payload, evicting the oldest entries
+to admit current shapes. This excludes driver allocation overhead and is separate
+from the resident expert-cache budget; it does not bound total VRAM.
+
+Each allocation completes a device fence before admission, preserving the old
+destruction lifetime across default-stream preparation and nonblocking decode.
+Failed fences never publish reusable storage. A failed weight allocation trims
+inactive storage and retries once. Backend destruction releases the pool;
+`bn_gpu_cuda_trim_weight_pool()` releases only inactive storage explicitly.
+`bn_gpu_cuda_weight_pool_stats()` reports current payload/count, limits and
+cumulative hits, misses, evictions and fence failures. Access shares the backend's
+existing serialized-executor requirement. No handles move onto CPU model weights.
+
+The protected clean CUDA build has zero warnings. Standard and full CUDA tests,
+diagnostic isolation, backend matrix, AVX2/AVX512 syntax checks and AVX512 quant
+tests pass. Focused tests verify new contents after reuse, entry/byte limits,
+eviction, oversized-allocation bypass, trim and backend isolation. Separate fault
+injection verifies failed-fence rejection, allocation-failure trim/retry and
+failure propagation with an empty pool. The policy source also passes syntax
+checking with `__EMSCRIPTEN__`; this is not a WASM runtime qualification.
+
+With the pool enabled, Qwen27 retains 192/192 short and 24/24 long independent
+IDs. Flash retains 179/179 short IDs, 16/16 on all eight matched prefill/resume
+schedules and all 170 captured states bit-for-bit (72,327,168 words). The actual
+242-slot cache-charge replay retains 32/32 IDs. The separate cross-schedule Flash
+long CLI mismatch remains open; neither reference IDs nor reference math change.
+
+Four serialized processes in off/on/on/off order each execute two identical
+requests with session reset and retained model caches. Each passes 32/32 IDs,
+for 128 total. All corresponding per-forward expert read bytes, RAM/VRAM hit and
+miss counts, constructor/destructor counts and uploaded payload bytes match.
+Configuration: physical GPU 1, eight threads pinned to physical cores 0–7 sharing
+L3, F32 KV, the four qualified Flash flags, warm filesystem cache, 2 GiB RAM cache
+and conservative 128-slot/4 GiB GPU expert cache. Timed runs use the same frozen
+objects and replay binary, with the pool policy absent or present; no allocation
+interposer or Nsight is loaded during timing. The marker timer is shared.
+
+| Weight pool comparison | Off | On | Change |
+| --- | ---: | ---: | ---: |
+| First 1047-token prefill, two-process mean | 18.719 s | 15.825 s | -15.5% |
+| Second prefill, two-process mean | 18.604 s | 15.550 s | -16.4% |
+| Warm direct forward, 32 samples/version | 323.689 ms | 203.365 ms | -37.2% |
+| Warm direct-forward median | 325.668 ms | 204.395 ms | |
+| Mean expert I/O | 66.415 ms | 65.432 ms | |
+| Mean buffer construction | 167.814 ms | 105.690 ms | |
+| Mean buffer destruction | 64.696 ms | 7.678 ms | |
+
+Direct timing includes all eight forwards per phase and excludes CPU argmax and
+logging. Constructor/destructor wall times include uploads, preparation and
+waits; they are not pure allocator costs. These are limited serialized samples,
+not concurrent throughput, tail latency or vLLM parity measurements.
+
+Separate first-prefill traces preserve all 91,937 kernel launches by name/count,
+all transfer counts and bytes (HtoD 72,971,359,108; DtoH 18,005,328,896; DtoD
+25,731,072), and all 32 predictions per traced process. CUDA allocations drop
+38,092 to 9,606 and frees 38,085 to 9,594. Explicit device synchronizations rise
+1 to 28,492 as they replace the lifetime fences implicit in frees. Allocation
+plus free API wall time drops about 2.441 to 0.161 s; explicit device-sync API
+time is about 0.022 s with reuse. Kernel time remains about 7.54 s. API times
+include waits and must not be added to kernel times. This removes allocation
+churn; raw expert uploads and host MoE gathering/reduction remain.
+
+Checkpoint: `/tmp/bitnet-goal-weight-pool/qualification.json`, with source and
+reference hashes, clean/test logs, `performance.json`, `timings.json`,
+`trace-comparison.json`, fault-injection sources and both Nsight traces.
+Frozen executable SHA-256:
+`3d0e44324148f1a552338137c3fb5d21c7b269ee8f829e3b7ef2df47bf8f2956`.
+
+### vLLM checkpoint and precision compatibility gate (2026-11-06)
+
+The local vLLM runtime is available. Its pinned image is
+`ghcr.io/local-inference-lab/vllm@sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29`,
+reporting vLLM `0.1.dev21830+g8244d1c44.cu134` and PyTorch
+`2.14.0a0+4fdf77b940.nv26.8.63802676`. The base image rejects quantization
+method `gguf`; its installed method registry contains no GGUF implementation.
+
+The official [GGUF plugin](https://github.com/vllm-project/vllm-gguf-plugin/tree/e454affe0ca23c9dc8754ec3033270cb30622ed5)
+at commit `e454affe0ca23c9dc8754ec3033270cb30622ed5` builds successfully against
+that image's PyTorch and CUDA, targeting SM120a. The wheel hash is
+`d6dd44400cc02ca7f3a0452f32589d2eed6588da10ff04858d78b551f9f828ef`.
+The pinned llama.cpp `gguf-py` package supplies the Python GGUF reader; the
+original vLLM image and model files are unchanged.
+
+The probe uses the exact existing Qwen27 Q4_K_XL file, SHA-256
+`3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e`.
+It contains F32, Q3_K, Q4_K, Q5_K, Q6_K, Q8_0, IQ3_S, IQ4_NL and IQ4_XS
+tensors. It is not a uniform four-bit checkpoint. The other locally available
+safetensors checkpoint mixes NVFP4, FP8 and BF16, with separate activation
+quantization and global scales; comparing its runtime to Q4_K_XL would not
+establish matched-quantization parity. BitNet currently lacks the NVFP4 format
+and that mixed-precision activation/scaling contract.
+
+For text-only loading, the probe extracts the existing HF `text_config` from
+the local Qwen27 metadata and omits the safetensors quantization declaration,
+since formats come from the GGUF. A one-line runtime adapter correction maps
+`QWEN35_ARCHITECTURES['qwen3_5_text']` to vLLM's existing
+`Qwen3_5ForCausalLM`. The plugin otherwise selects the conditional-generation
+wrapper, which requires vision metadata/projector tensors even for this text
+probe. The correction selects the native text implementation; it changes no
+checkpoint values or model kernels. All failed attempts are retained.
+
+| Proposed comparison | Verified status |
+| --- | --- |
+| Same GGUF, F32 activations/KV/state | Weights load, but both tested GDN prefill implementations reject F32 |
+| Same GGUF, BF16 activations/KV and F32 recurrent state | vLLM generation works; BitNet has no matching BF16 activation/KV path yet |
+| Native mixed NVFP4/FP8 safetensors versus Q4_K_XL | Different quantization and scaling contracts; no parity ratio is valid |
+
+The F32 probe loads 17.21 GiB of GPU weights. Automatic GDN prefill selects
+FlashInfer/CuteDSL and fails with `DSL kernel only supports fp16/bf16 inputs`.
+Selecting the existing Triton GDN option also fails: `ChunkGatedDeltaRuleFunction
+does not support float32`. These are observed limitations of this pinned
+image/backend combination, not claims that the model or vLLM is unavailable.
+No precision casts or assertions were changed to force the comparison through.
+A separate selector probe confirms that explicit in-tree CuteDSL falls back to
+Triton on SM120; the image's `b12x` GDN path requires BF16 and rejects F32 before
+execution. The BF16 `b12x` selection succeeds, but its generation/performance is
+not tested here. The observed BF16 vectors below come from explicit Triton GDN.
+
+BF16 generation succeeds with the same GGUF using explicit Triton GDN prefill
+and decode, automatic BF16 KV, F32 SSM state, maximum context 512, concurrency
+one, disabled prefix caching and eager execution. This is a compatibility probe,
+not a performance baseline: no latency ratio against BitNet's F32 path follows.
+Normal generation produces eight IDs:
+`[11751, 13, 198, 760, 6511, 314, 9564, 369]`.
+
+A worker-side observer preserves all eight IDs and records 32 layer-0 input/output
+buffers across initial prefill and the first decode forward: 799,296 BF16 words,
+all finite. Eight observed modules cover normalization, GDN projections and
+normalization, output projection and the dense FFN. Sampled layer-0/3 parameter
+and cache metadata establish these distinctions:
+
+| Value | Measured vLLM dtype |
+| --- | --- |
+| Captured activation inputs/outputs | BF16 |
+| Attention KV at layer 3 | BF16 |
+| Convolution history at layer 0 | BF16 |
+| Recurrent SSM state at layer 0 | F32 |
+| Layer-0 `A_log` parameter | F32 |
+| Layer-0 `dt_bias` and norm parameters | BF16 |
+
+TF32 is disabled in the observed model. FP16 KV storage in BitNet would not
+match this contract: BF16 activation rounding, parameter precision and
+convolution/KV storage must also be addressed. Loading BF16 weight tensors is
+not itself a BF16 activation mode. The next comparison gate is an explicit
+BitNet precision contract followed by native CUDA BF16 execution, validated
+against these observed boundaries before timing equivalent workloads. Future
+timing must use identical input IDs and matched output/graph policies; the
+eight-token smoke test is not a full-model BF16 correctness qualification.
+
+Evidence: `/tmp/bitnet-goal-vllm-parity/`, including `inventory.json`, the plugin
+wheel/build log, F32 failure logs, successful BF16 generation and observer logs,
+`precision-contract.json`, `captures/manifest.json`, `capture-validation.json`
+and `probe-summary.json`. Worker hooks run only in the isolated local probe;
+the successful capture explicitly shuts down its engine. BitNet's qualified
+`3d0e4432…` executable and implementation sources remain unchanged.
+
+### Native CUDA BF16 weighted normalization (2026-11-06)
+
+The first typed BF16 backend operation is implemented:
+`rmsnorm_bf16_batch`, with capability/dispatch facades in `gpu_backend.h`.
+Inputs, outputs and normalization parameters use BF16 storage; reduction,
+normalization and parameter-offset addition use F32. The optional offset selects
+`gamma = float(w_BF16)` or `gamma = 1 + float(w_BF16)`. The effective gamma is
+not rounded back to BF16 before multiplication. Parameter preparation and the
+choice of offset remain caller/model-policy responsibilities; the CUDA kernel
+contains no model-family branch and changes no CPU-visible model weights.
+
+The host-entry callback stages BF16 data in backend-owned scratch, respects the
+existing prefill/decode stream handoff, supports in-place output and commits
+host output only after successful completion. Invalid shapes, parameter types,
+short buffers, epsilon values and offset selectors reject without changing
+output. Other backends leave this optional callback absent. This does not expose
+a global BF16 inference option or change the existing F32 execution path.
+
+| BF16 normalization check | Result |
+| --- | --- |
+| Independent synthetic cases | 44 |
+| Distinct synthetic reference words | 50,952 |
+| Separate/in-place comparisons | 101,904/101,904 bit-exact |
+| Captured Qwen27 layer-0 words | 30,720/30,720 bit-exact in both output modes |
+| Additional batch-size check | 65,537 rows |
+| Failure injection | Partial readback preserves separate/alias output; retry succeeds |
+
+Synthetic references come from the pinned image's
+`GemmaRMSNorm.forward_native`, using Torch CUDA native IR with F32 reduction and
+BF16 output. Tests require at most one BF16 ULP for possible reduction-order
+differences; all current comparisons are exact. A separate strict boundary case
+distinguishes F32 `1+w` from prematurely rounded BF16 gamma, so that allowance
+cannot mask the parameter-precision error. Signed zero, input/output canaries,
+unsupported capability, invalid calls and in-place execution are also checked.
+The checked-in reference header is generated entirely from synthetic data and
+requires no model, Docker or Python packages to run the unit test.
+
+The real-model replay uses the preceding observer's unchanged first-normalization
+inputs/outputs: five initial rows and the first decode row, each width 5120.
+The source GGUF's F32 normalization vector is transformed to an offset parameter
+and rounded to BF16 before upload. Both direct and in-place calls reproduce all
+30,720 expected BF16 words. This qualifies that boundary, not an end-to-end BF16
+model or its other captured operations.
+
+The protected clean CUDA build is warning-free. Standard tests, the final full
+CUDA suite, diagnostic isolation, backend matrix, AVX2/AVX512 checks and AVX512
+quant tests pass. Existing F32 gates retain Qwen27 192/192 short and 24/24 long,
+Flash 179/179 short, 16/16 on all eight matched prefill/resume schedules and all
+170 captured states exactly (72,327,168 F32 words). The actual cache-charge
+replay retains 32/32 IDs. The final full CUDA run includes the additional strict
+parameter-rounding regression; production objects are unchanged by that test
+addition. User-owned reference binaries are preserved and hash-checked.
+
+Remaining BF16 work includes precision planning, matrix and residual/activation
+operations, GDN execution and BF16 KV/convolution storage. The current global
+inference contract remains F32, and the cross-schedule Flash long CLI mismatch
+remains separately open. No whole-model BF16 correctness, throughput or matched
+vLLM parity follows from this primitive. Backend access remains serialized.
+
+Evidence: `/tmp/bitnet-goal-bf16-norm/qualification.json`, with the synthetic
+generator and reference hashes, real-boundary replay, readback fault injection,
+clean/test logs, original reference-ID hashes and 170-state comparison.
+Frozen executable SHA-256:
+`cfc31a055f4b63bf2b80bd24035dada97bdf8565d2b8c12f553c021f33d2d5bb`.
+
+### Native CUDA BF16 matrix components (2026-11-06)
+
+Added two optional backend operations: independent decoded BF16 weight layouts
+for IQ4_NL/IQ4_XS and dense BF16 matrix multiplication. The quant registry owns
+the decoded-layout declaration. Decoding performs the quantized format's FP32
+scale/codebook arithmetic followed by one BF16 RNE conversion per weight.
+The source handle is borrowed, remains unchanged and can be freed immediately
+after layout preparation; the caller owns and budgets the new dense payload
+at `2 * rows * cols` bytes. It is not an uncharged lazy attachment to raw
+weights or a new MoE cache policy.
+
+The GEMM callback accepts BF16 weights, activations and output, accumulates in
+FP32 and disables reduced-precision reductions while preserving the previous
+cuBLAS math mode. It supports host input/output aliasing, observes stream
+handoffs and commits output only after staged readback succeeds. It currently
+uses host entry/exit buffers rather than a resident BF16 model graph. Other
+backends leave both optional callbacks absent; native BF16 GEMM is advertised
+on CUDA SM80 or newer.
+
+The pinned GGUF plugin's actual linear dispatch matters here. IQ formats are
+excluded from `MMQ_QUANT_TYPES`: large batches enter `DEQUANT_TYPES`, invoke
+CUDA BF16 weight dequantization and then Torch BF16 matrix multiplication.
+Small IQ batches use A8 MMVQ (at most 16 rows, or 8 when output width exceeds
+5120). K formats instead use A8 MMQ above their MMVQ threshold. Reading only
+the lower-level Triton GEMM implementation gives a different precision contract;
+those kernels are not selected by this default IQ linear dispatch. The existing
+F32 path therefore cannot stand in for this BF16 operation simply by rounding
+its output.
+
+| BF16 matrix check | Result |
+| --- | --- |
+| Independent BF16 GEMM cases | 6; odd K, partial rows and batches through 129 |
+| Distinct GEMM output words | 9,264 |
+| Separate/in-place output checks | 18,528/18,528 bit-exact |
+| Decoded IQ4 layouts | 8, covering both formats, signed scales and zero |
+| Decoded BF16 words | 165,888; complete byte hashes match independent reference |
+| Source ownership | Source destroyed before every decoded-layout readback |
+| Weight allocation pool | Same focused tests pass with pool disabled and enabled |
+| Combined decode + GEMM vs plugin linear dispatch | 24 cases, 115,992/115,992 bit-exact output words |
+| Injected partial readback failure | Separate/alias output unchanged; retry succeeds |
+| Checked-in reference regeneration | Byte-identical |
+
+References use the previously pinned image, Torch and plugin wheel. Independent
+Torch FP32 format decoding followed by BF16 conversion is checked against the
+plugin's identity-matrix projection. Dyadic GEMM inputs give exact FP32 sums.
+The generator is `test/reference_cuda_bf16_matrix.py`; ordinary tests use the
+checked-in header and need no external model, Docker or Python packages. Layout
+readback uses qualified BF16 RMSNorm on an all-ones input with zero epsilon,
+so every scale is exactly one and signed-zero bits are retained.
+
+The protected clean CUDA build has zero warnings. Standard/full CUDA tests,
+diagnostic isolation, backend matrix and AVX2/AVX512 checks and quant tests pass.
+F32 regressions retain Qwen27 192/192 short and 24/24 long, Flash 179/179 short,
+16/16 on all eight matched prefill/resume schedules, 32/32 with the actual cache
+charge, and all 72,327,168 words across 170 captured states exactly. User-owned
+reference binaries are preserved and hash-checked.
+
+These are backend primitives, not a complete BF16 inference mode. Precision
+planning, remaining mixed GGUF formats, small-batch IQ/K-format A8 contracts,
+resident intermediates, residual/activation operations, attention, GDN and BF16
+KV/convolution storage remain. The cross-schedule Flash long CLI mismatch is
+still separately open. No model-level BF16 correctness or matched vLLM
+performance claim follows from this checkpoint.
+
+Evidence: `/tmp/bitnet-goal-bf16-matmul/qualification.json` and
+`precision-contract.json`, with reference generation, composite comparisons,
+fault injection, clean/test logs, immutable reference-ID hashes and state replay.
+Frozen executable SHA-256:
+`cd80901848102ed3daa7e26993b8374feb28ad067c38ec825bda540c11b5de0f`.
+
+### Explicit CUDA BF16 GGUF matrix dispatch (2026-11-06)
+
+Added a backend-quant matrix plan and optional `matmul_quant_bf16` callback for
+IQ4_NL/IQ4_XS. It preserves the pinned plugin's format/batch arithmetic:
+
+| Condition | Execution | Additional decoded weight payload |
+| --- | --- | --- |
+| Output width <=5120 and tokens <=16 | A8 MMVQ | None |
+| Output width >5120 and tokens <=8 | A8 MMVQ | None |
+| Larger batches | Decoded BF16 GEMM, FP32 accumulation | `2 * rows * cols` bytes |
+
+The planner uses registry-declared decode metadata, validates shapes/overflow
+and rejects unsupported formats without changing its output plan. Large batches
+require a matching caller-owned BF16 layout; the callback does not allocate or
+admit a hidden weight copy. The raw handle identifies the original format.
+The existing F32 dispatch and CPU-visible model weights remain unchanged.
+`backend_quant.h` now declares its C linkage for CUDA/C++ consumers.
+
+Small batches quantize BF16 activations directly into FP16-scale Q8 blocks on
+the device, without an expanded F32 activation buffer. The dot kernel uses byte
+permutations and DP4A with one warp per output row, preserving the reference
+lane partition, scale multiplication order, FP32 reduction and final BF16 RNE
+conversion. Large batches call the preceding native BF16 GEMM. Both paths stage
+readback before committing host output and support in-place output. These are
+host-entry operations, not a resident BF16 model execution graph.
+
+| Dispatch qualification | Result |
+| --- | --- |
+| Independent synthetic cases | 104: 68 A8 MMVQ, 36 decoded GEMM |
+| Distinct BF16 output words | 1,173,104 |
+| Separate/in-place checks | 2,346,208 exact reference words |
+| Thresholds | 8/9 and 16/17 tokens; output widths 5120/5121 |
+| Input widths | 256, 768, 5120; includes plugin padding cases |
+| Strict cuBLAS 13.7 replay | All outputs match that version's independent reference |
+| Strict cuBLAS 13.10 replay | All outputs match that version's independent reference |
+| Captured Qwen27 IQ4_XS gate/down projections | 135,168/135,168 BF16 words exact |
+| Failure injection | Small/large, alias/separate outputs unchanged; retries succeed |
+| Weight pool | Same focused suite passes with pooling enabled |
+| Reference regeneration | Byte-identical combined header |
+
+The larger-width cases exposed an environment difference: the pinned vLLM image
+loads cuBLAS 13.7.0.27, while the host links 13.10.0.20. The same unchanged Torch
+linear dispatch selects different FP32 reduction kernels for two IQ4_XS GEMMs
+(output width 5121; 9 and 17 tokens). Their 15 differing output words include
+cancellation-sensitive results with up to four BF16 ULPs of difference. This is
+not an A8/decoded-layout dispatch error: using the image's unchanged libraries,
+the native backend matches all original 13.7 reference hashes exactly. An
+independent Torch run with the host's unchanged libraries matches the native
+13.10 results exactly as well. The ordinary test retains both complete-output
+hashes rather than adding an elementwise tolerance; separate strict replays
+require the corresponding version's hash. Future matched performance/correctness
+comparisons must pin the cuBLAS libraries as well as hardware, model, precision
+and batch schedules. The library paths and SHA-256 hashes are recorded.
+
+The real-model replay consumes unchanged captured BF16 inputs and outputs from
+the preceding Qwen27 observer: layer-0 FFN gate and down projections for five
+initial tokens and the first decode token. It reads the original GGUF weights
+and uses the new small-batch callback. All 135,168 expected BF16 words match
+without a tolerance. This qualifies those boundaries; the mixed Q3_K up
+projection and whole BF16 forward path remain unimplemented.
+
+Protected clean build has zero warnings. Standard/full CUDA, diagnostics,
+backend matrix and AVX2/AVX512 checks and quant tests pass. Existing F32 gates
+retain Qwen27 192/192 short and 24/24 long, Flash 179/179 short, 16/16 on all
+eight matched schedules, 32/32 with the actual cache charge and all 72,327,168
+words across 170 captured states exactly. User-owned reference binaries are
+preserved and hash-checked.
+
+Evidence: `/tmp/bitnet-goal-bf16-dispatch/qualification.json`, including both
+independent reference manifests, strict library-specific replays, library hashes,
+real-boundary replay, failure injection and model/state gates. Reproducible
+reference sources are `test/reference_cuda_bf16_dispatch.{c,py}`; ordinary tests
+need only the checked-in header. The original 13.7 reference values are retained.
+Frozen executable SHA-256:
+`fbf3ca0bbd5cea324b8f4a8a17e429496959f69fe9c458b645654cf882d88df5`.
+
+Remaining work includes other mixed GGUF formats and their A8 contracts,
+model-level precision planning, resident BF16 intermediates, residual/activation,
+attention, GDN and BF16 KV/convolution storage. No full BF16 model mode or matched
+vLLM throughput/latency parity is claimed. The cross-schedule Flash long CLI
+mismatch and serving/concurrency qualification remain separately open.
+
+### Native CUDA BF16 Q3_K matrix execution (2026-11-06)
+
+Extended the explicit BF16 GGUF matrix plan and CUDA callback to Q3_K. Quant
+registry metadata now distinguishes linear arithmetic from decoded-layout
+support: IQ4 keeps its preceding profile, Q3_K declares A8 MMVQ/MMQ, and other
+formats remain explicitly unsupported. Q3_K does not declare or allocate a
+BF16 decoded-weight layout. Both Q3_K paths consume the original quantized
+weight handle and BF16 activations/output, with FP16 Q8 activation scales and
+FP32 accumulation. The existing F32 routing and kernels are unchanged.
+
+| Q3_K condition | Execution | Additional decoded weight payload |
+| --- | --- | --- |
+| Output width <=5120 and tokens <=6 | A8 MMVQ | None |
+| Output width >5120 and tokens <=2 | A8 MMVQ | None |
+| Larger batches | Tiled A8 MMQ | None |
+
+The small path uses one warp per output row and preserves the reference's
+four-value lane dots and inner/outer FP32 sums. The 128-row by four-token MMQ
+tile shares activation blocks across output rows and decodes each weight group
+once for four tokens. Each pair of signed 16-value subblock dots is combined
+as integers before FP32 scaling, matching the pinned plugin's MMQ arithmetic.
+This differs from the existing F32-input path, whose reduction contract is
+preserved. DP4A handles the packed integer dots; output uses BF16 RNE rounding.
+No expanded F32 activation buffer or hidden weight materialization is needed.
+
+The common symmetric BF16-to-Q8 quantizer now uses a flat grid. This removes
+its 65,535-token grid-Y limit while retaining the IQ4 results exactly. Q3_K MMQ
+also flattens its output tiles, handles partial rows/tokens without divergent
+barriers, and stages host readback before committing separate or in-place
+output. Large requests remain subject to shape/overflow checks and available
+backend scratch memory; this is not model-level context or serving qualification.
+
+| Q3_K qualification | Result |
+| --- | --- |
+| Independent synthetic cases | 61: 30 MMVQ, 31 MMQ |
+| Distinct BF16 output words | 329,321 |
+| Separate/in-place checks | 658,642 exact reference words |
+| Dispatch thresholds | 2/3 and 6/7 tokens; output widths 5120/5121 |
+| Input widths | 256, 768, 5120; includes reference activation padding |
+| Long matrix batch | 65,537 tokens, exact; flat quantization/output grids |
+| Captured Qwen27 FFN-up projection | 104,448/104,448 BF16 words exact |
+| Injected partial readback failure | MMVQ/MMQ, alias/separate output unchanged; retry succeeds |
+| Weight pool | Same focused reference suite passes with pooling enabled |
+| Checked-in generator | Reproduces reference header byte-for-byte |
+
+References use the unchanged pinned image, plugin CUDA extension and Torch
+linear dispatcher. The first 60 reference cases are preserved when adding the
+long-batch case. The reference quantizer itself cannot launch a 65,537-row grid;
+that additional reference concatenates two unchanged MMQ calls of 32,768 and
+32,769 tokens. Both retain MMQ dispatch and identical independent per-token
+linear arithmetic. The runtime evaluates the whole batch in one callback.
+Q3_K A8 execution does not use cuBLAS or accept a per-element numerical
+allowance. Both digest fields in the shared test schema contain the same
+independent reference hash. Reproducible sources are
+`test/reference_cuda_bf16_q3.{c,py}`; ordinary tests need only the checked-in
+reference header and synthetic C fixtures.
+
+The real-model replay reads the original GGUF's layer-0 Q3_K FFN-up weights
+and the unchanged observer's captured BF16 inputs/outputs. Five prefill tokens
+select MMQ at output width 17408; the first decode token selects MMVQ. All
+87,040 prefill and 17,408 decode output words match exactly. Together with the
+preceding IQ4 gate/down boundary qualification, all three layer-0 FFN matrix
+boundaries have independent BF16 reference coverage. This does not qualify their
+residual/activation composition or a complete BF16 model forward pass.
+
+The protected clean build has zero warnings. Standard/full CUDA tests,
+diagnostic isolation, backend matrix and AVX2/AVX512 checks and quant tests pass.
+The full CUDA suite retains preceding IQ4 matrix and normalization references.
+F32 model gates retain Qwen27 192/192 short and 24/24 long, Flash 179/179 short,
+16/16 on all eight matched schedules, 32/32 with the actual cache charge and
+all 72,327,168 words across 170 captured states exactly. User-owned reference
+binaries are preserved and hash-checked.
+
+Evidence: `/tmp/bitnet-goal-bf16-q3/qualification.json`, with independent
+reference generation, long-batch comparison, real-boundary replay, fault
+injection and the model/state gates. Frozen executable SHA-256:
+`b7ab0443a1f7100a89a880611030f7841ca2f9934b6be0204da0a77c2ccec7f0`.
+
+Other mixed GGUF formats, model-level precision planning, resident BF16
+residual/activation, attention, GDN and KV/convolution execution remain open.
+No full BF16 model mode or measured vLLM throughput/latency parity is claimed.
+The cross-schedule Flash long CLI mismatch and serving/concurrency qualification
+remain separate open work.
+
+### Resident CUDA BF16 SwiGLU FFN (2026-11-06)
+
+Added optional `dense_ffn_bf16` for
+`down(silu(gate(X)) * up(X))`, using the preceding qualified GGUF matrix
+profiles. Gate, up, activation and down intermediates stay on the device.
+The callback uploads the BF16 input once and reads back only the BF16 output;
+it contains no normalization, residual addition or F32 fallback. It supports
+in-place output and commits host output only after successful staged readback.
+All weight/profile/shape checks run before compute begins.
+
+The borrowed weight descriptor carries each original GGUF type, raw handle and
+optional independently budgeted BF16 layout. Large-batch GEMM accepts a decoded
+layout after the raw GPU payload has been released. A8 plans still require raw
+weights, even if a compatible BF16 layout is present; a cache miss cannot change
+the selected arithmetic. Tests cover both ownership modes, reject mismatched
+format tags and reject a decoded layout substituted for required A8 execution.
+No CPU-visible model weights are mutated and no weight copy is admitted lazily.
+
+The matrix entry points now share validated device execution helpers. A8 gate
+and up reuse one BF16-to-Q8 input quantization. The down projection prepares its
+own activation input only when its plan requires A8. Two BF16 hidden vectors
+reuse backend prefill scratch; the gated product overwrites the gate vector.
+All scratch is reserved before launching the composed sequence. The active
+hidden payload is `4 * tokens * hidden_dim` bytes, plus input/output/Q8 scratch;
+these activation allocations are separate from weight-cache budgets.
+
+The reference's activation precision is significant: CUDA `silu_and_mul` rounds
+SiLU to BF16 before the multiplication, then rounds the product to BF16. In a
+65,536-word independent probe, this matches every reference word; one final
+rounding of an FP32 SiLU/product matches only 52,689 words. The native kernel
+preserves both conversions. On the unchanged Qwen observer data, the resident
+activation intermediate matches all 104,448 distinct captured BF16 words exactly
+(208,896 comparisons including separate/in-place execution).
+
+| Resident FFN qualification | Result |
+| --- | --- |
+| Independent synthetic FFNs | 160; four format combinations, two seeds, four geometries, five batch sizes |
+| Formats | IQ4_XS/Q3_K/IQ4_NL, including entirely IQ4_XS FFNs |
+| Distinct FFN output words | 798,720 |
+| Separate/in-place output checks | 1,597,440 exact reference words |
+| cuBLAS 13.7 and 13.10 reference runs | Identical full FFN outputs and headers for all covered cases |
+| Source ownership | Every GEMM raw handle destroyed before ordinary test execution |
+| Fresh decoded-only context | 8,448 exact output words, all raw GPU handles released |
+| Captured Qwen27 FFN outputs | 30,720 distinct words exact; 61,440 separate/in-place comparisons |
+| Captured activation intermediate | 104,448 distinct words exact in both output modes |
+| Readback fault injection | A8/mixed GEMM, alias/separate output untouched; retry succeeds |
+| Weight pool | Final 160-case suite passes with pooling enabled |
+| Reference generation | Both independent library runs reproduce the checked-in header |
+
+The real-model replay uses layer-0 weights from the original Qwen27 GGUF and
+the unchanged BF16 observer input. It computes all three projections and the
+activation, then compares against the captured down-projection output. Five
+prefill tokens exercise IQ4 MMVQ plus Q3_K MMQ; one decode token uses MMVQ.
+An external passive launch observer reads the fourth kernel's gated activation
+and compares it to the original down-projection input. Observed and unobserved
+calls preserve every expected output. No test hook is added to production code.
+This validates the core FFN composition, not its normalization/residual boundary
+or the whole BF16 model.
+
+Host/device traffic was measured separately with capture disabled and weight
+uploads excluded. The baseline is three host-entry BF16 matrix calls, with the
+unchanged captured gated input supplied to down; it measures projection traffic
+without attributing a CPU activation cost. It is not the existing F32 resident
+FFN path or a vLLM latency benchmark.
+
+| Qwen27 sample | Separate matrix calls H2D / D2H | Resident FFN H2D / D2H |
+| --- | --- | --- |
+| Five prefill tokens | 276,480 / 399,360 bytes; 3 / 3 calls | 51,200 / 51,200 bytes; 1 / 1 calls |
+| One decode token | 55,296 / 79,872 bytes; 3 / 3 calls | 10,240 / 10,240 bytes; 1 / 1 calls |
+
+This removes 84.8% of the measured tensor traffic in both samples. Each resident
+call has six observed custom launches: two quantizers, three projections and
+one activation. No explicit device/stream synchronization occurs between stages;
+allocation occurs before compute and final readback is a host boundary. The
+passive activation observer's extra synchronization/copy is excluded from the
+traffic run. No throughput or latency parity claim follows from these counts.
+
+Protected clean build is warning-free. Standard tests, the final full CUDA
+suite including all 160 FFNs, final diagnostics, backend matrix and AVX2/AVX512
+checks and quant tests pass. Preceding BF16 matrix, Q3_K and RMSNorm reference
+tests pass after the device-helper refactor. F32 model gates retain Qwen27
+192/192 short and 24/24 long, Flash 179/179 short, 16/16 on all eight matched
+schedules, 32/32 with actual cache charging and all 72,327,168 words across
+170 captured states exactly. User-owned reference binaries are preserved and
+hash-checked. The extra final CUDA run includes the decoded-only IQ4 FFNs;
+production objects did not change when those reference cases were added.
+
+Evidence: `/tmp/bitnet-goal-bf16-ffn/qualification.json`, with both independent
+FFN reference runs, activation-contract probe, source-ownership tests, transfer
+counts, passive intermediate capture, fault injection and model/state gates.
+Reference sources are `test/reference_cuda_bf16_ffn.{c,py}`; normal tests need
+only checked-in data and C fixtures. Frozen executable SHA-256:
+`d40cf678301d4fac6a6628865b546749552839dd96766b221cae6d687731744b`.
+
+Remaining work includes other mixed GGUF matrix formats, model-level precision
+planning, resident BF16 normalization/residual boundaries, attention, GDN and
+KV/convolution storage. The F32 model execution contract remains the default.
+A full BF16 model mode, measured matched-vLLM parity, serving/concurrency and
+the separate cross-schedule Flash long CLI mismatch remain open.
+
+### CUDA BF16 residual/RMSNorm/FFN composition (2026-11-06)
+
+Optional `add_rmsnorm_bf16_batch` and `dense_ffn_bf16_add_norm` extend the
+preceding FFN checkpoint. With BF16 inputs X/R, F32 sum S=X+R drives RMSNorm;
+the second output is BF16(S). The norm parameter is BF16, with gamma formed
+in F32 using the declared zero/one offset. Normalizing BF16(S) instead changes
+8,381 of 30,720 captured Qwen27 norm words. Independent unchanged vLLM IR
+reproduces every captured norm word using the F32 sum.
+
+The composed callback returns FFN(norm(S)) and BF16(S), matching Qwen's
+post-attention/MLP boundary; it does not add the FFN output to the residual.
+It validates plans and reserves scratch before compute, uploads both inputs,
+keeps normalized input and FFN intermediates resident, and reads both outputs
+back together. Host outputs are committed only after successful readback.
+Outputs must be disjoint but can independently alias either input, including
+cross-input swapping. Other backends retain absent optional capabilities.
+Existing F32 model execution is unchanged.
+
+| Qualification | Exact result |
+| --- | --- |
+| Standalone add/RMSNorm | 38 cases, 1,480,784 comparisons across both outputs and four arrangements |
+| Composed add/norm/FFN | 48 cases, 2,293,760 comparisons across both outputs and four arrangements |
+| Norm geometries | Dimensions 1 through 5,120, warp/block boundaries, 65,537-token grid, gamma offsets 0/1 |
+| FFN geometries | 256/256, 768/512, 256/5,376; batches 1/5/17/33; IQ4_XS with IQ4_XS or Q3_K up |
+| Original Qwen27 layer-0 replay | Five prefill tokens and one decode token; both outputs exact in all four arrangements, for norm and composed FFN |
+| Qwen replay comparisons | 491,520 exact BF16 words; 30,720 distinct positions in each logical vector |
+| Independent reference regeneration | Checked-in Python reproduces checked-in header byte for byte |
+| cuBLAS versions | Native tests pass against host 13.10 and pinned reference 13.7 |
+| Pooling | All 86 cases pass with weight pooling enabled |
+| Readback failures | 16 partial copies crossing into the second vector; both outputs/inputs unchanged, retries exact |
+
+An initial composed case exposed one normalized BF16 word differing at a
+rounding boundary, propagating to 91 FFN words. It reproduced with both cuBLAS
+versions. An isolated kernel comparison fixes it by explicitly preserving the
+F32 addition of epsilon after mean-square division. The new kernel uses
+`__fadd_rn`; references and earlier norm kernels are unchanged. No tolerance
+was introduced. GEMM raw weights are released before synthetic execution;
+required A8 raw handles remain present.
+
+Transfer counts use the original Qwen inputs, exclude weight uploads and
+observer copies, and compare separate norm plus resident FFN to composition:
+
+| Sample | Separate H2D / D2H | Composed H2D / D2H |
+| --- | --- | --- |
+| Five tokens | 153,600 / 153,600 bytes; 3 / 2 calls | 102,400 / 102,400 bytes; 2 / 1 calls |
+| One token | 30,720 / 30,720 bytes; 3 / 2 calls | 20,480 / 20,480 bytes; 2 / 1 calls |
+
+Composition removes one third of measured tensor traffic. Both paths issue
+seven observed custom launches; neither explicitly synchronizes the stream or
+device between stages. Final host readback is a synchronization boundary. Both
+measured paths retain exact outputs. These counts establish no latency or
+throughput improvement and no vLLM parity result.
+
+The protected clean CUDA build has zero warnings. Standard/full CUDA,
+diagnostic isolation, backend matrix, AVX2/AVX512 checks and quant tests pass.
+Qwen27 retains 192/192 short and 24/24 long tokens; Flash retains 179/179 short,
+16/16 on all eight matched schedules and 32/32 with actual cache charging.
+All 72,327,168 words across 170 initial/resumed states remain exact. Preserved
+user reference binaries are hash-checked.
+
+Evidence: `/tmp/bitnet-goal-bf16-residual/qualification.json`. Independent
+reference generator: `test/reference_cuda_bf16_residual.py`; synthetic expected
+hashes: `test/cuda_bf16_residual_reference.h`. References use the preceding
+pinned vLLM image/plugin, unchanged native IR, plugin linear and BF16 activation.
+Frozen executable SHA-256:
+`bccfdccd7e4fb1464382751f6c434de189c0912700c28e2f7214684ce1a66b9e`.
+
+This qualifies one resident decoder boundary. Full BF16 model execution,
+remaining matrix formats, attention/GDN/KV state, serving, matched vLLM
+performance and the cross-schedule Flash long mismatch remain open.
+
+### BF16 GDN linear reference topology (2026-11-06)
+
+`test/reference_cuda_bf16_gdn_linear.py` now replays Qwen27 layer-0 QKV/Z,
+beta/alpha and output projections directly from the original GGUF and saved
+independent vLLM prefill/decode captures. All six outputs match exactly:
+129,600 BF16 words. The pinned plugin's unchanged `GGUFHeadTilingLayout`
+restores packed weight rows for V, Z, beta and alpha, and maps the output
+projection input to GGUF order. Comparing raw GGUF rows to vLLM's logical
+head order incorrectly produces widespread mismatches. Same-type merged
+weights dispatch once using their combined row count; splitting a merged
+projection can alter MMVQ/MMQ selection.
+
+The tool saves transformed packed weights, activation inputs, complete
+reference outputs and SHA-256 hashes for native-kernel replay. This establishes
+the reference layout and arithmetic boundary; native BF16 Q5_K/Q8_0 linear
+kernels remain unqualified. At five tokens the 16,384-row merged Q5_K input
+projection uses A8 MMQ, while decode uses MMVQ. The Q8_0 96-row beta/alpha and
+5,120-row output projections use MMVQ for both captured batch sizes.
+
+The GGUF layer matrix inventory contains 191 Q5_K and 110 Q8_0 tensors, alongside
+Q4_K, Q6_K, IQ3_S and the already covered IQ4/Q3_K formats; F32 convolution
+matrices are counted separately. Q5_K and Q8_0 are the immediate typed BF16
+linear gaps required to connect the first complete GDN layer. Existing F32
+execution is unchanged. Evidence and full inventory:
+`/tmp/bitnet-goal-bf16-model-linear/qualification.json`.
+
+### CUDA BF16 Q8_0 A8 linear execution (2026-11-06)
+
+Q8_0 now declares a typed BF16 linear contract in the quant registry. The shared
+backend planner selects MMVQ for batches of at most six tokens, or two when
+output rows exceed 5,120; larger batches select MMQ. Raw weights remain borrowed
+backend handles. No BF16 decoded copy is allocated, and a cached layout cannot
+replace the required A8 arithmetic. Existing F32 dispatch is unchanged.
+
+The decode kernel assigns four lanes to each 32-value weight block and eight
+blocks per warp. It preserves the reference's FP16 activation scale, F32 scale
+product, integer partial dots, lane accumulation and XOR reduction. The prefill
+kernel shares activation blocks across 128 rows and four tokens, computes full
+32-value integer dots and accumulates them in block order. Its flattened tile
+grid handles batches beyond 65,535 without a grid-Y failure. Both produce BF16
+outputs and use the existing staged host commit/failure behavior.
+
+| Q8_0 qualification | Result |
+| --- | --- |
+| Independent matrix cases | 61 |
+| Distinct output words | 329,321 |
+| Separate/in-place comparisons | 658,642 exact whole-output reference words |
+| Output widths | 1, 33, 129, 5,120, 5,121 |
+| Input widths | 256, 768, 5,120 |
+| Coverage | Both dispatch thresholds, partial row/token tiles, positive/negative/zero weight scales |
+| Long batch | 65,537 tokens; independent reference concatenates two unchanged MMQ calls to avoid its quantizer grid-Y limit |
+| Original Qwen27 GDN projections | Beta/alpha and output, five prefill tokens and one decode token |
+| Real-model replay | 31,296 distinct BF16 words; 62,592 exact separate/in-place comparisons |
+| Pooling | Same 61 cases pass with weight pooling enabled |
+
+The real replay consumes the preceding GDN tool's exported transformed packed
+weights and inputs, so logical head ordering is held constant. This isolates
+native arithmetic from layout conversion. Both real captured batch sizes use
+MMVQ; synthetic cases independently qualify the MMQ branch. References use the
+unchanged pinned vLLM plugin; Q8_0 A8 involves no cuBLAS call or tolerance.
+The checked-in C producer and Python generator preserve complete raw weights,
+reference outputs, manifests and hashes. Normal CUDA tests use only synthetic
+fixtures and checked-in expected hashes.
+
+A scoped external trace of each real separate/in-place call observes two custom
+launches (input quantization and MMVQ), one H2D and one D2H, and no explicit
+stream/device synchronization. Beta/alpha traffic is 51,200/960 bytes at five
+tokens and 10,240/192 at one; output-projection traffic is 61,440/51,200 and
+12,288/10,240. Weight uploads are excluded. These are transfer/launch counts,
+not latency or throughput measurements.
+
+Protected clean CUDA build is warning-free. Standard/full CUDA, diagnostic
+isolation, backend matrix, AVX2/AVX512 and the retained model/state regression
+gates pass. Evidence: `/tmp/bitnet-goal-bf16-q8/qualification.json`.
+This is typed component support, not full-model BF16 execution or a throughput
+claim. Q5_K remains the next projection format required by the first GDN layer;
+remaining mixed formats, GDN/attention/KV precision, serving, measured vLLM
+parity and the cross-schedule Flash long mismatch remain open.
+
+### CUDA BF16 Q5_K affine A8 linear execution (2026-11-06)
+
+Q5_K now declares typed BF16 A8 MMVQ/MMQ in the quant registry and shares the
+six-token threshold (two above 5,120 output rows). Native kernels borrow raw
+weights, keep decoded-weight bytes at zero and return BF16 with F32
+accumulation. MMQ shares activation blocks across 128 rows and four tokens;
+its flattened grid supports long batches. Existing F32 execution is unchanged.
+
+The reference uses different affine corrections in the two branches. MMVQ
+sums quantized lanes, weighted by their FP16 scale. MMQ uses the FP16-rounded
+sum of original BF16 input values. A dedicated affine input quantizer supplies
+that sum only for Q5 MMQ plans. Shared gate/up preparation enables it if either
+projection needs it; symmetric formats ignore the sum field. Down preparation
+selects its own contract. No format substitution or CPU fallback is introduced.
+
+An initial matrix test exposed a BF16 rounding boundary at row width 33 and
+five tokens. Isolated unchanged-reference comparisons showed that fusing the
+scale/data product matches, while fusing the minimum product changes one of
+165 output words. Both new kernels now use an explicit FMA after separately
+rounding the minimum product. References were preserved and no tolerance added.
+
+| Q5_K qualification | Result |
+| --- | --- |
+| Independent matrix cases | 61; 329,321 distinct output words |
+| Separate/in-place matrix checks | 658,642 exact words |
+| Matrix coverage | Signed/zero data and minimum scales, dispatch thresholds, partial tiles, widths 256/768/5,120, 65,537 tokens |
+| Independent mixed FFNs | 90; Q5/Q8/Q5, Q8/Q5/Q8, Q5/IQ4_XS/Q3_K |
+| FFN dimensions/hidden | 256/256, 768/512, 256/5,376; two seeds; batches 1/5/9/17/33 |
+| Separate/in-place FFN checks | 998,400 exact words; 499,200 distinct outputs |
+| Independent cuBLAS 13.7/13.10 FFN runs | Identical reference outputs and headers |
+| Original Qwen QKV/gate projection | 98,304 distinct prefill/decode words; 196,608 exact comparisons |
+| Entire first GDN layer projection set | Q5 input plus rerun Q8 beta/alpha/output: 129,600 distinct words; 259,200 comparisons |
+| Pooling | All 61 matrix and 90 FFN cases pass with pooling enabled |
+| Reference regeneration | Both checked-in Q5 reference headers reproduced exactly |
+
+Real replays use the preceding tool's original transformed GGUF weights,
+inputs and independent vLLM captures. Five tokens exercise merged Q5 MMQ;
+one token exercises MMVQ. Separate and in-place outputs match exactly. The
+normal synthetic test needs no model files and preserves all earlier matrix,
+FFN and residual references. The 65,537-token reference uses two unchanged MMQ
+calls to avoid its quantizer grid-Y limit; native execution uses one batch.
+
+Scoped traces exclude weight uploads. Each real call issues two custom
+launches, one H2D and one D2H, with no explicit stream/device synchronization.
+Five-token input/output traffic is 51,200/163,840 bytes; one-token traffic is
+10,240/32,768. Readback remains a host synchronization boundary. These counts
+are not latency or throughput measurements.
+
+Protected clean CUDA build is warning-free. Standard/full CUDA, diagnostic
+isolation, backend matrix, AVX2/AVX512, model and saved-state gates pass. Evidence:
+`/tmp/bitnet-goal-bf16-q5/qualification.json`. Frozen executable SHA-256:
+`22e5c48e808f6d7fd3823ac06710855d09f8dbd692b197dbdb0ea44d2776c5a4`.
+
+This qualifies the first GDN layer's linear projection formats, not its full
+recurrence or model execution. Resident BF16 GDN, gated norm, attention and
+KV/state precision, remaining mixed formats, serving, matched vLLM performance
+and the separate cross-schedule Flash long mismatch remain open.
+
+### CUDA BF16 tiled causal convolution with history (2026-11-06)
+
+Added optional `causal_conv_silu_bf16_batch` for widths 2/3/4, without bias.
+Weights are resident BF16 `[dim,width]`; input/output are `[tokens,dim]` and
+caller-owned history is BF16 `[width-1,dim]`, oldest first. Output can alias
+input; history must be disjoint from input/output. Combined staged readback
+commits output and history only after success. Other backends retain an absent
+optional capability. Existing F32 convolution and Q/K normalization are unchanged.
+
+The unchanged reference Triton convolution rounds each BF16 product before
+F32 accumulation. A 54,074-word probe matches every word using this sequence;
+F32 fused products match only 37,497. SiLU consumes the F32 sum, then rounds to
+BF16. The native kernel preserves those conversion boundaries explicitly.
+Carried history stores raw BF16 input, preserving its bits independently of
+activation. No scalar fallback, weight conversion or automatic placement occurs.
+
+Prefill parallelizes across eight-token/channel tiles rather than a serial
+loop over the entire prompt. Each tile reads its immutable raw input/history
+window, and only the final token tile writes carried history. A flattened grid
+avoids a grid-Y token limit. Short calls use 64 channel threads and longer ones
+128. No inter-tile synchronization is required.
+
+| Convolution qualification | Exact result |
+| --- | --- |
+| Independent fixtures | 146; cold/warm history, widths 2/3/4 |
+| Channels | 1, 31, 32, 33, 255, 256, 257, 10,240 |
+| Tokens | 1/5/17 plus 65,537-token cases |
+| Distinct output/history words | 1,663,564 / 399,786 |
+| Separate/in-place/chunked/decode comparisons | 7,991,240 exact words |
+| Independent prefill/update equivalence | All 144 short fixtures agree in output and history |
+| Real-weight replay | Qwen27 layer-0 weights and captured QKV inputs, five prefill tokens followed by one decode token |
+| Real-weight output/history checks | 245,760 exact comparisons across both output modes |
+| Readback failures | Eight partial copies into the history vector; output/input/history unchanged, retries exact |
+| Pooling | All 146 cases pass with weight pooling enabled |
+
+The real replay compares against independently executed convolution primitives,
+not an observed model convolution output or the full GDN layer. Value-head rows
+are restored using the pinned GGUF adapter's layout; F32 convolution weights
+round to BF16 as in the reference model. The first call starts with zero history,
+then decode consumes the carried prefill history. Synthetic references use
+unchanged native vLLM prefill/update operations in the pinned image; no BitNet
+output generates a golden value. Cache slot one avoids the reference's reserved
+null slot. Reference generator: `test/reference_cuda_bf16_conv.py`.
+
+Each real callback issues one custom kernel, two H2D copies and one combined
+D2H copy, with no explicit stream/device synchronization. Five-token traffic
+is 163,840 bytes each direction; one-token traffic is 81,920 bytes each direction,
+including history. Weight uploads are excluded. Final readback remains a host
+synchronization boundary; this callback does not keep history resident across
+host entries or establish a full-model performance result.
+
+A standalone kernel comparison uses real Qwen weights, synthetic BF16 inputs,
+zero initial history and warmed data. Five CUDA-event samples time 100-node
+CUDA graph replays after warmup; all other task tests finished before measurement
+on GPU 0. The largest shape runs first to warm the device. Both extracted kernels
+produce identical complete outputs/history for every timed shape.
+
+| Tokens, 10,240 channels | Serial BF16 prototype median | Tiled median | Ratio |
+| --- | --- | --- | --- |
+| 1 | 2.27 us | 1.83 us | 1.24x |
+| 5 | 3.92 us | 3.23 us | 1.21x |
+| 512 | 189.64 us | 19.88 us | 9.54x |
+| 1,047 | 382.50 us | 38.93 us | 9.82x |
+
+This measures extracted device kernels against the serial BF16 prototype,
+including graph-node scheduling. It excludes copies, allocations and the host
+callback; warm-cache inputs/history remain immutable across replays. It is not
+a vLLM comparison or full-model prefill/decode result. Raw samples, ranges,
+source, device/process records and equality assertions are retained with the
+qualification evidence.
+
+Protected clean CUDA build is warning-free. Standard/full CUDA, diagnostics,
+backend matrix, AVX2/AVX512, model and fresh saved-state regression gates pass.
+Evidence: `/tmp/bitnet-goal-bf16-conv/qualification.json`. Frozen executable:
+`ec2c0f51013bba9296666f1f30c231b08fa007ec9392c96ec019b05f41a70141`.
+
+Q/K normalization, gating and the F32 recurrent-state contract remain before a
+complete BF16 GDN layer can run. Other mixed formats, attention/KV precision,
+serving, matched vLLM parity and the cross-schedule Flash long mismatch remain open.
+
+### CUDA BF16 packed GDN decode/state contract (2026-11-06)
+
+The optional `gdn_decode_bf16` host bridge implements the pinned vLLM packed
+decode operator for K=V=128, logical repeated K heads and F32 `[V,K]` recurrent
+state. Input QKV and beta/alpha rows are BF16. Natural-log A and bias are
+resident F32 and BF16 respectively. The profile fixes additive L2 epsilon at
+1e-6 and softplus threshold at 20; its caller supplies positive query scale.
+It keeps normalized Q/K in FP32 through recurrence, decays state before the
+K dot product and uses explicit FMA local dot trees for both update and output.
+The private prototype also passes with automatic contraction disabled.
+
+| Decode qualification | Exact result |
+| --- | --- |
+| Independent unmodified reference | 9 cases, 8 dependent steps each; K/V head counts 1/1, 2/6, 16/48 |
+| Output/state comparisons | 65,387,520 across separate, input-alias and fresh host-state allocation modes |
+| Reference regeneration | All exported bytes and embedded hashes identical |
+| Captured and synthetic trajectories | 48 calls; 294,912 BF16 output and 37,748,736 F32 state words |
+| Captured first decode | All 6,144 core-output words match the original model capture |
+| Partial readback recovery | 48 injected failures; output/state/input unchanged; retries exact |
+| Pooling | All independent cases also pass with bounded weight pooling enabled |
+
+For the target 16/48-head shape, each host call launches one kernel, uploads
+3,166,400 bytes in three copies and reads back 3,158,016 bytes in one staged
+copy. No explicit synchronization calls were observed; the synchronous copies
+still impose transfer waits. Resident parameter uploads are excluded from
+these counts. Output and state commit together only after successful readback;
+output may alias QKV input, while state and BA must remain disjoint.
+
+These counts qualify the host bridge and its arithmetic. Device-resident state
+composition and native chunk/WY prefill remain before full BF16 model execution;
+no throughput, decode-latency or vLLM performance-parity result is claimed.
+Evidence: `/tmp/bitnet-goal-bf16-gdn-decode/qualification.json`.
+
+### CUDA BF16 GDN prefill Q/K and gate preparation (2026-11-06)
+
+Added optional `gdn_prefill_prepare_bf16` with packed BF16 QKV and
+`[beta,alpha]` input rows. It normalizes Q/K, copies V without changing its bits,
+and produces F32 log-decay and beta. Resident parameters are natural-log A in
+F32 and bias in BF16. Positive finite epsilon and nonnegative finite softplus
+threshold are caller-supplied, preserving architecture ownership of policy.
+No query scaling, recurrence, scalar fallback or lazy parameter conversion is
+performed. Output QKV may alias input; the scalar vectors and packed BA storage
+must be disjoint. All three output vectors remain unchanged on failure.
+
+The kernel preserves the pinned prefill operator's precision, including additive
+L2 epsilon, approximate square root followed by full division, and BF16 rounding
+of normalized Q/K. Gate preparation uses `log(1+exp(...))`, not `log1p`, with
+explicit F32 addition, exponential and threshold order. Decay and beta remain
+F32. Half-warp reduction trees retain the reference's local grouping. Eight-token
+head tiles use a flattened grid; packed BA addressing uses size_t arithmetic.
+Internal padding aligns F32 readback vectors after odd-length BF16 output.
+
+| Preparation qualification | Exact result |
+| --- | --- |
+| Independent cases | 178 |
+| Default wrapper profile | 154 cases; all original reference hashes preserved |
+| Additional policy cases | 24 unchanged-kernel runs; epsilon 1e-5/1e-3 and thresholds 0/8/20 |
+| Q/K widths | 1 through 256, including partial/power-of-two boundaries |
+| Target geometry | 16 K heads, 48 V heads, K/V width 128 |
+| Tokens | 1/5/17/33 and 65,537 |
+| Distinct BF16 QKV words | 16,629,634 |
+| Distinct F32 words per gate vector | 150,702 |
+| Separate/in-place/chunked comparisons | 38,078,936 raw BF16/F32 values exact |
+| Pooling | All 178 cases pass with weight pooling enabled |
+| Real-parameter replay | 124,032 exact QKV/log-decay/beta comparisons across both output modes |
+| Failure recovery | 24 partial readbacks into both F32 vectors; all outputs and inputs unchanged; retry exact |
+
+The unchanged reference wrapper fixes epsilon at 1e-6 and threshold at 20;
+additional policy cases call its unchanged kernel with different constexpr
+arguments. The reference currently fails to compile when the padded K and V
+widths differ because a branch-local mask name has incompatible types. This
+backend profile explicitly requires matching power-of-two buckets with widths
+at most 256. No reference math was patched to bypass that limitation.
+
+Real replay uses independent convolution results from the preceding checkpoint,
+captured Qwen BA projections and actual GGUF parameters. As in the pinned
+adapter, raw negative decay coefficients become natural logs on the CPU before
+GPU loading; value-head rows are restored to logical order and bias rounds to
+BF16. This checks the prefill primitive on five-token and single-token inputs.
+It does not observe a full model preparation boundary directly, validate the
+fused model decode recurrence or close the complete GDN layer.
+
+Scoped transfer traces observe one custom kernel, two H2D copies and one combined
+D2H copy, without explicit stream/device synchronization. Five-token input/output
+traffic is 103,360/104,320 bytes; one-token traffic is 20,672/20,864 bytes. Weight
+uploads are excluded. Host readback remains a synchronization boundary; no
+resident-history, throughput or vLLM parity claim follows from these counts.
+
+Protected clean CUDA build is warning-free. Standard/full CUDA, diagnostics,
+backend matrix, AVX2/AVX512, model and fresh saved-state regressions pass.
+Evidence: `/tmp/bitnet-goal-bf16-gdn-prep/qualification.json`. Generator:
+`test/reference_cuda_bf16_gdn_prep.py`. Frozen executable:
+`05c52a6d2328b3bde42f9d7df8e4e41c4ab66377198c3b67274e9a22aef6b4cc`.
+
+Remaining work includes the F32 recurrent-state contract, gated normalization,
+resident layer/model composition, other mixed formats, attention/KV precision,
+serving, matched vLLM performance and the cross-schedule Flash long mismatch.
 
 ### ARM Native CPU Checkpoint
 
@@ -6524,6 +8465,2859 @@ Next work should replay identical token histories and compare logits/tensors
 at divergence, rather than treat individual projection accuracy as sufficient
 for model-level parity. All processes completed.
 
+## CPU Q5_K prefill reduction investigation (2026-11-04)
+
+On the Threadripper 9980X, the pinned llama.cpp build
+`df18bee11e96557b07aa7b12db0976f3c7ac9165` selects its tiled CPU matrix
+multiplication path for the 33-token Qwen3.8 27B prompt. The first layer's
+5,120 normalized input floats match bit for bit between engines. Q8_K
+activation scales, codes, and block sums also match independently.
+
+Replaying the captured input through the current Q5_K batched kernel and
+llama.cpp's exported legacy vector dot gives identical results to each
+other, but only 2,215 of 10,240 outputs match the captured tiled projection
+bit for bit (maximum difference 7.62939453e-6). The existing 16-lane VNNI
+vector reduction does not resolve the difference.
+
+A standalone arithmetic replay instead sums scaled integer dot products and
+minimum corrections within each 256-element block, computes the corrected
+block value with fused negative multiply-add, and accumulates each block
+with `fmaf(block_value, activation_scale, output)`. This matches **all
+10,240 captured outputs bit for bit**, maximum and RMS difference zero.
+Using a separately rounded multiply and add for the final accumulation
+matches only 5,326 outputs. This identifies the required tiled arithmetic;
+it does not yet qualify a production kernel or fix model-level CPU parity.
+
+Captures and replay are local diagnostic artifacts:
+`/tmp/bitnet-goal-cpu33-norm.bin`,
+`/tmp/bitnet-goal-ref33-qkv.bin`, and
+`/tmp/bitnet-goal-q5-tiled-replay.c`. The reference probe was explicitly
+linked to the pinned build's versioned libraries and run with that build's
+`LD_LIBRARY_PATH`; the installed `/usr/local/lib` probe is not the oracle.
+The subsequent format-local kernel entry point
+`bn_quant_q5k_avx512_tiled_matmul_range` shares four-token weight decoding
+with the existing kernel, performs integer superblock reduction, and keeps
+the existing GEMV-order entry point intact. It reproduces all 10,240 captured
+outputs exactly. It is not selected by production dispatch yet; prefill
+policy integration and model-level qualification remain required.
+
+`test/reference_cpu_q5k_tiled.c` independently generates synthetic graph
+hashes using only pinned GGML CPU libraries. `test_quant` checks those hashes
+for 8, 9, 17, and 33 tokens, 137 output rows and three superblocks, both
+serially and through threaded row partitioning, and checks untouched output
+tails. All quant integration tests pass, including existing GEMV-order tests.
+The independent reference hashes were generated before executing the new
+kernel tests; existing golden values are unchanged.
+Validation after the kernel change: clean CUDA-enabled `bitnet` build with
+zero warnings, full `make -j8 BN_ENABLE_CUDA=1 test` passed, and an AVX2-only
+compile of the changed source passed with `-Wall -Wextra -Wshadow`.
+The optional real-model matrix is not implied by the standard suite; model
+prefill/decode qualification remains open. Logs are
+`/tmp/bitnet-goal-q5-clean-build.log` and
+`/tmp/bitnet-goal-q5-tiled-full-suite.log`.
+
+The reference CPU library SHA-256 is
+`e28660ece5030ec85229b5e03e57d8f0da55866b63943623a651e1adbd02716f`.
+Reproduce the synthetic oracle with the pinned build (its CPU library must
+have AVX512 VNNI enabled):
+
+```sh
+ref=/home/mark/artalis.io/tools/llama.cpp
+cc -O3 -march=native -I"$ref/ggml/include" test/reference_cpu_q5k_tiled.c \
+  "$ref/build/bin/libggml.so.0" "$ref/build/bin/libggml-base.so.0" \
+  "$ref/build/bin/libggml-cpu.so.0" -lm -o /tmp/reference_cpu_q5k_tiled
+LD_LIBRARY_PATH="$ref/build/bin" /tmp/reference_cpu_q5k_tiled
+```
+
+
+## CPU Q5_K integration and GDN normalization probe (2026-11-04)
+
+An isolated executable `/tmp/bitnet-goal-tiled-q5-bitnet` selects the new
+Q5_K tiled arithmetic at eight or more tokens and enables native Q5_K
+prefill projections. The production dispatch and registry are unchanged.
+For the same 33-token prompt, its complete layer-0 QKV output (10,240
+floats) matches the independent capture byte for byte. Its post-convolution
+SiLU output also matches all 10,240 floats byte for byte. Independent token
+parity nevertheless remains **5/8**, identical to the baseline; projection
+agreement alone is not model qualification.
+
+With identical convolution inputs, the next discrepancy is Q/K normalization.
+The pinned reference's `build_gdn_l2_norm` in `src/models/models.h` computes
+`scale(rms_norm(x, eps/head_dim), 1/sqrt(head_dim))`. The current CPU SSM
+kernel computes `x / max(sqrt(sum(x*x)), eps)`. Besides the different epsilon
+placement, the reference performs two separately rounded output scales.
+
+A second isolated executable `/tmp/bitnet-goal-gdn-q5-bitnet` combines the
+Q5_K candidate with the reference RMS-and-scale sequence. The first 16
+layer-0 Q-normalized values now match exactly. The first 16 values also
+match at SSM delta, SSM gate, SSM output projection, and FFN input norm;
+the next observed difference is the FFN gate projection. These are trace
+samples, not claims of complete tensor equality for those later stages.
+Token parity still remains **5/8**. Neither candidate is promoted.
+
+Evidence: `/tmp/bitnet-goal-tiled-q5-prefix33-reference.log`,
+`/tmp/bitnet-goal-tiled-q5-prefix33.trace`,
+`/tmp/bitnet-goal-ref33-conv.bin`, `/tmp/bitnet-goal-tiled33-conv.bin`,
+`/tmp/bitnet-goal-gdn-q5-prefix33-reference.log`, and
+`/tmp/bitnet-goal-gdn-q5-prefix33.trace`. Reference captures use the same
+explicitly pinned libraries described above. Next work must qualify the
+remaining FFN matrix arithmetic and express GDN normalization through
+architecture-owned semantics across CPU/GPU paths, preserving existing
+independent test contracts rather than globally replacing generic L2 norm.
+
+## CPU FFN tiled arithmetic qualification (2026-11-04)
+
+Complete layer-0 FFN input captures from the isolated Q5_K/GDN candidate
+and pinned reference match byte for byte (5,120 floats). The gate and down
+weights are IQ4_XS; the up weights are Q3_K. Replaying that identical input
+with per-superblock integer reduction, FP32 weight scaling, and fused
+activation-scale accumulation matches every reference output for both the
+IQ4_XS gate and Q3_K up projections (17,408 floats each, maximum/RMS zero).
+Current legacy arithmetic matches only 3,651 IQ4_XS outputs and 3,770 Q3_K
+outputs bit for bit, respectively. Activation Q8_K codes/scales/sums remain
+identical to the independently exported reference quantizer.
+
+An isolated IQ4_XS panel epilogue changes
+`fma(integer_total, weight_scale * activation_scale, output)` to
+`fma(integer_total * weight_scale, activation_scale, output)`. Combined with
+the prior Q5_K and GDN candidates, the complete captured gate tensor now
+matches all 17,408 values byte for byte. The formerly failing 33-token
+prompt improves from **5/8 to 8/8** independent generated token IDs.
+
+Broader checks prevent promotion: the eight-prompt CPU comparison gives
+**177/192** prefix token matches, all eight first tokens match, with no
+count mismatches. The story prompt matches 21/24 and the HTTP 404 prompt
+12/24; all others match 24/24. This is a CPU result, separate from the prior
+192/192 CUDA gate. Internal full-versus-chunked prefill (33 tokens, chunk 9,
+64-token resume, eight predictions per phase) still gives **15/16**. Its
+full-prefill step-5 prediction is now 11258, while chunked predicts 89583.
+The six-token initial tail uses a different arithmetic route from the full
+batch. No test threshold or independent expected values were relaxed.
+
+Adding isolated Q3_K tiled prefill still leaves the story prompt at 21/24.
+Thus exact layer-0 projection contracts do not close whole-model parity.
+Production dispatch, registry, normalization, and IQ4_XS/Q3_K kernels remain
+unchanged; these executables are diagnostic candidates.
+
+Evidence: `/tmp/bitnet-goal-iq4xs-tiled-replay.c`,
+`/tmp/bitnet-goal-q3k-tiled-replay.c`,
+`/tmp/bitnet-goal-gdn-iq4-q5-ffn-gate.bin`,
+`/tmp/bitnet-goal-gdn-iq4-q5-prefix33-reference.log`,
+`/tmp/bitnet-goal-gdn-iq4-q5-cpu-short-reference.log`,
+`/tmp/bitnet-goal-gdn-iq4-q5-continuation33-9.log`, and
+`/tmp/bitnet-goal-all-tiled-story-reference.log`. All processes completed.
+Candidate SHA-256 values:
+
+- Q5_K/GDN/IQ4_XS: `9e228e96e5d936f6384c46e2a8f3dd11b3a5c79d3f88be1e3bad9dfde90df8dd`.
+- With Q3_K: `bed6268836b18906cd15eed340ef71c6a79a0d93c76bfa95508569371805a632`.
+
+Next qualification needs complete tensor/logit comparisons under identical
+teacher-forced histories at the story/HTTP divergence, plus explicit,
+consistent prefill arithmetic for short chunk tails before integration.
+
+## CPU chunk-tail divergence localization (2026-11-04)
+
+An isolated variant lowers the Q5_K tiled and IQ-panel batch floor from eight
+to two tokens, keeping the preceding GDN normalization candidate. It still
+fails the 33-token/chunk-9 continuation gate at **15/16**. Thus the remaining
+failure cannot be attributed solely to the six-token tail selecting legacy
+Q5_K/IQ4_XS arithmetic. The resumed phase still matches all eight predictions.
+
+A full prompt-history trace compares every recorded stage at positions 0–32
+between whole and chunked execution. Layer 0 has **zero differing recorded
+summaries**, including their first-16 samples, at all 33 positions. These
+summaries are diagnostic evidence, not proof of full tensor equality.
+The first differing stage is layer 1 QKV at position 8; its recorded input
+norm agrees. Layer 1 QKV differs exactly at positions **8, 17, 26, and 31**.
+Its QKV and Z weight formats are Q4_K (layer 0 uses Q5_K).
+
+Those positions coincide with different four-token panel/canonical-tail
+assignments: each nine-token chunk has a one-token tail at 8, 17, or 26;
+the final six-token chunk has a two-token tail at 31–32, whereas the whole
+33-token batch has only position 32 in its tail. Position 32 QKV itself
+agrees, while its convolution differs after consuming the earlier divergent
+history. This localizes the next investigation to Q4_K packed-input versus
+canonical-tail arithmetic; complete same-input captures are still needed
+before claiming a kernel fix.
+
+Evidence: `/tmp/bitnet-goal-short-tiled-continuation33-9.log`,
+`/tmp/bitnet-goal-short-tiled-continuation-pos32.trace`, and
+`/tmp/bitnet-goal-short-tiled-continuation-all.trace`. Both trace processes
+completed with the same 15/16 failure. Production dispatch remains unchanged.
+
+## Q4_K same-input oracle and tail candidates (2026-11-04)
+
+Pinned-reference layer-1 normalization and QKV captures isolate Q4_K from
+the rest of the model. Using that exact normalized input (5,120 floats),
+the existing prepared Q4_K four-token matrix path matches **all 10,240
+reference projection outputs bit for bit**. Q8_K scales, codes, and sums
+also match independently. In contrast, the unprepared legacy vector/matrix
+path matches 1,543 outputs, and the proposed fused superblock formula
+matches only 799 (maximum difference 1.90734863e-6). The prepared result
+establishes that this reference projection uses the repacked Q4_K arithmetic
+contract; the Q5_K tiled contract cannot simply be generalized to Q4_K.
+The replay uses an independently created prepared weight, with a 256 MiB
+arena to hold its packed layout.
+
+Three isolated diagnostics distinguish token agreement from qualification:
+
+- Padding Q4_K float-input batches to a complete four-token panel gives
+  16/16 continuation token matches, but still leaves substantial logit
+  differences. It is not a sufficient fix.
+- Repacking canonical tail inputs into a temporary four-token panel and
+  executing the existing packed kernel gives 16/16 continuation matches
+  and **zero initial-phase logit differences at all eight steps**. All
+  1,456 recorded position-32 stage summaries agree. Its resumed logits
+  still differ, and its independent 33-token prompt regresses to 5/8.
+  The prototype is allocation-heavy and is rejected for promotion.
+- A Q4_K superblock-formula candidate gives 16/16 continuation matches
+  and 8/8 on that independent prompt, but its projection fails the direct
+  same-input oracle above. Story/HTTP independent prefixes remain 33/48.
+  This candidate is also unqualified, despite those narrow passes.
+
+For the superblock candidate, a second continuation schedule (33-token
+prompt, chunk 11, 64-token resumed suffix, eight predictions per phase)
+passes **16/16 with zero maximum/RMS logit difference at every step in
+both phases**. Chunk 9 passes 16/16 with zero initial-phase differences,
+but resumed logits differ after its one-token suffix tail. The runtime's
+`prefill_internal` explicitly dispatches a one-token prefill through
+`bn_transformer_forward`, which uses decode matrix arithmetic. Consistent
+multi-token arithmetic therefore does not by itself qualify arbitrary
+chunk boundaries.
+
+Evidence: `/tmp/bitnet-goal-q4-layer1-replay.c`,
+`/tmp/bitnet-goal-ref33-layer1-{norm,qkv}.bin`,
+`/tmp/bitnet-goal-pad-q4-continuation33-9.log`,
+`/tmp/bitnet-goal-q4-packed-tail-continuation33-9.log`,
+`/tmp/bitnet-goal-q4-packed-tail-prefix33-reference.log`,
+`/tmp/bitnet-goal-q4-tiled-prefix33-reference.log`,
+`/tmp/bitnet-goal-q4-tiled-continuation33-{9,11}.log`, and
+`/tmp/bitnet-goal-q4-tiled-story-http-reference.log`. All processes completed;
+production dispatch and golden values remain unchanged.
+
+Next work must distinguish reference packed-GEMM versus GEMV contracts
+explicitly and preserve the selected prefill contract across partial panels
+and one-token continuation requests. A passing greedy prefix alone must not
+promote a candidate whose same-input oracle contradicts that contract.
+
+## Durable Q4_K repack reference contracts (2026-11-04)
+
+`test/reference_cpu_q4k_repack.cpp` now reproduces the independent packed
+CPU oracle without model files or bitnet objects. It explicitly allocates
+Q4_K weights in GGML's `CPU_REPACK` buffer, uses three superblocks, and
+executes batches of 1–9, 17, and 33 tokens. Run it for 136 rows (eight-row
+runtime groups) and 128 rows (also eligible for sixteen-row runtime groups).
+The pinned reference chooses `q4_K_8x8` for both fixtures.
+
+The reference itself changes output rounding across batch schedules.
+For 136 rows, comparing identical input prefixes to its 33-token execution:
+one token changes 101 floats (maximum 7.62939453e-5), five tokens change 93
+(maximum 3.43322754e-5), and nine tokens change 103 (maximum 4.57763672e-5).
+Four and eight tokens match their full-batch prefixes exactly. These are
+independent reference observations, not relaxed runtime tolerances.
+
+`test_q4k_prepared_reference_panels` in `test_quant` preserves all **22
+independently generated hashes** across both row layouts, serial and
+threaded dispatch, and checks output sentinels. It also verifies directly
+that the same first token differs between a one-token call and a full panel.
+The current prepared runtime path passes these exact contracts, including
+tails. Existing reference values are unchanged.
+
+The quant registry consequently no longer declares Q4_K matrix arithmetic
+universally identical to GEMV on AVX512. This is capability metadata
+correction; it does not select a new kernel. CPU AVX512's normal prefill
+projection replay policy is `NONE`, so this change does not replace its
+current matrix arithmetic with per-token replay.
+
+Reproduce against pinned llama.cpp commit
+`df18bee11e96557b07aa7b12db0976f3c7ac9165` and the CPU library SHA above:
+
+```sh
+ref=/home/mark/artalis.io/tools/llama.cpp
+c++ -O3 -march=native -std=c++17 -Wall -Wextra -Wshadow \
+  -isystem "$ref/ggml/include" test/reference_cpu_q4k_repack.cpp \
+  "$ref/build/bin/libggml.so.0" "$ref/build/bin/libggml-base.so.0" \
+  "$ref/build/bin/libggml-cpu.so.0" -o /tmp/reference_cpu_q4k_repack
+LD_LIBRARY_PATH="$ref/build/bin" /tmp/reference_cpu_q4k_repack 136
+LD_LIBRARY_PATH="$ref/build/bin" /tmp/reference_cpu_q4k_repack 128
+```
+
+Validation completed after the metadata/test changes: clean CUDA-enabled
+`bitnet` build with zero warnings, followed by full
+`make -j8 BN_ENABLE_CUDA=1 test` passing. Optional external-model cases remain
+skipped unless configured; this does not claim that the open Qwen model
+qualification gates are resolved. Logs:
+`/tmp/bitnet-goal-q4-oracle-clean-build.log` and
+`/tmp/bitnet-goal-q4-oracle-full-suite.log`.
+
+The oracle intentionally calls a pinned internal C++ repack entry point;
+it is not a stable external GGML API. Local oracle outputs are
+`/tmp/bitnet-goal-reference-cpu-q4k-repack.log` and
+`/tmp/bitnet-goal-reference-cpu-q4k-repack128.log`.
+
+## Independent chunked-prefill model probe (2026-11-04)
+
+`test/llama_layer_probe.cpp` now accepts `--prefill-chunk N`. It submits
+explicit chunks into one reference context, sets batch/microbatch capacity
+to N, and keeps tensor observer positions relative to the active chunk.
+`--sequential` remains separate and mutually exclusive. Nonpositive,
+malformed, or overflowing chunk sizes fail before model load. Chunked
+layer-input embedding dumps fail explicitly because the probe does not yet
+aggregate them across calls; selected intermediate tensor and KV captures
+remain available.
+
+The pinned independent Qwen reference itself changes greedy predictions
+under these schedules. For the same 33-token prompt and F32 KV, flash off,
+context 113, eight predictions:
+
+- Whole prefill: `5604,13,271,550,4962,11258,6195,271`.
+- Chunk 9: `5604,13,271,550,4962,89583,21753,271`.
+- Chunk 11: `5604,13,271,550,4962,89583,21753,271`.
+
+These sequences are independently generated, not revised expected values
+from bitnet output. The existing internal continuation check remains
+unchanged and useful as a consistency diagnostic. Independent chunked
+qualification must additionally compare matching execution schedules and
+token histories, rather than interpret disagreement between two reference
+schedules as proof of runtime failure.
+
+A token-only diagnostic harness then reads each schedule's independently
+generated IDs from a file and replays matching histories through the isolated
+Q5_K/GDN/IQ4_XS runtime candidate (using the original Q4_K prepared kernels,
+not the rejected Q4_K formula candidates). Both **chunk 9 and chunk 11 pass
+8/8 initial-phase predictions**, including the divergent step 5 and its
+following token. This is a matched-schedule independent result; it neither
+changes the internal 15/16 invariance result nor qualifies the resumed phase
+against an independent oracle. The broader CPU 177/192 failures remain open.
+No new runtime default is enabled.
+
+Diagnostic harness and results:
+`/tmp/bitnet-goal-matched-chunk-tokens.c`,
+`/tmp/bitnet-goal-reference-{chunk9,chunk11}-ids.txt`, and
+`/tmp/bitnet-goal-candidate-matched-{chunk9,chunk11}.log`.
+
+Probe self-tests pass. A real chunk-9 tensor capture at position 8 reports
+`ne=5120,9,1,1` and writes exactly 5,120 normalization floats, validating row
+selection at the first chunk boundary. Reference runs and captures:
+`/tmp/bitnet-goal-reference-prefill-{whole,chunk9,chunk11}.log`,
+`/tmp/bitnet-goal-reference-chunk9-pos8.log`, and
+`/tmp/bitnet-goal-reference-chunk9-pos8-norm.bin`.
+The source is compiled with the same explicitly pinned versioned libraries
+and runtime library path as preceding authoritative probes.
+
+Validation after the probe change: its self-tests pass, invalid/conflicting
+chunk arguments are rejected before model loading, the clean CUDA-enabled
+`bitnet` build has zero warnings, and full
+`make -j8 BN_ENABLE_CUDA=1 test` passes. Logs:
+`/tmp/bitnet-goal-chunk-probe-clean-build.log` and
+`/tmp/bitnet-goal-chunk-probe-full-suite.log`. Optional external-model matrix
+entries remain skipped unless configured; these checks do not qualify all
+modern model gates.
+
+
+## HTTP divergence and Q6_K prefill contract (2026-11-04)
+
+For the isolated Q5_K/GDN/IQ4_XS candidate, the HTTP prompt matches the first
+12 reference tokens, then chooses `like` (4650) instead of `web` (2817).
+At prediction 12 the reference logits are 24.5190487 versus 24.4701996;
+the candidate gives 24.5353565 versus 24.5517616. Both histories are identical
+through this prediction. Matching tokenwise prefill instead passes **24/24**,
+so the remaining discrepancy is specific to batched prefill history.
+Adding the earlier isolated Q3_K correction alone still gives 12/24.
+
+Complete tensor captures at position 19 establish that all 5,120 layer-0
+normalized-input floats match byte for byte. Recorded first-16 samples
+through layer-0 SSM/FFN also agree; those samples are not full-tensor proof.
+Layer-1 delta output differs in 1,656/6,144 floats, maximum 7.45058060e-9;
+its gate maximum difference is 2.23517418e-8. By layer 2 the delta maximum
+is 2.11747829e-6 and gate maximum 0.000129260123, concentrated in later value
+heads. The layer-2 Q6_K output projection matches **all 5,120 outputs exactly
+on identical reference input** in decode. Replaying the actual differing
+gate input produces maximum output difference 0.000312864780. This rules
+out changing the decode projection to compensate for upstream state/input
+differences.
+
+The independent eight-token prefill capture exposes a distinct Q6_K matrix
+contract: applying integer reduction within each superblock, FP32 weight
+scaling, then fused activation-scale accumulation matches all 5,120 layer-2
+outputs exactly. Existing GEMV-order arithmetic matches only 431 outputs
+bit for bit (maximum 1.19209290e-7). A preliminary layer-0 replay was
+inapplicable because that projection is Q8_0, not Q6_K; the authoritative
+Q6_K replay explicitly selects layer 2 and asserts its format.
+
+`bn_quant_q6k_avx2_tiled_matmul_range` now provides this arithmetic as a
+separate internal entry point. It shares eight-token weight decoding with
+the existing implementation. The existing GEMV-order entry point and all
+production dispatch remain intact. `test/reference_cpu_q6k_tiled.c` generates
+four independent GGML graph hashes (8, 9, 17, 33 tokens, 137 output rows,
+three superblocks). `test_q6k_tiled_reference` verifies them with serial and
+threaded execution and output sentinels. Both native AVX512-enabled and
+explicit AVX2-only quant integration suites pass these exact hashes.
+
+The checked-in entry point also reproduces all 5,120 real-model prefill
+projection outputs exactly in a direct same-input replay
+(`/tmp/bitnet-goal-http-prefill-q6-production-replay.c`). Validation completed:
+clean CUDA-enabled build with zero warnings, explicit AVX2-only full quant
+integration tests, and full `make -j8 BN_ENABLE_CUDA=1 test` all pass.
+Logs: `/tmp/bitnet-goal-q6-clean-build.log`,
+`/tmp/bitnet-goal-q6-avx2-quant.log`, and
+`/tmp/bitnet-goal-q6-full-suite.log`. Optional external-model matrix entries
+remain skipped unless configured; no broad model qualification is implied.
+
+This is **not** whole-model promotion: the isolated combined Q6_K/Q3_K/
+Q5_K/GDN/IQ-panel candidate regresses HTTP from 12/24 to **9/24** reference
+prefix matches. Correct same-input projection arithmetic is necessary but
+does not close the remaining model contracts. No reference golden was
+changed and no candidate kernel is selected by default.
+
+Evidence: `/tmp/bitnet-goal-http-{ref,candidate}24.log`,
+`/tmp/bitnet-goal-http-tokenwise-reference.log`,
+`/tmp/bitnet-goal-http-{ref,candidate}-pos19.trace`,
+`/tmp/bitnet-goal-http-output-replay.c`,
+`/tmp/bitnet-goal-http-prefill-q6-replay.c`,
+`/tmp/bitnet-goal-reference-q6-tiled.log`,
+`/tmp/bitnet-goal-q6-production-quant.log`,
+`/tmp/bitnet-goal-q6-avx2-quant.log`, and
+`/tmp/bitnet-goal-q6-tiled-http-reference.log`.
+
+## Mixed-format CPU prefill: independent gates pass in isolation (2026-11-04)
+
+Combining the qualified Q5_K, Q6_K, Q3_K, IQ-panel arithmetic and GDN
+normalization sequences moves the HTTP final-prefill trace into agreement
+through layer 44. The first recorded difference is layer 45 QKV. Its
+complete normalized input matches the reference byte for byte (5,120
+floats), but the fallback output matches only 697/10,240 floats; maximum
+difference is 2.86102295e-6. Replaying that same input with the prepared Q4_K
+matrix path matches **all 10,240 reference outputs exactly**.
+
+This layer pairs Q4_K QKV with IQ4_XS Z. The shared prepared K-quant group
+is ineligible for that combination. Its fallback calls independent host
+projections, where Q4_K takes per-token GEMV and the native-prefill branch
+discards prepared resources by passing NULL. This changes the arithmetic
+contract because grouping is unavailable, despite a prepared Q4_K matrix
+kernel already existing.
+
+The isolated correction declares native prefill for Q4_K and resolves each
+independent host projection's prepared resource through the existing backend
+resource policy. It passes that resource to matrix execution. There are no
+layer-number or model-file conditions. All **672 comparable recorded entries**
+at the final HTTP prompt token then agree across all 64 layers, including
+summary statistics and first-16 samples. This does not claim full-tensor
+identity at every stage.
+
+The combined candidate now passes independent CPU sampled-token gates:
+
+| Workload | Result |
+| --- | --- |
+| Eight standard prompts, 24 predictions each, context cap 512 | **192/192** |
+| Formerly failing HTTP and story prompts | **48/48** (also included above) |
+| Longer 4,096-byte prompt, 24 predictions, context cap 2048 | **24/24** |
+| 33-token corpus prefix, chunk 9, matched reference history | **8/8** |
+| Same prefix, chunk 11, matched reference history | **8/8** |
+
+CPU threads are 8, KV is F32, flash attention is off, and sampling is greedy
+with repetition penalty 1. The long prompt SHA-256 remains
+`5ba8da8fc2ff5e856a2e5d689785a80fc4691a5352d11290bdea864aa35f37f5`.
+Chunk checks use independently generated schedule-specific histories, not
+whole-versus-chunk equivalence. The resumed phase still needs an independent
+matched-schedule oracle. None of these runs establishes performance parity.
+
+Candidate executable `/tmp/bitnet-goal-mixed-bitnet` SHA-256:
+`c79aee07abb6299201afb3bcc9a6539c6230f611fbde4179777e9c0fcc9a3927`.
+Changed diagnostic sources are `/tmp/bitnet-goal-mixed-prefill.c` and
+`/tmp/bitnet-goal-mixed-registry.c`, combined with the preceding isolated
+format/GDN sources. The independent reference remains the same pinned
+llama.cpp build and GGUF. All processes completed.
+
+Evidence: `/tmp/bitnet-goal-q4-layer45-replay.c`,
+`/tmp/bitnet-goal-http-{ref,q6-candidate}7-{norm,qkv}45.bin`,
+`/tmp/bitnet-goal-http-mixed-pos7.trace`,
+`/tmp/bitnet-goal-mixed-http-story-reference.log`,
+`/tmp/bitnet-goal-mixed-cpu-eight-reference.log`,
+`/tmp/bitnet-goal-mixed-cpu-long-reference.log`, and
+`/tmp/bitnet-goal-mixed-matched-chunk{9,11}.log`.
+
+**Production integration remains required.** The diagnostic candidate alters
+ordinary quant dispatch directly; that approach must not replace the public
+GEMV-order contract. Integrate reference-prefill order explicitly, preserve
+prepared resources when mixed groups split, and put the scaled-RMS GDN
+normalization rule under architecture ownership. Preserve legacy/default
+operator reference values and qualify the corresponding CUDA normalization
+path separately. CPU candidate gates passing do not qualify the current
+production defaults or close the remaining CUDA long/resumed gates.
+
+## Explicit CPU prefill API integration (2026-11-05)
+
+`bn_quant_matmul_prefill_prepared` now exposes supported reference-tiled
+execution without changing ordinary matrix or GEMV-order APIs. It accepts
+the caller's prepared weight, validates matrix/block dimensions and size
+arithmetic, and prepares request-local Q8_K inputs before dispatch. Invalid
+inputs or tiled-input allocation failure return -1 before output writes.
+Other formats and batches below the supported tile floor retain the normal
+prepared-matmul path, including its existing fallback semantics.
+
+The quant registry owns `BN_QUANT_CAP_CPU_TILED_REFERENCE_PREFILL` and
+`bn_quant_format_cpu_prefill_uses_tiled(type, tokens)`. Current compiled
+coverage is Q5_K and Q6_K at eight or more tokens on AVX512 VNNI, and Q6_K
+on AVX2. Q5_K on AVX2, scalar/other backends, and other formats do not claim
+this tiled route. They continue through the existing prepared matrix path;
+this partial API coverage is not a model-level parity declaration.
+
+Tests exercise the public entry point against the unchanged independent
+Q5_K/Q6_K hashes, serial and threaded output-row partitions, and output
+sentinels. The 22 Q4_K prepared reference cases pass through both APIs,
+confirming that prepared layouts survive delegation. Short Q6_K batches
+match existing matrix execution byte for byte. Invalid request tests check
+that output remains untouched. Existing public GEMV-order tests still pass.
+
+Real-model same-input replay through the public API also matches every
+captured output across eight repeated input rows: 10,240 outputs per row for
+Q5_K and 5,120 per row for Q6_K. The original independent captures are used;
+no expected values are generated by this API.
+Evidence: `/tmp/bitnet-goal-prefill-api-real-replay.c`,
+`/tmp/bitnet-goal-prefill-api-quant.log`, and
+`/tmp/bitnet-goal-prefill-api-avx2.log`.
+
+Validation after these API changes: `make BN_ENABLE_CUDA=1 test_quant_avx2`
+and full `make -j8 BN_ENABLE_CUDA=1 test` pass. The clean CUDA-enabled build
+completes with zero warnings. Logs:
+`/tmp/bitnet-goal-prefill-api-clean-build.log` and
+`/tmp/bitnet-goal-prefill-api-full-suite.log`. Optional external-model matrix
+entries remain skipped unless configured; synthetic suite success does not
+promote the isolated model candidate.
+
+Default transformer/generation dispatch is unchanged. Remaining integration
+must route modern-model prefill explicitly through this interface, extend
+shared-input/multi-projection execution and the remaining format contracts,
+retain prepared resources for mixed groups, and declare GDN normalization
+semantics in architecture policy. The isolated 192/192 CPU model candidate
+is still separate from production defaults.
+
+## Shared-input reference-prefill projections (2026-11-05)
+
+`bn_quant_matmul_prefill_prepared_multi` extends the opt-in CPU entry point to
+multiple projections of the same floating-point input. It validates every
+weight/output and the shared column count before any output write. Supported
+tiled Q5_K/Q6_K projections share one Q8_K quantization pass and one set of
+activation buffers. Other formats retain independent prepared matrix
+execution, so Q4_K layouts and original F32 inputs are preserved.
+
+A bounded four-task stack array processes arbitrarily many projections in
+blocking dispatch groups. The shared activation cache remains alive across
+every group and is freed only after execution completes. A projection that
+uses a delegated path does not force the other projections into that path.
+The single-projection API now delegates to the same implementation.
+
+Synthetic tests mix Q5_K, prepared Q4_K, F32, and two Q6_K projections with
+different row counts. They cover one, three, four, and five projections;
+8, 9, 17, and 33 tokens; serial and threaded execution; untouched output
+sentinels; and invalid late-group widths, weights, and output pointers.
+Supported tiled outputs match the existing independent hashes. Prepared
+Q4_K matches its pinned AVX512 oracle, and delegated paths match their
+existing matrix contract, including AVX2's non-tiled Q5_K route. No golden
+values were changed.
+
+After refactoring, real-model single-input replay still matches every
+captured Q5_K/Q6_K output across eight repeated rows. Current evidence:
+`/tmp/bitnet-goal-prefill-multi-quant.log`,
+`/tmp/bitnet-goal-prefill-multi-avx2.log`, and
+`/tmp/bitnet-goal-prefill-api-real-replay.c`.
+
+Validation completed: clean CUDA-enabled `bitnet` build with zero warnings,
+`make BN_ENABLE_CUDA=1 test_quant_avx2`, and full
+`make -j8 BN_ENABLE_CUDA=1 test` all pass. Logs:
+`/tmp/bitnet-goal-prefill-multi-clean-build.log` and
+`/tmp/bitnet-goal-prefill-multi-full-suite.log`. Optional external-model
+matrix cases remain skipped unless configured; this is API qualification,
+not new model-default or performance qualification.
+
+This API is not yet wired into default transformer dispatch. Remaining work
+includes the other reference format kernels, prequantized projection groups,
+prepared-resource retention in host fallbacks, and architecture-owned GDN
+normalization before promoting the independently qualified CPU candidate.
+
+## Q3_K reference-prefill qualification (2026-11-05)
+
+The opt-in reference-prefill API now includes Q3_K on AVX2 and AVX512
+builds. Its kernel shares decoded weights across four tokens, accumulates
+each superblock in integer arithmetic, then applies the reference floating
+point scaling order. Existing GEMV and default matrix entry points retain
+their previous arithmetic.
+
+`test/reference_cpu_q3k_tiled.c` generates independent GGML CPU hashes for
+137 rows, three superblocks, and 8, 9, 10, 11, 17, and 33 tokens. The
+10- and 11-token cases cover the two- and three-token tile tails. Direct
+kernel and public API tests match all six hashes in serial and threaded
+execution, with output sentinels checked. One- and seven-token API calls
+retain the existing matrix contract. Mixed projection tests now include
+Q3_K after the first four-task dispatch group, alongside Q5_K, prepared
+Q4_K, F32, and Q6_K.
+
+The oracle uses llama.cpp revision
+`df18bee11e96557b07aa7b12db0976f3c7ac9165` and CPU library SHA-256
+`e28660ece5030ec85229b5e03e57d8f0da55866b63943623a651e1adbd02716f`.
+Real-model replay through the public API also matches all 17,408 captured
+layer-zero Q3_K FFN-up outputs across eight repeated input rows. This
+qualifies that projection's arithmetic, not eight independent prompts.
+The same replay preserves exact Q5_K and Q6_K projection results.
+
+Validation: clean CUDA-enabled `bitnet` build with zero warnings,
+`make BN_ENABLE_CUDA=1 test_quant_avx2`, and full
+`make -j8 BN_ENABLE_CUDA=1 test` pass. Logs are
+`/tmp/bitnet-goal-q3-api-clean-build.log`,
+`/tmp/bitnet-goal-q3-api-avx2.log`, and
+`/tmp/bitnet-goal-q3-api-full-suite.log`. Independent oracle output is in
+`/tmp/bitnet-goal-reference-q3-tiled.log`; real projection replay source is
+`/tmp/bitnet-goal-q3-api-real-replay.c`.
+
+Default transformer dispatch is unchanged. IQ-format reference arithmetic,
+prequantized projection integration, and architecture-owned GDN semantics
+remain required before promoting the complete CPU model candidate. This
+checkpoint establishes no new model-default or performance result.
+
+The next format gate has an independent generator in
+`test/reference_cpu_iq_tiled.c`: IQ4_XS, IQ3_S, and IQ3_XXS each have six
+GGML CPU hashes over the same odd-row and token-tail shapes. The generator
+builds with `-std=c11 -Wall -Wextra -Werror` and runs successfully against
+the pinned library above; captured output is
+`/tmp/bitnet-goal-reference-iq-tiled.log`. These are reference fixtures for
+the pending IQ kernel work, not evidence that the runtime matches them.
+
+## IQ reference-prefill kernels (2026-11-05)
+
+The opt-in CPU prefill API now routes IQ4_XS, IQ3_S, and IQ3_XXS to an
+AVX2 kernel with reference block scaling. It computes each superblock's
+integer total, multiplies by the weight scale, then fuses the activation
+scale into the running sum. The existing matrix API keeps its original
+combined-scale arithmetic. Both paths share the same integer dot helper.
+
+The new kernel decodes eight weight rows once per four tokens. Its scratch
+is a single stack-resident superblock panel, with bounded partial stores
+for arbitrary physical row ranges. It performs no heap allocation and
+cannot change arithmetic because a panel allocation failed. Registry
+capabilities select this route for batches of at least eight tokens on
+AVX2/AVX512; shorter calls retain existing prepared matrix behavior.
+
+All 18 independent IQ hashes from `test/reference_cpu_iq_tiled.c` match
+through direct dispatch, the single-projection API, and five shared-input
+projections spanning two bounded task groups. Tests cover serial and
+threaded execution, output sentinels, odd row counts, every four-token
+tail, and unchanged one-/seven-token behavior. Native and AVX2 quant suites
+pass without changing any existing golden values. Logs:
+`/tmp/bitnet-goal-iq-api-quant.log` and
+`/tmp/bitnet-goal-iq-api-avx2.log`.
+
+Real-model replay matches all 17,408 captured layer-zero IQ4_XS FFN-gate
+outputs across eight repeated input rows. Q3_K, Q5_K, and Q6_K captures
+also remain exact. Source and output:
+`/tmp/bitnet-goal-iq-api-real-replay.c` and
+`/tmp/bitnet-goal-iq-api-real-replay.log`. This is projection qualification;
+the repeated rows are not independent model histories.
+
+The clean CUDA-enabled `bitnet` build passes with zero warnings
+(`/tmp/bitnet-goal-iq-api-clean-build.log`). Full
+`make -j8 BN_ENABLE_CUDA=1 test` also passes
+(`/tmp/bitnet-goal-iq-api-full-suite.log`); optional external-model cases
+remain unconfigured. This is the standard suite, not a new full CUDA
+hardware or full-model qualification. Default transformer integration,
+prequantized projection groups, and architecture-owned GDN semantics are
+still pending. No model-default or performance claim follows from this
+kernel checkpoint.
+
+## Caller-prepared reference-prefill activations (2026-11-05)
+
+`bn_quant_matmul_prefill_prepared_kquant_input_multi` accepts caller-owned
+Q8_K values, scales, and block sums for shared-input projections. Supported
+tiled kernels consume those buffers directly without allocating or
+re-quantizing activations. Fully tiled groups accept null original-float
+and scratch pointers. Delegated projections require those pointers and
+retain their existing prepared matrix behavior; this includes Q4_K's
+prepared panels and original F32 inputs. Delegated paths can still perform
+their own input preparation, so this API does not claim to remove that
+work for every format.
+
+The float-input and prequantized APIs share group validation and bounded
+four-task dispatch. Invalid group members, missing activation buffers,
+incompatible widths, and missing delegated inputs are rejected before any
+output write. Batches below each format's tiled floor use their established
+matrix arithmetic and require original float inputs.
+
+Tests extend existing independent Q3_K, Q5_K, Q6_K, IQ4_XS, IQ3_S, and
+IQ3_XXS hash gates to the prequantized API, including calls without float
+inputs. Five-projection IQ groups span two dispatch groups. Mixed
+Q5_K/prepared-Q4_K/F32/Q6_K/Q3_K tests exercise one, three, four, and five
+projections, serial and threaded execution, output sentinels, and invalid
+late members. One- and seven-token cases retain existing behavior. Native
+and AVX2 quant suites pass; no existing golden values were changed.
+
+Prequantized real-model replay also matches every captured Q5_K, Q6_K,
+Q3_K, and IQ4_XS projection output across eight repeated rows, with null
+float-input and scratch pointers. This checks direct use of the prepared
+activations; it does not represent independent model histories. Source and
+output are `/tmp/bitnet-goal-prequant-api-real-replay.c` and
+`/tmp/bitnet-goal-prequant-api-real-replay.log`.
+
+Validation: clean CUDA-enabled `bitnet` build with zero warnings,
+`make BN_ENABLE_CUDA=1 test_quant_avx2`, and full
+`make -j8 BN_ENABLE_CUDA=1 test` pass. Optional external-model matrix cases
+remain unconfigured. Logs are
+`/tmp/bitnet-goal-prequant-api-clean-build.log`,
+`/tmp/bitnet-goal-prequant-api-avx2.log`, and
+`/tmp/bitnet-goal-prequant-api-full-suite.log`.
+
+This API is a prerequisite for model-path integration. It is not yet
+selected by default transformer dispatch, and does not qualify full-model
+correctness or establish a throughput improvement.
+
+## Explicit GDN Q/K normalization semantics (2026-11-05)
+
+`BnModelArchOps` now owns an explicit `BnSSMQKNormMode`, copied into
+`BnConfig` during architecture setup. Qwen35/Qwen35MoE and Qwen4exp declare
+RMS-scaled Q/K normalization; other registered families retain clamped L2.
+Applying an absent architecture resets this field to clamped L2.
+
+The SSM normalization context carries the mode. RMS-scaled execution uses
+the double sum of individually rounded float squares, RMS epsilon divided
+by head dimension, and two separately rounded output multiplies: the RMS
+scale followed by `1/sqrt(head_dim)`. The portable implementation is shared
+by scalar, AVX2, NEON, and WASM dispatch for this mode. Existing L2 arithmetic
+is retained under mode zero. Production CPU/prefill/debug callers currently
+select that existing mode explicitly; declaring architecture semantics does
+not yet promote a model-default change.
+
+`test/reference_cpu_gdn_norm.c` generates ten independent GGML CPU graph
+hashes: dimensions 1, 7, 16, 128, and 256 at epsilons 1e-6 and 1e-5, with
+zero, tiny, normal, and large finite heads in each case. Kernel tests match
+every hash, compare both Q and K, check untouched buffer sentinels, and
+exercise split head ranges. Native AVX512, explicit x86-64-v3 AVX2, and
+scalar-only builds pass; this does not establish execution on ARM/WASM.
+Existing L2 equivalence checks also pass. Reference output and focused logs:
+`/tmp/bitnet-goal-reference-gdn-norm.log`,
+`/tmp/bitnet-goal-gdn-policy-ssm.log`,
+`/tmp/bitnet-goal-gdn-policy-avx2.log`, and
+`/tmp/bitnet-goal-gdn-policy-scalar.log`.
+
+The clean CUDA-enabled `bitnet` build is warning-free, and full
+`make -j8 BN_ENABLE_CUDA=1 test` passes. Optional external-model matrix
+cases remain unconfigured. Logs:
+`/tmp/bitnet-goal-gdn-policy-clean-build.log` and
+`/tmp/bitnet-goal-gdn-policy-full-suite.log`.
+
+The remaining integration must select this architecture mode in model
+execution, implement and qualify the corresponding GPU operation, and
+re-run independent model histories alongside the qualified projection
+kernels. No new model-default or performance result is claimed here.
+
+## CUDA GDN RMS-scaled operation (2026-11-05)
+
+The CUDA SSM Q/K normalization operation now accepts an explicit mode in
+parameter `p[4]`. Mode zero preserves the existing clamped-L2 kernel; the
+RMS-scaled mode uses a separate kernel with 256 threads below width 1024
+and 1024 threads otherwise. It follows the CUDA reference's FP32/FMA partial
+sums and warp-XOR reduction, RMS epsilon divided by head dimension, and
+separate RMS/output-scale multiplies. Unsupported mode values fail execution.
+
+`test/reference_cuda_gdn_norm.c` independently generates fourteen GGML CUDA
+graph hashes for widths 1, 7, 16, 128, 256, 1024, and 1536 at two epsilons.
+Each fixture includes zero, tiny, normal, and large finite input heads.
+The reference is llama.cpp revision
+`df18bee11e96557b07aa7b12db0976f3c7ac9165`, CUDA library SHA-256
+`e3330904452e38a9dedc307dedf83e182322a27d6b10dd1df457e02326082840`.
+These CUDA values are distinct from the CPU fixtures where their reduction
+orders differ; the CPU expected values remain unchanged.
+
+All fourteen hashes match in synchronous, stream, and CUDA graph execution.
+Tests check separate Q/K buffers with nonzero offsets, untouched leading
+and trailing sentinels, and RMS/L2/RMS mode switches within one allocation
+generation. Existing L2 epsilon checks still pass. Focused command:
+`/tmp/bitnet-goal-gdn-cuda-test --ssm-qk-rms-reference`, with
+`BN_CUDA_DEVICE=0 CUDA_VISIBLE_DEVICES=0`. Logs:
+`/tmp/bitnet-goal-reference-cuda-gdn-norm.log` and
+`/tmp/bitnet-goal-gdn-cuda-focused.log`.
+
+The clean CUDA-enabled `bitnet` build is warning-free and full
+`make -j8 BN_ENABLE_CUDA=1 test` passes. Logs:
+`/tmp/bitnet-goal-gdn-cuda-clean-build.log` and
+`/tmp/bitnet-goal-gdn-cuda-full-suite.log`. Optional external-model matrix
+cases remain unconfigured.
+
+Model graph emission and the direct prefill helper still select legacy
+normalization. The next integration must select the architecture mode
+alongside CPU reference projection dispatch, then qualify independent
+model histories. This checkpoint claims no new model-default behavior,
+Metal/WebGPU mode support, or performance result.
+
+## GDN model-path normalization integration (2026-11-05)
+
+CPU decode/prefill and CUDA graph decode now select the architecture's Q/K
+normalization mode. The fused CUDA SSM prefill interface carries that mode
+explicitly, independently of FFN activation. The host-visible CUDA
+convolution/normalization hook also accepts the mode, keeping that operation
+on CUDA when RMS-scaled normalization is selected. Existing layer-state
+fixtures explicitly select legacy L2 and retain their expected values.
+
+`test/reference_cuda_gdn_convnorm.c` adds six independent strided GGML CUDA
+fixtures for three prompt rows, two Q/K heads, widths 7/128/1024, and two
+epsilons. Identity convolution taps make its output equal to the graph's
+SiLU input. Tests check packed Q/K/V outputs, retained raw convolution
+history, and output/state sentinels. This caught two subnormal normalized
+outputs in the 1024-wide case: the reference produces negative zero while
+ordinary round-to-nearest multiplication retained subnormals. Explicit
+`mul.rn.ftz.f32` for the two RMS output multiplies fixes the mismatch without
+changing legacy kernels or golden values. All six batched hashes and the
+fourteen isolated normalization hashes pass. Logs:
+`/tmp/bitnet-goal-reference-cuda-gdn-convnorm.log` and
+`/tmp/bitnet-goal-model-norm-ftz-focused.log`.
+
+Real projection replay provides another arithmetic check. The pinned GPU
+model probe captures layer-zero convolution and normalized Q values for
+"HTTP status code 404 means" at position 7. Replaying the same convolution
+input through the new CUDA normalization operation matches 2,048/2,048
+reference Q outputs exactly; legacy L2 matches 206/2,048 with maximum
+difference 2.38418579e-7. Diagnostic source:
+`/tmp/bitnet-goal-model-norm-real-op.c`; independent captures:
+`/tmp/bitnet-goal-model-norm-llama_ssm_conv.bin` and
+`/tmp/bitnet-goal-model-norm-llama_ssm_q_norm.bin`. This isolates one
+operation; it does not prove the complete pipeline.
+
+The first integrated CUDA model comparison matches 24/24 long-prompt tokens
+(`/tmp/bitnet-goal-model-norm-cuda-long.log`), improving on the preceding
+21/24 gate. Short prompts instead match 172/192 tokens with all eight first
+IDs matching (`/tmp/bitnet-goal-model-norm-cuda-short.log`). Restoring the
+CUDA convolution hook leaves that short result at 172/192
+(`/tmp/bitnet-goal-model-norm-hook-cuda-short.log`). These model histories
+precede the final subnormal-output correction and require requalification.
+The short regression remained unresolved at this checkpoint; the following
+batched-scan checkpoint identifies and corrects it without reverting the
+reference arithmetic.
+
+The standard suite passes before the final hook/FTZ changes. The earlier
+full CUDA suites also pass, including preserved original goldens, in
+`/tmp/bitnet-goal-gdn-cuda-hardware-suite.log` and
+`/tmp/bitnet-goal-model-norm-cuda-hardware-suite.log`. The final clean build
+passes with zero warnings
+(`/tmp/bitnet-goal-model-norm-final-clean-build.log`). Final standard and
+hardware suite results remain pending in
+`/tmp/bitnet-goal-model-norm-final-full-suite.log` and
+`/tmp/bitnet-goal-model-norm-ftz-hardware-suite.log`. The frozen current
+model-comparison binary is `/tmp/bitnet-goal-model-norm-current-bitnet`, with
+SHA-256 in `/tmp/bitnet-goal-model-norm-current-sha256.txt`; its short/long
+requalification logs use the `bitnet-goal-model-norm-current-cuda-` prefix.
+CPU reference-projection integration and independent short/long/chunked/
+resumed model qualification remain open. No performance parity or modern
+Metal/WebGPU qualification is claimed.
+
+## Corrected CUDA batched-scan normalization (2026-11-05)
+
+The missing model-path branch was the fused prefill scan: its per-token
+fallback and graph decode selected RMS-scaled normalization, but the scan
+still launched the legacy L2 kernel. Actual fused-prefill Q capture matched
+only 206/2,048 reference elements, exactly the isolated old-L2 replay.
+The scan now selects normalization by the same mode as the other paths.
+Actual fused-prefill Q now matches all 2,048 reference elements exactly
+(`/tmp/bitnet-goal-model-norm-scan-qkv.bin`), using the earlier independent
+GPU model captures and identical prompt/position.
+
+`test/reference_cuda_gdn_prefill_norm.c` adds four independent CUDA GDN
+state hashes: 2/9 rows and epsilons 1e-6/1e-3. Nonzero retained convolution
+history supplies Q/K/V for the first row, followed by zero projections;
+gate is zero, beta is 0.5, and initial recurrent state is zero. This
+isolates normalization selection in a full fused layer without requiring a
+model. Both scan and serial prefill match all 16,384 expected state values
+via bit hashes. Legacy mode must produce a different hash, preventing a
+zero-input fixture from concealing a missed mode. Tests also verify output
+residuals and sentinels. All earlier expected values remain unchanged.
+Source and output:
+`test/reference_cuda_gdn_prefill_norm.c` and
+`/tmp/bitnet-goal-reference-cuda-gdn-prefill-norm.log`; focused runtime log:
+`/tmp/bitnet-goal-model-norm-scan-focused.log`.
+
+Independent model comparisons now pass 192/192 short tokens and 24/24 long
+tokens, with matching first IDs and token counts. Logs:
+`/tmp/bitnet-goal-model-norm-scan-cuda-short.log` and
+`/tmp/bitnet-goal-model-norm-scan-cuda-long.log`. The compared binary is
+`/tmp/bitnet-goal-model-norm-scan-bitnet`, SHA-256
+`73cd5f4a0be2860ff8f8e44f0f359409e7d42f743e7133b6871c3f2fd981ad3b`.
+Reference flags, precision, threads, context limits, and the 4,096-byte long
+prompt match the previous model gates. Repetition penalty is one; reference
+attention is non-flash with F32 KV.
+
+Internal whole/chunked prefill, decode, 64-token resume, and decode checks
+also pass 16/16 greedy IDs for schedules 33/9, 256/64, and 1024/129. Logs use
+the `/tmp/bitnet-goal-model-norm-scan-continuation-` prefix. These are
+execution-consistency diagnostics, not independent model histories or a
+bitwise/logit-equivalence claim.
+
+The clean CUDA-enabled build is warning-free, and full standard
+`make -j8 BN_ENABLE_CUDA=1 test` passes. Logs:
+`/tmp/bitnet-goal-model-norm-scan-clean-build.log` and
+`/tmp/bitnet-goal-model-norm-scan-full-suite.log`. Optional model-matrix
+cases remain unconfigured. The updated full CUDA hardware suite also passes,
+including original reference hashes and the new nonzero-key fixtures:
+`/tmp/bitnet-goal-model-norm-scan-hardware-suite.log`. A separately frozen
+clean-build binary, `/tmp/bitnet-goal-model-norm-clean-bitnet`, also passes
+192/192 short and 24/24 long tokens with the same comparison commands.
+Its SHA-256 is
+`3b0fd7aebc226d9eb4d59aeffc206a50590ff7b8b2985e2b8dd43c3637c02dee`;
+logs use the `bitnet-goal-model-norm-clean-cuda-` prefix, and both commands
+return zero in `/tmp/bitnet-goal-model-norm-clean-status.txt`.
+
+CPU reference-projection integration and independent chunked/resumed model
+qualification remain open. This checkpoint makes no performance comparison.
+
+## CPU reference-prefill model integration (2026-11-05)
+
+CPU requests with the architecture's reference-recurrent policy now select
+the qualified reference-prefill matrix APIs. Other model policies and GPU
+numerical paths retain their existing dispatch. The prefill backend owns
+the quant API calls; orchestration selects the model contract and retrieves
+prepared weights from backend-owned resources. Mixed groups and individual
+host fallback projections keep those prepared layouts, including the Q4_K
+projection previously lost when its companion format could not share the
+prepared K-quant route.
+
+Prepared K-quant groups reuse their activation cache through the new
+prequantized API. Delegated matrix preparation uses the session's separate
+`x_q` scratch, preserving the read-only cached Q8_K inputs until all blocking
+dispatches finish. The float-input route shares preparation where its
+existing callers already group projections. This integration does not
+claim that every host projection has been co-scheduled into a shared group.
+
+Projection helpers now return status through PLE, hyperconnection, single,
+and grouped callers; new reference API failures abort prefill and release
+its temporary arena. A singleton hyperconnection injection also receives
+session scratch instead of a null pointer. The unchanged output-row/state
+tests cover that valid tail path. `test_prefill_projection_failure` corrupts
+the first layer's Z format after a successful control run and checks all
+three prefill APIs: failure must be reported, logits stay untouched, and
+position plus recurrent/convolution state remain unchanged before that
+layer's convolution. This does not promise rollback after an arbitrary
+failure later in a request.
+
+The first integrated native AVX512 CPU binary passes 48/48 tokens on the
+two formerly failing prompts, then 192/192 standard short tokens and
+24/24 long tokens. CUDA regression comparisons also pass 192/192 and 24/24.
+Those model comparisons use `/tmp/bitnet-goal-cpu-integration-bitnet`,
+SHA-256 `44188e030fbacedf5086a04eb378dd2cb45396f249192058b08d122f6730ba98`,
+before the direct quant calls were moved behind thin prefill-backend
+adapters. All four command statuses are zero in
+`/tmp/bitnet-goal-cpu-integration-status.txt`; logs use the
+`bitnet-goal-cpu-integration-{cpu,cuda}-{short,long}.log` names.
+
+The backend architecture check and full standard suite pass after that
+boundary correction (`/tmp/bitnet-goal-cpu-integration-backend-matrix.log`
+and `/tmp/bitnet-goal-cpu-integration-adapter-full-suite.log`). The CUDA
+hardware suite passes with existing reference values preserved
+(`/tmp/bitnet-goal-cpu-integration-cuda-hardware-suite.log`). Final clean
+CUDA-enabled build passes with zero warnings
+(`/tmp/bitnet-goal-cpu-integration-adapter-clean-build.log`). Optional
+external-model matrix cases remain unconfigured.
+
+The exact final clean binary is frozen as
+`/tmp/bitnet-goal-cpu-integration-final-bitnet`, SHA-256
+`d12a2294058aa2d4a1b075e13a95b35b3eefb98da914bdb0c6dbf887e080d591`.
+Its four CPU/CUDA short/long model reruns all return zero: 192/192 short
+and 24/24 long tokens on each backend. Status is recorded in
+`/tmp/bitnet-goal-cpu-integration-final-status.txt`; logs use the
+`bitnet-goal-cpu-integration-final-` prefix. No newer whole-model AVX2/NEON
+qualification or performance claim follows from the native CPU gates.
+
+## Independent chunked and resumed prefill (2026-11-05)
+
+The paired reference harness passes all ten Qwen3.8 27B cases: CPU and CUDA
+at prefix/chunk schedules 33/9, 33/64, 33/11, 256/64, and 1024/129. Each
+case checks eight greedy IDs after initial prefill, commits all eight tokens,
+submits a 64-token resumed input, then checks eight more IDs: 160/160 IDs
+across the matrix. Chunk 64 submits the 33-token prefix and 64-token resume
+in one batch each. This qualifies the tested schedules, not arbitrary contexts.
+
+The runtime supplies input IDs only; a separately linked llama.cpp probe
+produces expected output IDs. Both engines use eight threads, non-flash
+attention, F32 KV on CPU and F16 KV on CUDA. Each engine uses the same chunk
+schedule; whole and chunked CPU reference arithmetic can yield different
+histories. The replay teacher-forces reference IDs after scoring each greedy
+prediction, so any mismatch fails without changing subsequent history.
+Resumed probe mode commits fixed-length phases even through EOS; legacy
+probe generation retains its original stopping behavior.
+
+Reproduce one case after separately building the probe against the intended
+llama.cpp installation:
+
+```sh
+make BN_ENABLE_CUDA=1 test_prefill_reference
+LD_LIBRARY_PATH=/path/to/llama.cpp/build/bin CUDA_VISIBLE_DEVICES=0 \
+python3 test/compare_prefill_reference.py \
+  --model /path/to/Qwen3.8-27B-UD-Q4_K_XL.gguf \
+  --probe /path/to/independently-linked-llama-probe \
+  --backend cuda --tokens 1024 --chunk 129 \
+  --output-dir /tmp/qwen-resumed-cuda-1024-129
+```
+
+Use `--backend cpu` for CPU qualification. Artifacts include frozen corpus,
+input IDs, independent output IDs, both engine logs, executable hashes,
+commands, precision, and exit statuses. The harness rejects incomplete oracle
+output, incorrect resume position, failed replay, and missing success markers.
+Seven model-free protocol tests run as part of `make test`.
+
+The qualified probe is `/tmp/bitnet-goal-resumed-reference-probe`, SHA-256
+`09ba75801c51911023a4c617d5dc5bd78e6a773a20b2cf41abd8eb7e77570e32`,
+linked to llama.cpp revision `df18bee11e96557b07aa7b12db0976f3c7ac9165`
+in `/home/mark/artalis.io/tools/llama.cpp/build/bin`. The replay snapshot is
+`/tmp/bitnet-goal-prefill-reference-runner`, SHA-256
+`5a84c64e84ddca4e8707aa364579a223070604ef9297c9b4c2b30dd861ee821d`.
+Reports and logs are under `/tmp/bitnet-goal-independent-prefill/`; aggregate
+statuses are in `matrix-status.json`. All ten paired reports and runtime logs
+were checked. The post-harness clean CUDA-enabled build has zero warnings;
+full standard tests pass (`/tmp/bitnet-goal-resume-probe-clean-build.log` and
+`/tmp/bitnet-goal-resume-probe-full-suite.log`). These are correctness results;
+AVX2/NEON whole-model and vLLM performance qualification remain open.
+
+## AVX2 reference revision and Q5_K prefill (2026-11-05)
+
+The pre-existing llama.cpp `build-avx2/bin` reports revision `3d3d7c818`
+(version 0.3.0), rather than the qualified native reference revision
+`df18bee11e96557b07aa7b12db0976f3c7ac9165` (version 0.6.0). Its initial
+short/long comparisons and resumed probe results do not qualify the current
+runtime. In particular, a probe compiled with current headers must not be
+linked to those older context-parameter libraries.
+
+An isolated AVX2-only CPU reference was built from the qualified revision in
+`/tmp/bitnet-goal-llama-avx2-reference`, with native and all AVX512 features
+disabled, AVX2/FMA/F16C enabled, Release optimization, and CUDA disabled.
+Configure arguments and source revision are recorded in
+`/tmp/bitnet-goal-llama-avx2-reference-provenance.json`. The source's existing
+five-line GLM architecture alias is retained; no reference source was changed
+for this build. Build log:
+`/tmp/bitnet-goal-llama-avx2-reference-build.log`.
+
+Against the current reference, the pre-change runtime also fails the 33/9
+independent resumed case at 15/16 IDs, confirming an actual AVX2 gap independent
+of the old library mismatch. Artifacts:
+`/tmp/bitnet-goal-current-prefill-avx2-before-q5/cpu-33-9/`.
+The current independent Q5_K operator generator produces the same four batched
+graph hashes on AVX2 as on AVX512, while the old reference produces GEMV-order
+hashes. Reference hashes from the current build are recorded in
+`/tmp/bitnet-goal-current-reference-q5-avx2-hashes.txt`.
+
+The reference-prefill API now selects the shared four-token Q5_K tile on AVX2
+as well as AVX512. Legacy GEMV and ordinary batch entry points keep their
+existing accumulation order. The tiled API checks all four independent hashes
+at 8, 9, 17, and 33 tokens with 137 rows, including threaded partitions and
+float-input/prequantized public APIs. The AVX2 quant suite passes. Replaying
+the same current-reference 33/9 history after the correction passes 16/16 IDs
+(`/tmp/bitnet-goal-q5-avx2-33-9-replay.log`), versus 15/16 before it. The
+full short gate now passes 192/192 IDs, and the long gate passes 24/24,
+with zero token-count mismatches (`/tmp/bitnet-goal-q5-avx2-{short,long}.log`).
+The qualified executable is `/tmp/bitnet-goal-q5-avx2-bitnet`, SHA-256
+`1f6a2603f18d1989e8bee06555b5000486b7cc439c716274a4c4b598b1669090`.
+All five paired schedules (33/9, 33/64, 33/11, 256/64, and 1024/129) pass
+16/16 IDs each, totaling 80/80. Their reports and runtime logs were checked
+in `/tmp/bitnet-goal-q5-independent-avx2/`. All seven command statuses are zero in
+`/tmp/bitnet-goal-q5-avx2-status.json`. The post-change clean CUDA build has
+zero warnings, full standard and AVX2 quant suites pass, and the full CUDA
+hardware suite passes, including diagnostic isolation. Logs use
+`/tmp/bitnet-goal-q5-avx2-final-{clean-build,full-suite}.log` and
+`/tmp/bitnet-goal-q5-avx2-cuda-hardware-suite.log`. This is a correctness
+correction, with no speed claim. The final native CPU/CUDA runtime snapshot
+`/tmp/bitnet-goal-q5-final-native-bitnet`, SHA-256
+`aaa8f6751161d78b0d0a489770c34e033a19ce67c359e0e4b19d0ee6fc1207e6`,
+also passes all four short/long reruns: 192/192 and 24/24 on each backend.
+Statuses are in `/tmp/bitnet-goal-q5-final-native-status.json`; logs use
+`/tmp/bitnet-goal-q5-final-native-{cpu,cuda}-{short,long}.log`.
+
+Build the optional AVX2 replay tool with `make test_prefill_reference_avx2`,
+then supply `--runtime ./test_prefill_reference_avx2` to the paired Python
+harness. Link its independent probe to the matching isolated reference and
+set `LD_LIBRARY_PATH` to that build's `bin` directory.
+
+Fresh probes support `--reference-info`, which reports the linked llama/GGML
+versions and GGML commit without loading a model. Supply
+`--reference-commit df18bee11e96557b07aa7b12db0976f3c7ac9165` to the paired
+harness to reject a missing, duplicated, or mismatched revision before input
+extraction or model execution. The report records the actual revision and
+requested revision. Eleven model-free protocol tests now cover these checks;
+the current AVX2 probe also passes its operator-free self-tests.
+The real 33/9 paired run with revision pinning passes 16/16 IDs in
+`/tmp/bitnet-goal-q5-pinned-avx2/cpu-33-9/`. Full standard tests pass with the
+eleven protocol checks included (`/tmp/bitnet-goal-reference-pin-full-suite.log`).
+
+## Scoped resident CUDA prefill trace (2026-11-05)
+
+`bench_prefill --cuda-profile` brackets each measured CUDA run with profiler
+start/stop calls. Model loading, weight upload, warmup, and session reset are
+outside capture. A device synchronization after reset is also outside timing
+and capture. Prefill's completion readback remains inside timing. Capture stops
+on a failed run too; failures do not print a successful benchmark result.
+`--cuda-profile` requires `--cuda`. `--kv32` selects F32 KV for matched-precision
+comparisons; the benchmark's existing default remains F16 KV.
+
+Reproduce a single measured trace:
+
+```sh
+make BN_ENABLE_CUDA=1 bench_prefill
+CUDA_VISIBLE_DEVICES=0 BN_CUDA_DEVICE=0 nsys profile \
+  --trace=cuda --sample=none --cpuctxsw=none \
+  --capture-range=cudaProfilerApi --capture-range-end=stop \
+  --output=/tmp/qwen-prefill-256 \
+  ./bench_prefill /path/to/Qwen3.8-27B-UD-Q4_K_XL.gguf 256 1 8 \
+    --cuda --cuda-profile --with-logits --prompt-file docs/inference.md --profile
+nsys stats --report cuda_gpu_kern_sum,cuda_gpu_mem_size_sum,cuda_gpu_mem_time_sum,cuda_api_sum \
+  --format csv --output /tmp/qwen-prefill-256-stats /tmp/qwen-prefill-256.nsys-rep
+```
+
+The first real-model capture uses 256 corpus tokens, one measured run after
+warmup, eight threads, F16 KV, non-flash attention, and final-token logits.
+It returns success and contains kernel and transfer events. Exact SQLite
+transfer totals, excluding model upload, are:
+
+| Direction | Copies | Bytes | Summed device copy duration |
+| --- | ---: | ---: | ---: |
+| Host to device | 135 | 453,027,408 | 11.205 ms |
+| Device to host | 82 | 571,418,628 | 10.035 ms |
+| Device to device | 16 | 83,886,080 | 0.038 ms |
+
+The trace also has 200 blocking `cudaMemcpy` API calls totaling 326.701 ms,
+33 async-copy API calls, and one explicit stream synchronization. Blocking
+copy API time includes waiting for preceding kernels; it is not pure transfer
+time. GPU copy durations and kernel durations can overlap and must not be
+added as a critical-path estimate. The largest summed kernel durations are
+packed K-quant MMQ (92.867 ms/191 launches) and the leading IQ4 codebook
+ordered MMA specialization (77.688 ms/70 launches). Actual tiled kernels are
+running, while intermediate host traffic remains substantial. Host profiling
+reports 48 fused chain layers and zero decode-stage time; its `attn_cpu` label
+is a host-stage label and does not establish CPU attention fallback.
+
+The profiled wall time is 432.909 ms (591.348 tokens/s), recorded only as a
+diagnostic with profiling overhead and concurrent CPU verification activity.
+It is not an uncontended throughput baseline or a vLLM comparison. Artifacts:
+`/tmp/bitnet-goal-prefill-capture-256.{nsys-rep,sqlite,log}`,
+`/tmp/bitnet-goal-prefill-capture-256-stats_*.csv`, and the matching
+`-manifest.json`/`-summary.json`. The captured executable is preserved as
+`/tmp/bitnet-goal-profiled-prefill-f16`.
+
+The final capture/precision-option clean build is warning-free, full standard
+tests pass, and a real CUDA `--kv32` run reports F32 KV successfully. Logs:
+`/tmp/bitnet-goal-capture-kv32-{clean-build,full-suite}.log` and
+`/tmp/bitnet-goal-prefill-kv32-smoke.log`. The latter runs on physical GPU 1
+while the reference initializes on GPU 0 and serves only as a functional
+precision-option check. CPU-only C11 syntax checking and the capture flag's
+required-CUDA CLI rejection also pass.
+
+An isolated vLLM 0.33.0 / PyTorch 2.14.0+cu130 environment is installed in
+`/tmp/bitnet-goal-vllm-env`. The official [GGUF plugin](https://github.com/vllm-project/vllm-gguf-plugin)
+at revision `e454affe0ca23c9dc8754ec3033270cb30622ed5` builds for SM120.
+Its two Qwen configuration imports require a compatibility adjustment to
+import the classes from Transformers 5.20.2 instead of the removed vLLM
+modules. Text-only `qwen3_5_text` must also map to the current core
+`Qwen3_5ForCausalLM` class; the old conditional-generation mapping fails on a
+missing `vision_config`. The isolated dependency patch is checked in as
+`bench/patches/vllm_gguf_033_qwen_text.patch`; it applies to the plugin revision
+above. No kernel or weight arithmetic is changed. Plugin import and GPU
+detection pass. Version/patch provenance is recorded in
+`/tmp/bitnet-goal-vllm-reference-environment.json`.
+
+A real same-GGUF load attempt rejects F32 activations with explicit F16 KV
+at vLLM configuration validation; that precision combination is unsupported
+by this vLLM version. Log: `/tmp/bitnet-goal-vllm-qwen38-smoke.log`.
+The next smoke attempt uses F32 activations, automatic F32 KV, and F32
+convolution/recurrent state, matching the runtime's available F32 KV path.
+It uses the same GGUF weights and shared input IDs, with a text-only HF
+configuration derived from the local model config; the NVFP4 checkpoint's
+weights are not substituted. The text-only architecture retry loads the same GGUF, but automatic GDN
+selection reaches a FlashInfer SM120 DSL kernel that rejects F32 inputs
+(`/tmp/bitnet-goal-vllm-qwen38-smoke-f32-text.log`). A subsequent attempt
+selects the supported Triton GDN prefill and decode backends explicitly,
+retaining F32 precision (`/tmp/bitnet-goal-vllm-qwen38-smoke-f32-triton.log`).
+That attempt also loads the model but fails in `ChunkGatedDeltaRuleFunction`,
+which explicitly rejects F32 activations. Both available GDN prefill backends
+therefore reject the tested FP32 workload. The exact F32 comparison is
+unqualified, rather than silently substituting a lower-precision reference.
+The separate FP16 activation/F16 KV generation smoke passes and emits eight
+IDs: `5604,13,271,550,4962,89583,21753,271`. Log and result are
+`/tmp/bitnet-goal-vllm-qwen38-smoke-f16.log` and
+`/tmp/bitnet-goal-vllm-qwen38-smoke-f16-result.json`. Its activation precision differs from the current
+runtime, so it does not establish matched performance. No vLLM speed ratio
+is established.
+
+## Experimental mixed-format Q/K prefill view (2026-11-05)
+
+The Qwen3.8 checkpoint uses different formats for Q and K in its attention
+layers (for example layer 3 uses Q5_K/Q4_K). Its auxiliary prediction block
+also disables optional copied weight stacks. These conditions prevented the
+fused dense-layer path from seeing a Q/K stack even though both original
+weights were resident.
+
+`BN_CUDA_ENABLE_PREFILL_QK_PAIR=1` opts into a backend-owned borrowed Q/K view.
+The view retains each child's original format, owns neither child, allocates
+no device weights, and is consumed only by the dense-prefill hook. General
+attention resource planning does not advertise it as a stacked weight. The
+model/session/weight ownership split is preserved, and default dispatch stays
+unchanged. Metadata-only views remain available with auxiliary prediction
+blocks; a host upload regression test protects that distinction from copied
+optional layouts.
+
+Focused CUDA tests preserve independently generated K hashes while changing
+Q's format, including gated Q, aliased output, guard values, and child use
+after view destruction. Host resource-selection/auxiliary-upload tests pass.
+The first clean CUDA build has zero warnings; full standard and CUDA hardware
+suites pass, with original reference values preserved. Logs use the
+`/tmp/bitnet-goal-qk-pair-` prefix.
+
+Actual model profiling confirms 64 fused layers for the initial chunk instead
+of 48; resumed chunks retain their existing dispatch. An earlier candidate
+still inherited the auxiliary-block restriction and never selected the view;
+its passing model comparisons do not qualify the active path. The active
+candidate passes 192/192 short and 24/24 long CUDA IDs, but the independent
+F16-KV schedule matrix is 79/80: 33/9, 33/11, 256/64, and 1024/129 pass 16/16,
+while 33/64 misses the sixth initial greedy ID by a 0.00349 logit gap.
+Expected IDs are unchanged. Statuses/logs are in
+`/tmp/bitnet-goal-qk-pair-active-matrix/` and
+`/tmp/bitnet-goal-qk-pair-active-cuda-{short,long}.log`.
+
+Inspection found that dense prefill hard-coded fused RoPE rounding while
+standalone Q/K preparation honors the model's separate-RoPE setting. The
+borrowed-pair branch now forwards that existing setting; stacked legacy
+layouts retain their current contract. The formerly failing 33/64 case now
+passes 16/16 IDs with its reference IDs unchanged
+(`/tmp/bitnet-goal-qk-pair-rope-independent-33-64.log`).
+
+A new independent standalone CUDA RoPE generator
+(`test/reference_cuda_qk_pair_rope.c`) produces hash `cbb2be23d5347d46`. The
+paired dense layer matches every bit of that 1,056-value K result when the
+model requests separate RoPE; the fused rounding mode must differ. Exact
+identity projections and zero-epsilon normalization isolate the rotation
+contract. These focused CUDA tests pass
+(`/tmp/bitnet-goal-qk-pair-rope-cuda-reference.log`), preserving existing
+reference values. The corrected path passes all five independent schedules
+(80/80 IDs), the 192/192 short and 24/24 long CUDA token gates, and a further
+full-batch 256/256 case (16/16 IDs). Statuses are recorded in
+`/tmp/bitnet-goal-qk-pair-rope-matrix/status.json` and
+`/tmp/bitnet-goal-qk-pair-rope-cuda-status.json`; all five runtime logs were
+checked. The final clean build has zero warnings, and full standard/CUDA
+suites pass, including the new fixture and CUDA diagnostic isolation. Logs:
+`/tmp/bitnet-goal-qk-rope-final-{clean-build,full-suite,cuda-suite}.log`.
+The feature remains opt-in.
+
+## Same-binary Q/K view transfer comparison (2026-11-05)
+
+After full-batch 256-token independent qualification passed, scoped Nsight
+runs compare the same executable, GPU 0, corpus, 256-token prefix, final-token
+logits, F16 KV, eight threads, one warm measured run, and non-flash attention.
+Only `BN_CUDA_ENABLE_PREFILL_QK_PAIR` changes. Loading, upload, warmup, and
+reset are excluded from both captures.
+
+| Captured quantity | Control | Borrowed Q/K view |
+| --- | ---: | ---: |
+| Host-to-device bytes | 453,027,408 | 184,591,952 |
+| Device-to-host bytes | 571,418,628 | 197,097,476 |
+| Host/device copy count | 217 | 153 |
+| Device-to-device bytes | 83,886,080 | 40,960 |
+| Kernel launches | 1,584 | 1,790 |
+| Summed kernel durations | 308.302 ms | 308.729 ms |
+| Profiled wall time | 426.445 ms | 336.557 ms |
+
+Host/device bytes fall 62.74%. Similar summed kernel duration alongside lower
+wall time shows reduced orchestration overhead; blocking copy API durations
+still include kernel waits and cannot be attributed wholly to PCIe transfer.
+The profiled wall-time change is diagnostic, not an unprofiled speed gate or a
+vLLM ratio. Unprofiled repeated runs remain next before deciding a default
+policy. Short-prompt performance must be measured separately.
+
+Artifacts are in `/tmp/bitnet-goal-qk-pair-rope-traces-256/`, including the
+frozen executable/corpus, command manifest, both `.nsys-rep`/SQLite captures,
+CSV reports, JSON summary, and the independent full-batch qualification logs.
+This change removes an avoidable Q/K format constraint from resident-layer
+execution; it does not yet make the entire hybrid prefill device-resident.
+
+## Unprofiled Q/K view prefill measurements (2026-11-05)
+
+Sequential same-binary runs after correctness jobs completed measure three
+warm iterations per size and mode on GPU 0. Both modes use identical corpus
+prefixes, F32 activations, F16 KV, final-token logits, non-flash attention,
+eight threads, completed device work, and untimed session reset. Profiling is
+disabled. The full-batch 1024-token independent check on the final clean replay
+binary also passes 16/16 IDs before timing starts.
+
+| Prefix tokens | Control median | Q/K view median | Median latency reduction |
+| ---: | ---: | ---: | ---: |
+| 33 | 175.649 ms | 165.848 ms | 5.58% |
+| 256 | 418.505 ms | 324.255 ms | 22.52% |
+| 1024 | 2024.091 ms | 1225.374 ms | 39.46% |
+
+These are initial internal measurements, not statistical confidence bounds
+or vLLM parity. The change remains opt-in through
+`BN_CUDA_ENABLE_PREFILL_QK_PAIR=1`; the control omits that variable. Three-run
+medians, means, token rates, commands, binary/corpus hashes, and independent
+qualification artifacts are in
+`/tmp/bitnet-goal-qk-pair-rope-unprofiled/{manifest,summary}.json` and the
+per-case logs. This does not close the remaining backend, expert-offload,
+serving, or matched-vLLM acceptance gates.
+
+## ARM NEON 128 SSM functional check (2026-11-05)
+
+An isolated GCC 13.3 AArch64 cross-toolchain and QEMU user emulator were
+extracted under `/tmp/bitnet-goal-arm-tools/`; no system packages were
+installed. The SSM suite builds warning-free with C11 and
+`-march=armv8-a+simd`. Compiler macros confirm NEON enabled and dot-product
+extensions absent, covering the baseline 128-bit NEON target.
+
+The actual AArch64 executable passes under QEMU, including the independent
+Q/K RMS-normalization hashes, convolution, legacy L2 normalization, delta
+state update, NEON reduction order, and gates. The suite explicitly reports
+`NEON vs scalar`; this is not an x86 fallback executable. Maximum delta
+output/state differences are `5.96e-8` in these fixtures.
+
+Compile command and logs:
+`/tmp/bitnet-goal-neon-ssm-command.json`,
+`/tmp/bitnet-goal-neon-ssm-build.log`, and
+`/tmp/bitnet-goal-neon-ssm-test.log`. The executable is
+`/tmp/bitnet-goal-neon-test-ssm`. Baseline NEON quant and transformer suites
+also pass under Cortex-A53 emulation, built with `-Werror`; commands and
+logs are in `/tmp/bitnet-goal-neon-unit-build/`. The separate
+`armv8.2-a+dotprod` quant build also passes under QEMU with SDOT enabled;
+all three cross-builds use `-Werror`.
+
+The baseline build exposed unconditional SDOT intrinsics in nine quant
+implementations. A widening integer NEON helper now provides identical
+four-byte dot products and wrapping accumulation without requiring SDOT;
+SDOT targets retain their hardware intrinsics. Synthetic tests cover all
+lane broadcasts, signed-byte extremes, and accumulator overflow. The
+activation Q8 reciprocal now uses `127 / amax`, preserving the existing
+reference tie-rounding assertion. Baseline Q8 prefill now uses a four-token float-input NEON tile,
+reusing each weight block while retaining decode’s per-block reduction
+order. Exact tests cover 1–9 tokens, partial tiles, split row ranges,
+signed-byte extremes, and output guards. These are functional checks;
+no native ARM throughput improvement is claimed. The resulting source also
+passes a clean CUDA-enabled native build without warnings, the complete
+standard test target, and the AVX2 quant target; logs are
+`/tmp/bitnet-goal-neon-q8-clean.log` and
+`/tmp/bitnet-goal-neon-q8-native-tests.log`. Q4_K prepared-layout policy tests now account
+for the layout being x86-only. Emulation establishes
+functional coverage for the tested operators; native ARM performance and
+whole-model qualification remain open.
+
+## CUDA GQA6 cached-prefix attention qualification (2026-11-05)
+
+`test/reference_cuda_prefix_attention.c` builds standalone GGML CUDA
+flash-attention graphs with FP32 queries and FP16 K/V. It links only the
+independent llama.cpp libraries at `df18bee11e96557b07aa7b12db0976f3c7ac9165`.
+As a control, GQA16 with nine queries and a 32-token prefix reproduces the
+existing `ee02ff3821594d63` golden exactly; original goldens are unchanged.
+
+The new GQA6 fixtures use four KV heads and head size 256. Thirty-two cases
+cover 9/33 queries, prefix positions 32/64/512/1024, two input magnitudes,
+two attention scales, and unrestricted/257-token windows. The opt-in runtime
+matches all 4,128,768 output float words by hash. Tests also cover padded
+cache strides, invalid offsets/shapes, host output guards, input/output
+aliasing, and unchanged cached prefix data.
+
+Enable only for qualification with `BN_CUDA_ENABLE_GQA6_PREFIX=1`; default
+eligibility remains unchanged. This qualifies the prepared attention
+primitive, not dense-layer prefix fusion or whole-model execution. Those
+integration and performance gates remain open.
+
+The opt-in dense backend now also supports a borrowed Q/K pair at a nonzero
+position using validated device cache spans and history-sized attention
+scratch. A composition test passes exactly against qualified prepared
+attention followed by the public output projection and residual. The test
+uses exact +/-1 inputs, identity projections, nonzero FP16 history, padded
+strides, unchanged cache checks, and output guards. F32 projection on this
+shape uses the existing TF32 route; assuming an identity projection preserves
+arbitrary FP32 attention bits initially failed, so the composition test
+explicitly includes the public projection. No independent golden changed.
+Focused success log: `/tmp/bitnet-goal-dense-prefix-focused.log`.
+
+Transformer orchestration remains unchanged: its generic dense batch path
+writes new K/V to host, and a request entering with an existing prefix must
+establish device-cache coherence before this new backend route can be used.
+Removing only the position guard would risk stale-prefix reads. Whole-model
+integration must preserve that cache ownership contract.
+
+An experimental integration now uses the existing within-request microbatch
+coherence contract. `BN_CUDA_ENABLE_DENSE_PREFIX_CHAIN=1`, together with both
+primitive opt-ins above, admits dense GQA6 attention only after all layer
+resources and prefix spans pass preflight. Each completed block's host KV is
+uploaded before the following block; public resumed requests retain their
+existing path. No default policy changes.
+
+Qwen3.8 27B at 1,024 input tokens passes 16/16 independent initial/resumed
+decode checks. Profiles prove two 512-token blocks each execute all 64 layers
+through the chain. Independent 513-token (singleton tail) and 1,057-token
+(33-token tail) cases also pass 16/16. **The 521-token case fails one initial
+phase decode token after its nine-token cached tail**, with candidate logit
+gap `0.0216178894`. Both the existing-path control and an unchunked 521-token
+resident-chain control pass. Thus this integration is not qualified for
+activation by default; short cached-tail numerical behavior remains work.
+The 32 primitive flash-attention goldens are unchanged and still pass. An additional
+oracle 512+9 schedule changes four initial-phase generated IDs relative to
+the oracle’s single 521-token batch. Replaying against that matched-schedule
+oracle still reports two teacher-forced mismatches (initial step 3 and resumed
+step 1); changing the oracle schedule does not resolve this failure. Both
+reference artifacts are retained separately. The existing runtime
+with external chunk size 512 also fails initial step 3 against the oracle’s
+512+9 schedule (15/16 overall); the new resident path additionally misses
+resumed step 1 (14/16). Thus there is both a broader chunk-schedule numerical
+gap and an additional resident-path discrepancy to resolve.
+
+Artifacts and frozen binaries: `/tmp/bitnet-goal-dense-prefix-chain-matrix/`;
+the initial 1,024-token log is
+`/tmp/bitnet-goal-dense-prefix-chain-1024.log`. The initial 2,048-token harness
+attempt stopped before model execution because the corpus contained only
+1,395 tokens; with a repeated frozen corpus, the 2,048-token case passes
+16/16 and profiles four resident 512-token blocks.
+The backend matrix caught a direct expert-count access in orchestration;
+using the existing MoE route policy restored the module-boundary check.
+
+
+Commands, individual oracle logs, and SHA256 provenance are saved under
+`/tmp/bitnet-goal-gqa6-prefix-oracle/`. Focused hardware test:
+`./test_cuda_backend --gqa6-prefix-reference`; its successful log is
+`/tmp/bitnet-goal-gqa6-prefix-focused.log`. Fixtures are in
+`test/cuda_gqa6_prefix_attention_reference.h` and are included in the full
+CUDA test suite.
+
+## Experimental non-flash cached-prefix GEMM (2026-11-05)
+
+The nine-token tail failure is being investigated without changing reference
+IDs. Disabling SSM scan, stacked SSM prefill, or fused SSM gate/up leaves the
+same initial mismatch in the frozen resident-path candidate. The cached
+attention path was using the independently qualified *flash* primitive
+while this whole-model reference requests non-flash attention.
+
+The existing GEMM attention implementation now supports rectangular
+`queries x (prefix + queries)` score/probability matrices and prefix-offset
+causal/window masks. Default zero-prefix callers preserve their dimensions
+and policies. The experimental dense-chain flag selects GEMM for a non-flash
+cached prefix. The initial implementation makes the original 521-token
+whole-model replay pass 16/16, but is **not qualified**: its new independent
+non-flash primitive test fails the first exact hash.
+
+`reference_cuda_prefix_attention.c` now accepts an optional final `flash`
+argument (default 1, preserving the original generator). Argument 0 builds
+separate GGML score/softmax/value graphs. Thirty-two independent fixtures are
+stored in `test/cuda_gqa6_prefix_gemm_reference.h`; they are distinct from the
+unchanged flash goldens. `GGML_REFERENCE_DUMP_DIR` optionally exports score,
+probability, and output tensors for diagnosis. Focused runtime command:
+`./test_cuda_backend --gqa6-prefix-gemm-reference`.
+
+Stage comparison on the first fixture found zero exact score words, maximum
+absolute error `0.01290369`, RMS `0.0043252097`. Explicit pedantic FP32
+accumulation left the isolated scores and failed output hash unchanged, so
+TF32 inheritance alone does not explain this fixture. An independent
+reconstruction showed runtime scores match FP32 queries (maximum error
+`1.91e-6`), while oracle scores match FP16-rounded queries (maximum error
+`1.91e-6`). Runtime versus oracle differs by about `7.89e-4` on the inspected
+first query. The prefix score GEMM now consumes FP16 queries and cached FP16
+keys with FP32 accumulation. That version still passes the original
+521-token model replay (16/16), but changes the first failed primitive hash
+to `da92d3a21fd98325`, rather than matching `43a33a7d36903a37`. The original
+flash suite and dense prefix integration continue to pass.
+
+A subsequent 256-key-padded candidate still fails the first primitive hash
+(`ba7ec74ba01fa325`) and regresses the original 521-token model replay to
+15/16. That candidate was reverted; artifacts remain under
+`/tmp/bitnet-goal-prefix-gemm-padded-*`. The non-flash oracle currently pads
+its key tensor to 256 while the runtime primitive uses only the logical key
+span. Matching the oracle/model tensor geometry and reduction semantics
+remains unresolved. No hashes or token references have been relaxed or
+replaced. The retained query-conversion candidate passes the model replay
+but is still unqualified against the new primitive test. Do not infer
+completion from either 16/16 model result. Artifacts:
+`/tmp/bitnet-goal-prefix-gemm-*` and
+`/tmp/bitnet-goal-gqa6-prefix-gemm-oracle/`.
+
+## Prefix value accumulation follow-up (2026-11-05)
+
+The independent non-flash graph exposes a second precision difference:
+runtime PV output was entirely FP16-rounded, whereas only 0.0524% of
+reference output words were exactly representable as FP16. Reconstructing
+PV from reference probabilities and values confirms FP16 probabilities with
+FP32 accumulation/output (first-query maximum reconstruction error
+`7.45e-9`; retaining FP32 probabilities gives `1.09e-5`).
+
+The experimental prefix GEMM now uses FP16 Q/K for scores, FP16 probability
+and value operands for PV, and FP32 accumulation/output. Probability and
+output element sizes are independently specified in the batched pointer
+setup. The non-batched prefix route follows the same type contract.
+Zero-prefix GEMM behavior remains unchanged.
+
+This version retains 16/16 on the original 521-token model replay. On the
+first independent fixture, exact output words rise to 30.7002%, maximum
+error is `2.2279099e-5`, and RMS is `1.2299558e-6`; **the exact hash still
+fails** (`dcf46969ba84bdc0` versus `43a33a7d36903a37`). Converted-query score
+comparison gives maximum error `4.77e-6`, RMS `1.32e-6`. These checks remain
+strict; no golden or threshold has changed.
+
+The pinned GGML `mmf.cuh` kernel distributes dot-product chunks among warps
+and combines warp accumulators in order. cuBLAS does not guarantee that
+same arithmetic order. Reproducing that reference tiled reduction for the
+prefix score/value kernels remains the next numerical task. Actual llama
+KV sizing also rounds to at least 256 keys, capped by cache capacity
+(`llama_kv_cache::get_n_kv`), so padded geometry must be treated explicitly.
+Stage logs and binaries are under `/tmp/bitnet-goal-prefix-gemm-f32pv-*`.
+`BN_TEST_PREFIX_OUTPUT_PATH` optionally saves the first primitive result
+from the test harness for comparison.
+
+## Reference-dispatch prefix attention follow-up (2026-11-05)
+
+The short-prefix score/value implementation now uses 16x8 F16-input,
+F32-accumulator MMA tiles. Independent 64-element dot-product chunks are
+combined in the reference MMF warp order. All first eight nine-query fixtures
+pass exact output hashes; the first case also matches every score float word.
+
+The 33-query oracle trace establishes the larger-batch dispatch directly:
+`nvjet_sm120_sss_tf32_mma_64x24x64_4_16x24x64_tmaAB_alignCD4_ptrBatch_bz_TNNN`
+for scores and
+`nvjet_sm120_hhh_mma_64x40x64_7_16x40x64_tmaAB_alignCD4_ptrBatch_bz_TNNN`
+for values. Artifacts: `/tmp/bitnet-goal-prefix-ref33-trace.nsys-rep` and
+`/tmp/bitnet-goal-prefix-ref33-kernels.csv`. Earlier inference that this
+larger-batch score graph directly used FP16 queries was incomplete: TF32 RNE
+and FP16 happen to round these normal-range input values to the same mantissa
+precision, but their kernels combine products differently.
+
+The experimental larger-batch path therefore requests TF32 score GEMM and
+packs V into the reference's transposed head-major layout. Its FP16 value
+GEMM writes head-major FP16 output, then unpacks to the runtime's token-major
+FP32 interface. Prefix scratch explicitly accommodates the padded key span;
+only backend scratch padding is zeroed, and cache reads remain bounded by
+the validated logical history. With this dispatch/layout, the first sixteen
+fixtures pass exact hashes, including all nine- and 33-query short-prefix
+cases. Original independent goldens remain unchanged.
+
+The next failing case is nine queries over a 512-token prefix. Its output
+is 98.6111% exact; FP16 probabilities are 99.9982% exact. Remaining observed
+probability differences are at most `2.33e-10`. The reference softmax keeps a
+lane-specific XOR reduction result, while the prior runtime broadcast lane
+zero's denominator. The follow-up prefix softmax now uses lane-specific XOR
+sums, the reference block width, and approximate reciprocal. **All 32
+non-flash prefix fixtures now pass exact hashes (4,128,768 output words).**
+The batched and non-batched larger-prefix routes use explicit TF32 scoring,
+transposed head-major V, and head-major FP16 output before token-major
+unpacking. Zero-prefix/default policy remains unchanged.
+
+The frozen candidate also passes original 521-token, 513-token, 1,057-token,
+and 2,048-token initial/resumed model replays, each 16/16. The separate
+matched 512+9 oracle reference still misses one initial-phase token (15/16),
+so complete chunk-schedule qualification remains open. Frozen binaries and
+SHA256 manifest are in `/tmp/bitnet-goal-prefix-qualified-candidate/`;
+model logs are in `/tmp/bitnet-goal-prefix-qualified-model/`. Full CUDA and
+final native regressions passed; the clean CUDA-enabled build has zero
+warnings, standard/AVX2 suites pass, and diagnostic isolation passes. The
+original five F16 replay schedules plus five full-prompt/tail schedules now
+pass 160/160 IDs in total. With the same opt-in flags, F32 KV CUDA short
+checks pass 192/192 and the original frozen 4,096-byte long prompt passes
+24/24 (SHA256 `5ba8da8fc2ff5e856a2e5d689785a80fc4691a5352d11290bdea864aa35f37f5`).
+An initial long check used the complete document and stopped at EOS after
+one ID in both runtimes; that 1/1 result is retained but is not counted as
+the 24-token long qualification.
+
+The explicit `BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM=1` diagnostic mode still fails
+the new exact larger-batch primitive hash (case 8); that alternate cuBLAS
+shape is not covered by the default-route qualification. Logs:
+`/tmp/bitnet-goal-prefix-dispatch-*`,
+`/tmp/bitnet-goal-prefix-wide-*`, and
+`/tmp/bitnet-goal-prefix-softmax-*`.
+
+
+## CUDA nonzero-state GDN reduction qualification (2026-11-05)
+
+The matched 512+9 failure reported above is resolved in the opt-in dense
+prefix candidate. A tail-only layer trace located the first material drift
+in SSM layer 1, before attention layer 3. Its QKV and gate projections were
+bit-exact, while the recurrent output already differed. The pinned GGML
+CUDA GDN kernel assigns eight lanes to each state column; the runtime used
+32. Their FP32 feedback reductions differ across timesteps.
+
+The prefill kernel now supports both lane layouts. The experimental dense
+prefix policy selects eight lanes (four columns per warp), with RMS-scaled
+normalization required in fused model prefill. Flags-unset execution retains
+the existing layout. No independent reference values were replaced.
+`test/reference_cuda_gdn_state.c` generates nine independent nonzero-state
+fixtures through GGML alone at reference revision
+`df18bee11e96557b07aa7b12db0976f3c7ac9165`: 1/9/33 timesteps and key/value
+head shapes 1/1, 2/6, and 16/48. All 2,703,360 final-state words match exact
+hashes. A legacy-layout negative control fails the nine-timestep fixture,
+confirming that the test detects the reduction-order defect.
+
+Frozen binaries and hashes are in `/tmp/bitnet-goal-gdn-order-candidate/`.
+The eleven model cases in `/tmp/bitnet-goal-gdn-order-model/status.json`
+pass 176/176 initial/resumed token IDs. These include the matched 512+9
+oracle and the original unbatched 521-token oracle as separate workloads;
+the latter explicitly uses `BN_GPU_PREFILL_FULL_PROMPT=1`. The independent
+histories differ and neither reference is substituted for the other.
+All cases enable `BN_CUDA_ENABLE_PREFILL_QK_PAIR=1`,
+`BN_CUDA_ENABLE_GQA6_PREFIX=1`, and
+`BN_CUDA_ENABLE_DENSE_PREFIX_CHAIN=1`.
+
+The full CUDA hardware suite and diagnostic isolation pass. The final clean
+CUDA build has zero warnings, and standard plus AVX2 suites pass. Evidence:
+`/tmp/bitnet-goal-gdn-order-full-cuda.log`,
+`/tmp/bitnet-goal-gdn-order-final-clean.log`,
+`/tmp/bitnet-goal-gdn-order-final-native-tests.log`, and
+`/tmp/bitnet-goal-gdn-reference-order-negative-control.log`.
+The same frozen candidate also passes F32 KV short checks (192/192 IDs)
+and the frozen 4,096-byte long prompt (24/24 IDs), recorded under
+`/tmp/bitnet-goal-gdn-order-final-model/`.
+This closes the observed matched-schedule defect for this candidate;
+it does not establish vLLM parity, native ARM model qualification, or exact
+behavior of the alternate non-batched cuBLAS diagnostic route.
+
+The same-binary warm prefill check for the corrected candidate records:
+
+| Prompt tokens | Default ms | Q/K pair ms | Resident chain ms | Chain latency reduction |
+| --- | --- | --- | --- | --- |
+| 33 | 176.399 | 165.865 | 162.827 | 7.69% |
+| 256 | 419.547 | 326.411 | 316.121 | 24.65% |
+| 1024 | 2042.649 | 1236.043 | 1207.933 | 40.86% |
+
+These are three-run medians on GPU 0, with the same Q4_K_XL checkpoint,
+F32 activations, F16 KV, non-flash attention, final logits, eight CPU threads,
+and session reset excluded from timing. Each process warms up before timing.
+They are preliminary internal comparisons without randomized order or
+confidence intervals; no vLLM parity is implied. At 1,024 tokens the chain
+includes two 512-token microbatches. The corpus, binary hash, commands,
+flags, logs, and summary are preserved in
+`/tmp/bitnet-goal-gdn-order-prefill-performance/`.
+
+
+## Scoped 1,024-token resident-prefix profile (2026-11-05)
+
+A same-binary scoped capture compares the Q/K pair alone with the corrected
+resident chain. Scope is one warm prefill with final logits, F32 activations,
+F16 KV, non-flash attention, eight CPU threads, and the same frozen corpus.
+CUDA profiler API boundaries exclude model upload, session reset, and warmup.
+
+| Measurement | Q/K pair | Resident chain |
+| --- | --- | --- |
+| Host-to-device bytes | 738,259,544 | 121,712,464 |
+| Device-to-host bytes | 785,348,612 | 135,251,972 |
+| HtoD / DtoH operations | 87 / 66 | 111 / 68 |
+| GPU copy time, HtoD + DtoH | 39.335 ms | 5.959 ms |
+| Sum of kernel durations | 1,197.432 ms | 1,205.309 ms |
+| Kernel instances | 1,790 | 3,594 |
+
+Host/device bytes fall 83.13%, while the chain uses two 512-token
+microbatches and approximately doubles launches. Kernel sums do not fall:
+the leading K-quant tensor kernel accounts for 361.665 ms (30.0%), the
+leading IQ4 tensor kernel for 307.917 ms (25.5%), and the ordered Q3_K
+kernel for 112.696 ms (9.3%) across six launches. These kernels are the
+next measured compute targets. The trace contains no kernel names matching
+`gemv`; this observation alone does not prove absence of all host fallbacks.
+
+Synchronous `cudaMemcpy` API duration is about 1.20 seconds in the chain,
+but includes waiting for earlier kernels. Its duration must not be reported
+as transfer-only cost or added to GPU kernel time. Actual copy engine
+durations above come from CUPTI activities. Device-to-device copies are
+reported separately in the saved summary and excluded from host/device bytes.
+
+A separate host-profile run confirms two 512-token batch records per run,
+each with `chain_layers=64`, `decode=0`, and `attn_cpu=0`. Its measured
+prefill is 1,192.978 ms; that single instrumented run is diagnostic, not a
+replacement for the three-run medians.
+
+Reports, SQLite activities, executable/corpus hashes, commands, flags, and
+summary are in `/tmp/bitnet-goal-gdn-order-traces-1024/`. Hardware-counter
+profiling with Nsight Compute 2026.3.1 was attempted but rejected with
+`ERR_NVGPUCTRPERM`; no occupancy or bandwidth-utilization measurements are
+claimed. The older `/usr/bin/ncu` (2022.4.1) also failed CUDA setup and is not
+used as performance evidence. These captures diagnose this runtime and do
+not establish matched-precision vLLM parity.
+
+
+## IQ4 block-layout and register-limit experiments (2026-11-05)
+
+Two isolated source candidates tested scheduling changes to the dominant
+packed IQ4_XS ordered tensor kernel. Neither is retained. Both used the
+resident chain, the same frozen corpus and checkpoint, F32 activations,
+F16 KV, final logits, eight CPU threads, and three warm timing runs on GPU 0.
+Each comparison below has its own freshly measured frozen baseline.
+
+| Experiment | Tokens | Baseline ms | Candidate ms | Latency change |
+| --- | --- | --- | --- | --- |
+| Two row tiles / 256 threads instead of four / 512 | 256 | 310.805 | 327.779 | +5.46% |
+| Two row tiles / 256 threads instead of four / 512 | 1024 | 1186.644 | 1242.293 | +4.69% |
+| Original layout, minimum two resident blocks requested | 256 | 311.763 | 309.070 | -0.86% |
+| Original layout, minimum two resident blocks requested | 1024 | 1186.167 | 1183.592 | -0.22% |
+
+The smaller-block candidate regresses both lengths. The requested
+higher-occupancy candidate changes compiled resources from 128 registers
+and zero stack bytes to 64 registers and 16 stack bytes per thread, retaining
+27,136 bytes of static shared memory per block. These are compiler resource
+reports, not measured occupancy. Its sub-one-percent timing differences are
+insufficient evidence of an improvement in this small fixed-order sample.
+Neither candidate proceeds to correctness qualification or production use;
+the original CUDA source is restored byte-for-byte.
+
+Source/binary hashes, commands, flags, logs, and summaries are retained in
+`/tmp/bitnet-goal-iq4-rowtile2/` and
+`/tmp/bitnet-goal-iq4-occupancy2/`. Baseline static resources are recorded in
+`/tmp/bitnet-goal-iq4-baseline-resources.log`. The next IQ4 optimization must
+address actual tile/data reuse or instruction cost rather than assume that
+smaller blocks or a lower register limit improve throughput.
+
+After restoration, the clean CUDA-enabled build has zero warnings and the
+standard plus AVX2 suites pass. Logs:
+`/tmp/bitnet-goal-iq4-tuning-final-clean.log` and
+`/tmp/bitnet-goal-iq4-tuning-final-native-tests.log`. The four user-owned
+reference binaries are restored and verified against their pre-clean hashes.
+
+
+## Flash Next split-file CPU cache qualification (2026-11-05)
+
+The local Qwen3.8 Flash Next Q4_K_XL checkpoint has four shards and GGUF
+architecture `qwen4exp`: 48 blocks, dimension 2560, 512 experts, top-10
+routing, and expert hidden size 640. The initial CPU reference check passes
+174/174 generated IDs across eight prompts with up to 24 tokens each
+(early EOS reduces the count). Reference revision is
+`df18bee11e96557b07aa7b12db0976f3c7ac9165`. This baseline exposed that the
+requested 2 GiB RAM expert cache was inactive: split-file pread keeps the
+legacy single-file descriptor negative, and both cache creation and the
+pipelined executor checked only that descriptor.
+
+The fix makes pread eligibility recognize valid shard descriptors and puts
+the appropriate descriptor on every asynchronous gate/up/down request.
+Synchronous fallback reads use the same projection-to-shard resolution.
+The existing bounded LRU and execution policy remain responsible for
+placement and computation. Synthetic tests read gate/up/down from distinct
+files, reject an out-of-range shard, and verify request recovery after an
+invalid descriptor. Single-file descriptor resolution remains supported.
+
+The fixed candidate also passes the full eight-prompt reference comparison
+(174/174 generated IDs) with the active 2 GiB cache; log:
+`/tmp/bitnet-goal-flash-next-sharded-cache/short-reference.log`.
+
+Real-model replay preserves all eight independently checked IDs with cache
+disabled, a 64 MiB budget, and a 2 GiB budget. Unlike the baseline, nonzero
+budgets now create the cache and report activity:
+
+| Requested slab budget | Actual slab MiB | Slots | Hits | Misses |
+| --- | --- | --- | --- | --- |
+| 64 MiB | 61 | 16 | 0 | 3360 |
+| 2048 MiB | 2045 | 537 | 1067 | 2293 |
+
+These are expert-data slab budgets; metadata, model, activations, and I/O
+staging are separate allocations. OS page cache was warm and concurrent
+correctness jobs ran, so these runs establish output preservation and active
+bounded caching, not cold-disk performance or throughput. Artifacts and
+binary/model provenance are in
+`/tmp/bitnet-goal-flash-next-cache-correctness/` (baseline) and
+`/tmp/bitnet-goal-flash-next-sharded-cache/` (fixed candidate).
+The clean CUDA-enabled build has zero warnings, and standard plus AVX2
+regressions pass; logs use `/tmp/bitnet-goal-sharded-pread-final-*`.
+
+CUDA Flash Next is **not qualified**: the baseline upload estimates expanded
+full expert residency at 318.6 GiB, attempts quant-only full residency, then
+fails at layer 0 and falls back to CPU. The comparison harness rejects this
+as requested-backend activation failure. That CPU execution must not be
+counted as CUDA correctness or offloading evidence. Bounded CUDA expert
+placement, long/resumed correctness, and separate cold/warm policy
+qualification remain open. Logs:
+`/tmp/bitnet-goal-flash-next-cpu-short.log` and
+`/tmp/bitnet-goal-flash-next-cuda-baseline.log`.
+
+A separate diagnostic run with `BN_GPU_DISABLE_MOE_ALL_LAYOUT=1` activates
+CUDA and passes eight generated IDs against the independent CPU oracle.
+Explicit GPU cache budgets of 1024 and 4096 MiB preserve those IDs with
+`CUDA weights uploaded` present and no reported fallback marker. The 1024
+MiB cache has 349 slots and reports 0 hits / 4920 misses; 4096 MiB reports
+1907 hits / 3013 misses (38.8%). This establishes cache reuse in the larger
+budget for this smoke workload. It does not qualify all prompts, cached
+prefixes, concurrent requests, cold storage, or performance. Expert misses
+still use pread staging; warm OS pages are not evidence of a dedicated
+bounded RAM tier feeding GPU misses. The default full-layout attempt remains
+unfixed. Commands, outputs, and assertions are in
+`cuda-bounded-result.json` and `cuda-bounded4096-result.json` under the fixed
+candidate artifact directory.
+
+
+## Pread CUDA placement and Flash Next batch failure (2026-11-05)
+
+Full-expert upload requires mapped projection spans. The placement decision
+now checks that prerequisite before selecting whole-model expert residency;
+pread models retain GPU base weights and use the existing bounded expert
+cache. A synthetic regression fails before this correction at the full
+expert upload, then passes for both single-file and split-file pread.
+Positive controls confirm that single-file and split-file mappings still
+create full-expert handles. Standard/AVX2 regressions and the clean
+warning-free CUDA build pass. Logs use
+`/tmp/bitnet-goal-pread-placement-{negative,focused,final-*}`.
+The comparison harness now forwards `--gpu-cache-mb` so this workload can
+pin the expert-cache budget explicitly.
+
+With no `BN_GPU_DISABLE_MOE_ALL_LAYOUT` override, the corrected Flash Next
+candidate activates CUDA and preserves the eight independently checked IDs
+at GPU cache budgets of 1024 and 4096 MiB. The 4096 MiB run records 1907 hits
+and 3013 misses. This fixes the observed upload/activation failure; **it does
+not qualify Flash Next batched CUDA correctness**.
+
+Broader gates expose a failure beyond the five-token France prompt. The
+short matrix matches only 24/174 reference IDs (and has one token-count
+mismatch); the frozen 1047-token long input matches 0/24. The initial short
+attempt also encountered oracle exit 139; its standalone retry succeeds,
+and the subsequent complete short comparison fails on runtime output,
+so that first infrastructure failure is not used as correctness evidence.
+
+The same long prompt passes 24/24 on CPU against separately saved llama.cpp
+IDs. An 11-token diagnostic prompt produces NaN logits in CUDA batch mode,
+while tokenwise CUDA starts with the expected token. A full per-position
+stage trace locates the first NaN at `bitnet_moe_routed_sum`, layer 1,
+position 1, before later SSM convolution/normalization propagates the error.
+A last-token-only trace initially showed the downstream SSM failure; it was
+insufficient to locate the origin. Setting
+`BN_CUDA_DISABLE_MOE_FFN_BATCH=1` produces finite logits and the expected
+first token on that diagnostic while the rest of prefill remains batched.
+This isolates the split-expert callback; the switch is not retained as a
+correctness or performance solution. The batch execution remains open and no
+reference values are replaced. Artifacts, commands, frozen binaries,
+reference IDs, and traces are under
+`/tmp/bitnet-goal-flash-next-default-cuda/`.
+
+
+## Split-expert stream and stacked-geometry corrections (2026-11-05)
+
+The Flash Next NaN failure exposed a stream-ordering defect in
+`cuda_moe_ffn_batch`: gather/activation/scatter used the default stream,
+while quantized matmuls inherited a nonblocking stream selected by prior
+graph execution. The callback now enters an ordered default-stream scope
+and restores the prior execution/cuBLAS stream on exit. It remains batched.
+An analytic Q4_K regression primes graph execution without host readback,
+then checks 9/17/33-token FFNs (151,040 output words plus guards). Before the
+fix, the 17-token case returns zero where `silu(0.5) * 0.5` is required.
+Its 1e-3 tolerance accommodates the quantized-input arithmetic; it is not an
+independent GGML hash fixture.
+
+An additional callback comparison reuses the existing independent GGML
+FFN goldens without replacing any values. It checks all 46 plain-FFN
+fixtures (382,464 words), including stacked and separate storage, through
+the split-expert interface after graph execution. This detects a second
+defect at fixture 203: stacked Q5_K gate/up, dim 5120, hidden 17408, 11
+tokens. The callback used the combined row count for reference partitioning.
+It now uses separate backend row views and planar activation for the
+reference-quant path, matching the already-qualified standalone FFN path.
+The original expected hash `07f45353fdc58d5d` is preserved; the unfixed
+callback produced `6ea6e3b6557c83da`.
+
+Both focused regressions, the full CUDA hardware suite, standard/AVX2
+regressions, CUDA diagnostic isolation, and the clean
+warning-free CUDA build pass. Frozen binaries/source hashes are in
+`/tmp/bitnet-goal-split-expert-geometry-candidate/`; full regression logs use
+`/tmp/bitnet-goal-split-geometry-*`. The checked worktree CUDA/test sources
+match that manifest exactly. Failure evidence is in
+`/tmp/bitnet-goal-split-expert-stream-negative.log` and
+`/tmp/bitnet-goal-split-expert-geometry-negative.log`.
+
+**Flash Next model-level CUDA correctness remains open.** The 11-token
+prompt no longer produces NaNs, but selects 77296 rather than 557. An
+independent fully offloaded CUDA oracle confirms 557, both on one GPU and
+split by layer over two GPUs (49/49 layers offloaded). The single-GPU run
+uses the same checkpoint, F32 KV, non-flash attention, and no precision
+substitution; log `/tmp/bitnet-goal-split-expert-reference-single-cuda.log`.
+Disabling shared-expert fusion also disables the separate GPU shared FFN,
+so its matching first token does not isolate a shared-kernel defect.
+
+A private replay under `/tmp/bitnet-goal-split-expert-shared-replay/`
+compares the captured eleven layer-0 inputs and original shared weights
+against a direct, independently linked GGML CUDA graph. All 28,160 down
+projection values and eleven gate logits match exactly. Public dense and
+split-expert callbacks also agree. The first model drift instead occurs
+before MoE, in the hyperconnection mixer.
+
+The hyperconnection prefill code forced Q8 projections through CPU reference
+arithmetic even with CUDA active. Using the existing backend-aware reference
+policy makes the first HC gate projection match the CUDA oracle exactly.
+The year prompt then matches the first five of eight generated IDs, but
+still fails full continuation qualification. Candidate and comparison are
+in `/tmp/bitnet-goal-hc-cuda-candidate/`.
+
+The remaining HC mean drift is consistent with a separate arithmetic
+contract: the pinned CUDA oracle enables fused DSV4 HC pre-gate, which
+accumulates products with FMA; the existing runtime fixture describes an
+unfused graph. A new independent generator,
+`test/reference_cuda_hc_fused_mean.c`, records the fused contract without
+replacing the unfused goldens. The experimental policy
+`BN_CUDA_ENABLE_FUSED_HC_MEAN=1` remains off by default. Its batch callback
+and graph operation pass 72 independent cases and 847,872 exact output-word
+comparisons, with guard words checked. The legacy kernel fails the first
+new fixture, as expected; its existing unfused goldens remain unchanged.
+The fused model trace matches the oracle's sampled layer-0 HC mixed
+statistics and values, but still generates only five of eight matching IDs.
+The next drift is in SSM QKV, whose projection selection also forced CPU
+arithmetic under CUDA. The backend-aware SSM projection change then matches all eight diagnostic
+token IDs. The 1,047-token long-prompt comparison still fails at generated token six
+(prefix 5/24). The eight-prompt short suite improves to 159/179 token-prefix
+matches, with all eight first tokens matching and no token-count mismatch,
+but still fails strict parity. Clean CUDA-enabled compilation has no warnings;
+standard, AVX512 quant, full CUDA operator, and CUDA diagnostic suites pass.
+Artifacts use `/tmp/bitnet-goal-hc-fused-*` and
+`/tmp/bitnet-goal-hc-ssm-projection-*`. No Flash Next CUDA model correctness
+or vLLM parity claim follows from these operator checks.
+
+### GDN decode reduction qualification
+
+`test/reference_cuda_gdn_decode.c` independently evaluates the pinned
+GGML CUDA gated-delta graph with decimal-valued Q/K/V and nonzero incoming
+state. Each hash includes all token outputs and the complete final state.
+These inputs expose reduction-order differences even on the first token;
+the older power-of-two fixture is retained unchanged.
+
+The legacy decode kernel fails the first new case (hash
+`d8957305576e9320`, reference `e7341587bdf784ca`). The opt-in
+`BN_CUDA_ENABLE_GDN_DECODE_ORDER=1` uses four columns per warp and eight
+lanes per column, matching the pinned oracle. It passes 18 plain/fused
+alpha-beta cases and 5,603,840 exact output/state word comparisons, with
+host and device guard words checked, including a nonzero state offset.
+It covers the standalone graph delta and fused
+alpha-beta/delta dispatch; the same templated kernel is used by the serial
+SSM prefill fallback. Default decode retains its previous reduction order.
+
+Enabling only the previously qualified prefill order leaves the Flash Next
+short comparison at 159/179 token-prefix matches. The combined prefill/decode-order short comparison fails at 156/179
+token-prefix matches, with all eight first tokens matching and one
+token-count mismatch (192 runtime IDs versus 179 oracle IDs). The HTTP
+continuation is restored, while other continuations still diverge.
+This operator qualification does not qualify the full model or justify
+promoting either arithmetic flag to default. The long comparison remains
+at a 5/24 token prefix, with no token-count mismatch. Clean CUDA compilation
+is warning-free; standard tests, AVX512 runtime/checks, and CUDA diagnostics
+pass. Artifacts use
+`/tmp/bitnet-goal-gdn-decode-*` and
+`/tmp/bitnet-goal-flash-gdn4-{prefill,decode}-short.log`.
+The full CUDA operator suite also passes. A subsequent model trace matches
+sampled layer-0 HC mixed, QKV, Z, alpha and beta values/statistics, then
+first differs at delta. Inspection finds a separate architecture-only guard
+still forcing CPU delta/gate in prefill despite CUDA projection selection.
+The prefill code now uses its backend-aware reference decision for that
+callback dispatch as well; model qualification of this handoff uses
+`/tmp/bitnet-goal-flash-gdn-backend-*` artifacts. The handoff makes sampled
+layer-0 SSM gate and output statistics/values match the independent oracle.
+The next sampled mismatch is HC post-combine, which still forces host
+arithmetic; the pinned oracle enables fused DSV4 HC post. This is an
+investigation target, not yet a proven post-combine fix. Whole-model parity
+still fails: short 138/179 prefix matches (one count mismatch), long 5/24.
+The latest incremental build is warning-free and standard tests pass.
+
+### Fused HC post-combine qualification
+
+`test/reference_cuda_hc_fused_post.c` evaluates the complete pinned GGML
+CUDA scale/sigmoid/scale/DSV4-HC-post graph with deterministic rational
+inputs. The new fixture preserves all existing unfused combine goldens.
+The legacy path fails case zero (`d5a686808bb98ebe` versus oracle
+`f75674c8ff57f8de`), confirming that the fixture detects this distinction.
+
+The experimental `BN_CUDA_ENABLE_FUSED_HC_POST=1` selects an explicit FMA
+for residual accumulation in both the host batch callback and public graph
+operation. The prefill combine dispatcher now uses the existing
+backend-aware reference policy, allowing CUDA to invoke this callback.
+CPU and Metal retain host reference arithmetic. All 72 independent cases
+pass, covering 5,087,232 exact output-word comparisons across the batch
+callback and graph/capture/replay paths, with host guard words intact.
+The independent generator reproduces all 72 saved hashes. Qualification artifacts
+use `/tmp/bitnet-goal-hc-post-*`; model-level parity remains a separate gate.
+
+**Observer limitation discovered during model qualification:** the broad
+intermediate-tensor observer changes the independent model's generated
+sequence (first ID 77296), while the same pinned probe with `--no-observer`
+produces the normal CLI sequence beginning 557,39338,440,449. Consequently,
+the preceding sampled stage matches establish agreement with the observed
+graph only; they do not establish agreement with normal CLI inference.
+Wildcard binary dumps may also be overwritten by reshaped aliases. Select
+an exact tensor name and occurrence when comparing binary values.
+
+The probe now supports `LLAMA_PROBE_OBSERVE_NAME` to request only one named
+boundary from the backend. Any such run must first reproduce the complete
+no-observer generated sequence before its tensors can guide model fixes.
+Normal CLI qualification for the combined HC-post candidate still fails:
+short 117/179 token-prefix matches, one count mismatch; long 5/24. Clean
+CUDA compilation, standard tests, AVX512 checks, full CUDA operators and
+CUDA diagnostics pass. Fused HC post stays off by default.
+
+The restricted observer for `hc_mixed-0`, occurrence 2, preserves all eight
+normal/no-observer generated IDs. Its layer-0 FFN input at prompt position
+10 matches all 2,560 runtime words exactly. This boundary is therefore
+qualified for the next FFN investigation, unlike the broad observer trace.
+Evidence: `/tmp/bitnet-goal-hc-post-candidate/minimal-observer-qualification.json`;
+probe `/tmp/bitnet-goal-minimal-boundary-reference-probe` compiled against
+pinned primary libraries with C++17 and `-Wall -Wextra -Werror`.
+
+### Routed Q4_K/Q5_1 prefill arithmetic gap
+
+Restricted observers of `ffn_out-0`, `ffn_moe_out-0` and
+`ffn_shexp_gated-0` preserve all eight normal-oracle IDs for the year
+prompt. Runtime layer-0 FFN output differs from the qualified normal
+boundary on all 2,560 words (maximum absolute difference 0.0007830523).
+A private repeated-input replay of the isolated shared branch matches the
+qualified shared boundary on all 2,560 words. This isolates a routed
+arithmetic issue for further investigation; it does not prove integrated
+shared-state correctness under every expert schedule.
+
+The checkpoint's layer-0 expert gate/up are Q4_K; down is Q5_1. Existing
+routed Q4_K/Q5_1 goldens cover NT=1,2,4,8 only. The pinned CUDA oracle
+switches indexed projections to MMQ above eight tokens, while the offloaded
+combined callback invokes dense projections on smaller gathered expert
+groups. Its descriptor also omits total-expert/index geometry. Separately,
+the ordered routed implementation selects Q5_1 MMVQ unconditionally,
+including batches above the oracle's MMVQ boundary.
+
+`test/reference_cuda_q451_prefill.c` now independently generates 16 cases
+at NT=9,11,17,33 for both synthetic and model-sized projections. It uses
+GGML indexed Q4_K gate/up, split SwiGLU and indexed Q5_1 down, then the
+existing separate weighted-add reduction contract. Expected values are
+preserved in `test/cuda_q451_prefill_reference.h` as pending qualification
+targets; the passing legacy goldens remain unchanged. A private copy of
+the existing runtime reference runner fails the first new NT=9 case.
+All 16 new runtime hashes disagree (394,240 output words covered); the
+independent oracle reproduces all hashes on the second GPU. The private
+inventory runner disables hash asserts and retains an inherited PASSED
+trailer, which is not a passing result; its qualification JSON records
+16 failures. The original strict negative runner aborts at case zero.
+The NT=9 invalid-route negative check also exposes a validation gap in
+the larger-batch fallback. These are reproducible kernel/API gaps,
+independent of model observer effects. Logs: `/tmp/bitnet-goal-q451-prefill-negative/`.
+
+A private full-batch padding diagnostic changes but does not fix the
+model FFN output (maximum absolute difference 0.0007269681). Padding was
+not added to the runtime. The next implementation needs routed MMQ
+arithmetic, including affine Q5_1 down and full geometry, while preserving
+bounded expert residency and grouped execution. Artifacts:
+`/tmp/bitnet-goal-ffn-branch-replay/`,
+`/tmp/bitnet-goal-moe-group-padding-diagnostic/`, and
+`/tmp/bitnet-goal-q451-prefill-oracle*`.
+
+### Q4_K/Q5_1 ordered MMQ implementation
+
+The ordered routed callback now selects reference MMQ arithmetic above
+NT=8 for both Q4_K gate/up and Q5_1 down. The affine down capability is
+declared in the quant registry and implemented in the format-local
+`src/quant/q5_1_cuda.cuh`; the backend owns scratch and launch geometry.
+The kernel preserves global expert/rank split-K partitions, reciprocal
+activation scales, original activation sums and two FMA updates per block.
+Existing NT<=8 MMVQ behavior remains covered by unchanged goldens.
+
+The first stage capture matches the independent oracle on all 36,864
+SwiGLU values and all 18,432 down-projection values. The original new
+fixtures used separate weighted multiply/add, while the standalone
+callback's existing contract uses fused accumulation. Both contracts are
+now generated independently from the same oracle down projections; all
+16 original separate hashes remain intact, with new fused counterparts.
+With equal contracts, the legacy routed code still fails (case-zero hash
+39fc3d28f27187b1 versus fused oracle c759c383be67417b). The corrected code
+passes all 16 callback cases, 1,576,960 exact output-word comparisons with
+alias/repeat checks, and invalid-route negative checks.
+
+This qualifies the ordered callback, not the bounded offload model path.
+The split-expert combined callback still invokes dense projection
+arithmetic and accumulates in expert order. Its existing global expert
+count and array index provide geometry; the earlier description that this
+information was absent from the API was too broad. The next step is to
+use that geometry and retain checkpoint route order without padding or
+uploading all expert weights. Kernel timing and model parity remain open.
+Artifacts use `/tmp/bitnet-goal-q451-mmq-*`. Clean CUDA compilation is
+warning-free; standard, AVX512 syntax/runtime, full CUDA and CUDA diagnostic
+suites pass. The four user-owned probe binaries are preserved byte-for-byte.
+
+### Gathered Q4_K/Q5_1 offload path
+
+The expert-batch callback now runs one borrowed Q4_K/Q5_1 expert using
+full prompt/expert/rank MMVQ or MMQ geometry, rather than selecting dense
+arithmetic from the local group count. It handles both independent and
+stacked gate/up buffers, host aliases and invalid-plan rejection. The
+quant registry owns format eligibility. A synthetic test uploads and
+releases one expert at a time and checks the unchanged independent
+references: 32 shapes, 1,914,880 exact output-word comparisons across
+stacking and alias modes. No all-expert weight stack is allocated.
+
+For this format combination, CUDA's combined split-expert callback now
+defers to the gathered path and existing slot-ordered reduction. The
+transformer policy skips its speculative all-active-expert preload, so
+cache budgets remain effective without warming every expert before the
+per-expert loop. The backend keeps a rejection guard for direct calls.
+
+The actual Flash Next layer-0 FFN output now matches the restricted,
+normal-generation-preserving oracle on every one of 2,560 words. The
+short model gate still fails: 124/176 token-prefix matches, all eight first
+IDs matching, one count mismatch (176 runtime IDs vs 179 oracle IDs).
+The year diagnostic matches five of eight IDs. Checkpoint metadata also
+shows Q5_K gate/up with Q8_0 down at layer 2, and Q4_K gate/up with Q8_0
+down at layers 4,30,46,47. Those gathered arithmetic paths remain open;
+qualifying Q4_K/Q5_1 alone does not qualify the model. Full CUDA and clean
+standard/AVX512 checks pass. Artifacts use
+`/tmp/bitnet-goal-q451-group-*`. The final dispatch-policy build and tests
+also pass without warnings, along with CUDA diagnostics and AVX512 runtime
+checks. The long-prompt gate still fails at a 5/24 token prefix with equal
+token counts. All four user-owned probe binaries remain byte-identical.
+
+### Mixed K-quant / Q8_0 gathered execution
+
+Independent fixtures now cover Q4_K/Q8_0 and Q5_K/Q8_0 at NT=1,8,9,11,33,
+including model-sized dimensions, sparse expert groups, stacked gate/up and
+host aliases. All 40 cases pass: 2,793,472 exact output-word comparisons.
+Q8_0 down uses FP16-scale MMVQ inputs or FP32-scale MMQ inputs according to
+the full prompt size. Its borrowed-expert kernel reuses the backend-owned
+global MMQ schedule. Quant/backend behavior helpers own format eligibility;
+a raw predicate accidentally introduced in transformer policy was caught
+by the architecture gate and removed. The fixed gate and clean standard /
+AVX512 checks pass without warnings; latest narrow CUDA and diagnostics pass. The final complete CUDA suite
+also passes, and all four user-owned probe binaries remain byte-identical.
+
+The year diagnostic now matches 8/8 normal-oracle IDs. Full parity remains
+open: short 146/175 token-prefix matches with one count mismatch (175
+runtime IDs / 179 oracle IDs); long 5/24 with equal counts. One earlier
+short-suite oracle process exited 139. Its log is preserved; the completed
+retry uses an immutable private copy of the token tracer, isolating mapped
+instrumentation from build cleanup/restoration. The crash cause is not
+established. Future comparisons should set `LLAMA_TOKEN_TRACE` to an
+immutable private copy when running concurrently with build cleanup.
+
+The next isolated decode issue is Q5_1 expert projection selection. The
+current K-quant/native-quant flag helpers produce flags=0 for this format.
+A graph replay with those flags differs from the independent CUDA
+single-column oracle in all eight cases. This is a contract mismatch:
+unflagged legacy matvec consumes floating inputs, while the routed oracle
+quantizes activations. Preserve the unflagged contract and introduce the
+appropriate explicit selection for routed down projections. Independent
+targets are in `test/cuda_q51_matvec_reference.h`, generated by
+`test/reference_cuda_q51_matvec.c`; the strict negative replay is under
+`/tmp/bitnet-goal-q51-matvec-negative/`. Mixed-prefill artifacts use
+`/tmp/bitnet-goal-qk8-*`. This evidence does not qualify decode or the model.
+
+### Q5_1 explicit decode activation selection (2026-11-05)
+
+CUDA routed Q4_K/Q5_1 down projections now explicitly select quantized
+activations through the backend policy adapter. Unflagged Q5_1 matvec keeps
+its existing floating-input contract; Metal selection is unchanged. The
+format-local kernel supports bias and nonzero output offsets.
+
+Eight independent single-column fixtures cover 43,304 exact output words
+across direct execution, graph capture/replay, lowered activation requests,
+and fused bias/copy. Another 10,826 words preserve saved legacy outputs;
+these compatibility values are not independent reference results. Original
+independent hashes are unchanged. The complete CUDA suite, clean warning-free
+CUDA build, standard tests, and AVX512 checks pass. The four user-owned probe
+binaries were restored byte-identically after cleanup.
+
+Model qualification remains incomplete. For the 11-token year prompt, the
+first decode layer's combined FFN output differs from the restricted normal
+oracle by at most 2.98023224e-8 (RMS 3.70640952e-9; 755/2560 values exact).
+The oracle observer preserves all eight normal generated IDs. Despite this
+local improvement, the candidate matches only the first five of those eight
+IDs, versus eight for the prior candidate. This is evidence for the local
+projection correction, not a whole-model correctness or performance claim.
+Fresh complete short/long suites for this candidate remain pending.
+
+Artifacts: `/tmp/bitnet-goal-q51-decode-candidate/`,
+`/tmp/bitnet-goal-q51-decode-positive.log`,
+`/tmp/bitnet-goal-q51-decode-full-cuda.log`,
+`/tmp/bitnet-goal-q51-decode-clean-build.log`, and
+`/tmp/bitnet-goal-q51-decode-final-tests.log`. Candidate SHA256:
+`36dc9bab808e43d81d63ae374126fba36064a72fd7b7ede79325f9cd92a8c8a8`.
+
+The first-decode boundary scan further localizes the remaining discrepancy.
+Restricted observers at layers 1, 2, 3, 7, 15, 31, and 47 each preserve the
+normal oracle's eight generated IDs. Comparing the first 16 FFN output
+values gives maximum differences of 7.5e-9, 3.11e-6, 4.09e-4, 5.76e-4,
+7.92e-3, 4.68e-3, and 2.53e-2 respectively. These are sampled boundary
+comparisons, not full-tensor error bounds. Layer two's full 2560-value FFN
+output has maximum error 1.2435e-5 and RMS 1.9857e-6. Its full FFN input
+has maximum error 5.9605e-7 and RMS 1.1569e-7. A CPU float32 quantization
+diagnostic finds identical Q8 integer values and FP16 scales for those two
+inputs; CUDA fast-division equivalence is not yet verified. The next check
+is identical-input Q5_K/Q8_0 projection arithmetic at this boundary, before
+attributing the discrepancy to upstream state. Machine-readable evidence:
+`decode-boundary-scan.json` and `layer2-input-diagnostic.json` in the
+candidate artifact directory above.
+
+### Identical-input layer-two expert isolation (2026-11-05)
+
+Real layer-two experts 63 and 84 were tested on both captured FFN inputs.
+Separate Q5_K gate/up projections match pinned GGML CUDA bit-for-bit over
+5,120 values. Subsequent reference SwiGLU and Q8_0 down projections match
+over another 12,800 values. For these two experts, changing between the two
+captured inputs does not change any tested projection output.
+
+The stacked fused Q5_K gate/up path does differ: only 141/640 and 140/640
+SwiGLU values match exactly, with maximum errors 1.1921e-7 and 5.9605e-8.
+Its current kernels neither accept the reference-SiLU request nor use the
+same reduction order as the qualified separate projections. Disabling only
+`BN_CUDA_DISABLE_MOE_GATEUP_SPLIT=1` restores all eight normal reference IDs
+on the year diagnostic. This localizes a concrete fused-path discrepancy;
+it does not qualify the full model or justify removing batching/fusion.
+The next implementation should preserve fused execution while honoring
+reference activation and projection reduction semantics, with independent
+fixtures and existing unflagged outputs preserved.
+
+Private diagnostic sources, raw expert slices, comparison JSON, logs, and
+source hashes are under `/tmp/bitnet-goal-layer2-identical/`. The diagnostic
+programs compile with warnings treated as errors. No runtime change was
+made during this isolation step.
+
+### Reference fused Q5_K correction (2026-11-05)
+
+The Q5_K fused gate/up implementation now honors explicit reference SiLU
+and reference activation requests using the independent MMVQ four-warp
+fold/XOR order and reference division operation. Both projections and
+SwiGLU remain in one fused kernel. Unflagged calls retain their existing
+kernels. Routed MoE emission now propagates reference FFN activation to
+its fused operation.
+
+Twelve synthetic independent GGML CUDA cases cover 37/640 output rows,
+256/512/2560 input columns, and two seeds. All 4,062 unique reference
+values match exactly across direct execution and graph capture/replay
+(12,186 comparisons), including both request flags and guarded nonzero
+copy offsets. The old implementation fails the first case. Sources are
+`test/reference_cuda_q5k_fused_gateup.c` and
+`test/cuda_q5k_fused_gateup_reference.h`; previous fixtures are unchanged.
+
+This fixes an independently demonstrated fused-operator discrepancy, but
+does not fix the Flash Next model continuation failure. The year prompt
+still matches only 5/8 reference IDs. Disabling all fused gate/up alone
+also leaves 5/8; disabling stacked MoE gate/up gives 8/8. Furthermore,
+identical-input split Q5_K projections plus SwiGLU for real experts 63/84
+match all 1,280 values exactly. Thus the earlier stacked-path diagnostic
+cannot be attributed solely to the fused Q5_K kernel. Remaining work must
+check other stacked formats/paths and accumulated model state. Artifacts
+and qualification manifest: `/tmp/bitnet-goal-q5k-fused-final/`;
+real-weight split comparison:
+`/tmp/bitnet-goal-layer2-identical/split-comparison.json`.
+
+The final clean CUDA build is warning-free; standard tests, AVX512 checks,
+complete CUDA suite, and diagnostic isolation pass. All four user-owned
+probe binaries remain byte-identical after cleanup. The corrected fused
+kernel additionally matches all 1,280 real-weight SwiGLU values for experts
+63/84. These checks preserve existing fixtures and do not qualify model
+continuation. Candidate and clean-build hashes, source hashes, and model
+IDs are recorded separately in the qualification manifest.
+
+### First full-attention prefill boundary (2026-11-05)
+
+The year-prompt prefill now has two stronger exact boundaries: layer two's
+complete FFN output and layer three's complete attention input each match
+all 2,560 independent normal-oracle values bit-for-bit. Layer three is the
+first full-attention block. Its attention output already differs before
+the FFN: first-16 maximum error 0.000675775575; the gated attention input
+to the output projection also differs (first-16 maximum 0.0002320186).
+These sampled errors are not full-tensor bounds. Each restricted observer
+used for these boundaries preserves all eight normal oracle IDs.
+
+This supersedes the inference that layer-two expert arithmetic was the
+primary model failure. Disabling stacked MoE gate/up changes the layer-zero
+FFN output and later state; its improved eight-token prefix is insufficient
+to establish that it is the correct path. Disabling only fusion does not
+improve the prefix. Disabling FP16 native-quant matmul also leaves the
+attention error and 5/8 diagnostic prefix unchanged. Next work should
+isolate the first full-attention block's Q8_0 Q/K/V projections,
+normalization, RoPE, attention, and gate, using the exact input boundary.
+
+Artifacts and observer qualification:
+`/tmp/bitnet-goal-q4k-split-investigation/qualification.json`. Some
+restricted Qcur/Kcur/Vcur attempts emitted no tensor values; they provide
+no projection-correctness evidence. The broad tensor-name inventory is
+only used to locate nodes and is excluded from numeric qualification.
+No runtime code changed during this isolation step.
+
+### Full-attention precision contract isolation (2026-11-05)
+
+The complete 12,288-value layer-three Q projection matches an independent
+Q8_0 GGML CUDA replay exactly. That replay repeats the captured input across
+11 columns to retain the normal prefill shape. The normal model's Q/K/V
+projection rows independently match this replay over 12,288/512/512 values.
+Private raw-tensor observers for Q, K, V, post-RoPE Q, softmax, and pregate
+attention each emit real tensors and preserve all eight normal reference IDs.
+The runtime's full post-RoPE K differs by at most 1.1325e-6 (228/512 exact).
+
+The major remaining attention difference tracks GPU MMF input precision.
+A CPU double diagnostic with TF32 input truncation gives maximum softmax
+error 2.9863e-7 and maximum value-product error 4.3958e-7 (RMS 3.0963e-8)
+against the raw normal reference tensors. Full-FP32 value products using
+those same reference probabilities differ by up to 2.5144e-3. These are
+precision-contract diagnostics, not exact independent kernel fixtures.
+
+The CUDA backend already has short MMF256 attention kernels. Its prepared
+attention adapter currently admits only the MMA route, while transformer
+backend QKV-only preparation is restricted to shared-K/V, ungated plans.
+The gated Flash Next plan therefore falls back to CPU attention. The next
+change should connect the existing GPU MMF execution through prepared gated
+prefill with independent tests, rather than round CPU attention inputs.
+Both `--kv16` and `--flash` can restore the eight-token diagnostic while
+leaving the observed attention tensor incorrect; neither is qualification.
+No runtime code changed during this isolation. Sources, raw captures,
+projection replay, observer IDs, and diagnostic measurements are under
+`/tmp/bitnet-goal-attention-q8-replay/qualification.json`.
+
+### Prepared gated CUDA MMF attention integration (2026-11-06)
+
+Prepared CUDA attention now admits the existing MMF256 score/value kernels
+for FP32 cache, head size 256, position zero, and 4..16 prompt tokens.
+Reference-attention CUDA models request this prepared route without requiring
+`--flash`. CPU and Metal selection retain their previous behavior. The
+adapter retains separate Q/K normalization, partial RoPE, gate extraction,
+cache-policy output, and rejection before output writes for unsupported
+MMVF shapes. Explicit state preserves the fused versus separate RoPE
+contraction order when a reference normalization pass clears weight pointers.
+
+Independent pinned GGML CUDA fixtures qualify 24 numeric cases, including
+4/6/8/9/11/16 tokens, GQA4/GQA12, padded gated input, no norm/per-head norm,
+partial RoPE, full causal/window-three attention, aliases, and guards.
+Attention output and returned F32 keys match all 857,088 unique reference
+values across 1,714,176 comparisons. Eight two/three-token cases verify
+safe rejection of the distinct MMVF contract. All 16 original targets from
+the initial fixture set remain unchanged after expanding boundary coverage.
+Existing independent fixtures are unchanged. Sources:
+`test/reference_cuda_gated_mmf.c`, `test/cuda_gated_mmf_fixture.h`, and
+`test/cuda_gated_mmf_reference.h`.
+
+The complete year-prompt layer-three prefill FFN output now matches all
+2,560 normal-oracle values exactly; the previous path differed after this
+first full-attention block. This extends the earlier exact layer-two FFN
+and layer-three attention-input boundaries. It does not qualify subsequent
+layers or continuation. A follow-up restricted normal-oracle comparison
+also matches the full layer-four FFN output (2,560/2,560) and the first 16
+layer-seven FFN values. The layer-seven sample is not a full-tensor gate.
+Both oracle observers preserve the normal eight IDs. Qwen27 preserves
+192/192 short and 24/24 long CUDA sampled IDs. Flash Next still fails: short 129/176 prefix matches, with
+176 runtime versus 179 oracle IDs and one count-mismatched prompt; long
+5/24 with equal counts. The short metric is worse than the older 146/175
+checkpoint, despite the corrected independently verified boundary. Keep
+this regression visible while locating the next difference; do not switch
+to a compensating path based only on an eight-token diagnostic.
+
+The clean CUDA build is warning-free; standard, AVX512, the initial complete
+CUDA suite, expanded complete CUDA suite, and diagnostic isolation pass.
+Both full-suite logs are retained in the qualification manifest directory. All four user-owned
+probe binaries remain byte-identical after cleanup. Model comparisons use
+the immutable private token tracer. No throughput or vLLM-parity claim is
+made. Longer/resumed FP32 prepared attention and the two/three-column MMVF
+contract remain open. Frozen candidate, logs, reference captures, source
+hashes, and qualification: `/tmp/bitnet-goal-gated-mmf-final/`.
+
+### CUDA shared Q8 projection policy (2026-11-06)
+
+Shared CUDA Q8 gate/up/down projections no longer combine an explicit
+native quantized-activation request with the CPU AVX2 reference-accumulation
+flag. That flag selected the CPU-contract kernel before native execution.
+Backend policy now preserves the requested native CUDA projection. Metal
+selection and explicit legacy primitives are unchanged; the CUDA kernel
+source is byte-identical to the preceding prepared-attention checkpoint.
+
+Ten independent pinned GGML CUDA projection/bias fixtures cover 37x64,
+256x512, 2560x640, 2560x2560, and 640x2560 shapes with two seeds. Direct,
+graph capture/replay, both shared projection policies, fused bias/copy,
+and nonzero-offset guards pass 48,424 comparisons (24,212 unique reference
+values). The old policy fails the first independent case. Existing primitive
+fixtures are unchanged. Sources: `test/reference_cuda_shared_q8_matvec.c`
+and `test/cuda_shared_q8_matvec_reference.h`.
+
+The clean warning-free build, standard tests, complete CUDA suite, and
+diagnostic isolation pass; four user-owned probe binaries remain unchanged.
+The year diagnostic remains 5/8. First-decode layer-zero FFN exact values
+increase from 755/2560 to 1139/2560, with unchanged maximum error 2.98e-8.
+Whole-model gates still fail and the short prefix metric regresses again:
+121/178 tokens, one count-mismatched prompt (178 runtime / 179 oracle IDs),
+versus 129/176 in the preceding prepared-attention checkpoint. Long remains
+5/24 with equal counts. These failures are retained, not treated as model
+qualification. Artifacts: `/tmp/bitnet-goal-shared-q8-final/`.
+
+A separate scan of the preceding prepared-attention candidate matches the
+first 16 prefill FFN values at layers 15, 31, 39, 43, 45, and 46. The final
+layer 47 differs across all 2,560 values (maximum 3.0483e-3). Each restricted
+observer preserves the normal reference IDs. Critically, the reference
+layer-46 FFN tensor has 11 rows while layer 47 has one: the reference drops
+unrequested output rows before the final stateless FFN. This runtime's
+existing final-row selection is guarded by `!prefill_gpu`, retaining eleven
+rows on CUDA and changing the final projection's MMQ/MMVQ contract. Next
+work should qualify backend-aware final output-row selection while retaining
+all rows for all-logit requests and preserving already completed KV/SSM/PLE
+state. Scan and tensor-shape evidence:
+`/tmp/bitnet-goal-post-mmf-scan/prefill-scan.json`.
+
+### CUDA final stateless FFN output-row selection (2026-11-06)
+
+CUDA fallback prefill now selects only the last requested output row for the
+final stateless FFN, after token/KV/SSM/PLE updates complete. All-logit requests
+retain every row, and backend-managed fused chains keep their own selection.
+CPU behavior and Metal/WebGPU admission are unchanged. Two one-row arithmetic
+fallbacks also needed correction: CUDA-resident quant projections may now use
+the backend matmul callback at one token, with CPU retry on rejection; HC mixing
+retains CUDA norm/projection/activation arithmetic when cropping leaves one row.
+
+The year prompt's complete final-layer FFN now matches all 2,560 independent
+normal-oracle values exactly (previous maximum error 3.0483e-3). The HTTP
+prompt also matches all 2,560 final FFN values, with eight prompt tokens and
+selected position seven. Its restricted observer preserves the no-observer
+reference IDs. The initial position-five attempt emitted no final-row tensor
+and is excluded from numeric evidence. Despite the exact final FFN, HTTP
+still disagrees on the first sampled token, so the next boundary is HC output
+mixing, final normalization, and logits; this is not merely a later-decode issue.
+
+The new `test_prefill_output_rows` real-model gate checks last-logit, all-logit,
+and no-logit requests. On Qwen27 CPU and CUDA, all requested logits are finite,
+nine host/device state component hashes agree, and a teacher-forced next step
+has bit-identical full logits. The gate checks optional PLE state if present;
+the executed dense Qwen27 model does not qualify Flash Next PLE state. This
+is execution invariance, not an independent mathematical reference. Build with
+`make BN_ENABLE_CUDA=1 test_prefill_output_rows` and run with a dense GGUF path
+plus optional `--cuda`.
+
+Clean build, standard tests, adapter retry tests, full CUDA suite, and diagnostic
+isolation pass. A test-only shadow warning was corrected and the transformer
+target rechecked without warnings. Four user-owned probe binaries remain
+unchanged. Qwen27 retains 192/192 short and 24/24 long CUDA IDs. Flash Next
+remains 121/178 short prefix IDs (178 runtime / 179 oracle; one count mismatch)
+and 5/24 long with equal counts. No performance-parity or complete model
+qualification claim is made. Frozen binaries, state checks, model failures,
+reference tensor captures, and provenance: `/tmp/bitnet-goal-last-row-final/`.
+
+### CUDA native-quant logits activation contract
+
+The CUDA logits adapter now requests the native quantized-activation matrix
+path with one input row when the quant registry declares support. The generic
+CUDA matvec callback retains its existing floating-input contract; rejection
+falls back through the existing adapter. CPU and Metal dispatch are unchanged.
+This fixes the Q8_0 output head selecting the legacy floating-input projection.
+
+The existing ten independent Q8 projection fixtures now also exercise the
+actual logits adapter: 60,530 word comparisons across five paths, with the
+reference hashes unchanged. The old adapter fails the added path's first
+fixture; the corrected adapter passes. Unit tests cover CUDA acceptance,
+CUDA rejection/retry, and Metal dispatch. Clean CUDA build has no warnings;
+standard tests and the full CUDA backend suite pass. The four user-owned
+probe binaries were restored and hash checked after cleanup.
+
+The frozen, newly linked executable matches all eight normal-reference IDs
+for `HTTP status code 404 means`. The year prompt still matches only the first
+five of eight IDs. Thus the HTTP first-token defect is resolved, while decode
+correctness remains open. Two earlier diagnostic runs copied an executable
+before the link finished; those runs are explicitly excluded. Current artifacts
+are in `/tmp/bitnet-goal-native-logits-final/`, including the independent negative
+and positive fixture evidence in the adjacent `native-logits-*.log` files.
+These checks do not establish performance parity or full Flash Next support.
+
+The completed short gate improves from 121/178 to 145/178 prefix IDs, with
+178 runtime versus 179 oracle tokens and one count mismatch. All eight first
+IDs match. The long gate remains 5/24. Qwen27 regression gates retain 192/192
+short and 24/24 long IDs. The artifact directory contains `qualification.json`
+with executable/source hashes and complete gate counts.
+
+At the year prompt's first divergent decode position (15), the final
+normalized input to the output projection differs by 0.452323 maximum and
+0.0725122 RMS across 2,560 values (zero bit-exact words). The restricted
+`result_norm` observer preserves all eight no-observer reference IDs. The
+runtime's `gpu_result_norm` capture preserves its ordinary eight IDs. This
+places a remaining discrepancy before the logits projection; localize decode
+layer/state boundaries next. The initial runtime attempt selected the CPU
+logits tag and emitted no tensor, so it is excluded. Numeric evidence and
+output IDs are retained in `year-pos15-boundary.json` in the artifact directory.
+
+### CUDA hyperconnection Q8 projection policy
+
+Decode boundary tracing localizes an arithmetic mismatch inside the layer 3
+hyperconnection mixer. On the year prompt's first decode step (position 11),
+the HC residual before layer 3 and after its attention both agree within
+2.98e-8, and the attention projection agrees within 1.49e-7. Yet the mixer gate
+differs by 2.19e-3 and its FFN input by 3.79e-4. The restricted observers retain
+all eight normal reference IDs. Later layer 4 differences are downstream and
+do not by themselves establish a recurrent-state defect.
+
+The mixer requests CPU-reference Q8 accumulation when the small-dense native
+policy is disabled. Its CUDA down/up projections now instead request the
+native quantized-activation contract through a backend policy helper. The
+existing CPU/Metal projection flags and independent reference values remain
+unchanged. The failing old policy hashes `2520f2787d6c8993` where the pinned
+CUDA oracle expects `dc834a56adc00bd5` in the first fixture. The corrected
+policy passes 14 independent cases and 199,356 word comparisons across six
+paths. Four new cases cover actual HC down/up shapes, 320x10240 and
+10240x320, with two deterministic seeds. Regeneration preserves all ten
+existing target rows exactly. Unit tests check backend selection and the
+flags emitted by the actual HC graph builder.
+
+The captured layer 3 FFN input error falls to 5.96e-7 maximum (1.43e-7 RMS).
+The year prompt still diverges at output six, so this local correction does
+not qualify the full model. HC normalization still selects host reference
+ordering through the same small-dense policy; qualify that selection against
+the pinned CUDA oracle next, preserving the existing operator fixtures.
+Tracing artifacts and excluded empty captures are recorded in
+`/tmp/bitnet-goal-decode-boundaries/trace-manifest.json`; build, negative/positive
+fixture checks, and model gates are in `/tmp/bitnet-goal-hc-native/`.
+
+Clean warning-free build, standard tests, and the full CUDA suite pass. The
+completed Flash short gate is 132/179 prefix IDs, with 192 runtime versus
+179 oracle tokens and one count mismatch; long remains 5/24. This is not a
+whole-model improvement over 145/178. At position 15 the final normalized-state
+error grows from 0.452323 to 1.21561 maximum (0.102889 RMS), despite the improved
+first-decode mixer boundary. Preserve these failures while qualifying the
+remaining normalization ordering; independent operator agreement does not
+establish a correct full-model trajectory.
+Qwen27 regression gates remain 192/192 short and 24/24 long CUDA IDs. The
+artifact directory's `qualification.json` records all four model gates,
+source/executable hashes, test outcomes, and preserved probe hashes.
+
+### CUDA mixer normalization, reduction, and F32 injection
+
+The HC graph builder now selects CUDA normalization and gated reduction
+independently of the small-dense quant policy. Host-reference order remains
+available to CPU/Metal. Revalidation against pinned GGML CUDA df18bee11
+reproduces all 48 retained RMSNorm hashes unchanged. The old graph selector
+fails those targets; the corrected selector passes 387,072 RMSNorm word
+comparisons and 847,872 fused-mean comparisons. Graph tests check the emitted
+normalization and reduction parameters. No GPU kernel or reference target was
+changed to obtain those passes.
+
+The F32 HC injection projection also requested AVX512 accumulation on CUDA.
+It now follows the backend projection policy, preserving Metal's existing
+flags. The old flags fail the independent F32 matrix fixture. Two additional
+pinned CUDA targets cover the actual 4x10240 injection and 48x2560 recurrent
+coefficient shapes; all existing targets are preserved. Tests exercise both
+the native matrix path and the HC-selected graph flags, including output
+guards. Source generators are `test/reference_cuda_hc_rmsnorm.c` and
+`test/reference_cuda_hc_f32.c`.
+
+The normalization/reduction-only intermediate candidate passes standard and
+CUDA tests but regresses Flash Next to 118/179 short prefix IDs (192 runtime
+versus 179 oracle tokens); long stays 5/24. Its frozen executable, source
+hashes, and failed gates remain in `/tmp/bitnet-goal-hc-norm/`. Adding the F32
+injection correction gives 143/177 short prefix IDs, with 177 runtime versus
+179 oracle tokens and one count mismatch. This is still unqualified and
+does not establish improvement over the earlier 145/178 candidate. Final
+injection-candidate artifacts are in `/tmp/bitnet-goal-hc-inject/`.
+
+A standalone pinned-GGML replay of the actual layer 3 HC weights reproduces
+the captured reference normalized input (10,240 values), gate (10,240), and
+mixed output (2,560) exactly. This validates a controlled same-input replay
+for separating mixer execution from incoming-state differences. Model
+weights and provenance, replay code, and comparisons are retained in
+`/tmp/bitnet-goal-hc-replay/`. The first-decode model boundary still differs
+by about 3.79e-4 after these policy corrections; fixture passes alone do not
+qualify the complete trajectory.
+
+Feeding the runtime's captured post-attention residual into that pinned
+replay reproduces the runtime mixed output exactly, 2,560/2,560 values. The
+reference and runtime incoming residuals differ by only 2.98e-8 maximum
+(2.94e-9 RMS; 1,451/10,240 words identical), yet the two reference replays
+produce the observed 3.79e-4 output difference. Thus the corrected mixer
+matches the independent same-input graph; the remaining trajectory error
+must be traced earlier than that incoming residual. The replay/capture
+preserves the ordinary runtime IDs. See `same-input-check.json` for the
+comparisons. Further mixer arithmetic changes are not justified by this
+later boundary discrepancy alone.
+The final injection candidate passes the warning-free clean build, standard
+tests, and full CUDA suite. Qwen27 retains 192/192 short and 24/24 long CUDA
+IDs; Flash Next remains 143/177 short and 5/24 long. User-owned probe hashes
+are unchanged. `qualification.json` in the injection artifact directory
+records all model counts, source/executable hashes, independent negative
+controls, and same-input replay checks.
+
+### CUDA unscaled routed-expert weighted sum
+
+The first decode layer now provides a controlled localization: attention
+input, recurrent output, and FFN input each match all 2,560 independent values
+exactly. Before this correction, the FFN output matches 2,052/2,560 values,
+with maximum error 7.45e-9. Those tiny differences later cross quantization
+boundaries. Selected expert IDs and all ten routing weights agree, including
+an unobserved router replay. All 25,600 selected expert projection outputs
+also agree. Actual shared-expert projection, sigmoid, and final-combine
+replays rule out those branches for this captured input.
+
+The discrepancy is the weighted reduction. The pinned reference fuses
+multiply, expert views, and ordered additions for 2..15 experts even without
+an additional expert output scale. The runtime requested its existing FMA
+kernel only when a separate scale was present. Backend policy now also
+selects that kernel with unit output scale for eligible complete CUDA sums.
+One/16-expert cases, partial accumulation, missing backend capability, and
+Metal retain the existing selection. Existing explicit-scale handling and
+the unflagged weighted-add primitive are preserved.
+
+Using the same captured weights and expert outputs, the old reduction matches
+1,681/2,560 values; the corrected reduction matches all 2,560. Integrated
+layer 0 first-decode FFN output also becomes exactly equal. Forty new pinned
+CUDA fixtures cover 1/2/10/15/16 experts, widths 37/2560, one/three tokens,
+and two seeds, with direct execution, capture, replay, and output guards:
+311,640 word comparisons. The old selector fails the first two-expert case;
+the corrected selection passes with reference targets unchanged. Unit tests
+check both selection boundaries and emitted graph flags. Generators and
+targets are `test/reference_cuda_moe_weighted_sum.c` and
+`test/cuda_moe_weighted_sum_reference.h`.
+
+The initial stacked gate/up diagnostic did not represent the production
+borrowed-weight path and is excluded. A corrected separate-projection replay
+reproduces the ordinary runtime FFN output exactly. The first standalone
+router graph exposed a reference lookahead crash at graph end; a trailing
+CONT consumer avoids it without modifying reference source. Trace evidence
+and exclusions are in `/tmp/bitnet-goal-shared-gate/trace-manifest.json`.
+Candidate builds, fixture negative controls, and model gates are in
+`/tmp/bitnet-goal-moe-fma/`. The year prompt still diverges later, so exact
+agreement at this first layer does not qualify the model or establish parity
+with vLLM.
+
+The completed candidate passes a warning-free clean build, standard tests,
+the full CUDA suite, and Qwen27's 192/192 short plus 24/24 long CUDA gates.
+Flash Next remains unqualified: short 120/179 prefix IDs, runtime 192 versus
+oracle 179 tokens with one count mismatch; long 5/24. This is not a whole-model
+improvement over the preceding candidate. Layer 1 now receives an exact
+10,240-value residual. Its post-PLE attention-mixer input differs by at most
+2.38e-7 (950/2,560 exact), localizing the next trace to that transition. Both
+restricted observers preserve the normal reference IDs. Probe hashes remain
+unchanged. Full counts, corrected test-link recheck, source hashes, and tensor
+boundaries are recorded in the candidate's `qualification.json`.
+
+### CUDA decode positional-embedding path
+
+After the routed-sum correction, layer 1 receives an exact 10,240-value
+residual, but its attention-mixer input still differs. Decode positional
+embedding was forced through host-exact arithmetic by the model's recurrent
+policy even on CUDA. Prefill already used the GPU operator path. Backend
+policy now selects that GPU path for CUDA decode as well, while retaining
+the existing non-CUDA selector and fallback behavior. No PLE kernel or
+reference target was changed. Unit tests check CUDA versus Metal selection.
+
+On the first decode step of the year prompt (position 11), the old host path
+matches only 744/10,240 gated values (maximum error 3.73e-9) and 1,207/10,240
+convolution values (maximum 2.98e-8). The GPU path matches all 10,240 values
+in each capture exactly. The following attention-mixer input improves from
+950/2,560 exact values (maximum 2.38e-7) to 2,560/2,560. Restricted reference
+observers preserve the normal eight reference IDs. The runtime's ordinary
+eight IDs also remain unchanged, including the later divergence; this is a
+qualified local correction, not whole-model qualification.
+
+The first attempts requested GPU-only tags while the old policy executed the
+host path, so they emitted no runtime tensors and are excluded. The reference
+gate callback captures only one scalar due to its row selection; no complete
+four-stream gate proof is claimed from that file. Full gated-value and conv
+vectors are the numeric evidence. Captures and comparisons are in
+`/tmp/bitnet-goal-decode-boundaries/ple-host-comparison.json` and
+`ple-native-comparison.json`; the frozen candidate and build/model gates
+are in `/tmp/bitnet-goal-ple-native/`.
+
+The completed candidate passes the warning-free clean build, standard tests,
+and full CUDA suite. Qwen27 retains 192/192 short and 24/24 long reference IDs.
+Flash Next improves from 120/179 to 144/179 short prefix IDs, with runtime 192
+versus oracle 179 tokens and one count mismatch; long remains 5/24. These
+Flash checks retain the four opt-in flags for fused HC mean/post, resident
+prefix chaining, and GDN decode order, with 2 GiB RAM / 4 GiB GPU expert caches
+on SM120. No default-path or cross-device model qualification is implied.
+
+Layer 1's recurrent output and following FFN input each match all 2,560
+independent values exactly. Its FFN output is the next non-exact boundary:
+1,683/2,560 values match, maximum error 3.73e-9. The next investigation is
+therefore a controlled same-input layer 1 FFN replay. Complete model counts,
+boundaries, source/executable hashes, and unchanged user-probe hashes are
+retained in the candidate's `qualification.json`.
+
+### CUDA shared-expert scalar gate and activation policy
+
+The layer 1 FFN input is exact, but the old FFN output matches only
+1,683/2,560 values (maximum error 3.73e-9). A controlled replay of the actual
+input and weights isolates the shared scalar gate: pinned CUDA produces
+`0x3e1fe700`, while the CPU-reference gate path requested by the CUDA caller
+produces `0x3e1fe6ff`. Native CUDA gate arithmetic matches the reference.
+Combining identical routed and shared projections with the old scalar gate
+reproduces the ordinary runtime FFN output exactly; selecting native gate
+math reproduces the reference FFN output exactly. Both captured reference
+observers preserve all eight normal IDs.
+
+Backend policy now keeps shared-expert scalar gating and SiLU on CUDA's
+native arithmetic contract. Non-CUDA selection and explicit legacy operator
+flags remain unchanged. The same-input shared SiLU replay also improves
+from 356/640 exact intermediate values to 640/640; Q8 down projections for
+this input were already exact under both choices. This distinction avoids
+claiming that the intermediate SiLU discrepancy caused this particular final
+FFN error. No kernel or existing reference target was changed.
+
+Eighty-six new pinned-CUDA cases cover sigmoid/add/reset/complement and SiLU
+with input widths 32/256/640/2560/8192, varied output widths, and two seeds.
+Direct, capture, replay, and guard checks pass 331,062 word comparisons. The
+old selector fails a sigmoid/add case; graph tests check the flags emitted
+for CUDA and Metal. Generator and targets are
+`test/reference_cuda_moe_shared_math.c` and
+`test/cuda_moe_shared_math_reference.h`. The integrated layer 1 first-decode
+FFN output now matches all 2,560 reference values exactly. The year prompt
+still diverges later, so whole-model qualification remains open.
+
+The protected clean build has zero warnings; standard tests and the full CUDA
+suite pass. The frozen candidate passes Qwen27 short (192/192) and long
+(24/24). Flash short improves to 159/179 prefix IDs, with 179 tokens from
+each runtime and no count mismatches; Flash long remains 5/24. These are
+correctness comparisons against pinned llama.cpp, not vLLM performance parity.
+
+On the year prompt's first decode, layer 2 recurrent and FFN outputs and
+layer 3 attention input each match all 2,560 values exactly. Layer 3 attention
+output matches 223/2,560, maximum error 1.49e-7. This narrows the next
+investigation to attention/cache execution; it does not yet establish its
+cause. Full gates and boundary counts are in
+`/tmp/bitnet-goal-shared-native/qualification.json`.
+
+A subsequent cache dump from the normal reference graph (observer disabled,
+all eight generated IDs preserved) matches every prompt key and value in
+layer 3: 5,632/5,632 each, positions 0–10. The temporary diagnostic probe
+only adds access to the hybrid memory's attention cache; pinned reference
+libraries are unchanged. This excludes prompt-cache corruption at this
+boundary, while the current decode query/key and attention computation
+remain unqualified. Layouts, hashes, and counts are in
+`/tmp/bitnet-goal-attention3-cache/manifest.json`.
+
+Original layer 0 replay inputs were preserved separately. Layer 1 replay
+weights, input provenance, gate bits, and full-combine comparisons are in
+`/tmp/bitnet-goal-layer1-ffn/trace-manifest.json`; the frozen candidate and
+build/model gates are in `/tmp/bitnet-goal-shared-native/`.
+
+### CUDA reference-attention Q8 projection policy
+
+The layer 3 first-decode attention input is exact, but the old Q8 value
+projection matches only 121/512 values (maximum error 2.68e-7). A pinned
+GGML replay using the actual weights and identical input matches all 512
+normal-reference cache values. Runtime native Q8 projection also matches
+all 512; the explicit CPU accumulation flag reproduces the old runtime
+value vector exactly. The correction belongs to projection policy, not
+RoPE or the prompt cache.
+
+Reference attention preparation now selects native CUDA accumulation for
+Q8 projections in a native Q8 reference group. The existing mixed-format
+group contract is preserved: applying per-projection format flags broadly
+regressed Qwen27 from 192/192 to 180/192 under identical settings, while
+the prior frozen binary still passed 192/192. The final policy retains the
+qualified mixed-format flags and has a regression assertion for them.
+Normalization, attention arithmetic, explicit legacy operator flags, and
+non-CUDA paths retain their contracts.
+
+Four independently generated targets add actual Q/KV dimensions
+512x2560 and 12288x2560 with two seeds; all 14 prior targets are unchanged.
+Eighteen cases across projection adapters pass 529,434 word comparisons.
+Restoring the old selector fails the added attention-policy execution path
+on the first case. Graph tests inspect all three emitted projection flags.
+
+Integrated native Q8 query, new key, and new value vectors are each bit-exact
+(6144/6144, 512/512, 512/512). Prompt keys and values remain exact. The
+attention weighted output still differs: 380/6144 exact, maximum 3.34e-6.
+A separate pinned GGML attention graph using the identical captured Q/K/V
+reproduces the normal reference weighted output 6144/6144 exactly. Thus the
+remaining difference is within score/softmax/value reduction. The runtime
+`gpu_attn_probs` dump is excluded because it is not the fused path's actual
+probability intermediate. Replay source, inputs, hashes, and exclusions:
+`/tmp/bitnet-goal-attention3-cache/replay-manifest.json`.
+
+With identical captured inputs, runtime's separate score/softmax/value path
+also matches all 6,144 reference outputs; the automatically selected fused
+path reproduces the 380/6,144 runtime result exactly. This is evidence for
+qualifying the F32 GQA12 vector dispatch next, rather than changing RoPE,
+cache contents, or downstream projection math.
+
+The final protected clean build has zero warnings, standard tests and the
+full CUDA suite pass, and Qwen27 passes short 192/192 and long 24/24.
+Flash short is 152/179 prefix IDs with no token-count mismatch; long remains
+5/24. Operator corrections do not imply monotonically improving sampled
+prefixes while later arithmetic remains different. Whole-model qualification
+remains open. Final source hashes, gates, and scope:
+`/tmp/bitnet-goal-qkv-native-final/qualification.json`.
+
+### Fused CUDA non-flash F32 attention order
+
+A fused F32 path now preserves the reference MMVF score, row-softmax, and
+MMVF value-reduction order for 256-wide heads and up to 256 cached keys.
+It is selected by the existing reference-order graph flag when the model
+requires reference attention and flash math was not explicitly requested.
+Older flash targets and explicit flash requests retain their contracts.
+Longer reference contexts use the qualified separate operations while the
+long fused path remains open. Fusions that would bypass the requested order
+are excluded. All intermediate values remain on the device.
+
+The independent pinned GGML generator `test/reference_cuda_gqa12_order.c`
+covers GQA12/KV2 and GQA6/KV4, two seeds, zero/three-key windows, and lengths
+1/3/12/32/33/127/256/257/513/1047/2048. The 88 targets in
+`test/cuda_gqa12_order_reference.h` pass 1,622,016 bit-exact comparisons,
+including direct execution, graph capture/replay, nonzero cache offsets,
+padded strides, output guards, and unchanged-cache hashes. Restoring the
+old attention selection fails case 4 (three keys). Graph tests cover CUDA
+and Metal, explicit flash, F16 caches, and the 256/257 dispatch boundary.
+
+The first implementation was correct but slower in the captured real
+12-key replay: 31.2 versus 21.5 microseconds for separate operations.
+Coalescing value reads across output features while retaining the same
+reduction tree gives 19.3 versus 21.8 microseconds in 1,000 warmed adapter
+executions, both producing all 6,144 reference values exactly. This scoped
+wall-time measurement includes adapter readback; it is not end-to-end
+serving or vLLM parity evidence. The initial slower version was replaced.
+
+With weighted attention exact, the remaining layer 3 output error isolates
+to Q8 output-projection accumulation. A same-input pinned GGML replay and
+native CUDA projection each match the reference 2,560/2,560. Explicit CPU
+accumulation reproduces the old runtime vector exactly (only 223/2,560
+reference values exact). Output policy now selects native CUDA arithmetic
+within its native Q8 query group and preserves qualified mixed-format
+selection. Two new 2560x6144 targets retain all 18 previous Q8 targets;
+the 20-case adapter suite passes 767,352 comparisons, and restoring the old
+output selector fails its execution check.
+
+The integrated layer 3 attention output is now 2,560/2,560 exact. Its FFN
+output is the next measured non-exact boundary: 577/2,560, maximum 7.45e-9.
+Same-input replay is required before assigning that error to an operator.
+The next FFN input is also 2,560/2,560 exact. A same-input unobserved router
+replay finds 512/512 logits and all ten expert IDs exact, but normalized
+weights differ in all ten values, maximum 1.49e-8. This narrows the next
+correction to route-weight computation rather than projection or selection;
+a full-combine replay is still needed to assign the FFN error. Input,
+weights, source, IDs, and hashes are preserved in
+`/tmp/bitnet-goal-layer3-ffn/router-manifest.json`.
+
+The final protected clean build has zero warnings; standard tests, backend
+matrix, and full CUDA suite pass. Qwen27 remains 192/192 short and 24/24
+long. Flash short matches 145 prefix IDs, with 175 runtime versus 179
+reference tokens (one count mismatch); long remains 5/24. An incomplete
+reference long run under concurrent diagnostic work is excluded; the solo
+rerun supplies the long result. Correct isolated operators do not qualify
+the whole model while later arithmetic differs. No vLLM parity claim is made.
+Reference provenance and projection replay:
+`/tmp/bitnet-goal-gqa12/reference-manifest.json`; final source hashes and gates:
+`/tmp/bitnet-goal-attention-native-final/qualification.json`.
+
+### CUDA native router normalization policy
+
+The layer 3 FFN input and all 512 router logits are exact, but the old
+separate-top-k request differs in every normalized weight (maximum 1.49e-8).
+A controlled replay of the identical input and actual F32 router weights
+shows native fused top-k matches all ten reference weights and expert IDs.
+The separate request reproduces all ten old runtime weights exactly. The
+explicit CPU accumulation request is a different contract and is not the
+observed production path. These distinctions are preserved in
+`/tmp/bitnet-goal-router-order/comparison.json`.
+
+Backend policy now selects native CUDA fused routing for admitted power-of-two
+expert counts 32–512 and active counts 1–16. It retains normalization flags,
+output scale semantics, model anatomy, CPU/Metal selection, unsupported
+shapes, and explicit legacy operator flags. Decode policy and emitted flag
+checks cover the selection; the old architecture-level accessor remains
+unchanged. CUDA prefill already uses the native route contract.
+
+The new independent pinned GGML generator `test/reference_cuda_router_order.c`
+covers 480 cases: five expert counts, four active counts, normalized and
+unnormalized weights, two seeds, scales 1/0.75, tied probabilities, and
+selected experts sharing reduction lanes. Targets are stored separately in
+`test/cuda_router_order_reference.h`; earlier reference targets are unchanged.
+Direct, captured, and replayed executions pass 20,880 weight/ID comparisons
+with output guards. Restoring the old selector fails a tied-probability case
+(experts 32, active 2), including checkpoint expert selection.
+
+The integrated layer 3 FFN now matches all 2,560 reference values exactly,
+with its input unchanged. The year prompt's first eight sampled IDs now also
+match. This establishes the previously isolated FFN correction; whole-model
+qualification still depends on the complete prompt and long-context gates.
+The protected clean build has zero warnings; standard tests and the full
+CUDA suite pass. Qwen27 remains 192/192 short and 24/24 long. Flash now
+passes the full short gate: 179/179 sampled IDs with identical counts over
+eight prompts. The CLI text comparison still displays special-token text
+differently on one prompt; this is not a sampled-ID failure. The long gate
+remains 5/24, so long-prefill state and subsequent decode are the next gates.
+No whole-model or vLLM parity qualification is claimed.
+
+The first long-context boundary probe compares recurrent layer 0 at position
+1047, after the 1,047-token prefill. Its projected output matches all 2,560
+values exactly. The exact-name reference observer preserves the eight IDs
+from a separate normal graph run. This qualifies that output boundary only,
+not all recurrent state or the remaining long-context layers. Continue with
+the following FFN and later boundaries. Probe source, outputs, normal IDs,
+and hashes: `/tmp/bitnet-goal-long-decode-boundaries/qualification.json`.
+
+Reference source, inputs, weights, hashes, and counts are preserved in
+`/tmp/bitnet-goal-router-order/reference-manifest.json`; final source hashes
+and gates are in `/tmp/bitnet-goal-router-native-final/qualification.json`.
+
 ## Historical Context
 
 Earlier measurements on an Apple M1 Max showed the CPU path reaching high memory
@@ -6531,3 +11325,2646 @@ bandwidth utilization on BitNet ternary models and competitive throughput on
 several dense and sparse quantized models. Keep old numbers in commit history;
 current docs should prefer reproducible commands and recent gates over broad
 claims.
+
+
+### CUDA stacked Q8 prefill projection geometry
+
+The long Flash Next discrepancy begins in prefill history, before the first
+decode step. At prompt position 1038 the layer 0 SSM output, HC attention
+combine, and FFN input are bit-exact. Its combined FFN output differs by at
+most 2.98e-8, which enters layer 1 PLE history and later amplifies in recurrent
+state. Swapping only captured PLE history in a same-input replay reproduces
+both runtime and reference convolution outputs exactly; the current PLE
+normalization and convolution are therefore not the correction target.
+
+A same-input Q8 shared-expert replay isolates stacked gate/up geometry:
+separate projections match all 2,560 reference outputs, while the stacked
+projection reproduces the runtime output exactly. The allocation contains
+two logical 640-row projections, but the old launch uses 1,280 rows for MMQ
+partition selection. CUDA now retains stacked storage and projects two row
+views using the logical row count. This applies to contiguous host batches
+and the device shared-FFN helper for native quant formats; the specialized
+routed host layout and single-token path retain their prior contracts.
+
+`test/reference_cuda_q8_stacked_ffn.c` independently generates 52 pinned
+GGML CUDA cases: dimensions 256/2560, hidden sizes 96/640, two seeds, and
+batch sizes 1,2,3,4,8,9,16,17,33,129,257,513,1047. Separate and stacked host
+FFNs and device grouped shared-FFNs pass 45,934,592 output-word checks with
+output guards. These callbacks are not graph-capture tests. The old backend
+fails the 2560x640, 129-token stacked case against unchanged reference
+hashes. Actual model replay now matches 2,560/2,560 reference shared outputs
+for both storage layouts, and the integrated position-1038 combined FFN
+also matches all 2,560 values. Evidence is retained in
+`/tmp/bitnet-goal-prefix-ffn-replay/`,
+`/tmp/bitnet-goal-ple-long-history/`, and
+`/tmp/bitnet-goal-q8-prefill-native-final/`.
+
+The protected clean build has zero warnings; standard tests, the full CUDA
+suite, and backend matrix pass. Qwen27 retains 192/192 short and 24/24 long;
+Flash retains 179/179 short with identical stopping counts. A normal
+unobserved runtime run matches 24/24 unobserved reference completion IDs
+with matched 1,047-token microbatches. The reference itself changes IDs at
+step 5 under its default 512-token microbatch schedule, retaining the
+5/24 cross-schedule result. The diagnostic eight-token agreement is therefore
+explained by reference batching, rather than observation. Both schedules
+are retained; chunked/resumed and schedule-independent qualification remain
+open. See `matched-schedule-comparison.json` and the two reference logs.
+Layer 1 first-decode recurrent output remains numerically different
+(max 0.000338674). No vLLM parity is claimed. Final sources and gates:
+`/tmp/bitnet-goal-q8-prefill-native-final/qualification.json`.
+
+The remaining PLE discrepancy is now independently isolated. With the Q8
+correction, the captured position-1038 residual entering PLE is exact in all
+10,240 values, but its first gated stream still differs. Pinned GGML on the
+identical captured normalized key/query selects 512 reduction threads for
+one token and 128 for 1,047 tokens on the 188-SM device. Both existing CUDA
+kernel geometries reproduce their own GGML outputs exactly (four gates).
+The 128-thread replay also matches all four actual model reference gates;
+the currently requested 512-thread replay matches three, with one difference
+of 7.45058e-9. The exact-name model observer preserves all eight normal
+reference IDs. This isolates lost batch geometry in prefill orchestration,
+rather than a remaining error in the signed-root kernel. That orchestration
+correction is still open. Controlled sources, sparse full-batch reference
+replays, and the actual-model comparison are in
+`/tmp/bitnet-goal-prefix-ple-reduction/`.
+
+
+### CUDA PLE prefill reduction geometry
+
+Prefix PLE now propagates its logical token count through the projected
+embedding adapter. The generic signed-root gate callback accepts that batch
+count alongside its explicit reduction mode. Mode zero selects from the
+full stream-row count and backend SM metadata; modes 32/128/512 preserve
+explicit arithmetic contracts. Each call still processes one token, keeping
+sequential convolution-history updates, while the reduction retains the
+geometry of the logical batch. Single-token decode keeps explicit mode 512.
+The selection has no model-name branch and no hardware-count constant in
+transformer code. This corrects reduction ordering; it does not yet batch
+all PLE transfers or remove per-token allocations.
+
+`test/reference_cuda_signed_sqrt_batch.c` independently produces 28 pinned
+GGML CUDA targets with widths 256/2560, four streams, two rational-input
+seeds, and token counts 1,8,93,94,95,512,1047. The 93/94/95 cases bracket the
+188-SM reference device's row-reduction selection boundary. Runtime tests
+check first/middle/last token gates and full gated vectors, including the
+32-thread small-width mode. Earlier signed-root reference targets remain
+unchanged. Sources and controlled actual-model replays are retained in
+`/tmp/bitnet-goal-prefix-ple-reduction/`.
+
+All 28 new automatic-selection cases pass 473,424 output-word checks. Forcing
+the old 512-thread selector fails the retained 95-token, width-256 target.
+The earlier explicit-mode signed-root reference suite also passes unchanged.
+Protected clean build has zero warnings; standard tests and backend matrix
+pass. Final integration evidence is collected under
+`/tmp/bitnet-goal-ple-batch-native-final/`.
+
+The integrated 1,047-token-prefix history now matches all 92,160 saved PLE
+values exactly, and the following layer 1 recurrent output matches all
+2,560 reference values exactly. The captures exit successfully and use the
+same four Flash correctness flags and bounded 2 GiB RAM / 4 GiB GPU expert
+caches as the earlier checkpoint. Normal unobserved generation retains
+24/24 reference completion IDs under matched 1,047-token microbatches;
+the 512-token reference schedule remains a separate comparison.
+The full CUDA suite passes, Qwen27 retains 192/192 short and 24/24 long, and
+Flash retains 179/179 short. This qualifies the corrected boundaries and
+these token workloads, not all chunk/resume schedules or vLLM performance.
+
+
+### Chunked prefill entry admission
+
+The bounded-cache F32-KV continuation harness exposes a separate entry bug.
+`bn_prefill()` admits host-orchestrated batch fallback when native GPU
+chaining is unavailable, while `bn_prefill_no_logits()` previously tested
+only native chaining. Earlier chunks therefore silently ran sequentially
+for HC models, changing both arithmetic order and performance relative to
+the requested independent chunk schedule.
+
+Controls use the same pinned no-observer reference, token inputs, F32 KV,
+eight threads, 2 GiB RAM expert cache and 4 GiB GPU expert cache. The GPU
+qualification harness conservatively charges each cache entry 32 MiB (128
+slots); these cache budgets exclude base weights, PLE tables, KV and
+activations. Before correction, a 257-token prefix in chunks of 129 matches
+14/16 teacher-forced token checks, a 33-token prefix in chunks of 9 matches
+8/16, and a single 9-token prefix followed by resumed chunks of 9 matches
+15/16. Whole-prefix controls at 33 and 257 tokens each match 16/16. Each
+case includes eight initial decode tokens, 64 resumed input tokens on the
+specified chunk schedule, and eight more decode tokens. Failed checks feed
+the supplied reference IDs onward; their later matches are conditional.
+Replacing only intermediate no-logits calls with ordinary batched prefill
+makes the failing 33/9 case pass all 16 unchanged reference checks.
+
+Both APIs now use one batch-admission policy. The regression covers HC
+fallback admission without native chaining, missing backend/config, and
+explicit no-prefill. Existing independent token files are retained for the
+post-correction replay. Pre-correction sources, binaries and logs are in
+`/tmp/bitnet-goal-flash-chunked-f32/`; final evidence is collected in
+`/tmp/bitnet-goal-prefill-entry-final/`.
+
+Post-correction, the original no-logits harness passes 16/16 on 257/129,
+33/9, 257/257, and 33/33 (prefix length / chunk size). The 9/9 case improves
+its trajectory but retains one resumed mismatch (15/16, now resumed step 2).
+Longer matched replays remain open: 1047/512 matches 14/16 (initial step 6
+and resumed step 3 fail), and 1047/129 matches 15/16 (resumed step 3 fails).
+The 1047/512 initial candidate gap is only 0.00152588; no tolerance is used
+to turn sampled-ID failures into passes. These are independent teacher-forced
+checks, not a claim of complete schedule qualification. All underlying
+reference token files and failed logs are retained.
+
+The entry correction passes a protected clean build with zero warnings,
+standard tests, backend checks, and the full CUDA suite. CUDA math source
+is unchanged from the PLE batch-geometry checkpoint. Qwen27 retains 192/192
+short and 24/24 long; Flash retains its 179/179 short gate. The remaining
+continuation discrepancies require boundary/state comparison before any
+further numerical change.
+
+The additional 1047/1047 whole-prefix plus resumed control passes 16/16.
+The 9/9 all-logits control retains the same resumed step-2 mismatch as the
+corrected no-logits API, isolating that remaining numerical failure from
+the admission asymmetry. Final build/source hashes, retained failures,
+controls and gates: `/tmp/bitnet-goal-prefill-entry-final/qualification.json`.
+
+
+### Recurrent state handoff from GPU decode to host prefill
+
+Read-only snapshots isolate the remaining 9/9 resumed failure. Immediately
+before resumed prefill, the first three device recurrent states (786,432
+F32 words each), their convolution histories (30,720 words each), and PLE
+history (92,160 words) match the pinned no-observer reference exactly. The
+host recurrent mirrors are stale: layer 0 differs by up to 2.11579. After
+resumed prefill without a refresh, layer 0 convolution history is still
+exact, but its recurrent state differs by up to 0.549348; slower-decaying
+heads retain the error while faster heads forget it.
+
+A controlled replay changes only the device-to-host import of recurrent and
+convolution state before resumed prefill. All 16 unchanged independent IDs
+then match, and all 2,543,616 captured post-resume words across those three
+layers and PLE history are bit-exact. The reference snapshots preserve all
+eight initial and all eight resumed normal IDs. No external model math or
+reference targets are changed. Sources and negative/positive snapshots:
+`/tmp/bitnet-goal-resume9-state/`,
+`/tmp/bitnet-goal-resume9-handoff/`, and
+`/tmp/bitnet-goal-resume9-refresh/`.
+
+Production now records pending decode state in per-request backend session
+metadata. Successful GPU forward, no-logits forward and argmax mark it;
+CPU completion, successful state upload and session reset clear it. Before
+host-orchestrated recurrent prefill, the backend adapter imports both state
+buffers when needed. It clears the marker only after both reads succeed,
+so a failed second read can retry both before host computation proceeds.
+Consecutive host batches do not repeat this transfer, and native GPU
+prefill does not request the host handoff. Unit tests cover independent
+sessions, reset, complete transfer sizes/content, failed-read retry and
+avoiding redundant reads. This is a decode-to-host-prefill handoff marker,
+not a claim of complete multi-session GPU buffer scheduling.
+
+The production handoff now passes the previously failing 9/9 and 1047/129
+replays. Seven of eight retained schedules pass all 16 unchanged reference
+checks. The 1047/512 case reaches 15/16: its initial step-6 mismatch remains,
+while all eight resumed checks pass on the common reference history. The
+normal production state snapshot reproduces all 2,543,616 captured words
+bit-for-bit, without a manual refresh in the qualification harness.
+Protected clean build has zero warnings; standard tests, full CUDA suite
+and backend matrix pass. Qwen27 retains 192/192 short and 24/24 long; Flash
+retains 179/179 short. Its separate default-reference long comparison stays
+5/24 because the runtime and reference use different batch schedules.
+Full source/build hashes and retained failures:
+`/tmp/bitnet-goal-recurrent-handoff-final/qualification.json`.
+
+The remaining matched 1047/512 failure is isolated beyond the corrected
+handoff. Passive snapshots after initial prefill find the first three
+recurrent states, their convolution histories and PLE history exact. The
+first attention cache at layer 3 differs in all rows (301,826/536,064 words
+exact, max 0.000284791), with later recurrent layers diverging downstream.
+Host and device keys agree, excluding upload corruption at this boundary.
+On identical captured raw K and gamma at position 0, independent pinned
+GGML RMSNorm matches all 512 actual reference cache values. The CPU prefill
+RMSNorm replay instead reproduces all 512 runtime values exactly (only 334
+match the reference). This isolates a backend numerical-contract mismatch
+in key normalization, without changing the CPU contract or any kernel.
+The passive runtime hook preserves all 16 candidate/reference predictions;
+the no-observer reference snapshot preserves all 16 normal IDs.
+Evidence: `/tmp/bitnet-goal-long512-state/` and
+`/tmp/bitnet-goal-long512-k-norm/`. Native CUDA prepared attention for the
+large F32 batch is the next gate; whole-model and performance goals remain
+open.
+
+## Flash Next GGUF MoE reference qualification
+
+The pinned GGUF plugin at `e454affe0ca23c9dc8754ec3033270cb30622ed5` needs
+correctness fixes before its CUDA grouped MoE path can be a Flash Next baseline.
+The unpatched kernel skips expert IDs above 255 even though this checkpoint has
+512 experts. Its grouped token-offset lookup also indexes a one-element local
+array by warp number. GPU memcheck independently finds reads beyond the actual
+640-column Q5_1 down-weight tensor when the final weight tile is partial.
+Unpatched grouped results and timings for this configuration are unsupported
+comparisons; zeroed high experts reduce the work and produce incorrect outputs.
+
+Apply these patches, in order, to a clean checkout of that plugin revision:
+
+1. `bench/patches/vllm_gguf_moe_expert_count.patch` passes the actual tensor
+   expert count through the grouped kernels and retains invalid-ID rejection.
+2. `bench/patches/vllm_gguf_moe_metadata_index.patch` uses the current warp's
+   first token offset when loading activation metadata.
+3. `bench/patches/vllm_gguf_q51_partial_tile.patch` passes the valid block count
+   to tile loaders and masks Q5_1 loads in the final partial tile. It covers
+   both grouped MoE and ordinary quantized matrix multiplication.
+
+The reference build uses image
+`745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29`,
+`TORCH_CUDA_ARCH_LIST=12.0a`, and the plugin's original build flags. The original
+wheel remains unchanged; reference containers install it and replace only its
+CUDA extension with the corrected build. Record all three patch hashes and the
+extension hash alongside benchmark results. The original wheel hash is
+`d6dd44400cc02ca7f3a0452f32589d2eed6588da10ff04858d78b551f9f828ef`.
+
+The corrections preserve quantizer, dot-product, activation and reduction
+formulas. Capacity tests preserve all 24 previously valid vector/low-ID outputs
+and correct eight skipped high-ID cases. Group-placement tests use identical
+weights with varying input scales for Q4_K, Q5_K, Q5_1 and Q8_0. Complete FFN
+captures cover layers 2, 3 and 47 at 1, 5, 17, 63, 64, 65, 128, 129 and 257
+tokens, including real high expert IDs, shared experts and HC combination.
+All 513 captured tensors are reproduced byte-for-byte after the bounded-load
+fix; this preserves the independent values rather than regenerating goldens.
+GPU memcheck passes the capacity/grouping tests and actual Q5_1 layer-3 replay
+at 65 and 257 tokens. Use `--report-api-errors explicit` for these reference
+checks: cuBLAS's implicit unsupported-fabric capability probes otherwise appear
+as four API reports. Memory checking remains enabled, and the original reports
+are retained with the evidence.
+
+Reference probes are `test/reference_cuda_bf16_moe_capacity.py`,
+`test/reference_cuda_bf16_moe_grouping.py`, and
+`test/reference_cuda_bf16_flash_moe.py`. Evidence, original failures, corrected
+build provenance and capture hashes are under `/tmp/bitnet-goal-flash-experts/`.
+These qualify the comparison baseline and independent FFN values. Resident expert
+execution, bounded placement and whole-model vLLM performance parity remain open.
+
+## Native gathered expert BF16 FFN qualification (2026-11-08)
+
+`test/reference_cuda_bf16_expert.c` replays the independently qualified Flash
+Next captures above against optional SM120 resident CUDA projection and FFN
+operations. It covers layers 2, 3 and 47 at all nine captured batch sizes,
+including the 64/65 MoE dispatch boundary, 128/129 router boundary and expert
+IDs above 255. The three actual format pairs are Q5_K/Q8_0, Q4_K/Q5_1 and
+Q4_K/Q8_0 for gate-up/down respectively.
+
+All 3,140 gathered expert groups match exactly: 9,420 isolated projections
+compare 83,980,800 BF16 values; complete FFN activation/down outputs compare
+69,984,000 more. The complete FFN uses original gathered input and raw expert
+weights, without reference activations as inputs. The separate down-projection
+test uses captured activations to isolate that operation. Original captures and
+comparison-plugin patches are preserved. Full replay under GPU memcheck reports
+zero errors and leaks. Full layer-3 batches 64 and 65 pass racecheck; selected
+experts at layer-3 batches 64, 65, 257 and layer-2 batches 64, 65 pass both
+racecheck and synccheck. A redundant all-expert batch-257 race run was deliberately
+interrupted when narrowing this scope; its partial log is retained.
+
+The API requires borrowed raw expert handles to remain valid through stream
+completion, request-owned disjoint BF16 views and pre-reserved A8 scratch. Plan
+validation checks all three projections before launching any FFN work. Guard
+tests verify rejected plans preserve output/scratch sentinels and a valid retry
+succeeds after reserving scratch. Quant capability metadata distinguishes this
+MoE arithmetic from ordinary dense dispatch and decoded-weight GEMM.
+
+Nsight captures of a warmed layer-3 expert at total batches 64 and 65 each show
+six kernels on one stream: input quantization, gate and up projections, SiLU
+product, activation quantization and down projection. Gate/up share quantized
+input. Both traces contain no allocations, copies, memset or device fence during
+submission; the test explicitly waits once after submission. These are structural
+checks, not latency measurements or vLLM performance parity results.
+
+The harness groups/gathers on the host and retains one expert's three weight
+handles at a time. It does not establish GPU grouping performance, a total VRAM
+bound, cache admission/eviction correctness or complete MoE execution. GPU
+grouping, routing-weight BF16 rounding and reduction, shared-expert integration,
+event-protected bounded placement and whole-model gates remain required.
+Commands, binary/source hashes, numerical/sanitizer logs and traces are recorded
+under `/tmp/bitnet-goal-resident-expert/`.
+The protected clean CUDA build, standard suite, complete CUDA backend suite and
+diagnostic isolation pass without compiler warnings. The final qualification
+audit verifies all 513 oracle files remain unchanged and records current hashes.
+
+## Resident GPU MoE grouping and routed composition (2026-11-08)
+
+`test/reference_cuda_bf16_moe_group.c` checks optional SM120 grouping/gather and
+weighted reduction against the same preserved Flash Next captures. Grouping uses
+four kernels: reset, histogram, prefix scan and scatter/gather. It produces exclusive
+expert offsets, grouped-slot and inverse maps; order within an expert is unspecified.
+Reduction uses three kernels: inverse-bound validation, multiplication rounded to
+BF16 in original slot order, then ordered F32 summation rounded to BF16. It consumes
+the grouping status without host readback. Invalid device IDs set status mask 1;
+invalid inverse bounds set mask 2. Invalid metadata suppresses downstream writes.
+
+All 27 actual cases and 36 synthetic cases pass across three repeats, totaling
+512,792,532 BF16 comparisons for gathered input, weighted slots and routed output.
+The synthetic cases span 1/3/65/257 tokens, dimensions 1/37/2560, all routes to expert
+511, distributed routing and concentrated IDs 0/256. They exercise duplicate IDs,
+empty groups, bad device IDs and inverse bounds, metadata resets, valid retries,
+request ownership, aliasing, alignment, extents and unchanged inputs. Host-plan
+rejections preserve metadata/output sentinels. GPU memcheck reports zero errors or
+leaks; racecheck and synccheck pass the complete 63-case replay.
+
+`test/reference_cuda_bf16_expert.c ... --grouped` adds composition with the qualified
+raw expert FFNs. It uses actual checkpoint weights and GPU-gathered input, then
+compares native weighted slots and routed output with the independent captures.
+All 27 cases match 61,585,920 BF16 values exactly; the full composition also passes
+memcheck with zero errors or leaks. Captured down projections are not inputs to
+this composition. Only 513 offsets plus one status word (2,056 bytes) return to the
+host before expert staging. The harness explicitly completes every expert before
+releasing its three borrowed weight handles. This establishes arithmetic and buffer
+composition, not asynchronous cache lifetime correctness or a total VRAM bound.
+
+Warm Nsight traces at layer 3/batch 257 show four grouping and three reduction
+kernels respectively, each on one stream with no submission allocations, transfers,
+memset or device-wide fence. Each capture has one explicit outer completion wait.
+These traces are structural checks, not latency or vLLM parity measurements.
+
+`make BN_ENABLE_CUDA=1 test_cuda_moe_group` runs the 36 synthetic cases without a
+model or capture files. The complete CUDA test target chains this after the FP16
+test and before the backend suite, keeping GPU probes sequential under `make -j`.
+Unsupported optional precision profiles explicitly skip this test. Full commands,
+logs, traces and hashes are under `/tmp/bitnet-goal-resident-group/`.
+
+The current grouping materializes one BF16 input row per route. A production
+prefill path still needs original-input quantization reuse, batched expert pointer
+banks, stream/event-based bounded weight placement, shared experts and HC integration.
+Default native model admission and whole-model performance qualification are unchanged.
+The protected clean build and standard suite pass without warnings. The complete
+CUDA suite, including the new synthetic target and diagnostic isolation, also
+passes without warnings. The final audit preserves all 513 independent reference
+files and records current source/binary hashes.
+
+## Asynchronous bounded expert weight-bank qualification (2026-11-08)
+
+The optional SM120 bank API reserves 1–4 fixed slots with 1–64 raw expert triples
+per slot. Payload budgets apply separately to pinned host memory and device weight
+memory, using the maximum supported pair (Q5_K gate/up, Q8_0 down). Actual supported
+pairs use Q4_K/Q5_K gate/up and Q5_1/Q8_0 down. Each acquired lease reports actual
+serialized gate/down sizes and per-expert stride. Matching reserve is idempotent;
+resizing a live pool is rejected. A8 scratch and activation views are reserved
+separately and are excluded from the bank budgets.
+
+Acquisition returns BUSY while the slot's previous compute-completion event is
+pending, without waiting or modifying the output lease. Generation and shape checks
+reject stale/forged leases. Submission validates the complete bank before queuing
+any upload, then uses one bulk H2D copy on a separate copy stream, an event dependency
+on the compute stream, the expert FFNs and a completion event after their final
+weight consumer. Thus pinned bytes and device weights remain protected through
+compute completion, rather than only DMA completion. Request teardown completes
+compute and copy streams before freeing the pool. Counters report reserved payload,
+queued upload bytes, submitted banks/experts and busy acquisitions; busy counts are
+poll counts, not transfer-stall durations.
+
+`test/reference_cuda_bf16_expert.c ... --banked` streams all 27 preserved actual
+cases through two banks of eight experts. `--banked1` repeats the same cases with
+one expert per bank, stressing rapid reuse. Both configurations match 61,585,920
+weighted/output BF16 values exactly, or 123,171,840 comparisons combined. Each run
+processes 3,140 expert groups and uploads exactly 11,035,750,400 raw bytes. The
+eight-expert run uses 408 bulk submissions; the single-expert run uses 3,140.
+Reserved weight payload per memory tier is 63,897,600 bytes and 7,987,200 bytes
+respectively. These figures bound bank payload, not total RAM/VRAM. The host checks
+2,056 bytes of grouping metadata before staging each case; no activation readback
+occurs between grouping, expert execution and resident reduction.
+
+Both complete streaming replays pass memcheck with zero errors and leaks. The
+model-free `test/test_cuda_moe_bank.c` covers exact/undersized budgets, invalid
+geometry and formats, idempotent reserve, no resize, cancel/reacquire, stale leases,
+whole-bank rejection before upload, insufficient scratch, view ownership/aliasing,
+two-slot reuse, partial banks, changed format pairs, exact transfer counters and
+teardown without an explicit completion wait. Its normal, memcheck, racecheck and
+synccheck runs pass; actual layer-3/batch-65 matrix execution also passes synccheck.
+The new `test_cuda_moe_bank` target follows the existing group test and precedes the
+backend suite, retaining sequential GPU execution under `make -j`.
+
+The layer-3/batch-257 trace streams 206 experts in 26 bulk copies totaling
+632,832,000 bytes. It contains 1,236 FFN kernels (six per expert) on one compute
+stream and H2D copies on a distinct stream. The trace records one compute-stream
+wait and two event records per bank, no submission allocation, memset, event or
+device synchronization, and one explicit outer completion wait. Union intersection
+of copy/kernel intervals shows 986,753 ns of overlap in this single trace. This
+demonstrates overlap; it is not a latency or vLLM parity benchmark.
+
+The implementation still uses host group descriptors and launches per-expert FFNs.
+It does not yet provide grouped matrix launches, original-input quantization reuse,
+model-cache admission/eviction integration, cold/warm offload latency metrics or a
+global serving memory budget. Shared experts, HC integration and whole-model
+qualification remain open. Commands, original captures, binary/source hashes,
+per-case counters, sanitizer logs and traces are under `/tmp/bitnet-goal-expert-bank/`.
+The protected clean build, standard suite and complete CUDA backend chain with
+diagnostic isolation pass without warnings. The final qualification audit verifies
+unchanged independent captures, quant kernels and protected diagnostic binaries.
+
+## Reusing original-input A8 quantization across expert banks (2026-11-08)
+
+The optional `--prepared` and `--prepared1` reference modes prepare original BF16
+token rows once, validate grouped slot bounds and map complete A8 blocks into
+expert order. Gate/up projections then read the mapped blocks directly; down
+projection inputs are still quantized from the computed expert activations.
+The copied blocks preserve scale, original-input-sum metadata and quantized values.
+Existing vector/matrix arithmetic and the total-batch 64/65 dispatch boundary are
+unchanged. A zero preparation ticket retains legacy per-expert input quantization.
+
+Setup explicitly reserves original/grouped A8 workspace with fixed capacity and
+a separate payload budget. At 257 tokens and dimension 2560, this occupies
+8,141,760 device bytes, separate from weight-bank payload and linear scratch.
+Preparation validates request ownership, exact/disjoint views and capacity before
+queuing work, then returns a request-local generation ticket. Subsequent banks
+must match both the latest generation and prepared batch size. Repreparing is
+ordered on the compute stream after previously submitted consumers. Grouping status
+must be checked by the caller before bank submission; malformed slot maps set the
+device status and suppress mapping rather than indexing outside input storage.
+
+Both capacities (one and eight experts per bank) match all 27 actual cases exactly:
+61,585,920 weighted/output BF16 comparisons each. The legacy eight-expert path
+also matches all 27 cases on the current implementation. The model-free bank test
+adds undersized/invalid workspace setup, idempotence/no resize, missing preparation,
+bad views/maps, generation invalidation, different batch geometry and valid retries.
+Both full prepared replays pass GPU memcheck with zero errors and leaks; lifecycle
+memcheck/racecheck/synccheck and actual matrix-path synccheck also pass.
+
+The layer-3/batch-257 trace has 206 expert groups, 26 bulk H2D copies and unchanged
+632,832,000 raw upload bytes. Preparation contributes three kernels (map validation,
+original-input quantization and A8 mapping); each FFN contributes five. Total
+compute kernels are 1,033 versus the previous 1,236, with one original-input
+quantization plus 206 down quantizations. The trace retains separate copy/compute
+streams, no submission allocation or internal host fence, and one explicit outer
+completion wait. Observed copy/kernel overlap is 1,486,245 ns in this single trace;
+it is a structural check, not a throughput or vLLM parity benchmark.
+
+The current grouping still materializes BF16 routed input for bank view validation,
+and the prepared workspace materializes grouped A8 blocks. Grouped kernels that
+index original A8 rows directly can remove those copies and reduce per-expert
+launches. Model-cache prefill/decode policy, shared FFNs, HC integration, whole-model
+gates and matched performance comparisons remain required. Commands, source/binary
+hashes, preserved references and traces are under `/tmp/bitnet-goal-moe-input-reuse/`.
+The protected clean build, standard suite and full CUDA suite with diagnostic
+isolation pass without compiler warnings. The final audit verifies preserved
+reference bytes, quant kernels and user diagnostic binaries, and records current
+source/binary hashes.
+
+## Grouped expert-bank CUDA launch qualification (2026-11-08)
+
+`--grouped-bank` and `--grouped-bank1` in the expert reference probe select four
+compute launches per bank: one gate/up projection grid, activation, down-input
+quantization and down projection. The projection grids select expert and role,
+with token/row tiling inside each expert. Launch width uses the largest active
+row count in the current bank, and inactive tiles exit uniformly before shared
+barriers. The original Q4_K/Q5_K/Q5_1/Q8_0 MMVQ/MMQ bodies, affine quantizer and
+two-round BF16 SiLU product are extracted as shared device functions; source-body
+hashes and independent numerical replay audit that extraction. Matrix/vector
+selection still follows total MoE tokens through the 64/65 boundary.
+
+Grouped setup explicitly budgets pinned descriptors, device descriptors and
+grouped down A8 scratch. At capacity eight/two slots, descriptors occupy 192 bytes
+per memory tier. At 257 tokens the grouped device workspace is 1,850,592 bytes,
+including those descriptors; original/grouped input A8 storage remains 8,141,760
+bytes separately. Raw weight-bank payload remains 63,897,600 bytes per tier.
+These figures exclude public activation views, linear scratch and allocator/event
+overhead. Each submission copies descriptors into stable pinned storage and queues
+one descriptor upload alongside the raw weight upload; the existing ready/completed
+events protect both descriptor and weight lifetimes. Validation rejection queues
+neither upload.
+
+Both grouped capacities match all 27 preserved actual cases exactly: 61,585,920
+weighted/output BF16 values each. The prepared per-expert and legacy paths also
+match all 27 cases on the extracted cores. Model-free matrix tests add 12 cases
+over hidden widths 32/96/160 and all four gate/down format pairs. They use one-row
+and five-row experts at separated offsets, exercise partial row/four-token tiles,
+and verify zero-weight outputs plus untouched gap/suffix sentinels for gate, up
+and down. Lifecycle tests cover separate workspace budgets, no resize, missing
+preparation/workspace and invalid grouped flags. Both full grouped replays pass
+memcheck with zero errors or leaks. Lifecycle/tail racecheck and synccheck, actual
+layer-3/batch-65 racecheck, and layer-3/batch-257 plus layer-2/batch-65 synccheck pass.
+
+The layer-3/batch-257 trace has 206 experts and 26 banks, with 107 compute kernels:
+three preparation kernels and four per bank. The prepared per-expert path used
+1,033 kernels for this case. Raw uploads remain 632,832,000 bytes; 26 descriptor
+copies add 2,472 bytes, yielding 52 H2D copies. Event counts remain one wait and
+two records per bank, with no submission allocations, memset, event/device fence
+or internal host completion wait. The harness explicitly waits once at the end.
+
+This trace observes zero copy/compute overlap. Kernel execution totals 7,120,357 ns,
+H2D execution 11,234,604 ns, and the first-to-last device activity spans 45,583,314 ns.
+The remaining span contains gaps consistent with the host staging/launch timeline;
+these single-trace timings do not isolate their cause or establish throughput or
+vLLM parity. Cache integration and matched end-to-end measurement are still needed.
+Source hashes, preserved references, per-case accounting, sanitizer logs and the
+trace are under `/tmp/bitnet-goal-grouped-bank/`.
+The protected clean build, standard suite and full CUDA suite with diagnostic
+isolation pass without compiler warnings. The final audit verifies independent
+reference bytes, core-body extraction hashes and protected diagnostic binaries.
+
+
+### Complete native Flash Next HC/FFN composition (2026-11-08)
+
+The actual-weight composition probe now executes HC normalization/projections and
+mixing, router/shared-gate projections, native top-k/grouping, bounded grouped
+expert banks, ordered routed reduction, the shared Q8 FFN, gated addition, and HC
+injection/combine. Only the original wide hidden state seeds neural computation;
+expected intermediate activations and routing decisions are comparison outputs.
+All 27 preserved cases (layers 3/2/47, token counts 1/5/17/63/64/65/128/129/257)
+match 215,275,158 BF16 values and 65,610 routing values/indices exactly.
+
+The original shared `SiluAndMul` uses one final BF16 rounding, whereas routed
+experts use separate BF16 SiLU/product rounding. The previous shared two-round
+assumption was incorrect. An explicit dense FFN activation profile preserves the
+existing separate default and selects fused rounding for this shared branch.
+Independent tests cover 524,288 inputs per profile. Accurate division also fixes
+three BF16 sigmoid subnormal cases and 21 SiLU/product edge cases; HC scaled SiLU
+and extreme-gate tests cover these boundaries. Reference captures remain intact.
+
+The layer-3, 65-token trace has 165 expert groups in 21 banks, 506,880,000 raw
+weight upload bytes, 1,980 descriptor bytes, one 2,080-byte metadata readback,
+and two stream completion fences (metadata plus explicit outer completion).
+Compute stays on one stream; copies use the separate transfer stream. No
+allocation, memset, device-wide synchronization or event completion wait occurs
+inside the captured execution. Operator setup is warmed, but weights still stream
+on each replay: this is not a warm-cache or vLLM performance comparison.
+
+The complete probe and model-free tests pass memory/synchronization checks;
+model-free tests also pass race checks. Evidence and commands are preserved in
+`/tmp/bitnet-goal-shared-hc/`. Production model/session integration, global cache
+leases and placement budgets, short/long/chunked/resumed model gates, and matched
+end-to-end vLLM measurements remain open. Audit modern dense-model activation
+profile selection independently before changing its default or prior goldens.
+
+
+### Production-owned Flash Next FFN layouts (2026-11-08)
+
+The backend precision container now owns immutable BF16 router/shared-gate
+projections and raw Q8 shared FFN weights for all 48 layers. Routed expert bytes
+remain in CPU RAM/file storage; preparation copies only expert-map anatomy and
+borrows any existing repacked CPU source. It does not upload all routed experts.
+The shared FFN explicitly selects the independently qualified fused SiLU profile.
+
+Preparation requires the same HC/PLE/GDN/QSA source container, validates every
+layer before GPU uploads, rejects unsupported routing scales/weight formats and
+expert geometry/offset overflow, and checks an aggregate GPU tensor budget.
+Each raw F32 router upload is released after BF16 conversion. On any failure,
+new allocations are released and the existing attention/HC components survive.
+Layouts cannot be replaced while live and are released by backend model teardown.
+Mock lifecycle tests inject all 15 upload and six decode failures across three
+layers, check preflight failures without uploads, and verify exact budget edges.
+
+Actual checkpoint preparation retains 376,750,080 FFN tensor bytes, with a
+376,765,440-byte preparation peak. Including HC/PLE/GDN/QSA, declared payload is
+7,132,468,352 bytes and peak is 7,132,483,712 bytes. These exclude allocator/context
+overhead, CPU expert source, request activations and staging/cache budgets.
+The full FFN composition probe's `--model-layout` mode borrows these production
+router/shared handles. All 27 original cases still match 215,275,158 BF16 values
+and 65,610 routing values/indices exactly; memcheck reports zero errors/leaks.
+The clean build has zero warnings and the standard test suite passes.
+
+Evidence is under `/tmp/bitnet-goal-flash-ffn-model/`. This qualifies model-owned
+FFN preparation, not a production session FFN submit hook: the probe still drives
+operator composition and expert-bank staging. Request orchestration, global
+cache leases/budgets and cold/warm placement policies remain open, along with
+whole-model gates and matched vLLM performance/serving acceptance.
+
+
+### Production Flash Next FFN request and RAM-cache policy (2026-11-08)
+
+`bn_transformer_bf16_flash_ffn_submit` now executes the full native FFN inside the
+production HC transaction, using immutable backend-model weights and request-owned
+scratch. Preparation reserves two cap-8 expert banks, input/down A8 workspace,
+routing and activation buffers under explicit host/GPU budgets. No resident
+allocation or host activation upload occurs during submit. One packed 2,080-byte
+routing metadata read selects expert groups. BUSY returns preserve the cursor and
+prepared-input generation, allowing caller retry without rerouting or internal
+spinning. HC's raw/normalized wide states survive until injection/combine.
+FFN positions commit only after successful outer completion; failures poison the
+request while retaining old committed positions. Model admission remains unchanged.
+
+The existing MoE source-lease API is exposed through `moe.h`, with const I/O
+control access. Prefill borrows RAM-cache hits without promotion/admission;
+decode admits misses. Source leases protect synchronous copies into pinned banks
+and are released immediately after those copies. Bank completion events protect
+the copied payload through GPU use. Pread misses can read directly into these
+pinned slots, without another expert-sized host staging allocation. Shared cache
+access across requests remains executor-serialized. This adds no GPU expert cache.
+
+Both mmap and split-file pread pass all 27 preserved numerical cases: 215,275,158
+BF16 values and 65,610 routing values/indices exactly per mode. Each mode streams
+11,035,750,400 raw bytes in 408 banks across these cases. Forced BUSY tests verify
+one routing read/input preparation per block, no premature HC combine/commit, and
+healthy retry. Allocated resident payload plus backend workspace/bank accounting
+matches declared GPU bytes for every case. Exact budget edges, partial-preparation
+rollback, queued-work failure, outer-fence failure and interleaved request isolation
+are tested. One persistent request also runs 5-token and 65-token prompt chunks
+then one decode token, reaching position 71 with three input generations; these
+are independent FFN fixture inputs, not a full-model continuation qualification.
+
+With a fresh 64 MiB shared RAM-cache budget, a one-token decode has 10 misses and
+30,720,000 file-read bytes; the next request has 10 hits and zero file-read bytes.
+Subsequent prefill borrows all 10 hits. The initial 27 prefill cases leave the
+empty cache unpopulated. Cold/warm here means RAM-cache state, not cold OS pages
+or storage. GPU upload is still 30,720,000 bytes for each one-token replay.
+Per-request raw bank payload is 63,897,600 bytes per host/device tier, with 192
+bytes of descriptors per tier. Input A8 is 31,680 bytes/token, down A8 is 7,200,
+and shared-linear A8 is 2,880; additional resident FFN tensors are 198,348
+bytes/token plus 4,128 bytes. Host metadata read storage adds 2,080 bytes. These
+exclude model weights, RAM-cache/source pages, allocator/context and C metadata.
+
+Request diagnostics report source/file/cache bytes, bank uploads, metadata read
+wall time, source fetch/copy wall time and BUSY-to-retry spans. The latter include
+caller scheduling delay and are not isolated DMA stall measurements. Mmap/pread
+request tests pass memcheck with zero errors/leaks; synchronization checks pass.
+Clean build and standard tests pass without compiler warnings. Evidence is under
+`/tmp/bitnet-goal-flash-ffn-request/`.
+
+Whole-model short/long/chunked/resumed gates, production token embedding/output
+and complete layer orchestration, global VRAM placement/leases, aggregate serving
+admission, matched resident vLLM performance and continuous batching remain open.
+
+
+### Flash Next vocabulary endpoints and explicit model driver (2026-11-08)
+
+The checkpoint has separate Q8 token/output tables and an output HC mixer, with
+no additional final norm. The pinned original model repeats input embeddings over
+four HC streams. Native Q8 selected-row embedding now declares its quant capability
+in the registry and preserves the original FP16 scale/product rounding before
+BF16 conversion. Its independent oracle covers every FP16 scale bit pattern paired
+with every signed 8-bit quant, plus token-count tails: 16,816,384 output words.
+NaN payloads are canonicalized only for synthetic hash comparisons. Finite values,
+infinities and signed zeros remain exact. Invalid IDs poison only their request;
+peer requests and released/reinitialized containers remain healthy. The existing
+Q4 embedding reference remains unchanged.
+
+The immutable model container now owns both raw vocabulary tables under an
+aggregate preparation budget, with rollback at either upload failure and no
+decoded vocabulary expansion. Their payload is 1,350,860,800 bytes; total prepared
+HC/PLE/GDN/QSA/FFN/vocabulary payload is 8,483,329,152 bytes. Token IDs, BF16 logits
+and the embedding status word add 4 bytes/token + 496,640 + 4 GPU bytes to requests;
+retained model-driver token copies add 4 host bytes/token. Existing scratch holds
+embedding repetition and output HC projection stages. Declared GPU bytes match
+tracked resident allocations plus opaque backend workspace for all endpoint cases.
+
+Production token-submit and head-submit APIs now perform device-resident lookup,
+four-stream repetition and output HC mixing followed by a last-row Q8 vocabulary
+projection. Five actual-checkpoint cases (1/5/17/129/257 tokens) match 11,712,000
+BF16 words and 409 token IDs exactly against fresh pinned references. Head inputs
+come from preserved independent FFN captures; native tests execute the production
+FFN before the head, preserving the original references. No extra output norm or
+CPU activation bridge is introduced. The independent oracle was replayed under
+memcheck into a fresh directory: all 35 data files, header and manifest match.
+
+An explicit model begin/submit API connects token input, PLE at its configured
+layer before attention, all 48 HC attention/FFN pairs and the output head. It
+copies token IDs into prepared request storage and retains its layer/phase cursor
+across expert-bank BUSY returns. The successful submit leaves head work queued;
+outer completion commits all recurrent, PLE and FFN positions. Ordinary model
+admission is unchanged pending independent whole-model qualification.
+
+A smoke test executes one-token prefill and subsequent decode through the full
+driver, with forced bank retries, stable copied token IDs, 48 then 96 accumulated
+FFN blocks, finite logits across all 248,320 vocabulary entries and committed
+positions 1 then 2. Argmax IDs are 11 and 11 for the initial token 116. These IDs
+are recorded observations, not validated expected model tokens. Component accuracy
+and finite full-model execution do not prove full-model token correctness.
+
+Clean build/standard tests pass without compiler warnings. Native endpoint,
+embedding and full-driver smoke tests pass memcheck with zero errors/leaks;
+full-driver synchronization checks pass. Evidence is preserved under
+`/tmp/bitnet-goal-flash-embedding/`. Independent whole-model short/long/chunked/
+resumed token gates and common session/CLI admission remain open. Global VRAM
+expert placement, aggregate serving budgets, matched vLLM performance and batching
+acceptance also remain open.
+
+The complete CUDA regression suite also passes on this checkpoint, including the
+new Q8 embedding cases and existing Q4 embedding, MoE and diagnostic isolation tests.
+
+Source audit found that the host vLLM checkout differs from the pinned image.
+The relevant pinned model ordering was inspected directly, and the common HC
+normalization/mix/combine math methods match the inspected host methods. Future
+whole-model references must use the pinned image sources preserved in this evidence directory.
+
+
+### Independent Flash whole-model references (2026-11-08)
+
+The explicit Flash driver now matches independent original-operator references
+through all 48 layers, rather than only producing finite smoke-test logits.
+Reference inputs begin at checkpoint token embeddings and continue through PLE,
+HC attention/FFN blocks and the output head. The pinned vLLM image supplies the
+original neural operators; the already documented corrected GGUF extension
+supplies raw expert/vocabulary operations. Core matrices use the qualified
+decoded-BF16 profile. This is an operator correctness comparison, not a served
+vLLM GGUF adapter or a performance benchmark.
+
+Qualified schedules are one-token prefill plus decode, the five-token plain-text
+prompt `The capital of France is` plus four greedy decode steps, that prompt split
+2+2+1 plus four decode steps, 129-token prefill plus decode, and 1,025-token prefill
+plus four decode steps. Comparisons are exact at every attention/FFN wide-hidden
+boundary. Additional checks cover selected GDN intermediates/F32 states, QSA
+projections/attention/indices, expert IDs/weights, PLE history, output HC mixing
+and all vocabulary logits. Each schedule also runs independently through the
+production begin/submit/complete driver with fresh request state. The 1,025-token
+case compares 1,125,382,624 BF16 words and 6,064,248 F32/I32 words across the two
+execution paths, with zero differences. Each chunk schedule retains its own
+reference; cross-schedule floating-point identity is not assumed.
+
+A real second-chunk cancellation exposed two original GDN output contractions.
+Enumerating all 24 supported original output-kernel configurations reproduced both
+behaviors using identical prepared inputs. Two-warp/BV32 configurations round the
+scaled local term before a history FMA; the other inspected configurations round
+scaled history before a local FMA. The resident plan now names that arithmetic
+contract. Existing zero-initialized callers retain local FMA; Flash explicitly
+selects history FMA. Future whole-model captures fix the supported original
+BK64/BV32/two-warp/three-stage configuration so autotune timing cannot change the
+reference contraction. No input-value or token-count heuristic selects the profile.
+
+The new model-free cancellation fixture checks both contracts, F32 next-state
+bits and immutable initial state. All 35 existing resumed GDN prefill calls still
+pass, and the previous 68 independent GDN output/state files and all earlier whole
+model reference files retain their recorded hashes. The fixture generator and
+full-model generator are `test/reference_cuda_bf16_gdn_cancellation.py` and
+`test/reference_cuda_bf16_flash_whole.py`; the comparison harness is
+`test/reference_cuda_bf16_flash_ffn.c --model-reference`.
+
+Evidence is preserved under `/tmp/bitnet-goal-flash-whole/`. Common session/CLI
+admission, larger context coverage, global expert VRAM placement and serving
+budgets, continuous batching, and matched vLLM performance acceptance remain open.
+
+
+The final production sources build cleanly with zero compiler warnings; standard
+and complete CUDA regression suites pass. Both output profiles pass the new
+cancellation regression. Native cancellation and complete short chunked model
+runs pass memory and synchronization checking with zero errors (memory checking
+also reports zero leaked allocations). The independent original-operator oracle
+passes memory checking and reproduces every preserved short chunked reference
+file exactly, including all recorded source-weight hashes.
+
+
+The long resumed whole-model gate also passes: 1,025 prompt tokens split into
+seven 129-token chunks and a final 122-token chunk, followed by four decode steps.
+Both execution paths agree exactly with their schedule's independent reference:
+1,129,719,264 BF16 words and 11,569,272 F32/I32 words, zero differences. This closes
+the 1K-context chunked/resumed accuracy gate for the explicit Flash driver;
+larger-context and ordinary runtime admission gates remain open.
+
+
+These whole-model comparisons use mmap-backed expert sources. Bounded pread
+source-cache behavior retains its earlier component qualification; a full-model
+pread comparison remains open. The tested contexts also do not reach QSA's
+2,048-token selection/pruning boundary (512 selected groups, compression ratio 4).
+That boundary and longer contexts need independent whole-model gates before
+claiming general long-context admission.
+
+
+The 1,025-token uninterrupted and eight-chunk native whole-model runs also pass
+memory checking with zero errors and zero leaked allocations. The eight-chunk
+run passes synchronization checking with zero errors. Final source, binary, log,
+reference and preserved user-diagnostic hashes are recorded in
+`/tmp/bitnet-goal-flash-whole/qualification.json`.
+
+
+### Flash whole-model bounded pread cache qualification (2026-11-08)
+
+The independent 48-layer Flash comparison harness now also supports
+`FIRST_SHARD CAPTURES --model-reference-pread REF DUMP [CACHE_MB]`.
+It selects shard-file pread explicitly, disables expert mmap access, derives each
+cache projection stride from the maximum actual checkpoint projection size, and
+verifies every layer fits. Source-weight files remain mapped for model/core
+loading; this is a bounded expert-cache qualification, not a total process RSS
+limit or a cold-storage benchmark.
+
+All preserved schedules pass exactly through both layer-by-layer execution and a
+fresh production driver: one-token and five-token prompts, 2+2+1 chunked prefill,
+129-token prefill, 1,025-token prefill, and 1,025 tokens split 129*7+122. Each
+continues through its original decode schedule. No expected values or numerical
+profiles change. The existing mmap whole-model comparison and all 27 legacy FFN
+request cases also pass.
+
+The harness snapshots cache membership without promoting entries or retaining
+leases. Prefill must preserve membership; decode must admit misses and account
+for evictions. Every phase checks expert hit/miss counts, pread projection counts,
+and `pread bytes == RAM miss bytes`, with RAM hit plus miss bytes equal to raw
+GPU upload bytes. Request GPU/host reservations remain constant across phases;
+raw bank reservations are 63,897,600 bytes in each host/device tier. This checks
+RAM payload ownership and existing event-protected streaming banks; it does not
+introduce a model-wide expert VRAM cache or aggregate serving-budget accounting.
+
+| Expert payload budget | Allocated payload | Slots | Observed behavior |
+| --- | ---: | ---: | --- |
+| 64 MiB | 63,897,600 bytes | 16 | First decode admits 480 experts, retains 16 and evicts 464; later decode continues evicting. Prefill borrows without admission. |
+| 2 GiB | 2,144,563,200 bytes | 537 | Retains the full 480-expert decode working set across fresh requests. |
+
+The 2 GiB replay's first decode has 480 RAM misses and reads 1,504,256,000 bytes.
+Repeating the same decode in a fresh request has 480 RAM hits, zero misses and
+zero pread bytes, with identical logits. Its intervening prefill borrows 172
+cached experts without changing the 480 cached entries. Both cold and warm
+decodes still upload 1,504,256,000 bytes to the GPU: RAM hits are not VRAM hits.
+This transfer remains a concrete target for the planned bounded VRAM placement.
+Here cold/warm describes the expert RAM cache; filesystem-cache state is not
+controlled.
+
+Per-phase logs include raw uploads, source reads, cache hits/misses/evictions,
+metadata read bytes, bank counts/retries, request reservations and source/read
+wall times. The bank retry spans include caller scheduling delays, and metadata
+read timing can include preceding stream work. Observer reads and sanitizer
+instrumentation also affect these tests. These are correctness/accounting traces,
+not isolated transfer-stall measurements or vLLM performance results.
+
+The clean build and standard tests pass without compiler warnings. Native
+1,025-token chunked pread and fully warm replay pass memory checking with zero
+errors and zero leaked allocations; chunked pread passes synchronization checking.
+Evidence and immutable-reference hashes are under
+`/tmp/bitnet-goal-flash-pread-whole/`. Larger-context pruning, common session/CLI
+admission, bounded expert VRAM residency, aggregate serving budgets, batching,
+and matched vLLM prefill/decode performance remain open.
+
+
+The complete CUDA regression suite and diagnostic isolation checks also pass on
+the final rebuild. Final qualification, per-phase cache/transfer metrics,
+source/binary/log hashes, unchanged independent-reference hashes and preserved
+user diagnostic binaries are recorded in
+`/tmp/bitnet-goal-flash-pread-whole/qualification.json` and `metrics.json`.
+This closes the explicit Flash driver's full-model pread accuracy/accounting gate
+through 1,025 tokens; ordinary CLI admission and performance gates remain open.
+
+
+### Flash 4K pruning under declared execution profiles (2026-11-08)
+
+The explicit 48-layer Flash driver now passes independent whole-model gates at
+and beyond QSA pruning, in both mmap and bounded pread modes. The reference
+contract names the existing native numerical/selection policies: four-warp
+triangular inversion, the previously pinned history-FMA output configuration,
+and exact score rank with lower-index ties and chronological QSA group emission.
+This does not establish literal bit equality with an unmodified, arrival-ordered
+vLLM execution, and does not yet enable ordinary Flash CLI admission.
+
+The first uncontrolled 4,097-token capture exposed a GDN inversion configuration
+difference. Native and a fresh original-operator replay agree exactly at every
+captured recurrence stage, including F32 state, on identical prepared inputs.
+Forcing the original two-warp inversion reproduces the uncontrolled layer-0
+output/state exactly; four warps reproduces native exactly. The two profiles
+differ at 270,007 of 25,171,968 BF16 output values and 59,665 F32 state values.
+The failed literal native comparison and original capture remain preserved;
+no production kernel or expected file was changed to hide this difference.
+
+QSA also has an existing selection-policy distinction. In the controlled 4K
+prefill's first sparse layer, all 2,046 pruned rows choose the same groups as the
+original operation, but their emission order differs. This changes 241,678 BF16
+attention values and 1,373,640 output-projection values on the same neural input.
+The reference retains the original choices, F32 scores and original attention/
+projection outputs separately. It verifies validity and score-optimality before
+independently applying the declared chronological policy and calling original
+attention. Canonical ranking uses NumPy; native uses radix threshold/compaction.
+A separate verifier checks cutoff inequalities and tie-ID ordering without
+reusing the generator's sorting algorithm.
+
+`test/reference_cuda_bf16_flash_whole.py` adds explicit
+`--gdn-inverse-warps {2,4,8}` and `--qsa-selection {original,canonical}` options.
+The default inversion remains autotuned and selection remains original. New
+controlled captures use `--gdn-inverse-warps 4 --qsa-selection canonical`, with
+these settings recorded in their manifests. Diagnostic scores may contain
+masked nonfinite cells outside the visible prefix; visible scores and every
+neural output still undergo finite-value checks. All earlier references remain
+immutable. A fresh controlled five-token/four-decode capture preserves every
+previously recorded short neural value and source-weight hash exactly.
+
+| Whole-model schedule | Compared BF16 words | Compared F32/I32 words |
+| --- | ---: | ---: |
+| 2,047-token prefill, eight decode steps across first pruning | 2,246,873,760 | 11,335,848 |
+| 4,097-token prefill, four decode steps | 4,475,877,856 | 12,429,432 |
+| 4,097-token prompt split 257*15+242, four decode steps | 4,485,170,656 | 24,225,912 |
+
+Each row includes all attention/FFN layer boundaries and selected recurrent,
+indexing, routing, PLE and head intermediates, followed by a fresh complete
+production-driver replay. Every compared word matches exactly in each I/O mode.
+Original ranking validity/score-optimality is independently checked on 49,248
+pruned query rows across these three reference trajectories. All pruned rows
+change order; two change membership only among exactly tied cutoff scores in
+the chunked trajectory. These original alternatives are retained, not used as
+interchangeable bit-exact expected model values.
+
+The clean build and standard suite pass without compiler warnings. Evidence,
+including uncontrolled and controlled captures, original inversion audits,
+ranking checks and preserved failure artifacts, is under
+`/tmp/bitnet-goal-flash-pruning/`. No production source changes in this step.
+Common session/CLI integration, bounded expert VRAM residency, matched vLLM
+performance, continuous batching, later models and backend qualification remain
+open. Literal unmodified-vLLM 4K bit parity remains explicitly unqualified.
+
+
+Final native memory checking passes for both uninterrupted 4,097-token and
+sixteen-chunk pread trajectories through layer-by-layer and fresh production
+driver execution: zero errors and zero leaked allocations. The chunked trajectory
+also passes synchronization checking with zero errors. The complete CUDA suite
+and diagnostic isolation pass on the final warning-free rebuild. All production
+source hashes and four user diagnostic binaries are preserved. Final checks,
+reference/source/binary/log hashes, ranking verification, original inversion
+audits and the explicit literal-parity limitation are recorded in
+`/tmp/bitnet-goal-flash-pruning/qualification.json`.
+
+### Flash CLI transfer and placement baseline (2026-11-08)
+
+The ordinary native BF16 CLI was measured on the dedicated RTX PRO 6000
+Blackwell Max-Q (`GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05`), with pread,
+a 2 GiB explicit RAM cache, default 1,025-token batches and temperature zero.
+Short input is the five-token frozen prompt; long input is the frozen
+4,097-token prompt, split 1,025/1,025/1,025/1,022. One warmup precedes the
+reported runs. OS file-cache state is uncontrolled; these are not cold-disk
+measurements or vLLM parity results.
+
+Three unprofiled runs give 349.4–358.9 ms for the short prompt and
+4,596.5–4,600.8 ms for the long prompt (about 891 prompt tokens/s). CLI reported
+output rates are 7.48–7.58 tokens/s for eight short-case output tokens and
+8.18–8.25 for five long-case output tokens. The reported numerator includes the
+first token sampled from prefill, so these rates are not isolated decode
+latencies and cannot establish the 5% vLLM gate.
+
+Nsight CUDA traces separate preparation from embedding-launch windows:
+
+| Operation | Streamed expert bytes | Active expert groups | Routing metadata reads |
+| --- | ---: | ---: | ---: |
+| Five-token prefill | 4,941,926,400 | 1,574 | 48 |
+| First 1,025-token chunk | 18,959,257,600 | 6,055 | 48 |
+| Next 1,025-token chunk | 14,189,363,200 | 4,529 | 48 |
+| Third 1,025-token chunk | 14,290,329,600 | 4,560 | 48 |
+| Final 1,022-token chunk | 13,963,468,800 | 4,452 | 48 |
+| Each decode step | 1,504,256,000 | 480 | 48 |
+
+Every routing read is 2,080 bytes; ordinary windows contain approximately
+50–51 stream fences. Endpoint differences include the next token upload or
+the final transaction fence. Long prefill selects grouped matrix kernels and
+Q8 MMQ; decode selects grouped small-batch kernels and MMVQ. Batched prefill
+uploads each active expert once per layer/chunk, rather than once per routed
+token. The tracked GPU activity union occupies roughly 82–89% of long-prefill
+windows and about 25% of decode windows; this is neither SM occupancy nor an
+isolated request-latency measurement. Windows include caller work and between-run
+restart, and profiler overhead is present.
+
+An all-CUDA-API/memory trace observes zero device-heap or pinned-host allocation
+events inside ten inference windows. Tracked peak device heap is 9,790,628,712
+bytes and pinned host payload 67,046,592 bytes for the short, capacity-2,048
+configuration. Both tracked heaps balance to zero on teardown; context static
+storage is separate. A coverage-instrumented CLI independently records zero
+CPU/legacy orchestration entries across 13 ordinary forward/prefill calls,
+including three no-logits chunks. Both frozen token trajectories match.
+
+`bench/analyze_flash_trace.py` reproduces trace extraction from Nsight SQLite
+exports. The export includes all captured routing and bank transfer counts;
+preparation is excluded, while final teardown is excluded at the completion
+fence. Production sources are unchanged from the qualified session/CLI build.
+
+#### Cache placement implications
+
+`--trace-routing` on the independent whole-model oracle now retains IDs for all
+48 FFN layers. The native comparator matches every captured routing word and
+the existing model values: 32 phases, 4,491,225,056 BF16 and 16,716,198 F32/I32
+words. All 1,180 prior neural files retain their values; original QSA diagnostic
+choices remain explicitly nondeterministic. The new 376 route files are added
+in a separate capture. The zero-cache placement replay exactly reproduces
+measured expert counts and upload bytes for all eight phases.
+
+The raw expert set is 77,017,907,200 bytes (71.73 GiB). Reserving the largest
+3,993,600-byte slot for every expert instead needs 98,146,713,600 bytes
+(91.41 GiB), which prevents full residency on this GPU after core/request state
+is included. Compact size-class pools preserve full-residency feasibility.
+The checkpoint has 43 layers with 3,072,000-byte experts, four with
+3,584,000-byte experts and one with 3,993,600-byte experts.
+
+`bench/simulate_flash_vram_cache.py` compares global fixed-slot LRU with compact
+size-class pools, pins all current-layer hits, and uses separate prefill/decode
+policies. Over the four captured decode steps, baseline upload is 6.017 GB:
+
+| Simulated placement/prefill policy | Budget | Cold decode upload | Third replay decode upload |
+| --- | ---: | ---: | ---: |
+| Largest slots / borrow only | 2 GiB | 4.395 GB | 3.958 GB |
+| Compact pools / borrow only | 1.5 GiB | 4.395 GB | 3.958 GB |
+| Compact pools / borrow only | 2 GiB | 4.391 GB | 3.954 GB |
+| Compact pools / retain prompt tail | 2 GiB | 4.101 GB | 4.108 GB |
+
+Tail admission helps cold decode here but is not uniformly better on warm
+replay. This model accounts for bank-to-cache device copies on tail admission.
+Smaller largest-slot caches
+thrash across the full layer cycle. These are placement simulations over a
+four-step reference trajectory, not implemented GPU residency, general cache
+hit-rate predictions or measured speedups. Long decode and broader prompts
+remain necessary before choosing defaults.
+
+The next implementation needs model-owned compact pools, event-protected
+request leases, cached-weight grouped execution, and separate GPU/RAM hit,
+miss and upload accounting. The legacy GPU expert cache has immediate handle
+eviction and fixed entry accounting, so it cannot be attached unchanged to the
+resident request path. Evidence, commands, source/binary hashes, coverage,
+memory events and preserved captures are under `/tmp/bitnet-goal-flash-profile/`.
+
+
+### Implemented Flash compact cache: local qualification (2026-11-08)
+
+Explicit `--gpu-cache-mb 2048` enables compact model-owned expert pools in the
+native CUDA BF16 Flash path. Default zero preserves the uncached control.
+This uses the same headless RTX PRO 6000 Blackwell Max-Q UUID as the earlier
+baseline. The 2 GiB budget reserves 2,147,328,000 bytes: 613 small, 57 medium
+and 15 large raw expert slots, with no quantization or routing changes.
+Prefill borrows without admission/promotion; decode admits into event-protected
+LRU pools. Stats separate GPU misses from subsequent RAM hits/misses and disk
+reads. Cache hits do not touch the RAM LRU. Miss fills currently perform a
+host-to-bank upload followed by an equal-sized bank-to-cache device copy.
+
+All 32 phases in the frozen all-layer routing reference match exactly:
+4,491,225,056 BF16 words and 16,716,198 F32/I32 words, zero differences. Actual
+hit/miss counts/bytes, resident payload, evictions and pressure bypasses match
+`bench/simulate_flash_vram_cache.py` compact-pool/borrow replay. Initial decode
+uploads 4,391,116,800 bytes over four steps; repeated warm decode uploads
+3,954,483,200 versus 6,017,024,000 uncached (34.28% less). Warm prompt uploads
+54,134,272,000 versus 61,402,419,200 bytes. These are the captured trajectory,
+not general hit-rate predictions. Decode fill device copies equal its miss
+bytes; prefill admission/device fill copies are zero.
+
+Local timing uses the same 4,097-token prompt, default four-chunk schedule,
+five generated tokens, one warmup and three measured runs per case. Sessions
+restart, while shared source/GPU caches remain warm. Each pair holds the RAM
+budget fixed. Values below are medians; raw samples and commands are retained.
+
+| RAM cache | GPU cache | Prompt ms | CLI reported output tokens/s |
+| --- | ---: | ---: | ---: |
+| 2 GiB | 0 | 4611.7 | 8.17 |
+| 2 GiB | 2 GiB | 4413.2 | 9.62 |
+| 4 GiB | 0 | 4578.4 | 8.84 |
+| 4 GiB | 2 GiB | 4343.7 | 9.78 |
+
+The relative reported output-rate gains are 17.75% and 10.63%; prompt time falls
+4.30% and 5.13%. CLI output rate counts the first token sampled from prefill,
+so it is not isolated decode latency. Fixed case order, three samples and a
+four-step repeated decode trajectory limit these measurements. They establish
+local benefit, not full-residency performance or the 5% vLLM goal.
+
+The independent numerical reference retains the documented GDN inverse-4 /
+history-FMA / canonical-QSA qualification profile; it does not establish literal
+unmodified-vLLM bit parity or invariance across different prefill chunk schedules.
+Synthetic cache tests, entire CUDA/CPU suites, dense Qwen27 regression, bounded
+pread/mmap, CLI/chat resets, preparation rollback and failed-session isolation
+pass. Compute Sanitizer reports zero errors/leaks for cache unit and real-model
+short execution and zero synchronization errors for long CLI execution.
+
+A separate allocation-only run reserves all 77,017,907,200 expert bytes
+(73,450 MiB) and returns the expected first token. Its pool starts empty and
+prefill only borrows, so this is capacity evidence, not full preloading or a
+fully resident benchmark. Full preload, larger prompt/decode sets, cache policy
+selection and matched vLLM timing remain open. Current evidence is under
+`/tmp/bitnet-goal-flash-vram/` and earlier reference/profile evidence is preserved.
+
+
+The cached short CLI all-API/memory trace contains ten inference windows
+(two restarted runs, five phases each). Nsight independently records
+17,448,550,400 raw upload bytes, exactly matching cumulative production counters;
+all 6,988 expert groups remain present. The extra pointer-table traffic is
+55,904 bytes. Cache fills are counted as separate device copies. Routing still
+requires 48 metadata reads per phase and roughly 50–52 stream fences; caching
+has not removed this control-path cost. Trace activity durations include
+profiler overhead and do not independently measure critical-path DMA stalls.
+
+Captured runtime APIs and memory events show zero inference allocations.
+Tracked device-heap peak is 11,937,956,840 bytes and pinned-host peak is
+67,046,720 bytes; both return to zero at teardown. Relative to the earlier
+uncached trace, these increase by exactly the 2,147,328,000-byte pool plus
+128 device pointer-table bytes, and 128 pinned-host pointer-table bytes.
+Static CUDA module allocations are tracked separately. These counters cover
+captured API/memory events, not unobserved driver-internal allocations.
+`bench/analyze_flash_trace.py --expert-cache` parses pointer/descriptor pairs
+and device fills explicitly, including phases without raw expert uploads.
+The earlier uncached capture also passes the revised parser.
+
+
+### Flash fully resident expert execution (2026-11-08)
+
+Enable explicit full preloading with:
+
+```sh
+./bitnet MODEL --cuda-bf16 --gpu-cache-mb 73450 --gpu-preload-experts \
+  --pread --cache-mb 64 --maxseq 8192
+```
+
+The preload API rejects partial capacity, insufficient staging budget, nonempty
+pools and any bound requests before reading sources. A single pinned buffer
+holds the largest raw expert (3,993,600 bytes); every payload is uploaded and
+completed before the buffer is reused. All expert metadata is published only
+after success. Source-read failure leaves every key absent and permits retry;
+CUDA transfer failure poisons the cache. Setup allocates/frees staging and a
+temporary stream before request preparation. Model-owned GPU pool ownership and
+request lifetime rules remain intact. Source orchestration stays above
+backend_layout, using existing checked GGUF/pread leases without RAM admission.
+
+Real-model preload reads/uploads exactly 77,017,907,200 bytes for 24,576 experts
+(73,728 projections). One observed setup took 4,235.8 ms with the filesystem
+cache already warm; this does not measure cold storage. Every long-reference
+phase has all experts present before execution, including the initial prompt.
+All 32 phases match 4,491,225,056 BF16 and 16,716,198 F32/I32 reference words
+exactly, including all-layer routing IDs. Every phase records zero expert
+misses, file reads, uploads, device fill copies and evictions. The 20-phase
+short reference, failure recovery and peer isolation also pass. Independently
+captured goldens and the explicit GDN inverse-4 / history-FMA / canonical-QSA
+qualification limits are preserved. A separate 32-token continuation matches
+uncached native token IDs; those additional tokens establish cache equivalence
+rather than an expanded independent oracle.
+
+A new local comparison fixes the RAM cache at 2 GiB, uses the same 4,097-token
+prompt, default 1,025-token chunks and five output tokens, then restarts the
+request for one warmup and three measured runs. Shared caches remain warm.
+Medians on the designated RTX PRO 6000 Blackwell Max-Q are:
+
+| Expert placement | GPU pool | Prompt ms | CLI reported output tokens/s |
+| --- | ---: | ---: | ---: |
+| Stream | 0 | 4656.0 | 8.14 |
+| Lazy compact cache | 2 GiB | 4397.6 | 9.60 |
+| Explicit full preload | 73,450 MiB | 3368.0 | 88.52 |
+
+Preloading/model preparation are outside these prompt/output intervals and
+logged separately. CLI output rate counts the first token sampled from
+prefill; it is not isolated decode latency. Three samples, fixed case order,
+a repeated four-step decode trajectory and concurrency one limit conclusions.
+The fully resident path still needs prefill work and a matched vLLM engine
+baseline before assessing the 5% parity criterion. The existing vLLM operator
+oracle is a numerical reference rather than a served-engine timing baseline.
+
+The short all-API/memory trace contains ten inference windows and all 6,988
+expert groups. It records zero raw expert upload/fill bytes, zero large H2D
+copies across all streams, and zero inference allocation calls/events.
+Tracked device-heap peak is 86,808,536,040 bytes; pinned-host peak is
+67,046,720 bytes. Both return to zero. Static CUDA module data is separate.
+The preload staging allocation is released before the larger request banks
+are allocated. These figures cover captured API/memory events and exclude
+unobserved driver-internal allocation. Routing still reads 48 metadata blocks
+per phase. The analyzer accepts explicit validated bank stream IDs for traces
+where full residency removes the raw uploads previously used for discovery.
+Pointer/descriptor sequences and total expert count are cross-checked; the
+prior uncached and lazy-cache parser regressions pass.
+
+Protected clean build and CPU-only build have zero warnings; standard/CUDA
+suites, dense Qwen27 and Flash CLI checks pass. Compute Sanitizer reports zero
+errors/leaks for synthetic cache/preload tests and full-resident real-model
+short execution, and zero synchronization errors for the long CLI. All raw
+commands/samples, checks, source/binary hashes and references are preserved in
+`/tmp/bitnet-goal-flash-preload/`.
+
+
+The long resident all-API/memory trace covers two restarted runs: eight prefill
+windows (8,194 input tokens) and eight decode windows. All 43,032 expert groups
+are present; expert uploads, fill copies and inference allocations remain zero.
+Prefill emits 40,656 kernels across both runs. Summed GPU kernel duration is
+6,803.91 ms; activity union is 6,800.84 ms within 6,913.58 ms of phase windows
+(98.37%). This is activity coverage, not SM occupancy. Grouped Q4_K gate/up
+accounts for 3,233.10 ms and Q5_1 down for 1,670.51 ms, together 72.07% of
+summed prefill kernel time. These measured quantized matrix kernels are the
+next prefill target. The eight decode windows contain 20,792 kernels and
+100.26 ms summed kernel duration; their 122.10 ms windows include caller work
+and restart, so they are not isolated decode latency measurements. Full kernel
+aggregates and phase data are in `resident-long-summary.json` and
+`resident-long-analysis.json` under the evidence directory.
+
+
+### Residency scope for the parity benchmark (2026-11-08)
+
+The Flash measurements above qualify complete **expert** residency. The
+28,800,138,240-byte PLE embedding table remains host-owned; selected rows are
+gathered into bounded upload leases in `src/transformer/bf16.c`. Zero expert
+uploads therefore does not mean zero model-weight transfers. The checkpoint
+contains 111,323,630,080 raw tensor bytes (5,505,584,640 core,
+28,800,138,240 PLE, 77,017,907,200 experts), exceeding this GPU's capacity even
+before decoded layouts and request state. The current Flash case does not
+satisfy full-model GPU residency for the parity criterion. A matched Flash
+comparison must account for the same PLE host placement explicitly.
+
+The Qwen3.8-27B GGUF is `qwen35`, has 17,548,181,504 raw tensor bytes and no PLE
+tensors. The pinned GGUF plugin includes a Qwen3.5 adapter, making this the next
+fully resident engine-comparison candidate. Engine/config/precision and memory
+qualification still need to be performed; the vLLM operator oracle is not an
+engine benchmark. Inventory and source evidence are recorded in
+`/tmp/bitnet-goal-flash-mma/residency-scope.json`.
+
+
+### Grouped integer tensor-core prefill (2026-11-08)
+
+Native grouped Q4_K/Q5_K gate/up and Q5_1 down matrix projections now use
+integer tensor cores. Q4_K/Q5_K share the previously qualified dense affine
+core; the dense wrapper preserves its geometry. Q5_1 retains FP16-rounded
+scale/minimum products and sequential F32 accumulation over 32-value blocks,
+including down widths not divisible by 256. Grouped token tiles are 8, 24 or
+64 according to the largest group in the bank. The original total-token
+MMVQ/MMQ precision selection is unchanged. Vector/decode arithmetic, Q8_0
+matrix execution, routing, source/cache policy and memory budgets are preserved.
+No persistent packed weights or inference allocations are introduced.
+
+A new nonzero differential compares every output/gate/up word with the retained
+per-expert DP4A path: 160 combinations of gate/down formats, hidden widths
+32/96/160/640 and uneven group lengths 1/7/8/9/23/24/25/63/64/65. Active values
+must be finite and nonzero, while inactive rows retain sentinels. The same cases
+pass memory and synchronization checking. All 32 long independent reference
+phases pass in full-expert-cache, lazy-cache and uncached execution, preserving
+4,491,225,056 BF16 and 16,716,198 F32/I32 words exactly, including routing IDs.
+The 32-phase real-model memory check reports zero errors/leaks; long CLI
+synchronization checking, short references, CLI/reset/chat, cache/preload,
+standard/CUDA suites and dense Qwen27 regression pass. Clean and CPU-only
+builds have zero warnings. Reference hashes and precision-profile limits remain
+unchanged. A 32-token continuation matches the saved pre-change binary.
+
+The saved baseline binary hashes identically to the preceding qualified
+preload binary. New before/after pairs use the same 2 GiB source RAM cache,
+4,097-token prompt, default four-chunk schedule, five outputs, one warmup and
+three measured runs. Shared caches remain warm across restarted sessions.
+Medians on the designated headless GPU are:
+
+| Placement | Matrix path | Prompt ms | CLI reported output tokens/s |
+| --- | --- | ---: | ---: |
+| All experts resident | DP4A baseline | 3336.1 | 88.43 |
+| All experts resident | Integer MMA | 1709.4 | 88.24 |
+| Stream from RAM | DP4A baseline | 4659.4 | 8.19 |
+| Stream from RAM | Integer MMA | 4312.2 | 8.17 |
+
+Resident-expert prompt time falls 48.76% (1.95x prefill throughput); streaming
+prompt time falls 7.45%. This difference limits claims for offloaded workloads:
+reducing matrix compute does not remove their source/transfer cost. Separate
+short-prompt, 64-output samples report 73.05 versus 72.79 tokens/s, consistent
+with unchanged decode kernels within this small sample. CLI output rate includes
+the first prefill-sampled token and is not isolated decode latency. Fixed case
+order, three samples and repeated prompts limit generalization. Flash's host
+PLE table remains present; this is full expert residency, not full-model GPU
+residency or a matched vLLM parity result.
+
+The new long resident-expert trace emits 9,594 grouped MMA calls during eight
+prefill windows and zero during eight decode windows. Summed prefill kernel
+duration falls from 6,803.91 to 3,386.08 ms over two restarted prompts; kernel
+count remains 40,656. Expert groups remain 43,032 across all 16 windows, with
+zero expert uploads/fill copies and zero inference allocations. Tracked device
+heap remains 86,971,359,720 peak bytes and pinned host 67,046,720; both return
+to zero. GPU activity union covers 3,382.96 of 3,491.01 ms of prefill windows,
+which include caller overhead and profiler effects, rather than isolated
+request latency or SM occupancy.
+
+Frozen routing counts independently reproduce all 50,633,920 MMA thread blocks
+in that two-run trace. Of 25,316,960 launched blocks per prompt, 15,459,680
+(61.06%) return uniformly because bank-max row padding exceeds an expert's
+actual rows. Compact tile scheduling is a concrete next experiment. This
+geometry model does not measure occupancy or predict its latency improvement;
+no such compaction is implemented yet. Remaining matrix and Q8_0 kernels,
+transfer/chunk policy, readbacks/fences and the matched Qwen27 engine benchmark
+remain open. Evidence and reproducible scripts are under
+`/tmp/bitnet-goal-flash-mma/`.
+
+### Loaded-model Qwen27 engine comparison harness (2026-11-08)
+
+`bench/bench_bf16_latency.c` measures native BF16 first-token and subsequent
+single-request greedy token delivery. Build with the same CUDA/MKL flags as
+`bitnet`, using target `bench_bf16_latency`, then run:
+
+```sh
+CUDA_VISIBLE_DEVICES=GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05 \
+CUDA_DEVICE_ORDER=PCI_BUS_ID BN_CUDA_DEVICE=0 \
+./bench_bf16_latency MODEL.gguf PROMPT.i32 64 3 1 8192 8192
+```
+
+`PROMPT.i32` contains little-endian signed 32-bit token IDs. The JSONL output
+includes raw/decoded linear layouts, output IDs and every decode interval.
+TTFT includes request restart, prefill, logits readback and greedy argmax;
+decode is `(last_delivery - first_delivery) / 63`, excluding the first token
+produced by prefill. Model load, layout/request allocation, tokenization and
+JSON serialization are outside the intervals. CPU fallback is rejected.
+
+`bench/bench_vllm_latency.py ENGINE.json CASES.json OUTPUT.json` implements the
+corresponding cumulative-token delivery protocol for an already installed
+vLLM environment. Engine arguments must specify single-request concurrency,
+no prefix cache and no tokenizer. Cases contain `name`, `prompt_ids` and an
+optional frozen `oracle8`. Placement and effective configuration are saved
+separately. Inspect delivery batch sizes before interpreting inter-token
+latency. Local `apply_model` inspection requires the pinned engine's trusted
+serialization opt-in; the benchmark container is offline and isolated.
+
+The pinned reference uses vLLM `8244d1c44`, GGUF plugin
+`0.0.5+e454affe`, the existing GGUF extension metadata/index/Q5_1-tail fixes,
+and `bench/patches/vllm_gguf_005_qwen_text.patch`. The last patch maps a text
+config to `Qwen3_5ForCausalLM` without changing tensor arithmetic. It is
+separate from the older 0.3.3 import-compatibility patch.
+
+The reference image's FA2 binary has 76 SM80 images and PTX 9.4; a split-KV
+variant fails to load on this host with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`.
+`bench/patches/vllm_fa2_506341a_sm120.patch` builds native SM120 code from
+vLLM's exact FA2 source pin `506341a143fcabd4bb79052a7605ada727d6b3f5`
+(CUTLASS `62750a2b75c802660e4894434dc55e839f322277`). Build only
+`_vllm_fa2_C` with `CMAKE_CUDA_ARCHITECTURES=120`, `CUDA_ARCHS=12.0` and
+`NVCC_THREADS=2`, leaving the installed FA3 extension intact. The patch
+changes architecture/build selection only. All 76 forward units are built;
+ten BF16 paged-attention cases pass against an FP32 Torch reference with
+PTX JIT disabled (largest absolute error 0.00390625). This loading/numerical
+check alone does not establish engine token equivalence or performance parity.
+Evidence, complete commands, source/binary hashes and failures are retained
+in `/tmp/bitnet-goal-qwen27-engine/`.
+
+An additional compatibility check located the image's forward-compatibility
+libraries under `/usr/local/cuda/compat/lib.real`; its default search path
+points at `/usr/local/cuda/compat/lib`. Explicitly placing `lib.real` first
+allows the **original** FA2 binary to load all ten standalone cases. Their
+110,592 BF16 words match the native SM120 rebuild exactly. This limited A/B
+check does not cover complete engine behavior. Prefer the original reference
+binary with the corrected process-local library path when establishing the
+engine comparison; the native rebuild remains a separately recorded fallback.
+No host driver or repository dependency was replaced.
+
+The actual engine comparison now runs to completion with all 965 reference
+parameters and all named buffers on CUDA (17,924,169,810 parameter bytes).
+The unchanged Qwen27 GGUF is fully GPU-resident in both engines; native
+profiling reports 34,655,021,572 peak tracked device-heap bytes, zero inference
+allocations, no weight uploads and a maximum inference H2D copy of 4,100 bytes
+(token IDs). Decode has 1,456 kernels, two stream fences and 496,648 D2H bytes
+per step in this trace, including BF16 logits readback. The profile windows
+include caller/restart overhead and are not isolated latency measurements.
+
+**Performance parity remains unqualified because token equivalence fails.**
+The original-FA2 reference with process-local CUDA compatibility libraries
+produces stable outputs across one warmup and three measured runs per case.
+All 64 outputs match native for the 5-token case and the synthetic 4,097-token
+repeat case. The 129-token case diverges at output 3; the 1,025-token case at
+output 22. A prior three-case, eight-output engine smoke test passed, showing
+why that smoke alone is insufficient. The medium mismatch repeats when run
+first in a fresh engine and through both `LLM.generate` and cumulative
+`LLMEngine.step`, including eight-output requests. The SM120 FA2 rebuild also
+reproduces the medium mismatch; its long case first diverges at output 44.
+Standalone attention equality does not imply full-engine equality.
+
+Diagnostic medians, in milliseconds (lower is faster):
+
+| Prompt tokens | Native TTFT | vLLM TTFT | Native decode/token | vLLM decode/token | All 64 IDs match |
+| ---: | ---: | ---: | ---: | ---: | :---: |
+| 5 | 49.74 | 50.35 | 15.54 | 18.12 | Yes |
+| 129 | 219.41 | 370.79 | 15.62 | 18.03 | No |
+| 1025 | 1213.12 | 2577.25 | 15.84 | 18.36 | No |
+| 4097 (repeat) | 4679.62 | 10306.85 | 16.35 | 18.78 | Yes |
+
+Both engines use BF16 activations, F32 SSM state, the same quantized checkpoint,
+GPU UUID, explicit token IDs, 8,192 context/prefill capacity, concurrency one,
+64 greedy outputs and ignored EOS. Reference compilation, FULL_AND_PIECEWISE
+CUDA graphs, FlashAttention2, FlashInfer GDN prefill, CUDA GDN decode and
+normal autotuning stay enabled. Reference KV allocation is 2 GiB with no host
+KV offload or prefix caching. Each delivery contains exactly one output token.
+Native runs precede reference runs; the small sample and fixed case order limit
+performance conclusions. The original reference uses the image's CUDA 615.65.02
+forward-compatible userspace libraries over host driver 595.104.02; native
+uses the host driver. Complete commands and effective configurations are saved.
+
+Native library/headers retain all 315 recorded production hashes from the
+preceding qualified milestone, and frozen expected tokens are unchanged.
+Baseline tests, protected clean build (zero warnings), standard tests, the
+native benchmark's CPU guard/build and both compatibility-patch dry runs pass.
+The previous production CUDA qualification remains separate from this
+benchmark work. The next correctness task is an aligned engine-versus-native
+logits/intermediate trace at the first medium divergence, including selected
+GDN/linear execution plans and top-logit margins. Do not rewrite the frozen
+expectations or report the diagnostic timing ratios as general parity.
+
+### Qwen27 arithmetic-profile diagnosis (2026-11-08)
+
+The medium mismatch is a near-tie: native's output-3 logits are 22.25 for ID 63
+and 22.125 for ID 12; a reproducible default compiled engine produces 22.25
+for both and chooses the lower ID, 12. Six requests in one engine preserve
+that choice with/without capture, with/without logprobs, and with 8/64 outputs.
+An earlier instrumented engine initialization produced ID 63 instead; agreement
+on a short greedy prefix is therefore insufficient to qualify the numerical
+contract. The frozen token expectations remain unchanged.
+
+Replaying the native final hidden vectors through the reference vocabulary
+head reproduces all 744,960 logits exactly across prefill and two aligned
+decode steps. The observed differences are upstream of that projection.
+Changing the worker's BF16 reduction permission before initialization, with a
+fresh compilation cache, leaves all 15,360 captured hidden values and 744,960
+logits identical for the default FlashInfer case. That permission is an
+important precision setting to record, but does not explain this case.
+
+A stronger correctness-only check now compares every layer of the entire
+129-token prefill against an actual reference engine using eager execution,
+FLA GDN prefill and FP32 BF16 reduction. All **169,743,360 BF16 words in 257
+vectors match exactly**: input norms, post-attention norms, FFN outputs,
+residuals and final norm across 64 layers. The first input norm also matches
+separately through both eager and compiled reference norm calls (660,480 words).
+This qualifies that explicit eager prefill profile; it does **not** qualify
+compiled/default-engine equality, decode after this reference trace, or
+performance parity. The default compiled performance baseline is retained.
+
+There is a concrete compiled-operator difference. On a deterministic
+129-by-17,408 BF16 gate/up batch, the original CUDA SiLU-and-multiply and
+PyTorch-native calls agree, while the unmodified compiled call differs in
+581,479 of 2,245,632 outputs (maximum absolute difference 0.03125). Generated
+Triton code retains F32 through SiLU and multiplication. A separate 30,720-word
+gated-norm fixture matches its original, native and compiled paths exactly;
+its frozen reference bytes were revalidated rather than regenerated.
+
+The native backend already exposes separate/fused SiLU arithmetic in its
+resident FFN plan. A temporary diagnostic selecting FUSED changes the medium
+prediction to the default compiled prefix, but its final hidden vectors still
+differ (prefill RMS difference 0.05966; output-3 RMS difference 0.04975 against
+the captured default engine). This is not a complete fix and is not enabled
+in production. Further work must identify the remaining compiled arithmetic
+boundaries instead of treating greedy-token agreement as sufficient evidence.
+
+The benchmark now records worker-side reduction settings and per-layer GDN
+prefill/decode/fusion selection. `--require-fp32-reduction` rejects a worker
+permitting reduced BF16 reductions at inspection time; configure worker
+precision before initialization/warmup, since this inspection cannot prove
+which setting an existing CUDA graph captured. Native JSONL explicitly records
+`bf16_gemm_reduction: fp32`. The worker audit is exercised on the real model
+(all 48 GDN plans); the new native metadata and unchanged eight-token fixture
+pass. Protected clean build, standard tests and CPU guard pass with zero build
+warnings, and all 315 recorded production source/header hashes and four user
+binaries remain unchanged. Evidence is under
+`/tmp/bitnet-goal-qwen27-logits/`; all traced timings are diagnostic only.
+
+### Compiled prefill boundaries and retained FP32 intermediates (2026-11-08)
+
+A persistent diagnostic worker now captures existing generated-kernel inputs
+and outputs without adding module hooks or recompiling the model. The initial
+GC scan missed the launchers because vLLM had frozen about 1.6 million Python
+objects; enumerating `PyCodeCache.modules` and `modules_no_attr` reaches the
+live cached kernels. The successful capture wraps 253 existing launchers and
+records 513 BF16 matrix snapshots across 129 normalization-related launches.
+An additional first-block capture records activation operands. The same engine
+produces the same eight tokens before capture, with capture, after a controlled
+GDN-prefill dispatch change, and after restoring all launchers/backend methods.
+These are correctness traces, not latency or throughput measurements.
+
+The earliest observed difference is input normalization: one of 660,480 BF16
+values differs at token 30, feature 4,345 (absolute difference 0.001953125).
+Replaying the original generated first-norm function on its captured embedding
+and weight inputs reproduces all 660,480 compiled outputs exactly with
+`XBLOCK=1`, `R0_BLOCK=1024`, eight warps. The eager norm on those same inputs
+matches native exactly. Ten original-kernel tile/warp configurations produce
+one to three differences from the eager result; selected reduction geometry
+is therefore part of a reproducible arithmetic profile.
+
+Two larger intermediate-precision differences are now isolated on actual
+checkpoint activations, not only synthetic inputs:
+
+| Boundary | Original compiled output | Eager-style result on the same operands |
+| --- | --- | --- |
+| Layer-0 SiLU/product, 2,245,632 BF16 values | Exact replay with FP32 SiLU/product and a final BF16 store | 592,671 differences; max absolute error 0.0078125 |
+| Residual after two additions, 660,480 BF16 values | Exact replay retaining the first sum in FP32 until the second addition | 135,284 differences when the first sum is rounded to BF16 |
+
+The activation replay uses the unchanged original vLLM CUDA/native/compiled
+methods; both the standalone compiled call and the FP32-intermediate formula
+match the actual compiled graph output exactly. The residual analysis uses
+captured operands and explicit FP32 additions with RTNE BF16 stores, matched
+against the original graph's stored residual. Generated code also retains
+FP32 between those additions. This explains why selecting the existing native
+fused-SiLU option alone did not reproduce the compiled hidden vectors.
+
+A live FLA prefill dispatch counterfactual keeps the outer compiled kernels,
+weights and decode backend intact. At the first post-attention norm it reduces
+differences from 455,728 to 86,384 values and RMS error from 0.00060764 to
+0.00011413 against the eager/native trace, but does not restore full equality.
+This is a diagnostic dispatch override, not a replacement performance baseline
+or a qualification of a separately compiled FLA model.
+
+`bench/bench_vllm_latency.py` now records cached kernel source SHA256 values,
+selected tile/warp/stage configurations, FP-fusion settings and Inductor's
+`emulate_precision_casts` policy. The real worker audit sees 254 cached kernels
+(including a diagnostic activation replay) and verifies the first norm's exact
+source/configuration; `emulate_precision_casts` is false. These cached/warmup
+records describe available configurations, not per-request kernel use. The
+separate captured launch manifest identifies actual execution.
+
+The next implementation step is a supported backend arithmetic profile that
+accounts for retained FP32 activation/residual intermediates and the selected
+normalization reductions, qualified against original compiled outputs. Preserve
+the existing eager profile and independent goldens. No production kernel or
+runtime arithmetic has changed in this investigation, and general compiled
+performance parity remains unqualified. Evidence and replay scripts are under
+`/tmp/bitnet-goal-qwen27-kernels/`.
+
+
+### Explicit retained-FP32 request profile (2026-11-08)
+
+`bench_bf16_latency` accepts an optional final `eager` (default) or
+`fp32-intermediates` argument and records `arithmetic_profile` in its JSON
+configuration. The latter retains the first residual addition in FP32 through
+the second addition and uses the existing fused FP32 SiLU/product kernel.
+It retains the qualified contiguous FP32 normalization reduction and native
+GDN/attention implementations. It does not claim equality with arbitrary
+Inductor normalization tiles, or replace the original default compiled-vLLM
+performance baseline. The model/CPU preparation math profile is independent.
+
+The new three-input norm callback passes 38 independent PyTorch cases with
+14,407,680 exact BF16 output words. Existing CUDA references and real-model
+eager goldens are preserved. Real-model profile checks cover complete logit
+replay across restart, observing residuals, request isolation, no-logit prefill,
+matching chunk schedules, resume/decode, and invalidation after a fence failure.
+Evidence, commands and logs: `/tmp/bitnet-goal-bf16-f32-profile/`.
+
+
+On the designated RTX PRO 6000 Blackwell Max-Q, one warmup and three measured
+64-output runs through the normal request path give these medians for the
+explicit `fp32-intermediates` profile (milliseconds, TTFT includes restart,
+prefill, host logits and greedy selection):
+
+| Prompt tokens | TTFT | Mean decode step |
+| --- | ---: | ---: |
+| 5 | 49.99 | 15.67 |
+| 129 | 222.29 | 15.75 |
+| 1025 | 1225.57 | 15.98 |
+| 4097 | 4733.90 | 16.52 |
+
+All measured repeats within each case produce the same 64 output IDs. The
+129-token case still selects token 63 at output 3, whereas the earlier default
+compiled reference selects 12. These measurements therefore establish stable
+execution and latency for this arithmetic profile; they do not close matched
+compiled-vLLM numerical or performance parity. Kernel memcheck and synccheck
+both pass with zero errors.
+
+The new CUDA residual operation also replays all 660,480 stored residual words
+from the original compiled 129-token graph exactly on its captured operands.
+This gate checks the residual output only, not equivalence of normalization
+tiles. A protected clean build and standard suite pass with zero warnings,
+and all existing CLI frozen-reference gates pass. Flash Next's 4,097-token
+prompt plus 32 greedy outputs matches the saved trajectory exactly with the
+expert preload path; this regression checks output IDs, not every layer word.
+
+
+### Compiled norm reduction isolation (2026-11-08)
+
+A standalone CUDA replay of the selected first compiled normalization now
+matches all 660,480 BF16 output words on the captured 129-token operands.
+The per-thread four-value reduction uses `(a0+a2)+(a1+a3)`; changing it to a
+sequential local sum restores the one-word discrepancy. On these operands,
+separate square/add versus FMA and exact division versus reciprocal multiply
+do not change that result; this does not establish their general equivalence.
+
+Original cached cubins for the first, two-input and three-input normalizations
+all replay their respective captured outputs exactly (1,981,440 words total).
+The standalone two/three-input implementations still differ in at least three
+BF16 values each across the tested reduction/contraction variants. These are
+unresolved diagnostic results, with no production arithmetic changes or new
+full-model parity claim. Evidence and CUDA replay source are under
+`/tmp/bitnet-goal-compiled-norm/`.
+
+
+### All three captured compiled norms reproduced (2026-11-08)
+
+The remaining two/three-input standalone norm discrepancies are resolved on
+the original captured operands: all three norms now match 1,981,440 BF16
+output words exactly. The missing operation was fused mean scaling plus
+epsilon: `fmaf(sum, 1.0f / 5120.0f, 1e-6f)`. Disassembly of both original
+cached cubins confirms `FFMA` with reciprocal `0x394ccccd` and epsilon
+`0x358637bd` before `MUFU.RSQ`. Separate rounded mean and epsilon addition
+changes output bits even when the sum of squares is identical.
+
+For the selected 512-thread add-norm kernels, the eight local accumulators
+reduce in offset order 2, 4, 1. The 256-thread first norm uses the previously
+qualified four-accumulator tree. Exact captured replay uses variant 0 for the
+first norm and 288 for both add-norms in the standalone evidence harness.
+Original cubin controls remain exact and unchanged; memory checking reports
+zero errors. Instrumented PTX copies expose sums/scales for diagnosis only.
+No production arithmetic changed in this follow-up. Independent synthetic and
+other-shape qualification is required before exposing this reduction contract
+in the runtime; full model equivalence and the remaining GDN differences are
+still open. Evidence: `/tmp/bitnet-goal-compiled-norm/results9.jsonl`, original
+SASS, source and qualification metadata in the same directory.
+
+
+### Synthetic qualification of compiled normalization formulas (2026-11-08)
+
+The three standalone formulas now match 144,629,760 BF16 values over 120
+independent synthetic cases: eight input patterns and batch sizes 1, 5, 17,
+129 and 1025, for each of the three norm operations. Patterns include exact
+cancellation, small/large scale and wide exponent ranges. Original selected
+cubins supply the reference outputs; no reference outputs were adjusted.
+Captured replay still matches all 1,981,440 values. Memcheck and synccheck
+report zero errors.
+
+The expanded cases exposed two issues hidden by the captured operands. The
+first norm also requires fused mean scaling plus epsilon. More importantly,
+the persistent two-input norm combines local square pairs with FMA within
+each tile before combining tiles, whereas the three-input norm accumulates
+across tiles before local reduction. Treating these as the same arithmetic
+left one BF16 mismatch in the 1025-token wide-range case. Keeping their
+operation order distinct removes it. Current replay selections are variant
+32 for the first norm and 288 for both add-norm entry points, whose kernel
+branches implement different square/reduction orders.
+
+This qualifies the formulas against those selected original configurations
+at dimension 5120, epsilon 1e-6 and weight offset 1; it does not qualify other
+compiler tiles or full-model parity. Production arithmetic is unchanged in
+this follow-up. Next integrate a named reduction contract with independent
+synthetic goldens and retain existing eager gates. Evidence/source:
+`/tmp/bitnet-goal-compiled-norm/qualification.json` and `synthetic.cu`.
+
+
+### Backend tiled normalization contract implemented (2026-11-08)
+
+CUDA resident RMSNorm, add-RMSNorm and three-input add-RMSNorm now accept
+`BN_GPU_RMSNORM_REDUCTION_TILED_5120_FMA`. This is an explicit fixed arithmetic
+contract: dimension 5120, epsilon 1e-6, shared BF16 gamma, weight offset 1.
+Other shapes/settings reject before work instead of silently selecting another
+reduction. The first, persistent two-input and looped three-input kernels
+retain their separately qualified square/reduction orders and fused mean plus
+epsilon. Intermediates remain on device; no request allocations are added.
+Existing default/contiguous reductions retain their original arithmetic.
+Ordinary dense request initialization does not yet select the new contract.
+
+The full CUDA suite passes, including 120 new independent original-cubin cases
+with 144,629,760 exact norm words and 48,209,920 exact three-input residual
+words. Seven invalid-plan variants are checked through all three callbacks
+for every case. The repository generator reproduces the frozen header exactly;
+memcheck and synccheck both report zero errors. Reference provenance, cubin
+hashes and selected configurations are in
+`test/cuda_compiled_norm_reference.json`; the generator is
+`test/reference_cuda_compiled_norm.cu`. Existing reference values are preserved.
+Evidence and command logs: `/tmp/bitnet-goal-compiled-runtime/`.
+
+Next connect this reduction contract to an explicit dense request arithmetic
+profile and qualify complete short/long/chunked/resumed reference traces.
+Native GDN/attention equivalence and default compiled-vLLM parity remain open;
+passing these operator gates alone does not close those requirements.
+
+The protected clean build and standard tests also pass with zero warnings;
+all four pre-existing probe binaries are preserved byte-for-byte. Frozen CLI
+integration passes all 20 cases. Flash Next's 4097-token prompt and 32-output
+trajectory matches the saved expert-preload baseline (output-ID regression,
+not an all-layer comparison). On original captured three-input operands, the
+production callback matches 660,480 norm and 660,480 residual words exactly.
+The broader request-level compiled comparison remains the next gate.
+
+
+### Explicit tiled-FP32 dense request profile (2026-11-08)
+
+`BN_TRANSFORMER_BF16_ARITHMETIC_TILED_FP32` now selects the qualified fixed
+tiled normalization contract together with retained FP32 activation/residual
+intermediates. Backend reduction capabilities are declared explicitly; missing
+support rejects before request allocation. The profile is request-local,
+survives allocation-free restart, and uses the ordinary forward/prefill paths.
+The eager default and existing FP32-intermediate profile remain available.
+`bench_bf16_latency` accepts `tiled-fp32` and records that label in JSON.
+
+The real-model runtime gate passes for both explicit profiles: complete logit
+replay across restart, observer checks, interleaved eager-session isolation,
+matching chunk schedules, resume/decode, no-logit publication and failure
+invalidation. The new profile adds no request allocations or CPU fallback.
+Its full runtime memory check, full CUDA regression and protected clean/CLI
+checks are still pending in `/tmp/bitnet-goal-tiled-request/` at this entry.
+
+One warmup plus three measured 64-output runs yield median TTFT/decode-step
+milliseconds: 5 tokens 49.66/15.56; 129 tokens 213.62/15.62; 1025 tokens
+1209.56/15.88; 4097 tokens 4668.55/16.34. Within-case output IDs are stable.
+Against the saved original compiled reference, short and 4097-token cases
+match all 64 output IDs; the 129-token case still differs at output 3
+(63 versus 12), and the 1025-token case first differs at output 51.
+This is not a fresh paired vLLM timing run or full numerical parity claim.
+
+Read-only inspection of the exact reference image identifies another concrete
+GDN difference: FlashInfer SM120 casts its F32 KK accumulator to FP16 before
+`CollectiveInverse`, which uses FP16 MMA operands and stores, while native
+prefill retains F32 inverse profile4 before its BF16 conversion. A queued
+first-layer capture will localize the remaining divergence. Source hashes and
+original files are preserved under the same evidence directory; no GDN
+arithmetic changed in this implementation.
+
+Further read-only inspection of the pinned FlashInfer source identifies two
+additional GDN arithmetic boundaries: alpha processing scans
+`log2(exp(g) + 1e-10)`, and beta multiplies the F32 key-dot accumulator after
+the dot product. Native prefill scans log decay directly and scales operands
+before the correlation. These source-level differences require actual
+operand/output comparison; they are not yet a proof of the first divergent
+operator. An original-GDN capture wrapper is prepared under
+`/tmp/bitnet-goal-qwen27-gdn/controller/` with syntax checks only. It has not
+been launched; the existing serialized runtime memory-check/regression pipeline
+remains active. No production kernel changes accompany this investigation.
+
+
+### Tiled request qualification complete; GDN core isolated (2026-11-08)
+
+All queued native checks now pass: full real-model runtime memcheck reports
+zero errors, the full CUDA suite passes, protected clean build and standard
+tests pass with zero warnings, all frozen CLI cases pass, and the Flash Next
+4097-token/32-output trajectory remains exact. Four pre-existing probe
+binaries retain their hashes. No request arithmetic defaults changed.
+
+A controlled capture from the original default compiled reference now compares
+layer0 directly with the native tiled profile. Input normalization (660,480
+BF16 values), prepared Q/K/V, log decay, beta and the F32 initial state all
+match bit-for-bit. The GDN output differs in 388,377 of 792,576 BF16 values
+(max absolute error 0.078125); next state differs in 776,661 of 786,432 F32
+values (max absolute error about 0.112315). Thus a remaining difference is
+inside the GDN execution path, with matching actual operands. Instrumentation
+preserves eight generated control IDs before/during capture and after fully
+restoring the first-norm launcher and GDN dispatch bindings.
+
+Direct replay of these captured operands identifies the actual default as
+FlashInfer's `cp_delta_rule_dsl_sm120` context-parallel path. Default-auto and
+forced-CP replay reproduce all 1,579,008 captured output/state values exactly.
+Forcing the non-CP SM120 path instead changes 175,624 BF16 output values and
+668,317 F32 state values. Non-CP is a diagnostic counterfactual, not an
+acceptable replacement for this default compiled comparison. A native
+compatible profile must qualify the CP phases and their arithmetic.
+
+This fresh reference initialization selects token 63 at medium output3,
+whereas the saved earlier benchmark selected 12; all three controls within
+the fresh engine agree. Existing frozen fixtures and saved benchmark outputs
+remain unchanged. The operator comparison relies on exact captured operands,
+not cross-initialization greedy-ID agreement. Full-model equivalence,
+matched performance parity and the broader serving/model/backend requirements
+remain open. Evidence: `/tmp/bitnet-goal-qwen27-gdn/qualification.json`;
+native qualification: `/tmp/bitnet-goal-tiled-request/qualification.json`.
+
+
+### First native FlashInfer-CP stage reproduced (2026-11-08)
+
+A stage-level capture of the unchanged original CP call now freezes signed
+inverse tiles, local transfer/state, fixed-up state, final output and next
+state. Copying these boundaries preserves all 1,579,008 original output/state
+values. The 129-token call chooses CP chunk length 512. Its T precompute is
+independent of decay: `T = -(inv(I + lower(beta_row * KKT)) beta)^T`.
+
+A standalone CUDA prototype reproduces the T stage exactly: all 589,824 BF16
+values from the captured prompt and 32,243,712 values from 40 independent
+original-kernel synthetic cases. Batches span 1, 5, 17, 63, 64, 65, 129, 257,
+513 and 1025, with tiny, signed and sparse keys and beta values including zero
+and one. Original references are generated twice and checked for equality;
+existing goldens remain unchanged. Memcheck and synccheck report zero errors.
+The prototype uses BF16 tensor-core Gram products, FP16 inverse storage,
+explicit F32-FMA diagonal8 elimination, FP16 MMA block composition and the
+reference's FP16 rounding of64-level partial products before their addition.
+A CPU diagnostic with rounded high-precision matmuls still differs in 592
+captured BF16 values and is not used as a golden or implementation substitute.
+
+No production GDN kernels changed. The remaining CP transfer/state, fixup and
+final prefill phases must be implemented and qualified, including nonzero
+initial state and multiple CP chunks, before exposing a complete compatible
+profile. Full-model parity and the original wider goal remain open.
+Source, references and qualification: `/tmp/bitnet-goal-qwen27-gdn/cuda-t/`,
+`/tmp/bitnet-goal-qwen27-gdn/t-synthetic/` and `stages/`.
+
+
+### Native CP transfer/state and fixup stages qualified (2026-11-08)
+
+The standalone CUDA prototype now reproduces local transfer and state
+precomputation exactly: 185,597,952 F32 words over 40 independent original
+FlashInfer cases. The composed T/MN/fixup pipeline also matches all 92,798,976
+F32 prefix-state values, totaling 278,396,928 exact F32 comparisons. Cases use
+zero/nonzero F32 initial state, lengths 1, 17, 63, 64, 65, 129, 257, 321,
+513 and 1025, and explicit CP lengths 64/512 (up to 17 chunks). All references
+are generated twice and checked for equality. Memcheck and synccheck report
+zero errors for both MN and the composed fixup suite. Captured real-model
+transfer, local state and fixed state each match all 786,432 F32 values.
+
+The MN implementation consumes the transposed view of the physical signed T
+matrix, preserves the reference's BF16 intermediate stores, and keeps decay
+placement distinct for transfer/state updates. For 48 heads, fixup selects
+raw-F32 TF32 MMA with even/odd feature permutation inside each 8-wide block;
+introducing an explicit conversion or using the old KKT's 16-wide permutation
+would change this contract. Fixed-state index j stores the state after chunk j.
+
+Final CP prefill remains unimplemented. Its final recurrent state must not be
+replaced by the last fixed state: those reference tensors differ in 786,418
+of 786,432 captured F32 values (max difference about0.08454). Native final
+output/state, runtime integration and full model/performance/serving goals
+remain open. Production GDN kernels are unchanged; all new kernels are still
+standalone prototypes. Source and evidence are under
+`/tmp/bitnet-goal-qwen27-gdn/cuda-mn/`, `cuda-fixup/`, and `mn-synthetic/`.
+
+
+### Dense Qwen27 CP profile: scoped resident CUDA qualification (2026-11-08)
+
+The complete SM120 CP GDN pipeline is now integrated behind the explicit
+`BN_TRANSFORMER_BF16_ARITHMETIC_CP_FP32` request profile (`cp-fp32` in
+`bench_bf16_latency`). It retains F32 activation/residual and attention-sigmoid
+intermediates, the fixed tiled 5120-column normalization contract, F32 SSM
+state, and explicit `expf` log-decay staging. Existing eager arithmetic remains
+the compatibility default. Earlier standalone-only status entries above are
+superseded by this integration.
+
+This comparison uses the same Qwen3.8-27B UD-Q4_K_XL GGUF checkpoint, RTX PRO
+6000 Blackwell Max-Q (SM120), one request, context capacity 8192, and a prefill
+budget of 8192 tokens. Native preparation uses MKL VML HA. The original pinned
+vLLM image is
+`sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29`,
+with GGUF loading, BF16 compute/KV, F32 SSM, FA2, default compiled graphs and
+prefix caching disabled. All learned reference parameters are CUDA resident.
+The reference kernels are unchanged; the GGUF text-only architecture mapping
+and validated plugin binary are the previously documented compatibility setup.
+
+One warmup and three measured runs generate 64 greedy tokens per prompt.
+TTFT includes request setup/restart, prefill, readback and sampling; decode is
+the median of each run's mean over the following 63 token-delivery intervals.
+Setup/model loading is excluded.
+
+| Prompt tokens | Native TTFT ms | vLLM TTFT ms | Native decode ms | vLLM decode ms |
+| --- | ---: | ---: | ---: | ---: |
+| 5 | 52.372 | 50.051 | 15.851 | 18.014 |
+| 129 | 221.615 | 369.617 | 15.880 | 17.977 |
+| 1025 | 1290.407 | 2563.279 | 16.130 | 18.250 |
+| 4097, repeated-token prompt | 4951.733 | 10240.937 | 16.561 | 18.725 |
+
+Every measured token stream matches the fresh unmodified reference for all
+64 outputs, including warmups. All 128 normalization stages of the captured
+129-token prefill match exactly: 84,541,440 BF16 values. A separate five-sample
+short-prompt repeat measures 52.279 ms, versus 53.445 ms for the saved previous
+native executable. The short case is 4.64% slower in the three-sample table
+and 4.45% slower in that repeat; the other measured prefill/decode cases are
+faster than vLLM. This meets the 5% threshold for these single-request resident
+CUDA workloads, with a narrow short-prompt margin.
+
+The CP operator preserves 551,755,776 exact output/state comparisons over
+56 independent original-FlashInfer cases. They include nonzero initial state,
+partial tiles, multiple CP chunks and 511/512/513-token chunk boundaries.
+The implementation skips unused MN/fixup work for a single CP chunk. Its
+preparation writes the token-major query copy contiguously and uses 512
+threads for independent copies/casts while retaining prefix math in warp zero.
+Nsight records the expected 36 launches for a 129-token multiplier-domain CP
+call, no allocation or host transfer, and one final device-to-device state
+copy. Preparation time for its three local blocks falls from 132.064 to
+49.568 microseconds. CPU/CUDA suites, request lifecycle tests, kernel memory,
+initialization and synchronization checks, and real-model initialization
+checking pass.
+
+The original saved reference values remain unchanged. A fresh audit established
+that the earlier layer-9 one-value mismatch came from reference configuration
+variation: actual original gamma, all operands and both outputs match native
+on 3,307,520 values. Source hashes and selected launch configurations accompany
+the fresh trace. This profile does not promise bit identity with arbitrary
+compiler/autotune selections.
+
+Large native prompts also pass a 512-token schedule using both automatic
+chunking and separate no-logits-prefix/one-token-tail calls, followed by 64
+decode tokens. Those native schedules agree. The default vLLM 512-token-budget
+run changes its own output for the unsplit 129-token control and disagrees
+with native on that case and the 1025-token case. That external chunked
+comparison remains unqualified pending an arithmetic-configuration and
+one-token-tail dispatch audit. The 8192-token-budget result above does not
+establish parity for this different schedule, other checkpoint/precision
+formats, libc preparation, other GPUs, CPU backends, offloaded models or
+concurrent serving. The wider model/backend/serving goal remains open.
+
+Commands, inputs, exact comparisons, source/configuration hashes, profiler
+reports and both reference snapshots are retained in
+`/tmp/bitnet-goal-cp-layout/`, `/tmp/bitnet-goal-norm9/benchmark/` and
+`/tmp/bitnet-goal-norm9/controller/`. The scheduling-specific follow-up is under
+`/tmp/bitnet-goal-cp-layout/chunk-reference/` and `chunk-native/`.
+
+### Qwen27: 512-token reference arithmetic and prompt-tail audit (2026-11-08)
+
+The pinned original vLLM engine was audited with a 512-token batch budget,
+chunked prefill enabled, and the same model, precision, device and cache
+settings as the comparison above. Both audit controllers exited successfully.
+The unsplit 129-token prompt produced the same eight tokens before, during
+and after instrumentation: `[18065, 271, 63, 3431, 14905, 508, 63, 271]`.
+These differ from the 8192-budget reference beginning at output index 2.
+
+The full capture aligned 128 backbone normalization stages. The first
+divergence occurs at layer 0 input normalization, before recurrent state:
+all 660,480 embedding words and 5,120 weight words match the 8192-budget
+reference exactly, but three of the 660,480 normalized BF16 words differ.
+The stock 512-budget engine selected `R0_BLOCK=8192`, 16 warps for this
+operator; the qualified 8192-budget engine selected `R0_BLOCK=1024`,
+8 warps. Thus even this unsplit control has different reduction arithmetic.
+
+An additional operator replay used the unchanged original three-input
+normalization kernels on identical captured layer 10 operands and gamma.
+The selected 512-budget configuration (`R0_BLOCK=1024`, 8 warps) reproduced
+both captured outputs exactly. The original 8192-budget configuration
+(`R0_BLOCK=4096`, 16 warps) preserved the residual output exactly and changed
+four normalized BF16 words. This diagnostic measures configuration effects;
+it does not replace either stock reference or its performance baseline.
+
+An initial ordinal capture selected the ninth three-input norm call, which
+is layer 10 under the 512-budget compilation and layer 9 under the
+8192-budget compilation. The weight identity was checked against GGUF,
+cross-layer comparisons were discarded, and the full stage capture was
+used instead. Kernel names and call ordinals alone do not establish layer
+identity across different compilations.
+
+Live GDN metadata confirms the 1025-token prompt executes as
+`512 prefill, 512 prefill, 1 prefill`, followed by decode. The 4097-token
+prompt executes eight 512-token prefills and a one-token prefill, followed
+by decode. This agrees with the original metadata builder's explicit
+`treat_short_extends_as_decodes=False` policy and with native prompt-tail
+dispatch. No native dispatch change is justified by this audit.
+
+The stock 512-budget token comparison remains unqualified. Arithmetic
+variation before recurrent state does not rule out a separate continuation
+defect. The next correctness control must explicitly match the numerical
+profile using unchanged original operators, first on the unsplit prompt
+and then on chunked/resumed prompts. Production code, defaults and frozen
+oracles were unchanged during this audit; existing suites were not rerun
+for these external diagnostic scripts. Evidence, source hashes, controls,
+metadata and comparisons are in `/tmp/bitnet-goal-chunk-audit/` and
+`/tmp/bitnet-goal-chunk-full/qualification.json`. The full production goal
+remains active.
+
+### Qwen27: matched arithmetic for chunked/resumed correctness (2026-11-08)
+
+A separate pinned original vLLM run fixed only the launch configurations of
+its unchanged 5120-column RMSnorm JIT functions: one-input norms use
+`R0_BLOCK=1024`, 8 warps; two-input norms use `8192`, 16 warps; three-input
+norms use `4096`, 16 warps. The policy was installed before engine startup
+so graph capture uses the same declared arithmetic. GDN, FA2, model weights,
+BF16 activations, F32 SSM state, graph mode and 512-token scheduling were
+retained. This is an additional correctness control, not a stock performance
+measurement or a replacement for the preserved stock reference.
+
+With that profile, the unsplit 129-token prompt matches native at all
+128 backbone normalization stages: 84,541,440 BF16 words, zero differences.
+Its 64 generated tokens agree before, during and after capture. The 5-token
+prompt agrees in two runs; the 1025-token and 4097-token prompts each agree
+in three runs, with 64 generated tokens per run. These schedules include
+`512+512+1` and `8*512+1` prompt chunks. The previously measured native
+explicit resume runs (prefix without logits, then one-token prompt tail)
+match native automatic chunking and these independent reference streams.
+All 11 controlled reference generations completed successfully and the
+controller exited with status zero.
+
+This qualifies those chunked and resumed paths under the explicit native
+CP_FP32 / MKL VML HA numerical profile. It does not assert bit identity with
+every stock compiler/autotune configuration, or performance parity for the
+512-token schedule. The original stock 512-budget output differences and
+all frozen references remain preserved. Evidence and configuration/source
+hashes are in `/tmp/bitnet-goal-chunk-matched/qualification.json`.
+
+### Qwen27 CP arithmetic exposed in the CLI (2026-11-08)
+
+The production CLI now accepts `--cuda-bf16-profile eager|cp-fp32`.
+`eager` remains the compatibility default. `cp-fp32` selects the qualified
+request-local arithmetic, requires the supported dense hybrid model and
+SM120 CUDA capabilities, and uses the existing required MKL VML preparation.
+The selected profile survives restart and is reapplied after session reset.
+Unsupported model/backend combinations fail explicitly; the Flash checkpoint
+is rejected before GPU preparation when this dense-only profile is selected.
+
+For an explicit 8192-token prompt chunk and context capacity:
+
+```sh
+./bitnet "$MODEL" --cuda-bf16 --cuda-bf16-profile cp-fp32 \
+  --prefill-batch 8192 --maxseq 8192 --temp 0 --repeat-penalty 1 \
+  -p "Explain expert offloading." -n 64
+```
+
+The new `test/test_cli_bf16_cp.py` uses the separate frozen independent
+`test/bf16_cli_cp_reference.json`. It checks all 64 output tokens for each
+of the four prompt lengths at both 8192- and 512-token chunk sizes: eight
+streams, 512 tokens total. The 8192-budget tokens come from the preserved
+stock engine; the 512-budget tokens come from the explicitly matched
+normalization control above. It also checks invalid flags, explicit eager
+selection, repeated benchmark/no-logits reset and chat reset. The existing
+eager CLI fixture and test remain unchanged and pass.
+
+The protected clean CUDA/MKL build has zero warnings; standard CPU tests,
+the complete CUDA suite with diagnostic isolation, both CLI integration
+suites and real-model request runtime tests pass. The latter cover all
+three optional arithmetic profiles, isolation, restart, chunk/resume and
+failure invalidation. All four user-owned llama probe binaries retain their
+hashes. Commands, logs and results are in `/tmp/bitnet-goal-cp-cli/`.
+This exposes the qualified path for normal use; the earlier performance
+claim remains scoped to its measured resident workloads and configuration.
+
+### Flash compact expert-grid experiment: no latency gain (2026-11-08)
+
+A compact-grid prototype removed bank-max-row padding from the grouped
+Q4_K/Q5_K gate/up and Q5_1 down MMA launches. It retained the original
+8/24/64 token-tile selection and per-output arithmetic, mapping blocks through
+the existing descriptors in expert/feature/token order. It added no buffer,
+metadata transfer, kernel launch or inference allocation. Every one of the
+9,857,280 useful block coordinates in the frozen 4097-token routing case
+matched the original grid's useful coordinates. The prototype also passed
+192 nonzero GPU differential cases against the retained per-expert DP4A path.
+
+The experiment did not establish a useful performance gain. Fresh resident-
+expert measurements use the same 4097-token prompt, host PLE placement,
+2 GiB source RAM cache, five outputs, one warmup and three measured runs.
+Median prefill was 1642.8 ms for the saved production binary and 1640.4 ms
+for the prototype, a 0.146% difference. Fixed run order and three samples
+limit interpretation of this small difference. These are local timings,
+not matched vLLM results or isolated decode measurements.
+
+Paired Nsight traces each contain two restarted prompts. The compact grid
+reduces grouped-MMA block count from 50,633,920 to 19,714,560, retaining
+all 9,594 grouped-MMA calls. Summed grouped-MMA duration is 1531.047 ms
+before and 1532.642 ms after. Removing 61.06% uniformly returning blocks
+therefore did not reduce measured MMA time. These sums include profiler
+effects and do not measure SM occupancy or isolated request latency.
+Tracked device heap and pinned host peaks are identical in both traces,
+with zero inference allocations, expert uploads or cache-fill copies.
+
+The production kernel sources were restored byte-for-byte to their saved
+pre-experiment versions. The experimental binary and sources remain under
+`/tmp/bitnet-goal-flash-compact/`. The retained test expansion adds eight
+unsorted experts, disjoint row ranges with gaps, and groups spanning up to
+five 64-token tiles, across all existing gate/down formats and hidden widths.
+The final restored build has zero warnings; standard CPU tests, the full
+CUDA suite with diagnostic isolation, all 192 differential cases, memcheck
+and synccheck pass. No original golden values were changed.
+
+The paired baseline trace identifies Q8 matrix projections as another
+candidate: dense Q8 kernels consume 572.953 ms and grouped Q8 down kernels
+217.909 ms across the two prompts, approximately 24% of summed prefill
+kernel time. They retain the DP4A matrix path. An integer-MMA experiment
+must preserve Q8's F32 scale product and sequential per-32-value FMA order;
+Q5_1's FP16-rounded scale product is a different contract. No Q8 matrix
+optimization is implemented or qualified by this experiment. Commands,
+profiles, geometry models and verification are under
+`/tmp/bitnet-goal-flash-compact/`.
+
+### Q8 integer-MMA matrix execution (2026-11-08)
+
+SM120 native BF16 Q8_0 matrix projections now use integer tensor cores for
+dense linear operations and grouped expert down projections. The existing
+total-batch activation quantization and MMVQ/MMQ precision selection are
+preserved. Q8 retains its F32 product of FP16 scales and sequential per-32-value
+FMA accumulation, followed by BF16 rounding. It does not adopt Q5_1's FP16
+product rounding. Unaligned 34-byte weight blocks use safe loads. Token tiles
+are 8/24/64. Vector/decode kernels, other-device dense dispatch and the
+per-expert DP4A path remain available with their existing behavior.
+
+The integer-only dot32 helper moved byte-for-byte into a shared private quant
+header. No public API or quant capability declarations changed: Q8 BF16
+linear/MoE support was already declared in the format registry. Model weights,
+routing, cache admission, placements, budgets and request ownership are
+preserved. There are no new persistent packed layouts or inference allocations.
+
+The direct test checks all three MMA tiles against the retained DP4A kernel
+and an independent scalar CPU recurrence in 72 cases. It includes token and
+row tails, K=32/96/160/640/2560/5120, signed quants, zero, subnormal and extreme
+finite positive/negative FP16 scales. Existing frozen plugin Q8 references
+remain unchanged. All 192 grouped nonzero differential cases pass against
+the unchanged per-expert dispatch. The whole-model long oracle passes all
+32 phases in each of resident, lazy-cache and uncached modes: each checks
+4,491,225,056 BF16 and 16,716,198 F32/I32 words with zero differences.
+
+Fresh before/after Flash samples use the same 4097-token prompt, five outputs,
+one warmup and three measured runs, a 2 GiB source cache and shared caches
+retained across restarted sessions. Filesystem-cache state is not independently
+controlled:
+
+| Placement | Before prompt ms | After prompt ms | Change |
+| --- | ---: | ---: | ---: |
+| Resident experts, host PLE | 1641.7 | 1354.7 | -17.48% |
+| Stream experts from RAM | 4232.1 | 4213.8 | -0.43% |
+
+The streaming difference is within the sample spread; no streaming speedup is
+established. A separate 64-output resident-expert control reports medians of
+72.83 and 72.89 output tokens/s. This CLI rate includes the prefill-sampled
+token and is not isolated decode latency. Fixed case order and three samples
+limit generalization. These Flash cases retain host PLE placement and do not
+establish full-model GPU residency or matched vLLM performance parity.
+
+Paired profiles cover two restarted prompts. Dense Q8 matrix duration falls
+from 576.970 to 138.135 ms across 1,152 calls; grouped Q8 down duration falls
+from 221.085 to 67.564 ms across 554 calls. Projection call counts and the
+other 9,594 grouped-MMA calls are retained. Summed kernel durations include
+profiler effects and do not measure SM occupancy or isolated request latency.
+Tracked device/pinned peaks, expert transfers and inference allocation counts
+are unchanged; tracked device heap and pinned host allocations return to zero.
+
+The clean CUDA/MKL build has zero warnings. Standard CPU tests, the complete
+CUDA suite and diagnostic isolation pass. Direct and grouped tests pass
+memcheck/synccheck with zero errors. Whole-model uncached memcheck passes all
+32 phases and the oracle with zero errors. Both Qwen27 CLI suites and the
+request-state/isolation/restart/failure tests pass on the final rebuild.
+
+A fresh original Qwen27 vLLM timing run was also made because both the saved
+baseline and new native short-prompt timings exceeded the older reference's
+5% threshold. The old timing snapshot is preserved. With the fresh reference,
+short native TTFT is 52.911 versus 50.500 ms, a 4.77% gap. Other measured
+prefill and decode cases are faster. This remains the explicit CP_FP32 plus
+MKL VML HA, fully resident, single-request, 8192-token budget/context scope.
+The fresh stock run has stable medium/long streams that differ from the
+preserved arithmetic-profile streams beginning at indices 2/21. Current
+correctness qualification uses the preserved profile-matched references,
+which both native binaries match for every measured 64-token stream; timing
+and fresh-stock bit identity are recorded separately. Commands, both timing
+snapshots, all stream comparisons, profiles and checks are under
+`/tmp/bitnet-goal-q8-mma/`.
+### Bounded Flash expert supply diagnostics (2026-11-09)
+
+`bench_flash_offload` measures ordinary Flash prefill and greedy decode with
+explicit GPU expert and managed RAM cache budgets. Build with the same CUDA/MKL
+flags as `bitnet`, then run:
+
+```sh
+./bench_flash_offload MODEL.gguf PROMPT.i32 64 3 0 128 128 12288 8192
+```
+
+Arguments after the prompt are output count, measured requests, warmup requests,
+prefill chunk, maximum sequence length, GPU expert cache MiB and RAM cache MiB.
+The prompt contains little-endian I32 token IDs. JSON records include configuration,
+tokens, individual decode times and per-phase counter deltas. Caches persist across
+restarted requests; warmup records retain chronological run indices. Decode timing
+includes forward plus greedy selection and excludes the diagnostic getter gaps.
+TTFT includes request restart and prefill. CPU fallback is rejected.
+
+On the designated SM120 GPU and Flash Next Q4_K_XL checkpoint, a five-token prompt
+followed by 64 outputs produced these unprofiled mean decode times (63 steps):
+
+| Managed RAM cache | Request 0, empty expert caches | Request 1 | Request 2 | Request 2 per-token p95 |
+| --- | ---: | ---: | ---: | ---: |
+| 0 MiB | 27.39 ms | 18.91 ms | 18.91 ms | 29.09 ms |
+| 2048 MiB | 41.98 ms | 22.93 ms | 22.89 ms | 41.79 ms |
+| 8192 MiB | 50.99 ms | 20.72 ms | 17.74 ms | 25.09 ms |
+
+All nine 64-token streams match. The GPU expert cache reserves 12,883,353,600
+bytes and starts empty in each process. Core tensors, request buffers and host PLE
+storage are additional allocations. The OS filesystem cache is uncontrolled and
+is outside the managed RAM budget: PRead bytes do not establish physical disk I/O.
+This is one repeated trajectory, without concurrency, and establishes neither
+general workload performance nor vLLM parity.
+
+GPU decode hit fractions are identical across RAM budgets: 86.04% on request 0
+and 95.13% on requests 1/2. Corresponding raw expert H2D payloads are
+13,280,768,000 and 4,739,481,600 bytes. The 2 GiB RAM cache misses on every GPU
+miss, including request 2; the zero-cache control reads directly into pinned
+staging and avoids managed-cache fill/copy overhead. With 8 GiB, source PRead
+bytes fall to 2,613,760,000 on request 1 and zero on request 2. Larger cache cold
+latency is higher; these measurements do not identify its full cause. No default
+cache or runtime policy changed.
+
+An independent Nsight Systems capture validates upload bytes and D2D cache-fill
+bytes against actual GPU copy activities in all 192 phases. Fully warm request 2
+transfers 4,739,481,600 H2D bytes in 88.90 ms of copy activity (about 53.3 GB/s),
+with 2.28 ms of D2D fill activity. Its CPU source-wrapper span totals 188.97 ms
+with no source reads. These spans can overlap and cannot be summed to infer
+latency or isolated transfer stalls. The wrapper includes reads, cache handling
+and CPU staging. Metadata/retry spans also include dependencies and caller gaps.
+`upload_bytes` covers raw expert-bank uploads, not all H2D traffic. Prefill
+intentionally bypasses GPU expert admission, and its D2D fill bytes are zero.
+With the GPU cache disabled, misses are derived from submitted experts and raw
+uploads; the eight-output control also preserves tokens. No inference runtime
+allocations were observed in the trace.
+
+Protected clean CUDA/MKL compilation and benchmark compilation have zero warnings;
+standard tests and real-model runs pass. Evidence, commands, logs, comparison JSON
+and the trace are under `/tmp/bitnet-goal-offload-supply/`. The next policy work
+should evaluate admission and CPU staging on the GPU-conditioned miss stream,
+including cold costs, before changing cache defaults.
+
+An external linker wrapper subsequently captured the actual host expert-acquire
+sequence without changing library code. Replay reproduces every observed RAM LRU
+hit and source byte count in all 192 phases. At 537 slots (2 GiB), FIFO and
+resident-only LFU also have zero warm hits. Inserting at the LRU end yields only
+77 hits of 1,474 misses on request 2. A bounded ghost list of twice the slot count
+with second-touch admission never admits an expert at this capacity: a second
+touch alone is insufficient when the reuse distance exceeds the ghost budget.
+
+Exploratory full-history frequency admission, comparing a candidate against the
+least-frequent resident and retaining residents on ties, yields 537 request-2
+hits and reduces simulated source reads from 4.739 to 3.032 GB. It also reduces
+request-0 admitted payload from 13.281 to 1.700 GB. At 2,151 slots the replayed
+LRU again matches the measured 8 GiB result: 655/1,474 warm hits, then 1,474/1,474.
+These are counterfactual counts on a fixed GPU-miss sequence, not measured latency
+gains. The frequency experiment has no aging, uses full-history metadata over
+checkpoint IDs, and does not establish behavior under changing or concurrent
+requests. Admission can avoid cache-fill copies but still needs a hit copy into
+pinned staging. Runtime policy remains unchanged. Capture code, trace, validated
+replay and policy definitions are under `/tmp/bitnet-goal-cache-policy/`.
+
+### Measured RAM admission prototype (2026-11-09)
+
+An external linker wrapper implements frequency admission with saturating U16
+counters, LRU tie breaking and strict candidate-frequency comparison. The aged
+variant halves counters every 4,096 decode GPU-miss requests. It uses 270,336
+bytes of fixed metadata for this 48-layer/512-expert checkpoint, plus the existing
+2 GiB RAM slab. Its global state is confined to the standalone serial experiment;
+it is not a library implementation or a concurrent cache design. Prefill still
+borrows without admission or promotion. No production code or defaults changed.
+
+Two comparisons, reversing variant order on the second pass, preserve every
+64-token output stream and every GPU hit/miss/upload/fill counter. Independent
+replay exactly reproduces all 192 phase hit/read counts for both unaged and aged
+repeated-request experiments. Results below are mean decode ms per step; pairs
+are the two process measurements, not confidence intervals:
+
+| Workload and request | Existing 2 GiB LRU | Aged admission, 2 GiB | No managed RAM cache, separate control |
+| --- | ---: | ---: | ---: |
+| Repeated, request 0 | 43.29 / 42.71 | 32.75 / 33.82 | 27.36 |
+| Repeated, request 2 | 22.86 / 22.89 | 19.07 / 18.87 | 19.12 |
+| Alternating, request 0 | 42.27 / 42.91 | 32.62 / 32.62 | 27.66 |
+| Alternating, request 4 | 26.50 / 26.91 | 22.10 / 21.81 | 20.90 |
+
+Alternating requests swap the second/fourth valid token IDs on odd requests and
+restore the original five-token prompt on even requests. This is a controlled
+changing-routing test, not a representative serving workload. Aged repeated
+request 2 has 507 RAM hits and reads 3.120 GB rather than LRU's 4.739 GB; alternating
+request 4 has 244 hits and reads 5.946 GB rather than 6.744 GB. The unaged repeated
+request reproduces the predicted 537 hits/3.032 GB and measures 18.51 ms at
+request 2, but has no adaptation/aging qualification.
+
+The admission experiment improves the undersized LRU control by about 17–19%
+at the final warm requests, yet does not establish an improvement over direct
+PRead into pinned staging. The no-cache control is faster cold and in the
+alternating case despite reading more bytes. Read savings alone are therefore
+insufficient grounds to integrate this policy. Pinned-staging copies, admission
+costs and memory budgets still matter. The 8 GiB fully warm cache result remains
+a separate larger-memory placement point. All tests are serial, filesystem cache
+is uncontrolled, and isolated critical-path stalls remain unmeasured. Commands,
+source, raw logs, exact replay and comparisons are under
+`/tmp/bitnet-goal-cache-admission/`. Production integration of this frequency
+prototype is deferred pending an advantage over the no-cache control.
+
+### Serialized multi-request CUDA baseline (2026-11-09)
+
+`bench_bf16_concurrency` keeps several backend-only Qwen27 sessions live on one
+shared immutable model and admits queued requests when a session finishes. It
+executes one decode per ready request, followed by one round-robin prefill chunk.
+All requests arrive together. The implementation executes each session call
+separately; it does not implement fused cross-request decode or production
+continuous batching. This baseline measures what those changes must improve.
+
+```sh
+./bench_bf16_concurrency MODEL.gguf PROMPT.i32 64 8 4 128 2048 uniform
+./bench_bf16_concurrency MODEL.gguf LONG_PROMPT.i32 64 8 4 128 2048 mixed
+```
+
+Arguments are output count, request count, maximum live sessions, prefill chunk,
+maximum sequence length and optional `uniform`/`mixed` mode. In mixed mode odd
+requests use five tokens while even requests retain the full prompt. Each request
+also swaps valid prompt IDs deterministically to exercise different state. Before
+timing, every request runs in isolation with the identical prompt, CP_FP32 profile,
+MKL VML HA and chunk boundaries. Every interleaved output must match this reference.
+This is an isolation/continuation regression check, not an independent model oracle.
+CPU fallback is rejected.
+
+Measured time excludes shared-model loading, tokenization, isolated reference
+execution and JSON output; it includes request initialization, admission, decode,
+prefill and session teardown. Per-request TTFT and completion include queue time
+from the common arrival instant. Delivery timestamps expose inter-token latency
+including interference from other requests. The slot limit bounds concurrently
+allocated session contexts; it is not a byte-accounted KV allocator or paged KV.
+`reserved_context_slots_peak` excludes recurrent states, workspace and weights.
+The benchmark does not implement cancellation, HTTP or arrival-rate workloads.
+
+On the designated SM120 GPU, eight requests with 129-token prompts, 64 outputs,
+128-token chunks and 2048-token capacity show:
+
+| Maximum live sessions | Aggregate output tokens/s | Per-token inter-delivery p95 |
+| --- | ---: | ---: |
+| 1 | 53.16 | 15.87 ms |
+| 2 | 52.54 | 32.15 ms |
+| 4 | 51.60 | 65.39 ms |
+| 8 | 51.05 | 131.94 ms |
+
+These single-sample cases retain identical per-request token streams across all
+four concurrency limits. Throughput includes the prefill-sampled first output.
+P95 pools the 504 decode delivery intervals; it is distinct from request-level
+TTFT/completion tails. No concurrent vLLM parity claim follows from these results.
+Evidence and commands are under `/tmp/bitnet-goal-serving-baseline/`.
+
+Mixed cases alternate 1,025-token and five-token prompts. At four live sessions,
+increasing prefill chunks reduces the number of pauses but lengthens the largest:
+
+| Prefill chunk | Output tokens/s | Inter-delivery p95 | Inter-delivery p99 | Maximum interval |
+| --- | ---: | ---: | ---: | ---: |
+| 128 | 34.19 | 242.27 ms | 243.46 ms | 251.96 ms |
+| 512 | 36.75 | 73.68 ms | 672.72 ms | 695.45 ms |
+
+The lower p95 with 512-token chunks does not mean its longest pauses improved;
+fewer prefill calls shift which intervals fall below that percentile. These are
+single-sample observations, not a general optimal chunk policy. All eight cases
+(uniform at 1/2/4/8 live; mixed at 1/2/4 live with chunk 128 and at four live with
+chunk 512) match 4,096 generated tokens to isolated execution. Streams also remain
+identical across concurrency limits with the same chunk schedule. Clean CUDA/MKL
+build, standard tests, warning-free benchmark compilation, CPU unsupported-build
+stub and argument validation pass. The four existing user probe binaries retain
+their original hashes. No production runtime/kernel changes were required for
+this baseline; production scheduling, KV allocation and batched execution remain
+unfinished.
+
+### Independent-sequence GDN decode batches (2026-11-09)
+
+`BnGPUGDNDecodeResidentPlan.n_sequences` now supports packed sequence-major
+one-token decode batches. Zero/one retains the original single-sequence kernel
+specialization; larger batches launch independent sequences on the second grid
+axis. Each sequence has separate F32 initial/next state and BF16 input/output;
+geometry and immutable weights are shared. The original reduction, FMA and
+rounding contract is preserved. All views remain owned by the supplied backend
+request. This does not reinterpret a batch as a multi-token recurrence.
+
+The new `--bf16-gdn-decode-batch-reference` CUDA test covers batches 1/2/3/8/16,
+three head geometries including HK16/HV48, three input/state seeds and five
+dependent launches. Sequences begin at different points of the preserved
+eight-step unmodified-vLLM trajectory, checking distinct state and input rows.
+All 408,672,000 output/state words match frozen reference hashes over 225
+launches. Initial states remain unchanged, boundary guards survive, and invalid
+counts, extents, aliases and ownership reject without publishing output/state.
+Neither the independent reference header nor its generator was changed.
+
+Nsight Systems confirms 180 grouped kernel launches covering 1,305 independent
+sequence updates: 45 launches each at grid Y=2/3/8/16. Batch-one and reference
+warmup calls retain the original specialization. This capture validates batching
+structure; its host fixture reads/hashes do not establish serving latency or
+throughput gains.
+
+Protected clean CUDA/MKL build has zero warnings; standard tests, the complete
+CUDA suite and diagnostic isolation pass. Batch memcheck and synccheck report
+zero errors. The preserved dense 64-token CP_FP32/MKL stream and six interleaved
+16-token streams remain exact after rebuilding. User probe binary hashes are
+preserved. Commands, logs, unchanged-reference hashes, trace and qualification
+are under `/tmp/bitnet-goal-gdn-batch/`.
+
+This operator is not yet used by the serving runtime. Efficient integration
+still needs validated access to individual sessions' state, shared-row
+projections, sequence-aware attention and KV scheduling. Packing full recurrent
+matrices into a temporary batch on every decode step would add substantial
+traffic; the packed arithmetic contract alone does not solve that ownership and
+placement problem. No concurrent vLLM performance gate is established here.
+
+### Direct session-state GDN groups (2026-11-09)
+
+The CUDA backend now has a bounded group coordinator that runs GDN directly
+against separate participant requests' buffers. `BnGPUGDNDecodeGroupPlan` lists
+one token per distinct live participant. State views are validated against that
+participant's registry; the shared-row extension below also permits explicitly
+coordinator-owned activations. Geometry and immutable weight handles are shared. The
+coordinator owns preallocated pinned/device pointer descriptors and CUDA events,
+while participants retain ownership of F32 recurrent state.
+No full state matrices need to be gathered or scattered for this operator.
+
+Setup queries/reserves descriptor payload for 1–256 participants. The budget
+includes descriptor storage, host event table and container, excluding driver,
+event and allocator/page overhead. Capacity is fixed; matching reserve is
+idempotent. Execution validates the entire group before queueing work, records
+producer-ready events, joins them on the coordinator stream, copies descriptors,
+launches one kernel and orders subsequent participant work after its done event.
+Pinned descriptor reuse can return `BN_GPU_GROUP_BUSY`; retry remains healthy.
+There is no explicit host fence or allocation on normal submission. Partial
+device submission failure fences the coordinator and invalidates participants.
+Callers serialize access and retain immutable weights until pending work ends.
+Output/next-state publication requires successful participant and coordinator fences,
+including upstream logical error checks.
+
+The `--bf16-gdn-decode-group-reference` test uses separate requests, async pinned
+input uploads and queued input consumers. Batches 1/2/3/8/16 cover all nine frozen
+GDN fixtures with staggered trajectory positions. All 408,672,000 output/state
+values hash-match the unchanged independent references; previous state, guards
+and rejection atomicity pass. Coordinator teardown while participant work is
+pending also passes. A bounded queued-memset case observes descriptor BUSY in
+the normal run and verifies recovery; sanitizer runs also accept the queue
+draining before that observation. One duplicate retry-check update makes 226
+kernel launches in total.
+
+Independent Nsight tracing confirms 226 direct kernels covering 1,351 sequence
+updates on 45 coordinator streams. Those streams copy exactly 54,040 descriptor
+bytes across 226 H2D copies, with zero activation/state copies. No CUDA runtime
+allocations occur between each case's first and last group kernel. Fixture setup
+and participant upload/readback traffic are separate; these correctness captures
+do not establish serving latency or throughput gains.
+
+The final protected clean build and benchmark build have zero warnings. Standard
+tests, the complete CUDA suite and diagnostic isolation pass. Memcheck and
+synccheck report zero errors. The preserved dense 64-token stream and six
+interleaved 16-token streams remain exact. User probe binaries and independent
+reference files retain their hashes. Evidence, final logs and trace are under
+`/tmp/bitnet-goal-gdn-direct/`; `initial/` contains checks before the final
+busy-path cleanup and is not the final qualification.
+
+Whole-model batched serving remains unfinished. Shared-row projections will
+also need explicitly validated batch-owned activation rows or efficient row
+gather/scatter, followed by sequence-aware convolution, RoPE, attention and KV
+scheduling. State ownership checks must remain strict as that access expands.
+
+### Shared activation rows with session-owned GDN state (2026-11-09)
+
+GDN groups now accept BF16 X/BA/output rows owned either by their participant or
+by the explicit coordinator. F32 initial/next states remain strictly participant
+owned. Other request owners are rejected; the generic view resolver is unchanged.
+This lets a future batched projection leave its result in coordinator storage
+for GDN to consume directly. Every output/next-state write is checked against
+every other row's inputs and writes before submission, preventing overlap through
+a shared allocation. Read-only input sharing is permitted. Both coordinator and
+participant fences remain necessary to detect upstream logical errors.
+
+The shared-row test uses guarded packed activation buffers, independent request
+states, async uploads and queued consumers. All 408,672,000 output/state values
+match the unchanged frozen GDN hashes across batches 1/2/3/8/16. The original
+participant-owned mode also passes, totaling 817,344,000 values in the two group
+modes. Added rejection cases cover otherwise valid coordinator-owned F32 state,
+overlapping output rows and a row writing another row's input. Numerical checks,
+state immutability, guards and rejection atomicity pass.
+
+Tracing confirms 226 indirect kernels and 54,040 bytes of pointer-descriptor
+uploads. There are no D2D copies on coordinator streams and no CUDA runtime
+allocations between each case's first/last group kernel. Unlike the earlier
+participant-input fixture, this fixture also uploads packed X/BA and reads back
+packed outputs on coordinator streams; those verification transfers are counted
+separately from descriptors. This capture does not measure a serving speedup.
+
+The clean build and full CUDA build have zero warnings. Standard tests, complete
+CUDA suite, diagnostic isolation, memcheck and synccheck pass. Preserved dense
+64-token and interleaved six-by-16-token streams remain exact. Reference files
+and user probe hashes are unchanged. Commands, logs, trace and qualification are
+under `/tmp/bitnet-goal-gdn-rows/`. Actual batched projection composition,
+convolution history, per-sequence RoPE/attention and KV/admission scheduling
+remain required for whole-model serving.
+
+### Batched projection → GDN composition (2026-11-09)
+
+`--bf16-projection-gdn-reference` now executes two real BF16 projections into
+coordinator-owned packed X/BA rows, followed by grouped GDN using each request's
+F32 state. Selector matrices reproduce eight controlled input steps through
+GEMM; batches 1/2/3/8/16 begin at staggered trajectory positions. Produced X/BA
+stay on the GPU between projection and recurrence. The test uses the existing
+decoded BF16 GEMM and shared-state APIs; production kernels are unchanged.
+
+This composition exposed a reference-contract difference. GEMM canonicalizes
+negative zero in the synthetic inputs. All 72 BF16 output hashes remain equal
+to the direct-input fixture, but five F32 continuation-state hashes change.
+The original reference header/generator remain unchanged. A separate
+`reference_cuda_bf16_projected_gdn.py` runs actual Torch BF16 selector GEMMs and
+the unmodified pinned vLLM recurrent kernel. It verifies projection bits across
+all tested batch sizes, exports eight dependent steps and produces the new
+`cuda_bf16_projected_gdn_reference.h`. Native fixture warmup uses the independently
+verified zero-sign contract; the composed rows themselves come from GPU GEMMs.
+No production zero normalization or approximate comparison was introduced.
+
+All 408,672,000 composed output/state values hash-match that independent
+reference. Original participant/shared-input modes still pass their original
+references. GPU tracing identifies 450 projection kernels: 90 singleton GEMV
+and 360 batched small-N matrix kernels, feeding 226 grouped GDN launches. The
+coordinator transfers 21,600 selector bytes and 54,040 pointer-descriptor bytes;
+there are no coordinator D2D copies. No CUDA runtime allocations occur between
+each case's first/last GDN kernel. Fixture initialization and correctness
+readbacks are additional traffic, and verification fences make this a
+correctness test rather than a serving performance benchmark.
+
+The protected clean build, standard tests, complete CUDA suite and diagnostic
+isolation pass with zero compilation warnings. Memcheck/synccheck report zero
+errors. Preserved dense 64-token and six interleaved 16-token streams remain
+exact; user probe hashes are preserved. Reference provenance includes the pinned
+image, Torch version and unchanged vLLM kernel source hash. Evidence is under
+`/tmp/bitnet-goal-projection-gdn/`, including the initial signed-zero mismatch.
+
+This qualifies synthetic decoded-BF16 projection composition. Quantized
+checkpoint projections, convolution history, per-sequence RoPE/attention,
+KV/admission scheduling and whole-model batched serving remain unfinished.
+
+### Real checkpoint quantized projection/GDN composition (2026-11-09)
+
+`bench_checkpoint_gdn` is an optional real-tensor correctness gate. It loads the
+independently replayed Qwen27 layer-0 Q5_K QKV/Z, Q8_0 BA/output, F32 log-decay
+and BF16 bias parameters. Its default controlled graph is QKV/Z+BA projection → raw
+GDN → output projection. The optional convolution capture adds independent
+decode histories before GDN. Both modes exclude gated norm/head layout,
+residuals and FFN; neither is a complete linear-attention block.
+
+```sh
+make BN_ENABLE_CUDA=1 BN_ENABLE_MKL_VML=1 MKL_VML_ROOT=PATH bench_checkpoint_gdn
+./bench_checkpoint_gdn REFERENCE_DIR LINEAR_CAPTURE_DIR GDN_PREP_DIR [CONV_CAPTURE_DIR]
+```
+
+The reference directory comes from `test/reference_cuda_checkpoint_gdn.py`
+inside the pinned vLLM image with the e454affe GGUF plugin and qualified compatible
+extension. Generation reads immutable captures and calls the original GGUF
+projection and recurrent functions; expected values never come from native
+output. A second run of the published generator reproduced all 248 binary files
+exactly. Provenance records parameter, extension and GDN source hashes.
+
+Batches 1/2/4/8 run five dependent steps from both zero and distinct nonzero
+initial state. Native QKV/Z, BA, GDN output, F32 next state and final projection
+are compared byte-for-byte after graph submission. All 122,126,400 values match,
+including 117,964,800 F32 state values. Intermediates remain on the GPU between
+the three quantized projections and grouped recurrence.
+
+Nsight records 40 grouped GDN launches covering 150 independent sequence updates.
+Dispatch retains Q5_K/Q8_0 vector kernels at batches 1/2, selects Q5_K pair-split
+execution at batches 4/8, and Q8 integer MMA at batch 8. Coordinator H2D traffic
+is 1,536,000 hidden-input bytes plus 6,000 pointer-descriptor bytes. There are no
+coordinator D2D copies or CUDA runtime allocations between each case's first/last
+GDN kernel. Setup weight/state uploads and correctness readbacks are additional
+traffic. This fixture does not establish latency or throughput gains.
+
+Protected clean build, standard tests, warning-free gate compilation, CPU
+unsupported-build stub, native byte comparisons, memcheck and synccheck pass.
+The published reference reproduces the original capture exactly and user probe
+hashes are preserved. Production runtime source is unchanged from the earlier
+qualified build; the full CUDA suite was not repeated for this gate-only addition.
+Commands, reference captures, source provenance, trace and qualification are under
+`/tmp/bitnet-goal-checkpoint-gdn/`. Whole-model batching still requires independent
+convolution history, per-sequence RoPE/attention, KV allocation and scheduling.
+
+### Independent-history grouped convolution (2026-11-09)
+
+CUDA now supports one-token convolution groups with independent session-owned
+BF16 histories and participant/coordinator-owned activation rows. Each group
+launches one kernel across sequence rows. Histories, outputs, extents and owners
+are validated before submission, including cross-row write aliases. The generic
+view resolver remains strict. Existing convolution/GDN arithmetic is preserved.
+
+Convolution and GDN coordinators use separate bounded descriptor workspaces.
+Shared queue helpers implement ready/done event joins, pinned-copy backpressure,
+error fencing and participant poisoning. Separate metadata permits immediate
+convolution → GDN submission while earlier metadata remains in flight. Each
+workspace still has bounded BUSY behavior on reuse; this is not an unbounded
+multi-layer submission queue.
+
+The new `--bf16-conv-group-reference` gate staggers request progress through the
+unchanged five-token reference trajectories. Active row lists change while
+histories occupy different positions. Batches 1/2/3/8/16, widths 2/3/4, eight
+channel dimensions and zero/nonzero initial history pass 1,536 launches,
+7,200 sequence updates and 13,992,300 frozen output/history words. Guards,
+previous-history immutability, FIFO contents and rejection atomicity pass.
+
+The optional checkpoint gate now accepts a convolution capture directory, and
+`reference_cuda_checkpoint_gdn.py --conv CONV_CAPTURE_DIR` generates its
+independent counterpart. Actual Qwen27 Q5_K/Q8_0 projections → convolution →
+GDN → Q8_0 output projection match all 128,270,400 values byte-for-byte at batches
+1/2/4/8 over five dependent steps, including both BF16 histories and F32 states.
+The original graph without convolution still passes its 122,126,400 values.
+Gated normalization/layout and residual/FFN layers remain outside these graphs.
+
+The checkpoint trace confirms 40 convolution groups and 40 GDN groups covering
+150 sequence updates. Coordinator H2D payload comprises 1,536,000 hidden-input
+bytes and 12,000 descriptor bytes. Coordinator D2D copies and CUDA runtime
+allocations between each case's first/last GDN kernel are zero. Fixture
+readbacks, setup uploads and explicit validation fences are additional work;
+this does not establish serving latency or throughput gains.
+
+Protected clean compilation, standard tests, complete CUDA suite and diagnostic
+isolation pass without warnings. Both the staggered convolution gate and real
+checkpoint chain pass memcheck/synccheck with zero errors. Preserved dense and
+interleaved token streams remain exact. Evidence is under
+`/tmp/bitnet-goal-conv-group/`. Next integrate gated normalization/layout and
+per-sequence RoPE/attention, then whole-model batching and KV/admission scheduling.
+
+### Complete BF16 benchmark arithmetic policy
+
+`bench_bf16_latency` also accepts `--policy POLICY.json` after the seven
+required arguments, in place of the legacy arithmetic/mask arguments:
+
+```sh
+./bench_bf16_latency MODEL.gguf PROMPT.i32 64 3 1 8192 8192 --policy POLICY.json
+```
+
+The JSON object must contain exactly `arithmetic`, `ffn_arithmetic`,
+`input_norm_reductions` (65 integers), and `post_norm_reductions` (64 integers).
+Values use the enums in `src/transformer/bf16_internal.h` and
+`include/gpu_backend.h`: arithmetic 0–4, FFN 0–2, reductions 0–6. Zero entries
+inherit defaults. The reader rejects duplicate/unknown fields, incorrect array
+lengths, invalid numbers, truncation, embedded NULs, trailing data, and files
+of 16 KiB or more before reading the prompt or model. Runtime admission still
+checks the selected policy against backend capabilities.
+
+The `bf16_policy` JSONL record contains the complete `admitted` policy copied
+from the runtime, including resolved defaults. It replaces the partial
+`norm_policy` mask record; the legacy command-line arithmetic and mask syntax
+remains supported. Keep this record with timing results: the base arithmetic
+label alone cannot identify the selected FFN and normalization contracts.
+The CPU wire-format checks run as `make test_bench_bf16_policy` and as part
+of `make test`. Independent reference qualification and the remaining
+performance gates are described in `docs/qwen38-cuda-correctness.md`.
+
+`bench/policies/qwen38-cuda4097.json` records the explicit plan qualified
+against `test/bf16_cuda4097_reference.json`. It is scoped to that independent
+reference variant and is not a universal compiler policy or a production
+default. The earlier cold-compiled reference uses a different input-norm plan.
+
+Qualification of the policy-file path reproduces all 64 frozen tokens for
+each of short/medium/long/repeat4097, both on the initial warmup and after
+request restart (512 token comparisons). Each emitted admitted policy matches
+the reviewed file exactly. A separate legacy/file replay verifies that default
+entries are reported as the runtime's canonical choices. These checks validate
+benchmark configuration and token replay; they do not capture fresh raw logits
+or establish vLLM timing parity. Evidence: `/tmp/bitnet-goal-bench-policy`.
+
+### Complete policy for batched decode diagnostics
+
+`bench_bf16_batch` accepts `[uniform|mixed] [--policy POLICY.json]` after
+its required arguments. It uses the same strict four-field policy format as
+`bench_bf16_latency`. Every isolated reference request, failure/rejection
+self-test request, serving request, and decode coordinator receives that
+policy. Without a file it retains its existing CP_FP32 defaults. The emitted
+`bf16_policy.admitted` record describes the coordinator's canonical plan;
+`config.arithmetic` is its numeric enum value. Policy parsing occurs before
+prompt/model reads.
+
+This harness compares native batched greedy streams with native isolated
+execution. Its batch-of-one self-test additionally checks complete logits,
+rejection atomicity, and failure poisoning. A successful native token check
+is not independent multi-request qualification: GEMM shapes can change
+arithmetic, and the round-robin separate-prefill schedule differs from a
+reference engine that packs all prompts into one prefill call.
+
+The explicit 4097-reference policy passes native two-request 64-output checks
+with uniform 129-token prompts and mixed 129/5-token prompts using 64-token
+prefill chunks. Both retain the full-logit batch-of-one and failure-atomicity
+self-tests. A four-request 64-output run diverges from isolated execution at
+output 14; with legacy defaults, it diverges at output 57. Neither four-request
+result is admitted as qualified serving performance. The unchanged kernels
+and differing GEMM shapes require an independent schedule-matched comparison.
+Evidence and emitted policies: `/tmp/bitnet-goal-batch-qualification`.
+
+
+### Flash bank dependency reporting (2026-11-10)
+
+`bench/analyze_flash_trace.py --dependencies` now adds a conservative exposed
+bank-dependency lower bound, separate from copy activity durations and host
+source spans. The existing bounded cold/warm capture has 18,789 matched waits;
+all consumers are grouped expert kernels and positive intervals do not overlap.
+The decode lower bounds average 3.748 ms cold and 1.335/1.354 ms on the two
+repeated requests. These are not total source stalls or latency savings.
+Six independent two-stream controls distinguish exposed waits, hidden work and
+late CPU submission using CUDA event timings. Existing 192-phase metrics remain
+unchanged. No runtime policy changes follow from this diagnostic. See
+[method, calibration and scope](qwen38-flash-dependencies.md).
+
+
+### Host expert-staging experiments (2026-11-10)
+
+External linker-wrapper trials tested two/four-thread copies, AVX2 streaming
+stores, upfront cache-page preparation and transparent huge-page advice. All
+81 streams and 5,184 GPU cache phase records match controls. Two-thread copies
+produce only about a 1% fully warm gain at 8 GiB; undersized-cache variants still
+trail direct reads. Upfront page preparation worsens combined startup cost, and
+huge-page cold results are inconsistent despite fewer faults. No runtime defaults
+changed. See [results and rejected hypotheses](qwen38-flash-staging-experiments.md).

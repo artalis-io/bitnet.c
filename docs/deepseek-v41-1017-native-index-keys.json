@@ -1,0 +1,198 @@
+{
+  "status": "parameterized CUDA latent-key component qualified; historical checkpoint epsilon claim corrected by native KV pool qualification",
+  "architecture": "DeepseekV41ForCausalLM",
+  "api": "BnGPUF16LatentKeysResidentPlan / latent_keys_f16_resident",
+  "implementation": {
+    "order": "Generate positions (entry0+row)*rate on device; project UNROTATED F16 latents to F16 index keys; original vector4 RMSNorm to F16; original GPT-J trailing rotary slices on normalized keys and input latents in place.",
+    "numeric_profile": "Existing F16 linear torch-matmul cuBLAS32MiB profile, immutable raw BF16/F16 norm, source vector4 norm reduction and original source RoPE kernels. No existing numerical kernel changed.",
+    "preflight": "Validate all component plans and exact topology before any write, signed position arithmetic bounds, three disjoint live F16 arrays and disjoint output position/frequency metadata. Full plan rejects malformed final rotation, aliases, foreign owners and unreserved workspace without changing outputs.",
+    "ownership": "Backend parameter owners hold immutable WK and K norm; request owns three activation buffers, position output scratch and explicit frequency view. Same existing48MiB F16 reserve, no additional workspace. No model/session/provider/transformer edits or CPU/GPU handles on model weights."
+  },
+  "checkpoint": {
+    "path": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "owners": [
+      2,
+      8,
+      14,
+      20
+    ],
+    "rates": [
+      2,
+      2,
+      2,
+      1
+    ],
+    "latent_dim": 512,
+    "key_dim": 128,
+    "rotary_dim": 64,
+    "projection": "Existing native parameter BN_NATIVE_INDEX_K F16 backend layout from source BF16 conversion; raw BF16 BN_NATIVE_INDEX_K_NORM preserved.",
+    "stage_semantics": "Input unrotated compressed latents. Index keys project before any latent rotation. Device-generated entry positions used identically for key and latent rotation. Shared page publication follows this operation and remains unintegrated."
+  },
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "license": "third_party/exllamav3/LICENSE",
+    "reference_order": "modules/dsv4.py::_indexer_keys",
+    "captures": "Independent Torch matmul and original norm/RoPE CABI source wrappers. Original bundled cuBLAS13.1 and paired system cuBLAS13.10 source captures retained separately. Candidate obtains actual weights only through existing production backend parameter owners.",
+    "cross_library_different_case_counts": {
+      "projected": 74,
+      "keys": 71
+    },
+    "interpretation": "Combined operation compares matched paired source library. Original reference projected/keys may differ by library; original and paired rotated latents/positions agree. No source golden regenerated from candidate.",
+    "synthetic": {
+      "cases": 32,
+      "header_sha256": "ba0619ecb262c9f1290e7821b14fa98512101d20ea5f6d9031b7d8262ceabcad",
+      "torch": "2.14.0+cu130"
+    }
+  },
+  "correctness": {
+    "unique_actual_cases": 117,
+    "calls_per_actual_run": 468,
+    "actual_shapes": "All4 owners rows1/7/31/32/33/64/129/256/511 at entry0 and524000, plus all nonempty emitted stages from original checkpoint compressor chunk/wrap/rewind schedule.",
+    "comparison": "Two independently owned persistent requests preallocated once and reused over forward/reverse case order. Raw projected keys, normalized/rotated keys, rotated latents, generated positions, immutable frequency byte-exact; every allocation halo unchanged; zero hot resident_alloc calls.",
+    "synthetic": "32 fixtures x2 requests x2 repeats =128 calls. F16/BF16 raw norm weights, rows1/7/31/32/33/64/129/256, entries0 and1073740000 rate2 (large signed-int positions), wrong capacities/topology, late invalid stages, aliases, foreign requests, unreserved workspaces and guards.",
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "real": 0,
+        "asan-real": 0,
+        "memcheck": 0,
+        "initcheck": 0,
+        "racecheck": 0,
+        "nsys": 0,
+        "export": 0
+      },
+      "records": {
+        "real": {
+          "calls": 468,
+          "compared_bytes": 66606384,
+          "hot_allocations": 0
+        },
+        "asan-real": {
+          "calls": 468,
+          "compared_bytes": 66606384,
+          "hot_allocations": 0
+        },
+        "memcheck": {
+          "calls": 468,
+          "compared_bytes": 66606384,
+          "hot_allocations": 0
+        },
+        "initcheck": {
+          "calls": 468,
+          "compared_bytes": 66606384,
+          "hot_allocations": 0
+        },
+        "nsys": {
+          "calls": 468,
+          "compared_bytes": 66606384,
+          "hot_allocations": 0
+        }
+      },
+      "frozen_files": 761,
+      "references": {
+        "/tmp/bitnet-goal-native-index-keys/original-reference": "8009bee9c7ae4886dec1562e8983e1c5fd3e3818f86f0ed16c1d11f9da44836c",
+        "/tmp/bitnet-goal-native-index-keys/paired-reference": "d724b903d64a503d219d19c602cef79038c96a07c4f921bce041c40f73864ed3"
+      },
+      "probe_sha256": "b458b9c0d1d9c0ddbd0cc1163f359d067787925fc288841ab883534fa7be595b"
+    },
+    "checkpoint_scope": "Historical results below use1e-6; current checkpoint1e-20 proof is in native-kv-pools.json."
+  },
+  "trace": {
+    "kernels": [
+      {
+        "name": "nvjet_sm120_hsh_mma_16x32x128_8_16x8x128_tmaAB_alignCD4_bz_NNNN",
+        "count": 1,
+        "total_ns": 2432
+      },
+      {
+        "name": "bn_cuda_latent_keys::positions(int *, int, int, int)",
+        "count": 1,
+        "total_ns": 544
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, __half, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "count": 1,
+        "total_ns": 1344
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)0>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "count": 2,
+        "total_ns": 3392
+      }
+    ],
+    "api_calls": [
+      {
+        "name": "cuKernelGetName",
+        "count": 4
+      },
+      {
+        "name": "cudaLaunchKernel_v7000",
+        "count": 4
+      },
+      {
+        "name": "cuStreamGetGreenCtx",
+        "count": 2
+      },
+      {
+        "name": "cuKernelSetAttribute",
+        "count": 1
+      },
+      {
+        "name": "cuLaunchKernelEx",
+        "count": 1
+      },
+      {
+        "name": "cudaStreamSynchronize_v3020",
+        "count": 1
+      }
+    ],
+    "transfer_calls": 0,
+    "transfer_bytes": 0,
+    "scope": "One warmed 256-row layer14 index key call at entry524000. Explicit probe completion synchronization included; no full-model performance claim."
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "changed_previous_source_files": [
+    "Makefile",
+    "include/gpu_backend.h",
+    "src/gpu_cuda.cu",
+    "test/test_cuda_backend.c"
+  ],
+  "new_source_test_files": [
+    "src/gpu_cuda_latent_keys.cuh",
+    "test/cuda_native_latent_keys_checks.h",
+    "test/cuda_native_latent_keys_reference.h"
+  ],
+  "artifacts": {
+    "root": "/tmp/bitnet-goal-native-index-keys",
+    "frozen_source": "/tmp/bitnet-goal-native-index-keys/frozen-source.json",
+    "qualification": "/tmp/bitnet-goal-native-index-keys/qualification.json",
+    "original_reference": "/tmp/bitnet-goal-native-index-keys/original-reference/reference.json",
+    "paired_reference": "/tmp/bitnet-goal-native-index-keys/paired-reference/reference.json"
+  },
+  "limitations": [
+    "Backend operation only. Production frequency construction, compressor metadata conversion, request-owned shared-pool lifecycle, page scatter/quantization and candidate visibility/scheduling are not integrated.",
+    "Query indexer scoring/topk/candidates, SWA/pooled attention, F32 attention de-rotation, grouped output projection, Engram and complete model forward/generation/CLI remain open. No native whole-model admission from this component.",
+    "ASAN/UBSAN instruments probe and selected model/reader/layout C sources; CUDA host validation code is not claimed host-ASAN-instrumented. Device memcheck/leak/init/race tools independently cover executions.",
+    "Qualified on selected sm_120a only. No full-model/vLLM parity or cross-backend claim."
+  ],
+  "reference_profile_correction": {
+    "checkpoint_norm_epsilon": 1e-20,
+    "historical_capture_epsilon": 1e-06,
+    "scope": "The original117-case source captures and probe used1e-6 for index K norm. They qualify that engineering parameterization, not the checkpoint epsilon. All original artifacts are preserved. The API already accepts explicit epsilon; current checkpoint execution must pass model native numerics.",
+    "current_checkpoint_evidence": "docs/deepseek-v41-1017-native-kv-pools.json",
+    "current_checkpoint_calls": 96,
+    "original_document_preserved": "/tmp/bitnet-goal-native-kv-pools/historical-eps1e-6/prior-index-keys-document.json"
+  }
+}

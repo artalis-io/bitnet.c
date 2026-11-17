@@ -1,0 +1,232 @@
+{
+  "status": "independent-reference-captured; native Engram execution not yet implemented or qualified",
+  "artifact_directory": "/tmp/bitnet-goal-native-engram",
+  "reference_tool": "test/reference_native_engram.py",
+  "source": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "source_files": {
+      "architecture/deepseek_v41.py": "18e0dc275d300e68ee09e51d890a029907dfd32a2e1c13a53f1b2cc0a3a48aff",
+      "modules/ngram_embedding.py": "7affaa5ec9c1a31d2d3d1d95eeb6270db70f65e3e4fb33b10447accda5afd65c"
+    },
+    "checkpoint_files": {
+      "config.json": "d0c1867b26c99c5721e8e75816c2e4a2ac527d4651bcc5a32aa970b73b7ddf17",
+      "tokenizer.json": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b"
+    },
+    "torch": "2.14.0+cu130",
+    "numpy": "2.3.5",
+    "tokenizers": "0.23.3",
+    "vocabulary": 129280,
+    "compressed_vocabulary": 99092,
+    "mapped_pad": 2,
+    "raw_token_fallbacks": 1484,
+    "empty_normalization_fallbacks": 214,
+    "cases": 108,
+    "scope": "CPU token map/hash only; no native runtime qualification"
+  },
+  "reference": {
+    "manifest_sha256": "92875f3309c982a04a8d7bbea0221f729454af3c4be387019e610e97df8778ae",
+    "manifest_payload_files": 330,
+    "token_map_bytes": 1034240,
+    "token_map_sha256": "26b9be2936d236a124ba318a998c417bc7032e3e92a3107fe98deee49f1dc496",
+    "hash_cases": 108,
+    "layers": [
+      1,
+      14
+    ],
+    "batch_sizes": [
+      1,
+      2
+    ],
+    "sequence_lengths": [
+      1,
+      2,
+      3,
+      4,
+      7,
+      17,
+      64,
+      129,
+      513
+    ],
+    "profiles": [
+      "text",
+      "pad-boundaries",
+      "repeated"
+    ],
+    "chunk_size": 7,
+    "checks": [
+      "Every reconstructed source key maps to the exact captured source token-map ID.",
+      "Each source hash result equals source execution with carried context in chunks of seven.",
+      "Replay compares all existing output files byte for byte and never overwrites a differing reference.",
+      "Modified pinned source rejected; conflicting output preserved; all 330 manifest payloads audited."
+    ],
+    "layer_layout": {
+      "1": {
+        "sizes": [
+          16000057,
+          16000079,
+          16000081,
+          16000097,
+          16000121,
+          16000129,
+          16000133,
+          16000183,
+          16000189,
+          16000207,
+          16000211,
+          16000253,
+          16000277,
+          16000289,
+          16000307,
+          16000321,
+          16000339,
+          16000381,
+          16000393,
+          16000399,
+          16000403,
+          16000409,
+          16000447,
+          16000463
+        ],
+        "offsets": [
+          0,
+          16000057,
+          32000136,
+          48000217,
+          64000314,
+          80000435,
+          96000564,
+          112000697,
+          128000880,
+          144001069,
+          160001276,
+          176001487,
+          192001740,
+          208002017,
+          224002306,
+          240002613,
+          256002934,
+          272003273,
+          288003654,
+          304004047,
+          320004446,
+          336004849,
+          352005258,
+          368005705
+        ],
+        "multipliers": [
+          76632096046245,
+          4839876093313,
+          35959672319349,
+          73987337458391
+        ],
+        "rows": 384006168
+      },
+      "14": {
+        "sizes": [
+          16000477,
+          16000487,
+          16000499,
+          16000507,
+          16000511,
+          16000573,
+          16000609,
+          16000627,
+          16000667,
+          16000669,
+          16000693,
+          16000697,
+          16000711,
+          16000729,
+          16000759,
+          16000769,
+          16000781,
+          16000799,
+          16000813,
+          16000819,
+          16000841,
+          16000877,
+          16000879,
+          16000889
+        ],
+        "offsets": [
+          0,
+          16000477,
+          32000964,
+          48001463,
+          64001970,
+          80002481,
+          96003054,
+          112003663,
+          128004290,
+          144004957,
+          160005626,
+          176006319,
+          192007016,
+          208007727,
+          224008456,
+          240009215,
+          256009984,
+          272010765,
+          288011564,
+          304012377,
+          320013196,
+          336014037,
+          352014914,
+          368015793
+        ],
+        "multipliers": [
+          67716810739261,
+          51510806800915,
+          30921347202721,
+          82619226485591
+        ],
+        "rows": 384016682
+      }
+    }
+  },
+  "normalization_diagnostic": {
+    "python_unicode_version": "15.0.0",
+    "nonspacing_marks_only_mismatches": 654,
+    "all_mark_categories_mismatches": 0,
+    "scope": "Full actual vocabulary keys, including raw-token replacement-character fallback and empty-normalization fallback. Zero differences for this vocabulary is not a general Unicode equivalence proof.",
+    "example": [
+      4384,
+      "ার",
+      "র",
+      "ার"
+    ]
+  },
+  "limits": [
+    "No native C token-map/hash, Unicode normalizer, PCG64 layout derivation, row-cache or Engram projection/gate qualification in this milestone.",
+    "No embedding-table or projection weights are loaded by this reference capture.",
+    "The captured original NGramEmbedding hashing is independent of packed row decoding; the checkpoint int4_fp16s32 row format still needs an authoritative decode reference.",
+    "No whole-model generation, admission, throughput or vLLM parity claim."
+  ],
+  "next": [
+    "Implement model-owned immutable Engram token-map/hash metadata, with tokenizer-boundary and source ownership preserved.",
+    "Qualify native results against every token-map ID and all captured row IDs, then extend reset/rewind/multimodal history cases.",
+    "Establish exact packed-row decoding and bounded row supply before integrating two strided key/value projections, grouped norms, gate and stream addition."
+  ],
+  "validation": {
+    "baseline_make_test": {
+      "exit": 0,
+      "log": "/tmp/bitnet-goal-native-engram-baseline.log"
+    },
+    "protected_clean_build_and_standard_tests": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "build_process": "terminal exit 0; handle 53915",
+    "capture_and_replay": "both terminal exit 0; handles 85196 and 25812",
+    "negative_and_manifest_audit": "terminal exit 0; handle 17542",
+    "scope": "Only an offline Python oracle and JSON evidence were added. No production C/CUDA changes; no new native execution or CUDA sanitizer qualification claimed."
+  }
+}

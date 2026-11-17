@@ -1,0 +1,140 @@
+{
+  "before": {
+    "memory_api_inclusive_blocking": [
+      {
+        "api": "cudaMemcpyAsync_v3020",
+        "calls": 20791,
+        "total_host_api_ms": 5077.17324
+      }
+    ],
+    "kernel": "void cuda_bf16_q8_mma_kernel<(int)8>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+    "instances": 3480,
+    "total_kernel_ms": 1379.127375,
+    "mean_kernel_us": 396.3009698275862,
+    "whole_process_copies": [
+      {
+        "kind": "Host-to-Device",
+        "calls": 18189,
+        "bytes": 17198563392,
+        "total_ms": 1014.192101
+      },
+      {
+        "kind": "Device-to-Host",
+        "calls": 1341,
+        "bytes": 389370588,
+        "total_ms": 13.025738
+      },
+      {
+        "kind": "Device-to-Device",
+        "calls": 2160,
+        "bytes": 9940140032,
+        "total_ms": 9.93905
+      }
+    ],
+    "execution_window_copies": [
+      {
+        "kind": "Host-to-Device",
+        "calls": 17334,
+        "bytes": 6677056,
+        "total_ms": 11.003935
+      },
+      {
+        "kind": "Device-to-Host",
+        "calls": 1332,
+        "bytes": 389370552,
+        "total_ms": 13.018058
+      },
+      {
+        "kind": "Device-to-Device",
+        "calls": 2128,
+        "bytes": 4235886592,
+        "total_ms": 2.61579
+      }
+    ],
+    "execution_window_sync": [
+      {
+        "api": "cudaStreamSynchronize_v3020",
+        "calls": 1209,
+        "total_ms": 0.568825
+      },
+      {
+        "api": "cudaStreamWaitEvent_v3020",
+        "calls": 200704,
+        "total_ms": 80.708205
+      }
+    ],
+    "window": "First 1024-byte input-token HtoD copy through last output DtoH copy; initial model preparation/admission excluded, later admissions included",
+    "output_head_bytes": 389365760,
+    "source_sqlite": "/tmp/bitnet-goal-batch-runtime/staggered-profile.sqlite"
+  },
+  "after": {
+    "memory_api_inclusive_blocking": [
+      {
+        "api": "cudaMemcpyAsync_v3020",
+        "calls": 20791,
+        "total_host_api_ms": 4325.174705
+      }
+    ],
+    "kernel": "void cuda_bf16_q8_grouped_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+    "instances": 3480,
+    "total_kernel_ms": 249.067531,
+    "mean_kernel_us": 71.57112959770114,
+    "whole_process_copies": [
+      {
+        "kind": "Host-to-Device",
+        "calls": 18189,
+        "bytes": 17198563392,
+        "total_ms": 1006.852956
+      },
+      {
+        "kind": "Device-to-Host",
+        "calls": 1341,
+        "bytes": 389370588,
+        "total_ms": 12.516032
+      },
+      {
+        "kind": "Device-to-Device",
+        "calls": 2160,
+        "bytes": 9940140032,
+        "total_ms": 9.940538
+      }
+    ],
+    "execution_window_copies": [
+      {
+        "kind": "Host-to-Device",
+        "calls": 17334,
+        "bytes": 6677056,
+        "total_ms": 11.172032
+      },
+      {
+        "kind": "Device-to-Host",
+        "calls": 1332,
+        "bytes": 389370552,
+        "total_ms": 12.50864
+      },
+      {
+        "kind": "Device-to-Device",
+        "calls": 2128,
+        "bytes": 4235886592,
+        "total_ms": 2.615012
+      }
+    ],
+    "execution_window_sync": [
+      {
+        "api": "cudaStreamSynchronize_v3020",
+        "calls": 1209,
+        "total_ms": 0.550112
+      },
+      {
+        "api": "cudaStreamWaitEvent_v3020",
+        "calls": 200704,
+        "total_ms": 77.202292
+      }
+    ],
+    "window": "First 1024-byte input-token HtoD copy through last output DtoH copy; initial model preparation/admission excluded, later admissions included",
+    "output_head_bytes": 389365760,
+    "source_sqlite": "/tmp/bitnet-goal-q8-eight/promotion/staggered-profile.sqlite"
+  },
+  "scope": "Nsight observations excluded from performance medians; both profiler runs preserve all output tokens and schedule geometry",
+  "kernel_time_ratio": 0.18059791685303905
+}

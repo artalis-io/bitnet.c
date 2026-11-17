@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "goal_status": "active",
+  "api": "bn_generate_native_text_predict",
+  "existing_api_unchanged": "bn_generate_native_text",
+  "cli_unchanged": true,
+  "semantics": {
+    "delivery": "Selected counted UTF8 output before staging its forward",
+    "final": "Final reported token, including callback-stopped token, is not forwarded",
+    "history": "prompt_tokens + max(generated-1,0)",
+    "capacity": "prompt_tokens + max(max_new_tokens-1,0)",
+    "error": "-2 may follow visible output; no final flush on failure; reset/reprepare before retry",
+    "busy": "One staged token/admission policy; output not republished during retries"
+  },
+  "correctness": {
+    "unit_source_prefix_stop_batch_busy_cases": 336,
+    "shared_tokenizer_threads": 2,
+    "hot_heap_operations": 0,
+    "asan_ubsan": true,
+    "tsan": true,
+    "default_geometry": {
+      "prompt_bytes": 4948,
+      "prompt_tokens": 1026,
+      "prefill": [
+        512,
+        512,
+        2
+      ],
+      "reported_tokens": 5,
+      "forwards": 7,
+      "host_logit_bytes_per_call": 3619840,
+      "position": 1030
+    },
+    "prior_geometry": {
+      "prefill": [
+        513,
+        513
+      ],
+      "forwards": 6,
+      "host_logit_bytes_per_call": 3102720,
+      "position": 1030
+    },
+    "generated_ids": [
+      25744,
+      14,
+      223,
+      21,
+      16
+    ],
+    "output_hex": "3738392c20332e",
+    "both_skip_special_policies": true,
+    "unchanged_committed_geometry": {
+      "forwards": 8,
+      "position": 1031
+    },
+    "cli_control_cases": 23,
+    "qwen_parity": "192/192"
+  },
+  "qualification": {
+    "checks": {
+      "unit": 0,
+      "asan-unit": 0,
+      "tsan-unit": 0,
+      "predict-default": 0,
+      "predict-prior": 0,
+      "committed-control": 0,
+      "asan-predict": 0,
+      "cli-control": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "native-control": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 879,
+    "reference_files": 37996,
+    "goal_status": "active",
+    "scope": "Explicit prediction-first raw text API, independent unchanged source prefixes, existing committed API and CLI unchanged; no CLI latency, serving or vLLM parity claim"
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "evidence": "/tmp/bitnet-goal-native-predict",
+  "limitations": [
+    "No CLI behavior change in this component",
+    "No end-to-end latency or matched vLLM speedup established",
+    "No resumable generation contract; final reported token is absent from committed history",
+    "Explicit native CUDA storage/arithmetic adapter; no additional model/backend qualification"
+  ]
+}

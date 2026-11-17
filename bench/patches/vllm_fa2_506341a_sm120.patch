@@ -1,0 +1,20 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -5,7 +5,7 @@
+ set(CMAKE_CXX_EXTENSIONS OFF)
+ 
+ set(FA2_ENABLED ON)
+-set(FA3_ENABLED ON)
++set(FA3_ENABLED OFF)
+ 
+ # CUDA by default, can be overridden by using -DVLLM_TARGET_DEVICE=... (used by setup.py)
+ set(VLLM_TARGET_DEVICE "cuda" CACHE STRING "Target device backend for vLLM")
+@@ -137,7 +137,7 @@
+ 
+     # For CUDA we set the architectures on a per file basis
+     if (VLLM_GPU_LANG STREQUAL "CUDA")
+-        cuda_archs_loose_intersection(FA2_ARCHS "8.0+PTX" "${CUDA_ARCHS}")
++        cuda_archs_loose_intersection(FA2_ARCHS "8.0+PTX;12.0" "${CUDA_ARCHS}")
+         message(STATUS "FA2_ARCHS: ${FA2_ARCHS}")
+ 
+         set_gencode_flags_for_srcs(

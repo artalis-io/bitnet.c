@@ -537,7 +537,32 @@ static void test_tq_roundtrip(void) {
     printf("PASSED\n");
 }
 
+static void test_backend_only_reject(void) {
+    BnModel model = {0};
+    init_test_config(&model.config);
+    BnSession *cpu = bn_session_create(&model, NULL);
+    BnSession *backend = bn_session_create_backend(&model, NULL);
+    BnPromptCache *cache = bn_prompt_cache_create(0, NULL);
+    assert(cpu && backend && cache);
+    int tokens[] = {3, 7};
+    write_kv_pattern(cpu, &model.config, 0, 2, 1);
+    cpu->pos = 2;
+    assert(!bn_prompt_cache_store(cache, &model, cpu, tokens, 2));
+    assert(bn_prompt_cache_count(cache) == 1);
+    backend->pos = 7;
+    backend->state.token_history[0] = 23;
+    assert(bn_prompt_cache_store(cache, &model, backend, tokens, 2) == -1);
+    assert(!bn_prompt_cache_restore(cache, &model, backend, tokens, 2));
+    assert(backend->pos == 7 && backend->state.token_history[0] == 23);
+    assert(bn_prompt_cache_count(cache) == 1);
+    bn_session_free(cpu, NULL);
+    bn_session_free(backend, NULL);
+    bn_prompt_cache_free(cache);
+    puts("Backend-only prompt cache rejection PASSED");
+}
+
 int main(void) {
+    test_backend_only_reject();
     test_model_supported_policy();
     test_create_free();
     test_store_restore();

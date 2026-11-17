@@ -682,6 +682,23 @@ bn_transformer_gpu_resolve_hyper_connection_resources(
     return resources;
 }
 
+int bn_transformer_gpu_hyper_connection_prefill_batch(
+    const BnGPUBackend *gpu, const BnModel *model,
+    const BnHyperConnectionWeights *weights, int layer, int attention_branch,
+    float *out, float *inject, const float *residual,
+    int n_tokens, int streams, int dim, int rank, float eps) {
+    if (!gpu || !model || !weights || layer < 0) return -1;
+    BnTransformerGPUHyperConnectionResources resources =
+        bn_transformer_gpu_resolve_hyper_connection_resources(
+            bn_model_backend(model), weights, layer,
+            attention_branch ? BN_BACKEND_HANDLE_HC_ATTN_NORM
+                             : BN_BACKEND_HANDLE_HC_FFN_NORM, 1);
+    if (!resources.valid) return -1;
+    return bn_gpu_backend_hyper_connection_prefill_batch(gpu, out, inject,
+        residual, resources.norm, resources.down, resources.up, resources.inject,
+        n_tokens, dim, streams, rank, eps);
+}
+
 int bn_transformer_gpu_hyper_connection_grouped_rmsnorm_batch(
     const BnGPUBackend *gpu, const BnModel *model,
     const BnHyperConnectionWeights *weights, int layer,
@@ -754,7 +771,9 @@ int bn_transformer_gpu_ssm_conv_l2norm_batch(
         return -1;
     return bn_gpu_backend_ssm_conv_l2norm_batch(
         gpu, qkv, conv_state, resources.ssm_conv1d, n_tokens, qkv_dim,
-        conv_kernel, num_k_heads, head_k_dim, norm_eps);
+        conv_kernel, num_k_heads, head_k_dim, norm_eps,
+        model->config.ssm_qk_norm == BN_SSM_QK_NORM_RMS_SCALED
+            ? BN_GPU_SSM_QK_NORM_RMS_SCALED : BN_GPU_SSM_QK_NORM_CLAMPED_L2);
 }
 
 int bn_transformer_gpu_hyper_connection_combine_batch(

@@ -1,0 +1,787 @@
+{
+  "schema": 1,
+  "full_goal_complete": false,
+  "release_ready": false,
+  "evidence_root": "/tmp/bitnet-goal-joint-cache",
+  "execution": "Flash GPU expert caches now compose with joint cohort FFN kernels. An exclusive owner-issued layer lease pins the selected union across up to16 bound requests. All consumers retain private routing/precision and attention/recurrent state. Source banks upload each miss once; joint kernels use a mixed cached/raw device-pointer table.",
+  "policy": "Prefill-only selections borrow without admission or LRU promotion. An expert used by any decode row admits/promotes once for the cohort. All union hits are pinned before admission, protecting every selected cached weight. Other-layer pending GPU consumption prevents eviction.",
+  "lifetime": "Whole-cohort validation precedes membership publication. Generations and exact private row ranges guard each bank; all active participants must be present. End requires every selected expert to have been submitted. Owner or participant cancellation/teardown clears all borrowed membership and records owner-stream cache completion after queued joint work. Invalid/BUSY submissions retain leases and outputs. CPU I/O/partial-submit/head/fence failures publish no host state and support reset/recovery; CUDA failures quarantine the cache.",
+  "resources": "Existing model raw-pool budget and per-request bound raw-pointer tables are reused. Begin and submit allocate no GPU memory. Participant metadata is bounded to16 pointers and a512-bit decode mask per owner; existing request payload caps exclude backend host bookkeeping and CUDA driver allocations. Cache payload reports once, not once per borrower. Aggregate RSS/VRAM admission remains incomplete.",
+  "validation": {
+    "protected_clean_build": true,
+    "zero_gcc_product_warnings": true,
+    "standard_suite": true,
+    "full_cuda_suite_and_diagnostic_isolation": true,
+    "fresh_asan_ubsan_host_objects": 158,
+    "preexisting_clang_unused_function_warnings": 3,
+    "flash_normal_product_heads": 185,
+    "flash_asan_product_heads": 118,
+    "glm_regression_heads": 148,
+    "additional_uncached_control_heads": 20,
+    "additional_nsight_cached_heads": 80,
+    "flash_lifecycle_heads_per_cached_and_uncached_release_asan_variant": 7,
+    "cuda_memcheck_cached_lifecycle_heads": 7,
+    "cuda_memcheck_cached_product_heads": 8,
+    "cuda_synccheck_cached_product_heads": 8,
+    "asan_cache_units": true,
+    "cuda_memcheck_cache_units": true,
+    "cuda_initcheck_cache_units": true,
+    "dense_product_heads": 128,
+    "native_serving_heads": 22,
+    "legacy_qwen_tokens": "192/192"
+  },
+  "operator_checks": "12 nonzero format/geometry/capacity cases against retained uncached projections: vector/matrix, mixed prefill/decode union admission, warm hits with poisoned host staging, zero fully-warm H2D, pressure/bypass, cross-layer eviction, invalid/stale/omitted-participant rejection, participant cancellation and owner-first/participant-first teardown of submitted open cohorts. Existing private/preloaded cache tests remain intact.",
+  "numerical_profiles": "Existing decoded-BF16 core/raw GGUF expert profiles and private vector/MMA8/24/64 arithmetic are unchanged. GLM remains on its explicitly captured cuBLAS13.10.0 profile; this does not enable GLM GPU caches or change historical references.",
+  "offload_comparison": {
+    "gpu": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "matched_workload": "Four identical canonical5-token raw text prompts,2 live,5 greedy outputs each; same129 ceiling/256 context/thread1/RAM128MiB.",
+    "all_40_full_heads_exact": true,
+    "matching_dispatch_geometry": true,
+    "uncached_weight_h2d_payload_bytes": 21917900800,
+    "cached_weight_h2d_payload_bytes": 12113305600,
+    "weight_h2d_payload_bytes_avoided": 9804595200,
+    "cache": {
+      "weight_upload_bytes": 12113305600,
+      "hits": 3137,
+      "misses": 3851,
+      "hit_bytes": 9804595200,
+      "fill_copy_bytes": 4435046400,
+      "reserved_device_bytes": 4293222400,
+      "miss_bytes": 12113305600,
+      "evictions": 49,
+      "bypasses": 0
+    },
+    "gpu_cache_budget_bytes": 4294967296,
+    "scope": "Actual backend cudaMemcpy payload counters; excludes model initialization, metadata and physical PCIe protocol traffic. GPU cache starts empty and repeats canonical work; OS file cache and SSD cold state are not controlled. No timing, diverse-workset or vLLM parity claim."
+  },
+  "nsight_cached_trace": {
+    "cache_metrics": {
+      "weight_upload_bytes": 9214361600,
+      "hits": 558,
+      "misses": 2936,
+      "hit_bytes": 1744588800,
+      "fill_copy_bytes": 4272435200,
+      "reserved_device_bytes": 4293222400,
+      "miss_bytes": 9214361600,
+      "evictions": 5,
+      "bypasses": 0
+    },
+    "actual_joint_kernel_launches": 2396,
+    "actual_joint_projection_launches": 1198,
+    "backend_counters_match_trace": true,
+    "multi_request_projection_grid": true,
+    "full_source_heads_exact": 80,
+    "kernels": {
+      "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ4K, (int)2, (bool)0>(bn_cuda_moe_resident::JointGroupedBatch)": {
+        "launches": 586,
+        "max_grid_z": 256,
+        "block_x": [
+          32
+        ]
+      },
+      "bn_cuda_moe_resident::bank_joint_activate(bn_cuda_moe_resident::JointGroupedBatch)": {
+        "launches": 599,
+        "max_grid_z": 16,
+        "block_x": [
+          256
+        ]
+      },
+      "bn_cuda_moe_resident::bank_joint_quantize(bn_cuda_moe_resident::JointGroupedBatch)": {
+        "launches": 599,
+        "max_grid_z": 16,
+        "block_x": [
+          32
+        ]
+      },
+      "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ5_1, (int)1, (bool)1>(bn_cuda_moe_resident::JointGroupedBatch)": {
+        "launches": 533,
+        "max_grid_z": 128,
+        "block_x": [
+          32
+        ]
+      },
+      "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ5K, (int)2, (bool)0>(bn_cuda_moe_resident::JointGroupedBatch)": {
+        "launches": 13,
+        "max_grid_z": 256,
+        "block_x": [
+          32
+        ]
+      },
+      "void bn_cuda_moe_resident::bank_joint_vector<BnBlockQ8_0, (int)1, (bool)1>(bn_cuda_moe_resident::JointGroupedBatch)": {
+        "launches": 66,
+        "max_grid_z": 128,
+        "block_x": [
+          32
+        ]
+      }
+    },
+    "not_a_throughput_or_vllm_parity_measurement": true
+  },
+  "flash_product_cases": {
+    "final-short": {
+      "requests": 4,
+      "live": 2,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 8,
+      "metrics": {
+        "calls": 4,
+        "coordinated_moe_layers": 192,
+        "uploads": 1360,
+        "consumers": 2648,
+        "upload_bytes_avoided": 10856857600,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 7604,
+        "projection_launches": 4884,
+        "launches_avoided": 2988
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 32407142400,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-short-asan": {
+      "requests": 4,
+      "live": 2,
+      "chunk": 129,
+      "asan": true,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 8,
+      "metrics": {
+        "calls": 4,
+        "coordinated_moe_layers": 192,
+        "uploads": 1360,
+        "consumers": 2648,
+        "upload_bytes_avoided": 10856857600,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 7604,
+        "projection_launches": 4884,
+        "launches_avoided": 2988
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 32407142400,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-reversed": {
+      "requests": 4,
+      "live": 2,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 8,
+      "metrics": {
+        "calls": 4,
+        "coordinated_moe_layers": 192,
+        "uploads": 1360,
+        "consumers": 2648,
+        "upload_bytes_avoided": 10856857600,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 7604,
+        "projection_launches": 4884,
+        "launches_avoided": 2988
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 32407142400,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-wide": {
+      "requests": 16,
+      "live": 16,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 32,
+      "metrics": {
+        "calls": 2,
+        "coordinated_moe_layers": 96,
+        "uploads": 680,
+        "consumers": 10592,
+        "upload_bytes_avoided": 156852428800,
+        "busy_fences": 71,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 3802,
+        "projection_launches": 2442,
+        "launches_avoided": 38566
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 16203571200,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-wide-asan": {
+      "requests": 16,
+      "live": 16,
+      "chunk": 129,
+      "asan": true,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 32,
+      "metrics": {
+        "calls": 2,
+        "coordinated_moe_layers": 96,
+        "uploads": 680,
+        "consumers": 10592,
+        "upload_bytes_avoided": 156852428800,
+        "busy_fences": 65,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 3802,
+        "projection_launches": 2442,
+        "launches_avoided": 38566
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 16203571200,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-cached-joint": {
+      "requests": 2,
+      "live": 2,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 128,
+      "exact_full_heads": 4,
+      "metrics": {
+        "calls": 2,
+        "coordinated_moe_layers": 96,
+        "uploads": 680,
+        "consumers": 1324,
+        "upload_bytes_avoided": 5428428800,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 3802,
+        "projection_launches": 2442,
+        "launches_avoided": 1494
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 16203571200,
+        "hits": 0,
+        "misses": 5174,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 2118553600,
+        "reserved_device_bytes": 134041600,
+        "miss_bytes": 16203571200,
+        "evictions": 645,
+        "bypasses": 63
+      }
+    },
+    "final-cached-replace": {
+      "requests": 4,
+      "live": 2,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 4096,
+      "exact_full_heads": 8,
+      "metrics": {
+        "calls": 4,
+        "coordinated_moe_layers": 192,
+        "uploads": 1360,
+        "consumers": 2648,
+        "upload_bytes_avoided": 10856857600,
+        "busy_fences": 15,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 7604,
+        "projection_launches": 4884,
+        "launches_avoided": 2988
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 27823308800,
+        "hits": 1466,
+        "misses": 8882,
+        "hit_bytes": 4583833600,
+        "fill_copy_bytes": 2348441600,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 27823308800,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-cached-warm": {
+      "requests": 4,
+      "live": 2,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 4096,
+      "exact_full_heads": 20,
+      "metrics": {
+        "calls": 10,
+        "coordinated_moe_layers": 480,
+        "uploads": 1198,
+        "consumers": 2396,
+        "upload_bytes_avoided": 21917900800,
+        "busy_fences": 2,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 4792,
+        "projection_launches": 2396,
+        "launches_avoided": 4792
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 12113305600,
+        "hits": 3137,
+        "misses": 3851,
+        "hit_bytes": 9804595200,
+        "fill_copy_bytes": 4435046400,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 12113305600,
+        "evictions": 49,
+        "bypasses": 0
+      }
+    },
+    "final-cached-warm-asan": {
+      "requests": 4,
+      "live": 2,
+      "chunk": 129,
+      "asan": true,
+      "gpu_cache_mb": 4096,
+      "exact_full_heads": 20,
+      "metrics": {
+        "calls": 10,
+        "coordinated_moe_layers": 480,
+        "uploads": 1198,
+        "consumers": 2396,
+        "upload_bytes_avoided": 21917900800,
+        "busy_fences": 1,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 4792,
+        "projection_launches": 2396,
+        "launches_avoided": 4792
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 12113305600,
+        "hits": 3137,
+        "misses": 3851,
+        "hit_bytes": 9804595200,
+        "fill_copy_bytes": 4435046400,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 12113305600,
+        "evictions": 49,
+        "bypasses": 0
+      }
+    },
+    "final-cached-wide": {
+      "requests": 16,
+      "live": 16,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 4096,
+      "exact_full_heads": 32,
+      "metrics": {
+        "calls": 2,
+        "coordinated_moe_layers": 96,
+        "uploads": 680,
+        "consumers": 10592,
+        "upload_bytes_avoided": 156852428800,
+        "busy_fences": 77,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 3802,
+        "projection_launches": 2442,
+        "launches_avoided": 38566
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 16203571200,
+        "hits": 0,
+        "misses": 5174,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 2348441600,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 16203571200,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-cached-chunked": {
+      "requests": 3,
+      "live": 3,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 4096,
+      "exact_full_heads": 29,
+      "metrics": {
+        "calls": 12,
+        "coordinated_moe_layers": 576,
+        "uploads": 3969,
+        "consumers": 9712,
+        "upload_bytes_avoided": 99193856000,
+        "busy_fences": 6,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 19428,
+        "projection_launches": 11490,
+        "launches_avoided": 19420
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 75073433600,
+        "hits": 5363,
+        "misses": 23946,
+        "hit_bytes": 16833536000,
+        "fill_copy_bytes": 7499673600,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 75073433600,
+        "evictions": 1021,
+        "bypasses": 0
+      }
+    },
+    "final-cached-chunked-asan": {
+      "requests": 3,
+      "live": 3,
+      "chunk": 129,
+      "asan": true,
+      "gpu_cache_mb": 4096,
+      "exact_full_heads": 29,
+      "metrics": {
+        "calls": 12,
+        "coordinated_moe_layers": 576,
+        "uploads": 3969,
+        "consumers": 9712,
+        "upload_bytes_avoided": 99193856000,
+        "busy_fences": 4,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 19428,
+        "projection_launches": 11490,
+        "launches_avoided": 19420
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 75073433600,
+        "hits": 5363,
+        "misses": 23946,
+        "hit_bytes": 16833536000,
+        "fill_copy_bytes": 7499673600,
+        "reserved_device_bytes": 4293222400,
+        "miss_bytes": 75073433600,
+        "evictions": 1021,
+        "bypasses": 0
+      }
+    },
+    "final-chunked": {
+      "requests": 3,
+      "live": 3,
+      "chunk": 129,
+      "asan": false,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 29,
+      "metrics": {
+        "calls": 12,
+        "coordinated_moe_layers": 576,
+        "uploads": 3969,
+        "consumers": 9712,
+        "upload_bytes_avoided": 99193856000,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 19428,
+        "projection_launches": 11490,
+        "launches_avoided": 19420
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 91906969600,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-chunked-asan": {
+      "requests": 3,
+      "live": 3,
+      "chunk": 129,
+      "asan": true,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 29,
+      "metrics": {
+        "calls": 12,
+        "coordinated_moe_layers": 576,
+        "uploads": 3969,
+        "consumers": 9712,
+        "upload_bytes_avoided": 99193856000,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 19428,
+        "projection_launches": 11490,
+        "launches_avoided": 19420
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 91906969600,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    "final-1025": {
+      "requests": 3,
+      "live": 3,
+      "chunk": 1025,
+      "asan": false,
+      "gpu_cache_mb": 0,
+      "exact_full_heads": 15,
+      "metrics": {
+        "calls": 5,
+        "coordinated_moe_layers": 240,
+        "uploads": 1327,
+        "consumers": 3801,
+        "upload_bytes_avoided": 31051161600,
+        "busy_fences": 4,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 6668,
+        "projection_launches": 4014,
+        "launches_avoided": 8536
+      },
+      "cache_metrics": {
+        "weight_upload_bytes": 29860352000,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    }
+  },
+  "glm_product_cases": {
+    "final-short": {
+      "metrics": {
+        "calls": 6,
+        "coordinated_moe_layers": 252,
+        "uploads": 3850,
+        "consumers": 7588,
+        "upload_bytes_avoided": 107800428544,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 15400,
+        "projection_launches": 7700,
+        "launches_avoided": 14952
+      },
+      "requests": 4,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "chinese",
+        "english"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-short-asan": {
+      "metrics": {
+        "calls": 6,
+        "coordinated_moe_layers": 252,
+        "uploads": 3850,
+        "consumers": 7588,
+        "upload_bytes_avoided": 107800428544,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 15400,
+        "projection_launches": 7700,
+        "launches_avoided": 14952
+      },
+      "requests": 4,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "chinese",
+        "english"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    },
+    "final-long": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 7105,
+        "consumers": 10127,
+        "upload_bytes_avoided": 59573403648,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 34124,
+        "projection_launches": 19914,
+        "launches_avoided": 6384
+      },
+      "requests": 2,
+      "independent_histories": [
+        "long2049",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 8,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-long-asan": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 7105,
+        "consumers": 10127,
+        "upload_bytes_avoided": 59573403648,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 34124,
+        "projection_launches": 19914,
+        "launches_avoided": 6384
+      },
+      "requests": 2,
+      "independent_histories": [
+        "long2049",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 8,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    },
+    "final-reversed": {
+      "metrics": {
+        "calls": 6,
+        "coordinated_moe_layers": 252,
+        "uploads": 3850,
+        "consumers": 7588,
+        "upload_bytes_avoided": 107800428544,
+        "busy_fences": 0,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 15400,
+        "projection_launches": 7700,
+        "launches_avoided": 14952
+      },
+      "requests": 4,
+      "independent_histories": [
+        "chinese",
+        "english",
+        "english",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 12,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-wide": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 1925,
+        "consumers": 30352,
+        "upload_bytes_avoided": 1036204769280,
+        "busy_fences": 213,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 7700,
+        "projection_launches": 3850,
+        "launches_avoided": 113708
+      },
+      "requests": 16,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 48,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": false
+    },
+    "final-wide-asan": {
+      "metrics": {
+        "calls": 3,
+        "coordinated_moe_layers": 126,
+        "uploads": 1925,
+        "consumers": 30352,
+        "upload_bytes_avoided": 1036204769280,
+        "busy_fences": 207,
+        "joint_ffn_kernels": 1,
+        "kernel_launches": 7700,
+        "projection_launches": 3850,
+        "launches_avoided": 113708
+      },
+      "requests": 16,
+      "independent_histories": [
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese",
+        "english",
+        "chinese"
+      ],
+      "exact_full_f32_heads": 48,
+      "request_gpu_pooling": false,
+      "asan_frontend_tokenizer": true
+    }
+  },
+  "limitations": [
+    "The compact GPU cache capability remains the existing512-expert/top10 profile; GLM288/top8 GPU cache support is not added.",
+    "Singletons retain the counted per-session path. Joint grids keep private arithmetic buckets rather than introducing concatenated-row precision.",
+    "Weight-copy payload counters exclude model preparation, metadata and physical PCIe protocol traffic. D2D fills are reported separately; exposed transfer stalls and total memory peaks are not qualified.",
+    "Canonical repeated prompts demonstrate cache composition and payload reuse; diverse/cold-file working-set qualification remains pending.",
+    "Global RAM/VRAM admission, idle resource pools, external arrival/cancellation transport and sustained serving remain incomplete.",
+    "No vLLM throughput or latency parity claim; matched resident/offloaded benchmarks, CPU AVX2/AVX512/NEON and Metal coverage remain required."
+  ],
+  "serving_memory_followup_evidence": "docs/cuda-serving-memory.json",
+  "serving_memory_followup_scope": "Flash/GLM managed serving payload reservations and retained idle pooling are qualified in the followup. Earlier counts and limitations describe their historical evidence snapshot; physical RSS/VRAM bounds and all-four-profile resource unification remain incomplete."
+}

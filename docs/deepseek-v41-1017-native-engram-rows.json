@@ -1,0 +1,156 @@
+{
+  "status": "CPU quant row decoder qualified against original Triton BF16 lookup; whole Engram integration remains open",
+  "artifact_directory": "/tmp/bitnet-goal-native-engram-rows",
+  "implementation": {
+    "registry_format": "BN_QUANT_FORMAT_INT4_FP16S32",
+    "layout": "BN_QUANT_LAYOUT_ROW_SCALED",
+    "entrypoint": "bn_quant_int4_fp16s32_decode_region_bf16",
+    "contract": "Adjacent low/high offset-binary nibbles q=nibble-8; separate little-endian finite nonnegative FP16 scales, one per32 values per row. F32 product rounded to BF16 RN-even. Negative scale sign bits, infinities and NaNs rejected.",
+    "bounds": "No allocation; exact input byte counts; columns divisible by32; caller-owned contiguous output; regions may start at odd columns or span scale blocks; all requested scales validated before any output write; input/output overlap rejected.",
+    "arithmetic": "Integer evaluation exactly reproduces the finite FP16-scale times integer F32 product followed by BF16 rounding, independently of host FP rounding mode.",
+    "compatibility": "Generic load/matvec/matmul capabilities are not advertised by this row-only format. Existing model admission is unchanged. Make and WASM source lists include the new quant implementation."
+  },
+  "primary_source": {
+    "converter": "/home/mark/artalis.io/tools/deepseek-v4.1-flash-1017-diffbot/vendor/recipe/quantize/convert_engram_int4.py",
+    "runtime": "/home/mark/artalis.io/tools/deepseek-v4.1-flash-1017-diffbot/vendor/recipe/patches/vllm/sm120-fixes.diff",
+    "runtime_function": "_engram_lookup_int4_kernel",
+    "license": "MIT, Diffbot2026",
+    "method": "Extract unchanged added Triton function from local vendor patch and execute it; no bitnet code in oracle. BF16 store remains unchanged. Converter was inspected; no model pack is rewritten.",
+    "hashes": {
+      "/home/mark/artalis.io/tools/deepseek-v4.1-flash-1017-diffbot/vendor/recipe/patches/vllm/sm120-fixes.diff": "3402f734d039b06b0eeb757dc271a88c2d3ffee94fbc92b41e2a303e3fd9e800",
+      "/home/mark/artalis.io/tools/deepseek-v4.1-flash-1017-diffbot/vendor/recipe/quantize/convert_engram_int4.py": "424fb973802802f6d1967d2639e074f926f499d425978d574d3be5cf35c86585",
+      "/home/mark/artalis.io/tools/deepseek-v4.1-flash-1017-diffbot/vendor/recipe/LICENSE": "72d0add5aad86c1a452b789df4822a681300694de0c275939a76f3c386d50d2a",
+      "/tmp/bitnet-goal-native-engram-rows/original_kernel.py": "312f05a642037ec54c02c7f5dc40f0aa2deb3b3d1094b0ed45ed0906e18fc04f",
+      "/tmp/bitnet-goal-native-engram-rows/capture.py": "5f4173f90a4cfb66923fa172ee6e2d90e5ae0beb10a4e23f001c41febf714478",
+      "/tmp/bitnet-goal-native-engram-rows/probe.c": "d4d2987683f40ae2738250fac9be52f82058d52faa24b1a207199c97e617d806",
+      "/tmp/bitnet-goal-native-engram-rows/reference.json": "2cefb37f5f2c75d3e402c9a59154549938329111fa2ae39e78619cd4a6150615"
+    }
+  },
+  "reference": {
+    "cases": {
+      "exhaustive": {
+        "rows": 31744,
+        "cols": 32,
+        "fnv1a": "0xba104b93f11abf25",
+        "bytes": 2031616
+      },
+      "actual-1": {
+        "rows": 1026,
+        "cols": 256,
+        "fnv1a": "0x14d2aa4aa8ea41eb",
+        "bytes": 525312
+      },
+      "actual-14": {
+        "rows": 1026,
+        "cols": 256,
+        "fnv1a": "0x5e02236b7253230a",
+        "bytes": 525312
+      }
+    },
+    "files": {
+      "exhaustive.weights": {
+        "bytes": 507904,
+        "sha256": "4db03f77976447f859abc470ad03e504130c1c8a9223b95c232383161bb785be"
+      },
+      "exhaustive.scales": {
+        "bytes": 63488,
+        "sha256": "4fe9d29e9dad5780b2e224d5f533dc172078bb03baa61b6155a2d9d171e52b1a"
+      },
+      "exhaustive.bf16": {
+        "bytes": 2031616,
+        "sha256": "6aad26dabe2cea0349070e1b224e1ca69d04e5115a6b168b1b11035f49db2dfb"
+      },
+      "actual-1.ids": {
+        "bytes": 8208,
+        "sha256": "2261dd0729fd59d85c9234df27ef72f744ec376346674c892f2c7357f3613cba"
+      },
+      "actual-1.weights": {
+        "bytes": 131328,
+        "sha256": "69cffdbf922d43299a306f5635ad02e2eed948a5a5fead888ab862b82f0663ee"
+      },
+      "actual-1.scales": {
+        "bytes": 16416,
+        "sha256": "de8e3ba0f11f5f6eb2f961a204360c77d8b6829147dc1e9824732d0ab7f98805"
+      },
+      "actual-1.bf16": {
+        "bytes": 525312,
+        "sha256": "10f5c255e866fc3a9d28319370c7e2128259f997646d2abbf961c1e3d50be80a"
+      },
+      "actual-14.ids": {
+        "bytes": 8208,
+        "sha256": "e36c31f5db87272075897cd39fb1616216fd2793fd3ddb7350de5c9d45eedd9b"
+      },
+      "actual-14.weights": {
+        "bytes": 131328,
+        "sha256": "fb9a20f6fd7c1bfed5fa8387ad9dfadca210a7ee9d8e38997b346cf22231805c"
+      },
+      "actual-14.scales": {
+        "bytes": 16416,
+        "sha256": "6807706aec05dca7df3703aca13e98ca738a46f09991c7f791ae0686de898128"
+      },
+      "actual-14.bf16": {
+        "bytes": 525312,
+        "sha256": "caaa6d84ddf5083c69f34784a46e03bdeb99c1afc48060b6520cf2fce356c720"
+      }
+    },
+    "torch": "2.14.0+cu130",
+    "scope": "Unchanged Diffbot Triton int4 lookup: BF16 output, not FP16"
+  },
+  "native_results": {
+    "full_bytes_compared": 3082240,
+    "guarded_rectangles": 13854,
+    "actual_checkpoint_rows": 2052,
+    "exhaustive_distinct_nibble_scale_pairs": 507904,
+    "exhaustive_words": 1015808,
+    "source_kernel": "Explicit BF16 output; this does not establish an FP16 Engram embedding profile."
+  },
+  "limits": [
+    "CPU row-decode primitive only; no GPU candidate kernel or offload-cache integration.",
+    "Packed-row decoder does not establish token normalization, PCG64 layout, reset/rewind or full Engram forward equivalence.",
+    "No complete DeepSeek generation or default CLI admission.",
+    "Original pinned exllamav3 generic NGramEmbedding path lacks this packed-int4 decoder; its other numerical components are separately qualified. The Diffbot BF16 embedding output must be integrated deliberately with the chosen full-model execution profile.",
+    "No throughput, cold/warm placement, serving, NEON/WASM runtime or vLLM parity claim."
+  ],
+  "validation": {
+    "baseline_make_test": {
+      "exit": 0,
+      "log": "/tmp/bitnet-goal-native-engram-rows-baseline.log",
+      "terminal_handle": 49800
+    },
+    "protected_clean_build_standard_full_cuda_and_diagnostics": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "terminal_build_handle": 76056,
+    "qualification": {
+      "checks": {
+        "source-replay": 0,
+        "unit": 0,
+        "asan-unit": 0,
+        "probe": 0,
+        "asan-probe": 0,
+        "qwen27-compat": 0
+      },
+      "frozen_sources": 807,
+      "source_replay": "Unchanged original Triton BF16 lookup; all captured files compared byte for byte",
+      "native_checks": "CPU scalar region decoder only; no new candidate GPU kernel",
+      "goal_status": "active"
+    },
+    "terminal_qualification_handle": 64232,
+    "qwen27": {
+      "strict_cuda_continuation_ids": "192/192",
+      "first_token_ids": "8/8",
+      "token_count_mismatches": "0/8"
+    },
+    "sanitizers": "ASan/UBSan/leak checking on complete new CPU decoder and unit/probe code. No new candidate GPU kernel; GPU reference unchanged.",
+    "wasm": "Source list updated; emcc unavailable here, so WASM build/execution not verified."
+  }
+}

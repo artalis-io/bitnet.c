@@ -1,0 +1,646 @@
+{
+  "schema": 1,
+  "full_goal_complete": false,
+  "glm_model_qualified": false,
+  "scope": "Portable F32 bounded KDA coefficients plus recurrence, synthetic BF16-representable projection inputs. Numerical core agreement only; no full-model, BF16 bit parity or performance claim.",
+  "reference": {
+    "cases": [
+      {
+        "case": 0,
+        "heads": 1,
+        "dim": 1,
+        "tokens": 9,
+        "lower_bound": -5.0,
+        "sha256": "adccb936dc8df238ea69f6899ab9ebca500ea06899910742e56360ae75a49c66",
+        "double_decay_max_abs": 6.630354665304594e-08,
+        "double_beta_max_abs": 3.115243718543326e-08,
+        "coupled": false
+      },
+      {
+        "case": 1,
+        "heads": 2,
+        "dim": 3,
+        "tokens": 7,
+        "lower_bound": -5.0,
+        "sha256": "38e198581415c4f4a2fd26499d4970ce022d934f4f33e2cf27198180ad49a18b",
+        "double_decay_max_abs": 4.427095694481409e-07,
+        "double_beta_max_abs": 3.5951335575212795e-08,
+        "coupled": false
+      },
+      {
+        "case": 2,
+        "heads": 64,
+        "dim": 128,
+        "tokens": 17,
+        "lower_bound": -5.0,
+        "sha256": "dc3fd5c412a5b5d4f399572be43f35e28b41187dff400a018772ff0dec770c3d",
+        "double_decay_max_abs": 7.759125830730795e-07,
+        "double_beta_max_abs": 7.452501926685784e-08,
+        "coupled": true
+      },
+      {
+        "case": 3,
+        "heads": 3,
+        "dim": 17,
+        "tokens": 65,
+        "lower_bound": -1.0,
+        "sha256": "d0b63e260ad344d6b7038adb4ce1e67bef5282adfb299237f646c7d451482eda",
+        "double_decay_max_abs": 9.162431047204933e-08,
+        "double_beta_max_abs": 6.002925723169739e-08,
+        "coupled": false
+      },
+      {
+        "case": 4,
+        "heads": 2,
+        "dim": 256,
+        "tokens": 3,
+        "lower_bound": -12.0,
+        "sha256": "b965f75f46586c31ac980bc3eddc1763f76bf39fcf38522bd203fe50613f02e7",
+        "double_decay_max_abs": 1.6180574498037004e-06,
+        "double_beta_max_abs": 6.896151849566934e-08,
+        "coupled": false
+      }
+    ],
+    "source_sha256": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/kernels.py": "6f5865164682e2ea475995fbdeb1df6942baecfb06abeee3a4468c7c6344775e",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/fused_recurrent.py": "fa7f1eab41907d93b90d1d08aee2399df45c49a161620d1b790949a6f8a8c7a7"
+    }
+  },
+  "compiled_configurations": {
+    "scalar": [
+      {
+        "case": 0,
+        "decay_max_abs": 9.313225746154785e-10,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 72
+      },
+      {
+        "case": 1,
+        "decay_max_abs": 4.76837158203125e-07,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 224
+      },
+      {
+        "case": 2,
+        "decay_max_abs": 9.5367431640625e-07,
+        "beta_max_abs": 1.1920928955078125e-07,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 2.2351741790771484e-08,
+        "compared_values": 72421632
+      },
+      {
+        "case": 3,
+        "decay_max_abs": 1.1920928955078125e-07,
+        "beta_max_abs": 1.1920928955078125e-07,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 14040
+      },
+      {
+        "case": 4,
+        "decay_max_abs": 1.9073486328125e-06,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 6168
+      }
+    ],
+    "avx2": [
+      {
+        "case": 0,
+        "decay_max_abs": 9.313225746154785e-10,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 72
+      },
+      {
+        "case": 1,
+        "decay_max_abs": 4.76837158203125e-07,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 224
+      },
+      {
+        "case": 2,
+        "decay_max_abs": 9.5367431640625e-07,
+        "beta_max_abs": 1.1920928955078125e-07,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 2.2351741790771484e-08,
+        "compared_values": 72421632
+      },
+      {
+        "case": 3,
+        "decay_max_abs": 1.1920928955078125e-07,
+        "beta_max_abs": 1.1920928955078125e-07,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 14040
+      },
+      {
+        "case": 4,
+        "decay_max_abs": 1.9073486328125e-06,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 6168
+      }
+    ],
+    "avx512": [
+      {
+        "case": 0,
+        "decay_max_abs": 9.313225746154785e-10,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 72
+      },
+      {
+        "case": 1,
+        "decay_max_abs": 4.76837158203125e-07,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 224
+      },
+      {
+        "case": 2,
+        "decay_max_abs": 9.5367431640625e-07,
+        "beta_max_abs": 1.1920928955078125e-07,
+        "state_max_abs": 1.7881393432617188e-07,
+        "out_max_abs": 2.2351741790771484e-08,
+        "compared_values": 72421632
+      },
+      {
+        "case": 3,
+        "decay_max_abs": 1.1920928955078125e-07,
+        "beta_max_abs": 1.1920928955078125e-07,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 14040
+      },
+      {
+        "case": 4,
+        "decay_max_abs": 1.9073486328125e-06,
+        "beta_max_abs": 0.0,
+        "state_max_abs": 0.0,
+        "out_max_abs": 0.0,
+        "compared_values": 6168
+      }
+    ]
+  },
+  "comparisons": 217326408,
+  "parameter_storage": {
+    "layers": 34,
+    "pairs": 68,
+    "negative_exp_max_abs": 1.9073486328125e-06,
+    "bias_exact": true,
+    "rows": [
+      {
+        "layer": 0,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 0,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 1,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 1,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 10,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 1.9073486328125e-06
+      },
+      {
+        "layer": 10,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 12,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 12,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 13,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 13,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 14,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 14,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 16,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 16,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 17,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 17,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 18,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 18,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 2,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 4.76837158203125e-07
+      },
+      {
+        "layer": 2,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 20,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 4.76837158203125e-07
+      },
+      {
+        "layer": 20,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 21,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 21,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 22,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 22,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 24,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 24,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 25,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 25,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 26,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 26,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 28,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 28,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 29,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 29,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 30,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 30,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 32,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 4.76837158203125e-07
+      },
+      {
+        "layer": 32,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 33,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 33,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 34,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 34,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 36,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 36,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 37,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 37,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 38,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 38,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 4,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 4.76837158203125e-07
+      },
+      {
+        "layer": 4,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 40,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 4.76837158203125e-07
+      },
+      {
+        "layer": 40,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 41,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 4.76837158203125e-07
+      },
+      {
+        "layer": 41,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 42,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 42,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 44,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 44,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 5,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 5,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 6,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 6,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 8,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 8,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      },
+      {
+        "layer": 9,
+        "kind": "A_log",
+        "elements": 64,
+        "transformed_max_abs": 9.5367431640625e-07
+      },
+      {
+        "layer": 9,
+        "kind": "dt_bias",
+        "elements": 8192,
+        "transformed_max_abs": 0.0
+      }
+    ]
+  },
+  "toolchain": {
+    "torch": "2.14.0+cu130",
+    "numpy": "2.3.5",
+    "triton": "3.8.0",
+    "vllm": "0.33.0"
+  },
+  "validation": {
+    "baseline_standard": true,
+    "final_protected_clean_build_zero_warnings": true,
+    "standard": true,
+    "scalar_ssm_asan_ubsan": true,
+    "reference_generator_exact_reproduction": true,
+    "cuda_suite": true,
+    "cuda_diagnostic_isolation": true,
+    "protected_binaries_preserved": true
+  },
+  "source_sha256": {
+    "include/transformer_ssm_internal.h": "39fdd6e148eb563bc09fe911ba981246bdbb14c8b952206cd373fac298143f8c",
+    "src/transformer/ssm_scalar.c": "13c0127c94a0c5b5a853e2aed007cf395c0de8412e51aedc541cbf50f4e80b32",
+    "test/test_ssm.c": "825c1b3e653afb7436416554faedca905591803c4ef3e453c28257bce378df3e",
+    "test/kda_coefficients_reference.h": "2c416a78d3868307db47342868d87620c5924dff2b8ff5658d9e2ca79cd7a911",
+    "test/kda_coefficients_reference.json": "fdbc2154249a58a2cd2b8a32a6a9307bd1362470327fcc02ac8433e62894178f",
+    "test/reference_ssm_kda_coefficients.py": "39dd7b02ab2a5e111aa66c00270b51a7d65721438ead1d8061867acbf3fc7bd6",
+    "test/verify_ssm_kda_coefficients.py": "9f7666687acf05e05929ad23b9dd73196b26a0972fba525373973934b3f0b59c"
+  },
+  "evidence_directory": "/tmp/bitnet-goal-glm-gate",
+  "limits": [
+    "No GLM architecture alias, loader or graph registration",
+    "No new CUDA coefficient kernel or model performance claim",
+    "mHC, indexed MLA, convolution/output processing and complete model qualification remain open",
+    "ARM/NEON hardware not executed for this new primitive"
+  ]
+}

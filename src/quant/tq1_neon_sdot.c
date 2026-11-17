@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_neon_helpers.h"
 #include <arm_neon.h>
 
 #define TQ1_DECODE(qx) vreinterpretq_s8_u8( \
@@ -40,8 +41,8 @@ void bn_quant_tq1_neon_sdot_range(void *ctx, int row_start, int row_end) {
                     int8x16_t y1 = vld1q_s8(xb + (off) + 16); \
                     xsum_acc = vpadalq_s8(xsum_acc, y0); \
                     xsum_acc = vpadalq_s8(xsum_acc, y1); \
-                    bacc = vdotq_s32(bacc, TQ1_DECODE(mx0), y0); \
-                    bacc = vdotq_s32(bacc, TQ1_DECODE(mx1), y1); \
+                    bacc = bn_neon_dot4_i8(bacc, TQ1_DECODE(mx0), y0); \
+                    bacc = bn_neon_dot4_i8(bacc, TQ1_DECODE(mx1), y1); \
                 } while(0)
                 S1_TRIT(r0,   r1,   0);
                 S1_TRIT(m0_1, m1_1, 32);
@@ -61,7 +62,7 @@ void bn_quant_tq1_neon_sdot_range(void *ctx, int row_start, int row_end) {
                 #define S2_TRIT(mx, off) do { \
                     int8x16_t y = vld1q_s8(xb + (off)); \
                     xsum_acc = vpadalq_s8(xsum_acc, y); \
-                    bacc = vdotq_s32(bacc, TQ1_DECODE(mx), y); \
+                    bacc = bn_neon_dot4_i8(bacc, TQ1_DECODE(mx), y); \
                 } while(0)
                 S2_TRIT(r,   160);
                 S2_TRIT(m_1, 176);

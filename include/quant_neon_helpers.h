@@ -4,6 +4,32 @@
 #ifdef __ARM_NEON
 #include <arm_neon.h>
 
+/* Four signed byte products per accumulator lane, with SDOT's wrapping
+ * int32 addition. Baseline NEON widens before summing, including -128*-128. */
+static inline int32x4_t bn_neon_dot4_i8(int32x4_t acc, int8x16_t a,
+                                       int8x16_t b) {
+#ifdef __ARM_FEATURE_DOTPROD
+    return vdotq_s32(acc, a, b);
+#else
+    int32x4_t lo = vpaddlq_s16(vmull_s8(vget_low_s8(a), vget_low_s8(b)));
+    int32x4_t hi = vpaddlq_s16(vmull_s8(vget_high_s8(a), vget_high_s8(b)));
+    int32x2_t sum_lo = vpadd_s32(vget_low_s32(lo), vget_high_s32(lo));
+    int32x2_t sum_hi = vpadd_s32(vget_low_s32(hi), vget_high_s32(hi));
+    uint32x4_t dot = vreinterpretq_u32_s32(vcombine_s32(sum_lo, sum_hi));
+    return vreinterpretq_s32_u32(vaddq_u32(vreinterpretq_u32_s32(acc), dot));
+#endif
+}
+
+/* lane must be an immediate 0..3, as for the hardware intrinsic. */
+#ifdef __ARM_FEATURE_DOTPROD
+#define bn_neon_dot4_laneq_i8(acc, a, b, lane) \
+    vdotq_laneq_s32((acc), (a), (b), (lane))
+#else
+#define bn_neon_dot4_laneq_i8(acc, a, b, lane) \
+    bn_neon_dot4_i8((acc), (a), vreinterpretq_s8_s32( \
+        vdupq_n_s32(vgetq_lane_s32(vreinterpretq_s32_s8(b), (lane)))))
+#endif
+
 // Widen 16 int8 ternary values (-1/0/+1) to float, FMA with 16 floats from x,
 // accumulate into 4 float32x4 accumulators.
 static inline void bn_neon_acc_i8x16_f32(int8x16_t t, const float *x,

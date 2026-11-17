@@ -1,0 +1,294 @@
+{
+  "status": "Qualified opt-in pinned expert upload staging; full goal active and incomplete",
+  "parent": "docs/native-decode-cache-reuse.json",
+  "runtime_changes": true,
+  "source_changes": {
+    "test/native_trellis_store_checks.h": {
+      "before": "731bfef2d3dc073d090caa858667394b18eb7bc01dd8583b60d1440ef56950cc",
+      "after": "dacdccaf033de0c2065253ce4af74dddfc21050efbd9924fb5d539a4e69203c2"
+    },
+    "test/cuda_exl3_ffn_checks.h": {
+      "before": "bd1fc1235b714693a902bbcb3c0394166e426e0da738eb069fabb1a21e7ddc7b",
+      "after": "d087645e1ba4fb76a9c02cd426bb76cd421f80ab85f0d01fa0b41ec849cf9a6f"
+    },
+    "src/gpu_cuda.cu": {
+      "before": "c8046c8e2d17a8e05f3026444173a1ba412eaa256ce2ef94a0ee9558613d68eb",
+      "after": "ffff772b86466b34983ebcd1c81484853d07af7e5119224fda851c69b2dc4116"
+    },
+    "src/gpu_moe_bridge.c": {
+      "before": "db72f632f8528e25edb969edbb79a17e94cc3b6210200c2b41b41ccc4723ae38",
+      "after": "a517aeb4c1ff087663fe191a3bd98756aa98608d71ed96efc7cf161941fbacaf"
+    },
+    "src/gpu_cuda_exl3.cuh": {
+      "before": "39cae02ec956b3b60c7724298325a1f234228708dbfb7960597a884f60773376",
+      "after": "33f76b6ee1d660082813ac9818567ddada9e1ea681415946f074745d277d24ef"
+    },
+    "include/gpu_backend.h": {
+      "before": "7fb195a87527fbb3f2521a83dce7a23d700c49d47f2e5ef0bd12db28a2dba1d0",
+      "after": "db0987cb3ec778397df75085cb919d3647608862e9473e4ab980169f5dfe7a58"
+    },
+    "include/gpu_moe_bridge.h": {
+      "before": "7537bae1c5f4cb996b5acf7ee8176d9c8ad1779bdff525551e753cf0ddb6b8ea",
+      "after": "992cb83d34a0b27fdb353a682781baeec440f1cb4550f6b00e81849f5ab69d58"
+    },
+    "bench/bench_native_forward.c": {
+      "before": "8712cfee4a8402dc7ce96d86d145fb9b23e36f708136c1d51cd20a1c3a1f8305",
+      "after": "b112e511276e2d1b4eeec0d16cec6e015d8bbd82f1c19edc1d24066bb7dbc33e"
+    }
+  },
+  "behavior": {
+    "admission": "Positive pinned budget must cover one complete expert and requires all three backend hooks. Total staging budget still covers the SAME allocation; zero keeps ordinary staging. No live upgrade.",
+    "ownership": "One backend-owned pinned host bundle and nonblocking upload stream per serialized model expert store; no pinning of the RAM cache. Store owns lifecycle; sessions retain ordinary compute state.",
+    "batch": "Validate all projection descriptors before allocation/copy. Allocate missing handles privately, enqueue three H2D copies, synchronize the upload stream once, then expose successful handles and publish the cache entry.",
+    "failure": "Drain attempted copies before return. Batch failure leaves item handles unchanged, destroys newly allocated handles, and treats existing buffers as potentially poisoned. Store abort clears the entire failed reservation without publication. Host source lease survives through completion.",
+    "compatibility": "Existing model/store entry points pass pinned_budget=0. No kernel, arithmetic, routing, grouping, head geometry, or legacy default-path change.",
+    "timing": "Main forward elapsed time includes RAM-to-pinned copies and completed CPU-logit publication. upload_time_ms begins at the backend batch callback and excludes the preceding host memcpy; do not compare this counter alone with pageable driver staging."
+  },
+  "workload": {
+    "model": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "profile": "Explicit Diffbot INT4 BF16 lookup to Exllama F16 Engram adapter; not original Diffbot full-runtime equivalence",
+    "fixture": "Fresh513 + resumed513 + five self-fed source greedy tokens; context1031/maxseq1280/f16acc0",
+    "budgets": {
+      "ram": 13635158016,
+      "decode_vram": 639148032,
+      "temporary_vram": 639148032,
+      "total_staging": 13315584,
+      "pinned_staging_overlapping_total": 13315584
+    },
+    "measurement": "No observer callbacks in timing runs; monotonic history staging to completed CPU-logit publication; setup and verification excluded. Page-cache/disk warmth and clocks uncontrolled."
+  },
+  "result": {
+    "prefill_bypass": {
+      "plain-window32": {
+        "samples": 4,
+        "tokens": 2052,
+        "elapsed_ms": 26167.537999,
+        "tokens_per_second": 78.41777090677839,
+        "chunk_ms": [
+          6928.697736,
+          6206.117989,
+          6822.423375,
+          6210.298899
+        ]
+      },
+      "pinned-bypass": {
+        "samples": 4,
+        "tokens": 2052,
+        "elapsed_ms": 21177.809609,
+        "tokens_per_second": 96.89387325155455,
+        "chunk_ms": [
+          5546.565676,
+          5043.448985,
+          5544.412225,
+          5043.382723
+        ]
+      }
+    },
+    "pageable_warm_decode_median_ms": 153.06919,
+    "pinned_warm_decode_median_ms": 159.5359925,
+    "samples_each": 10,
+    "latency_change_fraction": 0.04224757771305909,
+    "throughput_ratio": 0.9594649307741637,
+    "pageable_samples_ms": [
+      154.914405,
+      153.230391,
+      152.894007,
+      154.617591,
+      152.818252,
+      154.631102,
+      152.907989,
+      152.700621,
+      153.58317,
+      152.840255
+    ],
+    "pinned_samples_ms": [
+      159.848956,
+      162.118405,
+      159.082144,
+      159.172783,
+      160.881644,
+      159.61621,
+      159.171712,
+      160.489405,
+      159.21719,
+      159.455775
+    ],
+    "matched_counters": [
+      "run",
+      "frame",
+      "rows",
+      "position",
+      "decode_hits",
+      "decode_misses",
+      "ram_hits",
+      "ram_misses",
+      "expert_uploads",
+      "expert_upload_bytes",
+      "expert_read_bytes",
+      "buffer_creates",
+      "buffer_refills"
+    ],
+    "warm_ram_hits": 240,
+    "warm_vram_hits": 0,
+    "warm_source_reader_bytes": 0,
+    "warm_expert_h2d_bytes": 3195740160,
+    "warm_projection_refills": 720,
+    "warm_triplet_completions": 240
+  },
+  "memory": {
+    "pinned_host_trace": {
+      "before": [
+        {
+          "operation": 0,
+          "calls": 8,
+          "bytes": 12607488
+        },
+        {
+          "operation": 1,
+          "calls": 8,
+          "bytes": 12607488
+        }
+      ],
+      "after": [
+        {
+          "operation": 0,
+          "calls": 9,
+          "bytes": 25923072
+        },
+        {
+          "operation": 1,
+          "calls": 9,
+          "bytes": 25923072
+        }
+      ]
+    },
+    "pinned_staging_overlaps_total_staging": true,
+    "temporary_allocated_overlaps_temporary_quota": true,
+    "backend_private_failed_allocations": "Covered by the charged full-expert reservation; successful persistent allocation stats do not count failed private allocations.",
+    "tracked_device_peak_bytes": 19402373481,
+    "tracked_device_final_bytes": 0,
+    "notes": "Device trace excludes driver/context/rounding overhead. Pinned staging is host memory and separate from device allocation totals."
+  },
+  "validation": {
+    "qualification": {
+      "checks": {
+        "plain-window1": 0,
+        "plain-window32": 0,
+        "plain-phase32": 0,
+        "observed-window1": 0,
+        "observed-window32": 0,
+        "observed-phase32": 0,
+        "all-logits-window32": 0,
+        "busy": 0,
+        "asan-busy": 0,
+        "asan-phase32": 0,
+        "memcheck-phase32": 0,
+        "initcheck-phase32": 0,
+        "small-vram": 0,
+        "all-logits-small-vram": 0,
+        "asan-small-vram": 0,
+        "memcheck-small-vram": 0,
+        "initcheck-small-vram": 0,
+        "pinned-bypass": 0,
+        "pinned-small-vram": 0,
+        "pinned-phase": 0,
+        "all-logits-pinned": 0,
+        "asan-pinned": 0,
+        "memcheck-pinned": 0,
+        "initcheck-pinned": 0,
+        "qwen27-compat": 0
+      },
+      "frozen_sources": 854,
+      "reference_files": 25019,
+      "goal_status": "active",
+      "scope": "Explicit bounded pinned expert staging and synchronous triplet publication, same source-exact full forward and preserved legacy path. No asynchronous overlap, vLLM parity or serving admission claim."
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "main_source_exact": {
+      "forwards": 357,
+      "checks": 714,
+      "bytes": 2130275840,
+      "self_fed_tokens": 255
+    },
+    "trace_source_exact_forwards": 14,
+    "trace_source_exact_checks": 28,
+    "synthetic": "Pinned admission and allocation failure, exact cold/refill bytes, pinned-victim refusal, poison abort, retry and full teardown; real CUDA descriptor rejection and create/refill feed unchanged frozen FFN references.",
+    "asan_ubsan": "Passed",
+    "cuda_memcheck": "0 errors and 0 leaked allocations",
+    "cuda_initcheck": "0 errors",
+    "busy": "Pinned-mode whole-forward retries preserve CPU logits, position, output ticket and pending history; four forced retries; index callbacks unchanged",
+    "qwen27": "Strict fresh compatibility gate passed"
+  },
+  "trace": {
+    "scope": "Supplementary Nsight trace only; separate from uninstrumented performance samples",
+    "roi": "Embedding CUDA dispatch through the start of the external half-logit verification transfer; includes original final-logit publication and synchronization, excludes setup/reset, initial embedding upload, external verification",
+    "warm_stream_synchronizations_before": 893,
+    "warm_stream_synchronizations_after": 413,
+    "warm_weight_copy_count": 720,
+    "warm_weight_completion_count": 240,
+    "warm_total_memcpy_async": 978,
+    "warm_malloc_free": 0,
+    "all_frame_h2d_bytes_match_parent": true,
+    "notes": "Separate instrumented run excluded from performance samples. Publication remains synchronous; asynchronous transfer/compute overlap is not implemented."
+  },
+  "artifacts": {
+    "qualification.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/qualification.json",
+      "sha256": "060c4f7880b26ca8d027782aaddbc93912d8b8b54322af6dbf68fdd71d46055f"
+    },
+    "records.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/records.json",
+      "sha256": "30a8e23fc153360c30e5a807b0b168a42660788e533cb457076c32160d711115"
+    },
+    "frozen-source.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/frozen-source.json",
+      "sha256": "b2d30af02dc34d53a41b5db980a0b43d3e0aaee3d3739761e24b349c93b92886"
+    },
+    "reference-audit.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/reference-audit.json",
+      "sha256": "4665d2de33ad4d7f5fe400924ce6e4d3aa0151de9ccb8da7fa6560239bcdfdaa"
+    },
+    "intentional-source-changes.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/intentional-source-changes.json",
+      "sha256": "36fa65a722c16ee5256d17cab18cee29b23e4994158bbfac9a522c29dd3a1723"
+    },
+    "rebuilt-artifacts.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/rebuilt-artifacts.json",
+      "sha256": "39265229d9100da41c381580892f75a3cb0d229f61cd3360d6623ed4110d78f7"
+    },
+    "native-phase-trace.nsys-rep": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/native-phase-trace.nsys-rep",
+      "sha256": "fd110898e66dc0a14046059862efd48e9e49964ffe90efedfbc11e2bb41bcbf0"
+    },
+    "native-phase-trace.sqlite": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/native-phase-trace.sqlite",
+      "sha256": "e188c41a375866d0dda436adf5e85a162b3ff507e757607b33ee7a636f203e85"
+    },
+    "trace-analysis.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/trace-analysis.json",
+      "sha256": "c3ba38b7f7528baf2d13bf549819e4a9fe8d3da32c961c714c55b3cb80438d9f"
+    },
+    "pinned-host-trace.json": {
+      "path": "/tmp/bitnet-goal-native-pinned-upload/pinned-host-trace.json",
+      "sha256": "d06f292baba3f9231a8e244c9b61d95f21467294ba722197d1f7ae7dc44f628f"
+    }
+  },
+  "remaining": [
+    "Asynchronous source I/O and transfer/compute overlap, controlled cold/warm source behavior and production placement policies",
+    "Text encoder/stream decoder, model/CLI admission and larger candidate contexts",
+    "Matched resident vLLM prefill/decode within 5%, continuous batching/KV scheduling, concurrent throughput/tail latency",
+    "Full qualification of all named models and CPU AVX2/AVX512/NEON backends; Metal remains secondary"
+  ],
+  "goal_complete": false
+}

@@ -17,12 +17,22 @@ struct BnSession {
     BnSessionBackendState *backend_state; // per-request backend ownership
     int pos;                   // generation position
     int gpu_kv_direct_valid;   // prefill wrote current KV window directly to GPU
+    int moe_cache_prefill;     // scoped prefill upload policy; independent of arithmetic
+    int backend_only;          // backend owns compute state; CPU fallback is forbidden
 };
 typedef struct BnSession BnSession;
 
 // Create a session with its own KV cache and activation buffers.
 // alloc: allocator for the session struct itself (NULL = stdlib default).
 BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc);
+
+// Host logits/token history only; backend request initialization is required
+// before execution. No CPU activation, KV, SSM, or MoE mirrors are allocated.
+// Native checkpoint storage uses its prepared anatomy's vocabulary/context;
+// this allocates host storage only and does not admit an inference path.
+// CPU entry points fail
+// instead of falling back when a compatible backend request is unavailable.
+BnSession *bn_session_create_backend(const BnModel *model, BnAllocator *alloc);
 
 // Free session memory.
 void bn_session_free(BnSession *s, BnAllocator *alloc);

@@ -1,0 +1,1361 @@
+{
+  "schema": 1,
+  "status": "qualified_declared_four_domain_native_cuda_cache_profiles",
+  "evidence_root": "/tmp/bitnet-goal-offload-working-sets",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "production_source_changes": false,
+  "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+  "profile": "exl3-int4-f16",
+  "precision_scope": "Existing explicit Diffbot INT4 BF16 lookup to Exllama F16 Engram adapter; independent original-source arithmetic within this declared profile, not unmodified Diffbot full-runtime equivalence.",
+  "workload": {
+    "scope": "Four fixed1026-token domain prompts; independent source captures then all four histories and revisits across RAM/GPU cache profiles.",
+    "domains": [
+      "code",
+      "math",
+      "multilingual",
+      "records"
+    ],
+    "reference": "Pinned independent upstream40-layer native graph, raw tokenizers0.23.3 encoding, unchanged grouped/folded/fused arithmetic and five self-fed outputs. New immutable outputs only; no previous gold edits.",
+    "profiles": [
+      {
+        "name": "small-ram-small-gpu",
+        "ram_mib": 13004,
+        "gpu_mib": 8192,
+        "host_mib": 16384
+      },
+      {
+        "name": "large-ram-small-gpu",
+        "ram_mib": 195060,
+        "gpu_mib": 8192,
+        "host_mib": 200000
+      },
+      {
+        "name": "large-ram-large-gpu",
+        "ram_mib": 195060,
+        "gpu_mib": 26008,
+        "host_mib": 200000
+      }
+    ],
+    "request_order": [
+      "code",
+      "math",
+      "multilingual",
+      "records",
+      "code",
+      "math",
+      "multilingual",
+      "records"
+    ],
+    "live": 2,
+    "prefill_chunk": 2048,
+    "maxseq": 1280,
+    "outputs": 5,
+    "acceptance": [
+      "Exact independent full-vocabulary F32 bytes, IDs/text/positions in each product correctness run.",
+      "Managed RAM/VRAM caps include retained idle state.",
+      "Report actual expert-key overlap, source/upload bytes and cache behavior; topics alone do not prove diverse working sets.",
+      "No universal or vLLM performance claim; timing protocol requires separate prospective gates."
+    ],
+    "production_source_changes": false,
+    "full_goal_complete": false
+  },
+  "inputs": {
+    "code": {
+      "reference": "/tmp/bitnet-goal-offload-working-sets/source-code/reference",
+      "source_input_sha256": "65ac5927624dcd144798a169e6631c2f18818a9af986e513c2a524b234bc7d09",
+      "prompt_sha256": "e1b4102dc6f81957f840cc5b5cbf5c30aa3f430ecf0102f856ea51074fc27776",
+      "token_count": 1026,
+      "generated_ids": [
+        9702,
+        101441,
+        982,
+        83,
+        14
+      ]
+    },
+    "math": {
+      "reference": "/tmp/bitnet-goal-offload-working-sets/source-math/reference",
+      "source_input_sha256": "d90df52b5c9a5519d383d6aff09384dd4d99e549226cf454325307e50f1286e6",
+      "prompt_sha256": "20340961a4f31dab7a1c575a34c0a266296805a31b3da31a99860ed5b93261ac",
+      "token_count": 1026,
+      "generated_ids": [
+        1957,
+        8509,
+        14,
+        2513,
+        334
+      ]
+    },
+    "multilingual": {
+      "reference": "/tmp/bitnet-goal-offload-working-sets/source-multilingual/reference",
+      "source_input_sha256": "9ecd0320d8dbe689e99a9fe0caea06c2411d9e2be037ca5461b86af6da272164",
+      "prompt_sha256": "889b197077b6b5b129de6b79407b23d9a8c65e06e5115a82ddde7cd29eb085b2",
+      "token_count": 1026,
+      "generated_ids": [
+        288,
+        614,
+        5316,
+        5045,
+        295
+      ]
+    },
+    "records": {
+      "reference": "/tmp/bitnet-goal-offload-working-sets/source-records/reference",
+      "source_input_sha256": "6e2f9909f8f5eb25919482e07afe6b51e48805235daafdc553132383c2b786e0",
+      "prompt_sha256": "47eafa7eeaf9ad306d6582f8eefa319835f32e684a9a117f0653af4a139b01ba",
+      "token_count": 1026,
+      "generated_ids": [
+        27,
+        1760,
+        582,
+        52633,
+        3362
+      ]
+    }
+  },
+  "independent_reference": {
+    "producer": "/tmp/bitnet-goal-offload-working-sets/source-domain.py",
+    "pinned_parent": "/tmp/bitnet-goal-native-prefill1026/source.py",
+    "parent_sha256": "501672b1ee0e218d42bc60434799c937ac7d44a2e94e148b714af73f2dfb0c09",
+    "change": "Only the raw domain text supplied before independent Rust tokenization; retained1026-row geometry,40-layer source graph, route selection, original expert arithmetic, vendor GEMM policy and five self-fed source steps.",
+    "source_frames": 24,
+    "files": 8844,
+    "host_conversion": "Python struct IEEE binary16 decode to binary32 encode from source logits; no candidate output used as gold.",
+    "source_environment": {
+      "CUDA_VISIBLE_DEVICES": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+      "LD_PRELOAD": "/usr/local/cuda/lib64/libcublas.so.13:/usr/local/cuda/lib64/libcublasLt.so.13",
+      "LD_LIBRARY_PATH": "unset",
+      "expected_cublas_maps": [
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20",
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20"
+      ]
+    },
+    "old_numerical_references_changed": false
+  },
+  "expert_working_sets": {
+    "combined_unique_layer_expert_keys": 13593,
+    "total_possible_keys": 15360,
+    "combined_unique_payload_bytes": 180998733312,
+    "pairwise": [
+      {
+        "a": "code",
+        "b": "math",
+        "intersection": 6990,
+        "union": 11392,
+        "only_a": 2520,
+        "only_b": 1882,
+        "jaccard": 0.6135884831460674,
+        "prefill_jaccard": 0.6132232856264817
+      },
+      {
+        "a": "code",
+        "b": "multilingual",
+        "intersection": 6436,
+        "union": 12123,
+        "only_a": 3074,
+        "only_b": 2613,
+        "jaccard": 0.5308916934752124,
+        "prefill_jaccard": 0.531023102310231
+      },
+      {
+        "a": "code",
+        "b": "records",
+        "intersection": 7136,
+        "union": 11666,
+        "only_a": 2374,
+        "only_b": 2156,
+        "jaccard": 0.6116920966912395,
+        "prefill_jaccard": 0.6113683127572016
+      },
+      {
+        "a": "math",
+        "b": "multilingual",
+        "intersection": 6162,
+        "union": 11759,
+        "only_a": 2710,
+        "only_b": 2887,
+        "jaccard": 0.5240241517135811,
+        "prefill_jaccard": 0.523732562095951
+      },
+      {
+        "a": "math",
+        "b": "records",
+        "intersection": 6695,
+        "union": 11469,
+        "only_a": 2177,
+        "only_b": 2597,
+        "jaccard": 0.5837474932426541,
+        "prefill_jaccard": 0.5832533798517227
+      },
+      {
+        "a": "multilingual",
+        "b": "records",
+        "intersection": 6504,
+        "union": 11837,
+        "only_a": 2545,
+        "only_b": 2788,
+        "jaccard": 0.5494635465067162,
+        "prefill_jaccard": 0.549087529570801
+      }
+    ],
+    "all_pairs_have_distinct_keys": true,
+    "per_domain_unique_keys": {
+      "code": 9510,
+      "math": 8872,
+      "multilingual": 9049,
+      "records": 9292
+    },
+    "full_layer_and_frame_details": "/tmp/bitnet-goal-offload-working-sets/working-set-analysis.json",
+    "interpretation": "Four domain labels are backed by selected expert IDs. Pairwise key Jaccard overlap is52.4\u201361.4%, and the corpus covers13593of15360 layer/expert keys. Repeated requests revisit the same independent histories."
+  },
+  "cache_assessment": {
+    "profiles": {
+      "small-ram-small-gpu": {
+        "profile": {
+          "name": "small-ram-small-gpu",
+          "ram_mib": 13004,
+          "gpu_mib": 8192,
+          "host_mib": 16384
+        },
+        "exact_product_heads": 80,
+        "exact_diagnostic_heads": 40,
+        "final": {
+          "kind": "final_saved_snapshot",
+          "forward": 20,
+          "acquire_calls": 55504,
+          "busy_calls": 1254,
+          "host_hits": 715,
+          "host_misses": 49677,
+          "host_hit_bytes": 9520642560,
+          "host_miss_bytes": 661478266368,
+          "source_bytes": 661478266368,
+          "decode_hits": 3858,
+          "decode_lookup_misses": 51646,
+          "decode_evictions": 4977,
+          "decode_charged": 8588551680,
+          "decode_capacity": 8588551680,
+          "temporary_charged": 0,
+          "temporary_allocated": 639148032,
+          "temporary_capacity": 639148032,
+          "temporary_allocated_peak": 639148032,
+          "temporary_charged_peak": 639148032,
+          "live_leases": 0,
+          "live_leases_peak": 56,
+          "upload_count": 151176,
+          "upload_bytes": 670998908928,
+          "buffer_creates": 2079,
+          "buffer_reuses": 149097,
+          "staging_payload": 13315584
+        },
+        "cohorts": [
+          {
+            "cohort": 0,
+            "requests": [
+              0,
+              1
+            ],
+            "domains": [
+              "code",
+              "math"
+            ],
+            "revisit": false,
+            "delta": {
+              "source_bytes": 168229088256,
+              "upload_bytes": 170905520640,
+              "host_hits": 201,
+              "host_misses": 12634,
+              "decode_hits": 506,
+              "decode_lookup_misses": 13146,
+              "busy_calls": 311
+            }
+          },
+          {
+            "cohort": 1,
+            "requests": [
+              2,
+              3
+            ],
+            "domains": [
+              "multilingual",
+              "records"
+            ],
+            "revisit": false,
+            "delta": {
+              "source_bytes": 166844267520,
+              "upload_bytes": 169028023296,
+              "host_hits": 164,
+              "host_misses": 12530,
+              "decode_hits": 1090,
+              "decode_lookup_misses": 13013,
+              "busy_calls": 319
+            }
+          },
+          {
+            "cohort": 2,
+            "requests": [
+              4,
+              5
+            ],
+            "domains": [
+              "code",
+              "math"
+            ],
+            "revisit": true,
+            "delta": {
+              "source_bytes": 159560643072,
+              "upload_bytes": 162037341696,
+              "host_hits": 186,
+              "host_misses": 11983,
+              "decode_hits": 1172,
+              "decode_lookup_misses": 12474,
+              "busy_calls": 305
+            }
+          },
+          {
+            "cohort": 3,
+            "requests": [
+              6,
+              7
+            ],
+            "domains": [
+              "multilingual",
+              "records"
+            ],
+            "revisit": true,
+            "delta": {
+              "source_bytes": 166844267520,
+              "upload_bytes": 169028023296,
+              "host_hits": 164,
+              "host_misses": 12530,
+              "decode_hits": 1090,
+              "decode_lookup_misses": 13013,
+              "busy_calls": 319
+            }
+          }
+        ],
+        "managed": {
+          "host_limit": 17179869184,
+          "device_limit": 90177536000,
+          "shared_host_upper": 13709554839,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 13753683783,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 13753683783,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "physical": {
+          "process_max_rss_bytes": 14879780864,
+          "max_sampled_rss_bytes": 14893527040,
+          "max_sampled_device_bytes": 35026632704,
+          "sample_count": 364,
+          "max_sampling_gap_ms": 298.202187,
+          "device_peak_is_sampled_lower_bound": true
+        },
+        "instrumented_target_rusage": {
+          "minor_faults": 250439,
+          "major_faults": 1,
+          "filesystem_input_blocks": 52978200
+        }
+      },
+      "large-ram-small-gpu": {
+        "profile": {
+          "name": "large-ram-small-gpu",
+          "ram_mib": 195060,
+          "gpu_mib": 8192,
+          "host_mib": 200000
+        },
+        "exact_product_heads": 80,
+        "exact_diagnostic_heads": 40,
+        "final": {
+          "kind": "final_saved_snapshot",
+          "forward": 20,
+          "acquire_calls": 55504,
+          "busy_calls": 1254,
+          "host_hits": 36799,
+          "host_misses": 13593,
+          "host_hit_bytes": 490000175616,
+          "host_miss_bytes": 180998733312,
+          "source_bytes": 180998733312,
+          "decode_hits": 3858,
+          "decode_lookup_misses": 51646,
+          "decode_evictions": 4977,
+          "decode_charged": 8588551680,
+          "decode_capacity": 8588551680,
+          "temporary_charged": 0,
+          "temporary_allocated": 639148032,
+          "temporary_capacity": 639148032,
+          "temporary_allocated_peak": 639148032,
+          "temporary_charged_peak": 639148032,
+          "live_leases": 0,
+          "live_leases_peak": 56,
+          "upload_count": 151176,
+          "upload_bytes": 670998908928,
+          "buffer_creates": 2079,
+          "buffer_reuses": 149097,
+          "staging_payload": 13315584
+        },
+        "cohorts": [
+          {
+            "cohort": 0,
+            "requests": [
+              0,
+              1
+            ],
+            "domains": [
+              "code",
+              "math"
+            ],
+            "revisit": false,
+            "delta": {
+              "source_bytes": 151691132928,
+              "upload_bytes": 170905520640,
+              "host_hits": 1443,
+              "host_misses": 11392,
+              "decode_hits": 506,
+              "decode_lookup_misses": 13146,
+              "busy_calls": 311
+            }
+          },
+          {
+            "cohort": 1,
+            "requests": [
+              2,
+              3
+            ],
+            "domains": [
+              "multilingual",
+              "records"
+            ],
+            "revisit": false,
+            "delta": {
+              "source_bytes": 29307600384,
+              "upload_bytes": 169028023296,
+              "host_hits": 10493,
+              "host_misses": 2201,
+              "decode_hits": 1090,
+              "decode_lookup_misses": 13013,
+              "busy_calls": 319
+            }
+          },
+          {
+            "cohort": 2,
+            "requests": [
+              4,
+              5
+            ],
+            "domains": [
+              "code",
+              "math"
+            ],
+            "revisit": true,
+            "delta": {
+              "source_bytes": 0,
+              "upload_bytes": 162037341696,
+              "host_hits": 12169,
+              "host_misses": 0,
+              "decode_hits": 1172,
+              "decode_lookup_misses": 12474,
+              "busy_calls": 305
+            }
+          },
+          {
+            "cohort": 3,
+            "requests": [
+              6,
+              7
+            ],
+            "domains": [
+              "multilingual",
+              "records"
+            ],
+            "revisit": true,
+            "delta": {
+              "source_bytes": 0,
+              "upload_bytes": 169028023296,
+              "host_hits": 12694,
+              "host_misses": 0,
+              "decode_hits": 1090,
+              "decode_lookup_misses": 13013,
+              "busy_calls": 319
+            }
+          }
+        ],
+        "managed": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107095,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204653236039,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204653236039,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "physical": {
+          "process_max_rss_bytes": 182251556864,
+          "max_sampled_rss_bytes": 182257512448,
+          "max_sampled_device_bytes": 35026632704,
+          "sample_count": 575,
+          "max_sampling_gap_ms": 337.100207,
+          "device_peak_is_sampled_lower_bound": true
+        },
+        "instrumented_target_rusage": {
+          "minor_faults": 6003571,
+          "major_faults": 0,
+          "filesystem_input_blocks": 0
+        }
+      },
+      "large-ram-large-gpu": {
+        "profile": {
+          "name": "large-ram-large-gpu",
+          "ram_mib": 195060,
+          "gpu_mib": 26008,
+          "host_mib": 200000
+        },
+        "exact_product_heads": 80,
+        "exact_diagnostic_heads": 40,
+        "final": {
+          "kind": "final_saved_snapshot",
+          "forward": 20,
+          "acquire_calls": 55467,
+          "busy_calls": 1217,
+          "host_hits": 31974,
+          "host_misses": 13593,
+          "host_hit_bytes": 425752482816,
+          "host_miss_bytes": 180998733312,
+          "source_bytes": 180998733312,
+          "decode_hits": 8683,
+          "decode_lookup_misses": 46784,
+          "decode_evictions": 1976,
+          "decode_charged": 27270316032,
+          "decode_capacity": 27270316032,
+          "temporary_charged": 0,
+          "temporary_allocated": 639148032,
+          "temporary_capacity": 639148032,
+          "temporary_allocated_peak": 639148032,
+          "temporary_charged_peak": 639148032,
+          "live_leases": 0,
+          "live_leases_peak": 64,
+          "upload_count": 136701,
+          "upload_bytes": 606751216128,
+          "buffer_creates": 6288,
+          "buffer_reuses": 130413,
+          "staging_payload": 13315584
+        },
+        "cohorts": [
+          {
+            "cohort": 0,
+            "requests": [
+              0,
+              1
+            ],
+            "domains": [
+              "code",
+              "math"
+            ],
+            "revisit": false,
+            "delta": {
+              "source_bytes": 151691132928,
+              "upload_bytes": 169001392128,
+              "host_hits": 1300,
+              "host_misses": 11392,
+              "decode_hits": 649,
+              "decode_lookup_misses": 13003,
+              "busy_calls": 311
+            }
+          },
+          {
+            "cohort": 1,
+            "requests": [
+              2,
+              3
+            ],
+            "domains": [
+              "multilingual",
+              "records"
+            ],
+            "revisit": false,
+            "delta": {
+              "source_bytes": 29307600384,
+              "upload_bytes": 156404849664,
+              "host_hits": 9545,
+              "host_misses": 2201,
+              "decode_hits": 2038,
+              "decode_lookup_misses": 12063,
+              "busy_calls": 317
+            }
+          },
+          {
+            "cohort": 2,
+            "requests": [
+              4,
+              5
+            ],
+            "domains": [
+              "code",
+              "math"
+            ],
+            "revisit": true,
+            "delta": {
+              "source_bytes": 0,
+              "upload_bytes": 137097252864,
+              "host_hits": 10296,
+              "host_misses": 0,
+              "decode_hits": 3045,
+              "decode_lookup_misses": 10580,
+              "busy_calls": 284
+            }
+          },
+          {
+            "cohort": 3,
+            "requests": [
+              6,
+              7
+            ],
+            "domains": [
+              "multilingual",
+              "records"
+            ],
+            "revisit": true,
+            "delta": {
+              "source_bytes": 0,
+              "upload_bytes": 144247721472,
+              "host_hits": 10833,
+              "host_misses": 0,
+              "decode_hits": 2951,
+              "decode_lookup_misses": 11138,
+              "busy_calls": 305
+            }
+          }
+        ],
+        "managed": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107095,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204653236039,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204653236039,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "physical": {
+          "process_max_rss_bytes": 182266253312,
+          "max_sampled_rss_bytes": 182272991232,
+          "max_sampled_device_bytes": 61507371008,
+          "sample_count": 246,
+          "max_sampling_gap_ms": 304.406781,
+          "device_peak_is_sampled_lower_bound": true
+        },
+        "instrumented_target_rusage": {
+          "minor_faults": 991355,
+          "major_faults": 10,
+          "filesystem_input_blocks": 304
+        }
+      }
+    },
+    "source_read_reduction_from_ram": 0.7263723654810073,
+    "gpu_upload_reduction_from_larger_gpu_cache": 0.09574932528972857,
+    "source_reads_equal_independent_union_with_large_ram": true,
+    "no_source_reads_on_large_ram_revisits": true,
+    "all_bytes_and_quota_checks_passed": true,
+    "all_compute_counts_equal": true,
+    "total_new_independent_product_heads": 360,
+    "production_source_changes": false,
+    "throughput_qualified": false,
+    "full_goal_complete": false
+  },
+  "interpretation": "Larger RAM reduces logical source reads by72.64% for this corpus; both large-RAM profiles read exactly the181GB independent union, and diagnostic revisits perform zero source reads. Increasing GPU cache from8192MiB to26008MiB reduces logical expert uploads by9.575%. These are byte/cache results, not end-to-end speedup or vLLM parity claims.",
+  "correctness": {
+    "new_exact_full_vocabulary_product_heads": 360,
+    "breakdown": {
+      "normal": 120,
+      "asan_ubsan": 120,
+      "diagnostic": 120
+    },
+    "product_results": {
+      "normal-small-ram-small-gpu": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 640,
+          "shared_expert_borrows": 46570,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 90177536000,
+          "shared_host_upper": 13709554839,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 13753683783,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 13753683783,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 670998908928,
+          "upload_ms": 25360.342638,
+          "ram_miss_bytes": 661478266368,
+          "source_read_bytes": 661478266368,
+          "source_read_ms": 42772.193259
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "lookahead": {
+          "queued_borrows": 23114,
+          "busy_stops": 1254
+        },
+        "pool": {
+          "retained_host_payload": 18913328,
+          "peak_host_payload": 18913328,
+          "retained_pinned_payload": 25214976,
+          "peak_pinned_payload": 25214976,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "normal-large-ram-small-gpu": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 640,
+          "shared_expert_borrows": 46570,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107095,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204653236039,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204653236039,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 670998908928,
+          "upload_ms": 51963.086787,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 293072.446852
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "lookahead": {
+          "queued_borrows": 23114,
+          "busy_stops": 1254
+        },
+        "pool": {
+          "retained_host_payload": 18913328,
+          "peak_host_payload": 18913328,
+          "retained_pinned_payload": 25214976,
+          "peak_pinned_payload": 25214976,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "normal-large-ram-large-gpu": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 640,
+          "shared_expert_borrows": 46570,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107095,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204653236039,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204653236039,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 606751216128,
+          "upload_ms": 25057.162604,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 232355.022278
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "lookahead": {
+          "queued_borrows": 27915,
+          "busy_stops": 1217
+        },
+        "pool": {
+          "retained_host_payload": 18913328,
+          "peak_host_payload": 18913328,
+          "retained_pinned_payload": 25214976,
+          "peak_pinned_payload": 25214976,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "asan-small-ram-small-gpu": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 640,
+          "shared_expert_borrows": 46570,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 90177536000,
+          "shared_host_upper": 13709554839,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 13753683783,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 13753683783,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 670998908928,
+          "upload_ms": 25922.382649,
+          "ram_miss_bytes": 661478266368,
+          "source_read_bytes": 661478266368,
+          "source_read_ms": 55579.39361
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "lookahead": {
+          "queued_borrows": 23114,
+          "busy_stops": 1254
+        },
+        "pool": {
+          "retained_host_payload": 18913328,
+          "peak_host_payload": 18913328,
+          "retained_pinned_payload": 25214976,
+          "peak_pinned_payload": 25214976,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "asan-large-ram-small-gpu": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 640,
+          "shared_expert_borrows": 46570,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107095,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204653236039,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204653236039,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 670998908928,
+          "upload_ms": 27438.419737,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 164160.428046
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "lookahead": {
+          "queued_borrows": 23114,
+          "busy_stops": 1254
+        },
+        "pool": {
+          "retained_host_payload": 18913328,
+          "peak_host_payload": 18913328,
+          "retained_pinned_payload": 25214976,
+          "peak_pinned_payload": 25214976,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "asan-large-ram-large-gpu": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 640,
+          "shared_expert_borrows": 46570,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107095,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 204653236039,
+          "reserved_device": 48427795958,
+          "peak_reserved_host": 204653236039,
+          "peak_reserved_device": 48427795958,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "experts": {
+          "upload_bytes": 606751216128,
+          "upload_ms": 25051.043331,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 157789.775836
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "lookahead": {
+          "queued_borrows": 27915,
+          "busy_stops": 1217
+        },
+        "pool": {
+          "retained_host_payload": 18913328,
+          "peak_host_payload": 18913328,
+          "retained_pinned_payload": 25214976,
+          "peak_pinned_payload": 25214976,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      }
+    },
+    "criteria": "Complete F32 vocabulary bytes, all input IDs, greedy tokens, concatenated streamed UTF8 and positions against unchanged independent source references;8requests/profile,2created sessions and6reuses.",
+    "managed_caps_and_retained_idle_checked": true,
+    "production_binary_and_source_unchanged": true,
+    "previous_build_and_suite_evidence": "docs/native-expert-wave-lookahead.json"
+  },
+  "cold_loading_observations": {
+    "status": "open_performance_concern_not_controlled_causality",
+    "normal_large_ram_source_path_ms": {
+      "normal-large-ram-small-gpu": 293072.446852,
+      "normal-large-ram-large-gpu": 232355.022278
+    },
+    "observations": [
+      "/tmp/bitnet-goal-offload-working-sets/large-ram-first-touch-observation.json",
+      "/tmp/bitnet-goal-offload-working-sets/large-ram-large-gpu-first-touch-observation.json"
+    ],
+    "facts": "The two normal large-RAM correctness runs spent about293s and232s in the source path while first populating the larger distinct working set. Live observations contain substantial system CPU, millions of minor faults and some filesystem input. These runs are not an OS-warm paired throughput experiment.",
+    "context": {
+      "source": "https://docs.kernel.org/admin-guide/mm/transhuge.html",
+      "retrieved_date": "2026-11-17",
+      "kernel_release": "7.1.5-76070105-generic",
+      "summary": "Kernel documentation states that the madvise THP defrag mode permits direct reclaim for MADV_HUGEPAGE regions. Huge-page advice therefore does not promise nonblocking first-touch allocation. Background promotion and global defrag controls are separate mechanisms.",
+      "inference": "High system CPU and faults during the two observed cold RAM fills are consistent with memory-management stalls. These observations do not isolate THP compaction from all other costs; a matched per-process hint/no-hint control is required before changing production policy.",
+      "global_kernel_settings_changed": false,
+      "words_derived_from_source": 75
+    },
+    "next_experiment": "Compare the same frozen product with and without only its per-allocation huge-page hint, on these fixed inputs and quotas. Measure target faults, user/system CPU, source I/O and first/revisit cohort times before changing production page policy.",
+    "global_kernel_settings_changed": false
+  },
+  "memory_definitions": {
+    "managed": "Reservations and active/retained payload counters, including idle session resources; temporary allocated and charged bytes checked on each observed acquisition/release.",
+    "process_rss": "Target wait4 ru_maxrss in the diagnostic runs, separate from managed reservations.",
+    "device": "nvidia-smi process memory sampled at nominal250ms; maximum is a lower bound with actual maximum sampling gaps retained. Exact device/setup peaks and an OS physical-memory cap are not claimed."
+  },
+  "instrumentation": {
+    "probe": "/tmp/bitnet-goal-offload-working-sets/cache-probe.c",
+    "build": {
+      "steps": [
+        {
+          "step": "compile",
+          "command": [
+            "cc",
+            "-O3",
+            "-march=native",
+            "-Wall",
+            "-Wextra",
+            "-Wshadow",
+            "-std=c11",
+            "-Iinclude",
+            "-D_GNU_SOURCE",
+            "-DBN_ENABLE_MKL_VML",
+            "-I/tmp/bitnet-goal-bf16-vml/mkl/include",
+            "-mprefer-vector-width=256",
+            "-DBN_ENABLE_CUDA",
+            "-DBN_CUDA_MXFP4_SM120",
+            "-c",
+            "-o",
+            "/tmp/bitnet-goal-offload-working-sets/cache-probe.o",
+            "/tmp/bitnet-goal-offload-working-sets/cache-probe.c"
+          ],
+          "exit": 0
+        },
+        {
+          "step": "link",
+          "command": [
+            "cc",
+            "-O3",
+            "-march=native",
+            "-Wall",
+            "-Wextra",
+            "-Wshadow",
+            "-std=c11",
+            "-Iinclude",
+            "-D_GNU_SOURCE",
+            "-DBN_ENABLE_MKL_VML",
+            "-I/tmp/bitnet-goal-bf16-vml/mkl/include",
+            "-mprefer-vector-width=256",
+            "-DBN_ENABLE_CUDA",
+            "-DBN_CUDA_MXFP4_SM120",
+            "-o",
+            "/tmp/bitnet-goal-offload-working-sets/cache-probe",
+            "src/platform.o",
+            "src/gguf.o",
+            "src/quant/int4_rows.o",
+            "src/quant/fp8.o",
+            "src/quant/exl3.o",
+            "src/quant/fp16.o",
+            "src/quant/dequant.o",
+            "src/quant/registry.o",
+            "src/quant/prepared.o",
+            "src/quant/kernel_select.o",
+            "src/quant/policy.o",
+            "src/quant/dispatch.o",
+            "src/quant/matvec_batch.o",
+            "src/quant/matmul.o",
+            "src/quant/fused_gateup.o",
+            "src/quant/batch_prepared_kquant_input.o",
+            "src/quant/matvec_multi.o",
+            "src/quant/mxfp4_scalar.o",
+            "src/quant/x_quant_avx2.o",
+            "src/quant/rmsnorm_q8k_avx2.o",
+            "src/quant/mxfp4_avx2.o",
+            "src/quant/i2s_avx2.o",
+            "src/quant/i2s_avx2_4row.o",
+            "src/quant/i2s_scalar.o",
+            "src/quant/tq2_avx2.o",
+            "src/quant/tq2_scalar.o",
+            "src/quant/tq1_avx2.o",
+            "src/quant/tq1_scalar.o",
+            "src/quant/q8_avx512_vnni.o",
+            "src/quant/q8_avx2.o",
+            "src/quant/q8_scalar.o",
+            "src/quant/q4_avx512_vnni.o",
+            "src/quant/q4_avx2.o",
+            "src/quant/q4_avx2_4row.o",
+            "src/quant/q4_avx2_matmul.o",
+            "src/quant/q4_scalar.o",
+            "src/quant/q4_1_avx2.o",
+            "src/quant/q4_1_scalar.o",
+            "src/quant/f32_avx2.o",
+            "src/quant/f32_scalar.o",
+            "src/quant/f16_avx2.o",
+            "src/quant/f16_scalar.o",
+            "src/quant/bf16_avx2.o",
+            "src/quant/bf16_scalar.o",
+            "src/quant/q6k_avx512_vnni.o",
+            "src/quant/q6k_avx2.o",
+            "src/quant/q6k_avx2_sdot.o",
+            "src/quant/q6k_avx2_4row.o",
+            "src/quant/q6k_scalar.o",
+            "src/quant/q8k_avx2.o",
+            "src/quant/q8k_scalar.o",
+            "src/quant/q4k_avx512_vnni.o",
+            "src/quant/q4k_avx2.o",
+            "src/quant/q4k_avx2_sdot.o",
+            "src/quant/q4k_avx2_4row.o",
+            "src/quant/q4k_scalar.o",
+            "src/quant/q5k_avx512.o",
+            "src/quant/q5k_avx2.o",
+            "src/quant/q5k_scalar.o",
+            "src/quant/q3k_avx2.o",
+            "src/quant/q3k_scalar.o",
+            "src/quant/q2k_avx2.o",
+            "src/quant/q2k_scalar.o",
+            "src/quant/iq4nl_avx2.o",
+            "src/quant/iq4nl_scalar.o",
+            "src/quant/iq4xs_avx2.o",
+            "src/quant/iq4xs_scalar.o",
+            "src/quant/iq3xxs_avx2.o",
+            "src/quant/iq3xxs_scalar.o",
+            "src/quant/iq3s_avx2.o",
+            "src/quant/iq3s_scalar.o",
+            "src/quant/iq2xxs_avx2.o",
+            "src/quant/iq2xxs_scalar.o",
+            "src/quant/iq2xs_avx2.o",
+            "src/quant/iq2xs_scalar.o",
+            "src/quant/iq2s_avx2.o",
+            "src/quant/iq2s_scalar.o",
+            "src/turboquant.o",
+            "src/json.o",
+            "src/safetensors.o",
+            "src/trellis.o",
+            "src/model.o",
+            "src/model_arch.o",
+            "src/model_policy.o",
+            "src/model_session.o",
+            "src/model_gpu.o",
+            "src/model_embed.o",
+            "src/model_backend.o",
+            "src/model_moe.o",
+            "src/backend_layout.o",
+            "src/backend_model.o",
+            "src/backend_model_rows.o",
+            "src/backend_session.o",
+            "src/backend_session_rows.o",
+            "src/backend_quant.o",
+            "src/runtime_policy.o",
+            "src/gpu_backend_runtime.o",
+            "src/gpu_policy.o",
+            "src/moe.o",
+            "src/moe_cache.o",
+            "src/moe_io.o",
+            "src/moe_policy.o",
+            "src/moe_cpu_kernels.o",
+            "src/moe_route.o",
+            "src/moe_math.o",
+            "src/moe_execute.o",
+            "src/moe_prefill.o",
+            "src/moe_stats.o",
+            "src/transformer.o",
+            "src/gpu_moe_cache.o",
+            "src/gpu_moe_bridge.o",
+            "src/transformer/math_scalar.o",
+            "src/transformer/math_backend.o",
+            "src/transformer/rmsnorm_avx2.o",
+            "src/transformer/rmsnorm_scalar.o",
+            "src/transformer/rmsnorm_backend.o",
+            "src/transformer/gqa_avx2.o",
+            "src/transformer/gqa_scalar.o",
+            "src/transformer/gqa_tq_scalar.o",
+            "src/transformer/batched_attn_avx2.o",
+            "src/transformer/batched_attn_scalar.o",
+            "src/transformer/logits_avx2.o",
+            "src/transformer/logits_scalar.o",
+            "src/transformer/logits_policy.o",
+            "src/transformer/logits_backend.o",
+            "src/transformer/logits.o",
+            "src/transformer/cpu_policy.o",
+            "src/transformer/cpu_backend.o",
+            "src/transformer/cpu.o",
+            "src/transformer/plan.o",
+            "src/transformer/gpu_fallback.o",
+            "src/transformer/gpu_policy.o",
+            "src/transformer/gpu_resources.o",
+            "src/transformer/gpu_emit.o",
+            "src/transformer/gpu.o",
+            "src/transformer/bf16.o",
+            "src/transformer/bf16_pool.o",
+            "src/transformer/trellis.o",
+            "src/transformer/kv_backend.o",
+            "src/transformer/kv.o",
+            "src/transformer/prefill_policy.o",
+            "src/transformer/prefill_backend.o",
+            "src/transformer/prefill.o",
+            "src/transformer/ssm_avx2.o",
+            "src/transformer/ssm_scalar.o",
+            "src/tokenizer.o",
+            "src/sampler.o",
+            "src/sampler_backend.o",
+            "src/threadpool.o",
+            "src/sh_arena.o",
+            "src/sh_log.o",
+            "src/bn_alloc.o",
+            "src/session.o",
+            "src/prompt_cache.o",
+            "src/generate_batch_plan.o",
+            "src/generate_batch.o",
+            "src/generate.o",
+            "src/main.o",
+            "src/gpu_cuda.o",
+            "src/gpu_cuda_native_frequency.o",
+            "src/gpu_cuda_native_attention.o",
+            "src/gpu_cuda_native_index.o",
+            "src/gpu_cuda_native_topk.o",
+            "src/gpu_cuda_native_candidates.o",
+            "src/gpu_cuda_native_candidate_use.o",
+            "src/gpu_cuda_compress.o",
+            "src/gpu_cuda_native_rope.o",
+            "src/gpu_cuda_exl3_decode.o",
+            "src/gpu_cuda_exl3_fused.o",
+            "src/gpu_cuda_native_moe.o",
+            "src/gpu_cuda_exl3_fold.o",
+            "src/gpu_cuda_router.o",
+            "src/gpu_cuda_hc4.o",
+            "src/gpu_cuda_fa2.o",
+            "src/gpu_cuda_mla_attention.o",
+            "-lm",
+            "-lpthread",
+            "-L/tmp/bitnet-goal-bf16-vml/mkl/lib",
+            "-Wl,--disable-new-dtags,-rpath,/tmp/bitnet-goal-bf16-vml/mkl/lib",
+            "-Wl,--no-as-needed",
+            "-lmkl_intel_lp64",
+            "-lmkl_sequential",
+            "-lmkl_core",
+            "-Wl,--as-needed",
+            "-lpthread",
+            "-lm",
+            "-ldl",
+            "-L/usr/local/cuda/bin/../lib64",
+            "-lcudart",
+            "-lcublas",
+            "-lstdc++",
+            "/tmp/bitnet-goal-offload-working-sets/cache-probe.o",
+            "-Wl,--wrap=bn_gpu_moe_trellis_acquire",
+            "-Wl,--wrap=bn_gpu_moe_trellis_release",
+            "-Wl,--wrap=bn_transformer_trellis_forward_group",
+            "-Wl,--wrap=bn_transformer_trellis_forward_run"
+          ],
+          "exit": 0
+        }
+      ],
+      "sha256": "cda39d5558277b8bcb4a0a7d247b4eedd5e875b0b6a244247f40e4afa44d83f4",
+      "production_source_changes": false
+    },
+    "kind": "Diagnostic GNU linker wrappers read placement statistics and emit per-forward snapshots; no arithmetic, routing, activation or logit changes. Probe and physical sampler overhead excluded from throughput qualification.",
+    "decode_misses": "Decode-cache lookup misses include speculative capacity-stop attempts. Host misses/source bytes count actual source paths; those are not interchangeable.",
+    "saved_footer": "Final saved placement snapshot precedes store teardown and reports zero live leases/charged temporaries; retained buffers remain separately accounted."
+  },
+  "reproduction": {
+    "producers": [
+      "/tmp/bitnet-goal-offload-working-sets/capture-domains.py",
+      "/tmp/bitnet-goal-offload-working-sets/analyze-working-sets.py",
+      "/tmp/bitnet-goal-offload-working-sets/qualify-products.py",
+      "/tmp/bitnet-goal-offload-working-sets/build-cache-probe.py",
+      "/tmp/bitnet-goal-offload-working-sets/run-diagnostics.py",
+      "/tmp/bitnet-goal-offload-working-sets/assess.py"
+    ],
+    "raw_evidence": "Per-run exact argv, complete outputs, source guards, maps, diagnostics, physical samples and wait4 resources are retained.",
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05"
+  },
+  "limitations": [
+    "One checkpoint/adapted numerical profile/GPU and four synthetic domain passages; broader model, hardware and real-traffic coverage remain open.",
+    "No new untraced throughput qualification, sustained offered-load SLO or vLLM-relative claim.",
+    "Per-forward cache counters do not measure exposed GPU transfer stalls; previous timeline evidence remains scoped to its own workloads.",
+    "Large-cache cold first-touch delay needs controlled page-policy investigation before a broad offload latency claim.",
+    "Exact total physical device/setup peaks, native folded/decode joint execution, broader resident/offload parity, modern CPU and Metal qualification remain open."
+  ],
+  "historical_exception": {
+    "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+    "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+    "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+    "changed": true
+  }
+}

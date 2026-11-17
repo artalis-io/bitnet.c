@@ -1,0 +1,1124 @@
+{
+  "schema": 1,
+  "status": "declared_native_joint_fused_prefill_qualified",
+  "evidence_root": "/tmp/bitnet-goal-native-joint-projection",
+  "full_goal_complete": false,
+  "production_release_ready": false,
+  "performance_qualified": false,
+  "change": "Native prefill cohorts now submit compatible request-private EXL3 expert FFNs in a shared cooperative CUDA kernel. Existing expert leases/transfers remain shared. Folded projections, small and mixed-decode layers retain individual execution.",
+  "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+  "profile": "exl3-int4-f16",
+  "numerical_contract": "Independent adapted F16 source values; not unmodified Diffbot runtime equivalence.",
+  "gpu": {
+    "uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "architecture": "SM120",
+    "multiprocessors": 188
+  },
+  "invariants": [
+    "Preserve each request\u2019s source-qualified split-K width, arithmetic tile, clipping and rounding. Only independent expert residency groups are redistributed.",
+    "Keep grid.x unchanged and grid.y=1; select private consumer/local expert group through grid.z.",
+    "At most16 API consumers and8 descriptors per CUDA parameter block; partition by original tile/width and cooperative residency.",
+    "Validate every consumer before queueing. Fixed request-owned readiness/completion events order streams; drain all consumers before releasing shared expert leases.",
+    "No forward allocation or new request activation buffer. Model weights remain immutable; resources and opaque event handles stay backend-owned."
+  ],
+  "counter_scope": "native_batch_compute counts only fused/shared prefill execution. Fused counts are GPU kernel launches; folded_ffn_calls are private FFN submissions, not individual GPU kernels. Other fallback layers retain their existing counters/profiler.",
+  "correctness": {
+    "total_exact_full_vocabulary_heads": 466,
+    "native_default": {
+      "normal": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 12,
+          "group_calls": 6,
+          "single_forwards": 10,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 200,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642943,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534607,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765534607,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "pool": {
+          "retained_host_payload": 19117712,
+          "peak_host_payload": 19117712,
+          "retained_pinned_payload": 37773312,
+          "peak_pinned_payload": 37773312,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "asan": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 12,
+          "group_calls": 6,
+          "single_forwards": 10,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 200,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642943,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534607,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765534607,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "pool": {
+          "retained_host_payload": 19117712,
+          "peak_host_payload": 19117712,
+          "retained_pinned_payload": 37773312,
+          "peak_pinned_payload": 37773312,
+          "evicted": 0,
+          "discarded": 0,
+          "restart_failures": 0,
+          "slots": 2,
+          "idle": 2,
+          "retained_metadata_payload": 640
+        }
+      },
+      "nsys": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 12,
+          "group_calls": 6,
+          "single_forwards": 10,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 200,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91140371252,
+          "shared_host_upper": 13708642943,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534607,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765534607,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "raw_stream_preserved": "/tmp/bitnet-goal-native-joint-projection/whole-nsys-default/stdout.raw",
+        "product_lines": 28,
+        "report_lines": 30,
+        "source_count": 925
+      }
+    },
+    "variants": {
+      "variant-normal-chunk512": {
+        "completed": 4,
+        "full_f32_heads": 28,
+        "metrics": {
+          "completed": 4,
+          "steps": 14,
+          "group_calls": 14,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 400,
+          "shared_expert_borrows": 28440,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 2251873898,
+          "peak_device_payload": 2251873898,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13707681091,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13738972339,
+          "reserved_device": 47153849386,
+          "peak_reserved_host": 13738972339,
+          "peak_reserved_device": 47153849386,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "compute": {
+          "fused_kernel_launches": 2776,
+          "joint_fused_kernel_launches": 2776,
+          "avoided_fused_launches": 2776,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 192
+        }
+      },
+      "variant-normal-reversed": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 11,
+          "group_calls": 9,
+          "single_forwards": 4,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 320,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 4,
+          "reused": 0,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 6047539846,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642943,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534607,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13778297359,
+          "peak_reserved_device": 50949515334,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        }
+      },
+      "variant-normal-wide20": {
+        "completed": 20,
+        "full_f32_heads": 108,
+        "metrics": {
+          "completed": 20,
+          "steps": 10,
+          "group_calls": 12,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 400,
+          "shared_expert_borrows": 22026,
+          "busy_retries": 0,
+          "created": 16,
+          "reused": 4,
+          "retained_device_payload": 38293441264,
+          "peak_device_payload": 38293441264,
+          "peak_live": 16
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13719246915,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 14174380227,
+          "reserved_device": 64513986736,
+          "peak_reserved_host": 14174380227,
+          "peak_reserved_device": 64513986736,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "compute": {
+          "fused_kernel_launches": 2690,
+          "joint_fused_kernel_launches": 2690,
+          "avoided_fused_launches": 15462,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 2388
+        }
+      },
+      "variant-asan-chunk512": {
+        "completed": 4,
+        "full_f32_heads": 28,
+        "metrics": {
+          "completed": 4,
+          "steps": 14,
+          "group_calls": 14,
+          "single_forwards": 0,
+          "shared_layer_steps": 160,
+          "fallback_layer_steps": 400,
+          "shared_expert_borrows": 28440,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 2251873898,
+          "peak_device_payload": 2251873898,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13707681091,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13738972339,
+          "reserved_device": 47153849386,
+          "peak_reserved_host": 13738972339,
+          "peak_reserved_device": 47153849386,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "compute": {
+          "fused_kernel_launches": 2776,
+          "joint_fused_kernel_launches": 2776,
+          "avoided_fused_launches": 2776,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 192
+        }
+      },
+      "variant-asan-reversed": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 11,
+          "group_calls": 9,
+          "single_forwards": 4,
+          "shared_layer_steps": 40,
+          "fallback_layer_steps": 320,
+          "shared_expert_borrows": 9360,
+          "busy_retries": 0,
+          "created": 4,
+          "reused": 0,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 6047539846,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642943,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534607,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13778297359,
+          "peak_reserved_device": 50949515334,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        }
+      },
+      "variant-asan-wide20": {
+        "completed": 20,
+        "full_f32_heads": 108,
+        "metrics": {
+          "completed": 20,
+          "steps": 10,
+          "group_calls": 12,
+          "single_forwards": 0,
+          "shared_layer_steps": 80,
+          "fallback_layer_steps": 400,
+          "shared_expert_borrows": 22026,
+          "busy_retries": 0,
+          "created": 16,
+          "reused": 4,
+          "retained_device_payload": 38293441264,
+          "peak_device_payload": 38293441264,
+          "peak_live": 16
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13719246915,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 14174380227,
+          "reserved_device": 64513986736,
+          "peak_reserved_host": 14174380227,
+          "peak_reserved_device": 64513986736,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "compute": {
+          "fused_kernel_launches": 2690,
+          "joint_fused_kernel_launches": 2690,
+          "avoided_fused_launches": 15462,
+          "individual_fused_kernel_launches": 0,
+          "folded_ffn_calls": 2388
+        }
+      }
+    },
+    "all_family_serving": {
+      "dynamic-mixed8-normal-native": {
+        "full_heads": 13,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "dynamic-mixed8-normal-dense": {
+        "full_heads": 12,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "dynamic-mixed8-normal-flash": {
+        "full_heads": 9,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "dynamic-mixed8-normal-glm": {
+        "full_heads": 8,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "dynamic-mixed8-asan-native": {
+        "full_heads": 13,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "dynamic-mixed8-asan-dense": {
+        "full_heads": 12,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "dynamic-mixed8-asan-flash": {
+        "full_heads": 9,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "dynamic-mixed8-asan-glm": {
+        "full_heads": 8,
+        "real_arrivals_during_first_execution": true,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      }
+    },
+    "acceptance": "Exact raw full-vocabulary F32 bytes, recorded input IDs, greedy tokens, output bytes and positions; no golds or tolerances changed."
+  },
+  "gpu_execution": {
+    "whole_product": {
+      "status": "passed",
+      "actual_joint_gpu_kernel_launches": 801,
+      "product_counter": 801,
+      "rows": [
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            3
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            6
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            8
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            9
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            11
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            12
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            13
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            14
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            15
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            16
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            17
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            18
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            19
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            20
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            21
+          ],
+          "count": 4
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            22
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            23
+          ],
+          "count": 258
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            2
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            4
+          ],
+          "count": 9
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            5
+          ],
+          "count": 9
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            6
+          ],
+          "count": 16
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            7
+          ],
+          "count": 26
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            8
+          ],
+          "count": 19
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            9
+          ],
+          "count": 27
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            10
+          ],
+          "count": 27
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            11
+          ],
+          "count": 19
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            12
+          ],
+          "count": 22
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            13
+          ],
+          "count": 14
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            14
+          ],
+          "count": 9
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            15
+          ],
+          "count": 8
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            16
+          ],
+          "count": 5
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            17
+          ],
+          "count": 4
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            18
+          ],
+          "count": 5
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            19
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            20
+          ],
+          "count": 4
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            21
+          ],
+          "count": 3
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            22
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            23
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            2
+          ],
+          "count": 1
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            3
+          ],
+          "count": 3
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            4
+          ],
+          "count": 3
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            5
+          ],
+          "count": 3
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            6
+          ],
+          "count": 4
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            7
+          ],
+          "count": 11
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            8
+          ],
+          "count": 11
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            9
+          ],
+          "count": 7
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            10
+          ],
+          "count": 15
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            11
+          ],
+          "count": 26
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            12
+          ],
+          "count": 17
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            13
+          ],
+          "count": 30
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            14
+          ],
+          "count": 21
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            15
+          ],
+          "count": 21
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            16
+          ],
+          "count": 17
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            17
+          ],
+          "count": 11
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            18
+          ],
+          "count": 21
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            19
+          ],
+          "count": 16
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            20
+          ],
+          "count": 9
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            21
+          ],
+          "count": 6
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            22
+          ],
+          "count": 10
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            23
+          ],
+          "count": 21
+        }
+      ],
+      "full_heads": 22,
+      "scope": "Whole-product unequal prompt histories, four requests, two live, reuse. Diagnostic instrumentation; no throughput acceptance."
+    },
+    "operator": {
+      "status": "passed",
+      "actual_joint_gpu_kernel_launches": 26,
+      "rows": [
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            3
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            5
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)16, (int)256>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            23
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)32, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            5
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            3
+          ],
+          "count": 6
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            5
+          ],
+          "count": 6
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            8,
+            1,
+            23
+          ],
+          "count": 2
+        },
+        {
+          "kernel": "void bn_cuda_fused_detail::exl3_moe_joint_kernel<(int)64, (int)128>(BnCudaFusedEXL3Batch)",
+          "grid": [
+            32,
+            1,
+            5
+          ],
+          "count": 4
+        }
+      ],
+      "scope": "Ten source-reference fixtures, two coordinator choices each; additional16-consumer mixed8/32-width test twice, partitioned into8/5/3 consumers. Trace is correctness/execution evidence, not throughput timing."
+    },
+    "operator_source_fixtures": 102,
+    "operator_joint_tests": "Pair controls, two owners, asymmetric groups, all16 private histories, mixed widths,8/5/3 partitions, dirty reuse, guard bytes, invalid last consumer and rejection atomicity.",
+    "compute_sanitizer": "Focused native fused fixtures including16 consumers: zero errors and zero bytes leaked."
+  },
+  "validation": {
+    "baseline_make_test": 0,
+    "final_clean_build": 0,
+    "zero_compiler_warnings": true,
+    "standard_tests": 0,
+    "full_cuda_tests_and_diagnostic_isolation": 0,
+    "fresh_host_asan_ubsan_objects": 158,
+    "asan_cpu_units": 11,
+    "all_four_whole_product_families_normal_and_asan": true
+  },
+  "resource_scope": "Managed payload quotas include retained idle requests and cache payload. CUDA event/driver/library overhead is bounded by request setup but excluded from managed payload counters; total physical/setup peaks remain unqualified.",
+  "preserved_attempts": [
+    {
+      "path": "fused-small-attempt1",
+      "reason": "New test helper left valid output slots where the subsequent unchanged rejection test expected poison; helper cleanup corrected, original failure retained."
+    },
+    {
+      "path": "pointer-copy-attempt",
+      "reason": "Initial kernel parameter copies generated excessive per-thread stack; read-only pointer references/grid-constant parameters replaced copies before qualification."
+    },
+    {
+      "path": "whole-nsys-default/verification-attempt1.json",
+      "reason": "Profiler report messages appended to stdout; raw stream preserved and exact product JSON extracted before unchanged source comparison. Product exited0; no rerun or numerical change."
+    }
+  ],
+  "limitations": [
+    "Launch savings are execution evidence, not a measured latency or throughput improvement.",
+    "Folded projections and small/mixed decode remain individual fallback; this is not complete native batching or a production release.",
+    "Only declared checkpoint/profile/GPU/workloads are qualified.",
+    "Broader resident/offloaded four-family performance and sustained serving, diverse cold/warm working sets, exposed stalls and total process/device/setup peaks remain open.",
+    "Modern whole-model AVX2/AVX512/NEON and Metal qualification remain open; legacy paths stay retained."
+  ],
+  "historical_exception": {
+    "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+    "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+    "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+    "changed": true
+  }
+}

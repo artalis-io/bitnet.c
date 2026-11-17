@@ -1,0 +1,131 @@
+{
+  "milestone": "Model-owned preparation of all native DeepSeek core FP16 projections",
+  "status": "Qualified storage/preparation and selected consumer composition; whole inference/vLLM goal remains active",
+  "implementation": {
+    "anatomy": "Architecture planning emits every logical core projection with explicit layer/weight role/scale role/tensor IDs/geometry/order. Backend code consumes this metadata without family names.",
+    "preflight": "Registry-driven validation of every pair, unique bindings, coverage of every native FP8 layer role, complete source extents, checked aggregate resident/device-tile peak/host staging bounds. Budget rejection occurs before any weight creation.",
+    "ownership": "One backend-owned container retains all330 decoded core weights. Staged backend resource transfer publishes only after every constructor succeeds. Failures free staged weights and preserve existing destination resources; model publication leaves no backend state on failure. Constant-time layer/role lookup returns immutable borrowed weights.",
+    "scope": "Only330 block-scaled core projections. BF16/F32 parameters, embedding/head, Engram tables, experts, requests and library/context overhead are separate resources. Backend stores no index pointer; the model expert catalog still borrows the index for model lifetime.",
+    "budgets": "Requested final GPU payload plus exactly one constructor tile; maximum explicit FP8/scale/F16 host tile staging. Metadata, test arrays, page cache, CUDA internal staging, allocator/context/library/driver memory excluded."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "asan-native": 0,
+      "memcheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "matrices": 330,
+    "packed_f16_words_per_run": 6836715520,
+    "runs": {
+      "native": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 499200,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 13673578496,
+        "host_staging_bytes": 786688,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 499200,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 13673578496,
+        "host_staging_bytes": 786688,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 499200,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 13673578496,
+        "host_staging_bytes": 786688,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "nsys": {
+        "matrices": 330,
+        "packed_f16_words": 6836715520,
+        "linear_output_words": 0,
+        "resident_bytes": 13673431040,
+        "device_peak_bytes": 13673578496,
+        "host_staging_bytes": 786688,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      }
+    },
+    "reference": "Unchanged upstream dequant_e8m0_blocks_ AST with original native checkpoint FP8/UE8M0 bytes, then bit-preserving transpose. All330 references captured and frozen before production owner implementation.",
+    "reference_source_sha256": "4638fea2f6f2fbf897ea6206f06f06ee45a37848f8f605574b169cd4141671df",
+    "reference_manifest_sha256": "2ad88cc42ced85c4c2babed47e87e8072e164ffb1e460c23a2af88bf413340de",
+    "consumer": "Two request streams share model-owned layer0 Q_A: M1/M64, F16/F32 outputs, three repeats,499200 exact outputwords per native/ASAN/memcheck run against previously frozen paired-library source references.",
+    "synthetic": "Independent aggregate byte arithmetic, complete pair coverage, duplicate/wrong-shape/format/role rejection before GPU creation, budgets one byte below bounds, failed constructors1/100/330, retry, foreign destination owner preservation, exact map/zero-weight contents and automatic model teardown.",
+    "memory_profile": {
+      "scope": "All330 native core F16 weights retained in model-owned backend; preparation/readback/teardown only, no request allocations in this capture.",
+      "native_allocations": 660,
+      "native_frees": 660,
+      "all_heap_allocations": 664,
+      "other_backend_context_payload": 100795392,
+      "native_peak_bytes": 13673578496,
+      "native_resident_bytes": 13673431040,
+      "all_heap_peak_bytes": 13774373888,
+      "host_staging_bound_bytes": 786688,
+      "publication_fences": 330,
+      "h2d_tiles": 74624,
+      "h2d_bytes": 13673431040,
+      "d2h_copies": 330,
+      "d2h_bytes": 13673431040,
+      "pack_kernels": 74624,
+      "sqlite_sha256": "0b7ccdc2094312f69d6e795789ad9969859f14e556f09d16f20de02ae27af2b3",
+      "limitations": "Native requested payload plus one GPU tile, not total VRAM: context/static/library/driver overhead separate. Host bound covers explicit FP8/scale/F16 tiles, not metadata, CUDA internal staging, page cache or test readback/reference buffers. No cold/steady inference throughput or vLLM parity claim."
+    }
+  },
+  "limitations": [
+    "No full native transformer forward/generation admission or vLLM parity claim.",
+    "Other native parameters and bounded expert residency/async routing still require integration. HC4, compressed/indexed shared KV, Engram and complete sessions remain unfinished.",
+    "Packed-weight equality is whole-set; numerical projection-consumer validation here is layer0 Q_A only. Broader dense primitive qualification remains in the prior stage.",
+    "No total VRAM/RSS, cold-start, steady inference throughput, NEON/Metal/WASM qualification claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-native-core-owner/qualification.json",
+    "profile": "/tmp/bitnet-goal-native-core-owner/profile-analysis.json",
+    "reference": "/tmp/bitnet-goal-native-core-owner/reference.json",
+    "trace": "/tmp/bitnet-goal-native-core-owner/lifetime.nsys-rep",
+    "continuation": "/tmp/bitnet-goal-native-core-owner/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/model_anatomy.h": "97c6834e5a90c2cc2e8a22cbb1ba0010dd7e6dc180dd73f1940002963a97af95",
+    "include/model.h": "43aaa09960a22c01f4af36ce3aeee1068dfdf2d008c64ad4f72bf1cf26707861",
+    "include/model_internal.h": "18adf095f57a9b2bab6773199505acbe1125e4e2bd9d95062014e4339895e86a",
+    "include/backend_layout.h": "507e405bb5e618a0c1437691d80a493fcadf1cc7b3426d639bf1dd71b33b8974",
+    "src/model_arch.c": "3a1f0e5b7552533e07ff8c3043ad4901f018314fcf24516ecbc2647dbd131b10",
+    "src/model.c": "945568fa48772f341918869c3d46f8a5504c5f34d0a3938e2585bc9334522cd9",
+    "src/model_backend.c": "18d290ada57ad3bafa48e505e65ee32b7c12f482ec25c59b86f7fb909eac064b",
+    "src/backend_layout.c": "54eab3a6aecac58db991e0e0698c2086b2841728cdad5fc348a12d71a5018b90",
+    "test/native_core_checks.h": "3f7b80057f8dc1f4f872d590311fc95fb03bdd25b56b5ab03d7a3faaebfdb83c",
+    "test/native_f16_layout_checks.h": "f427b3492f8c1206853aac825f592b916dea46b25a0ac542d8dfd86239699d82",
+    "test/test_moe.c": "d998ac4b9a77aa391942417a09e69d4ce07bf38915a68c1c4104b380e3382844",
+    "Makefile": "c71ba49ff375e6ec8b3419d4dcbb314e69bb22b7c39e9b1d0fc286d7b67e274c"
+  }
+}

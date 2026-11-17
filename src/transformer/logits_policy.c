@@ -182,6 +182,13 @@ void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
     int8_t *quantized_buf,
     BnThreadPool *pool,
     BnGPUBackend *gpu) {
+    /* Native-quant CUDA logits require quantized activations. The generic
+     * matvec callback retains its legacy floating-input contract. */
+    if (W && W_buf && bn_gpu_backend_is_cuda(gpu) &&
+        bn_backend_quant_supports_native_quant_matmul(W->type) &&
+        bn_gpu_backend_matmul(gpu, out, W_buf, x, W->rows, W->cols,
+                              1, W->type) == 0)
+        return;
     bn_backend_quant_matvec_gpu_buf_prepared(out, W, prepared, W_buf, x,
                                              quantized_buf, pool, gpu);
 }

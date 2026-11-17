@@ -1,0 +1,42 @@
+{
+  "cases": [
+    {
+      "case": 0,
+      "tokens": 5,
+      "heads": 2,
+      "dim": 3,
+      "eps": 1e-06,
+      "sha256": "2e04a56208a4fd32121652c2494e9b2a868c8ba76829b983330c307e1ee76977"
+    },
+    {
+      "case": 1,
+      "tokens": 9,
+      "heads": 1,
+      "dim": 1,
+      "eps": 1e-06,
+      "sha256": "d89f6480ed31f30a0f47afd827e638efd126bee9d1ff695da8c60adb7ce88d9f"
+    },
+    {
+      "case": 2,
+      "tokens": 17,
+      "heads": 64,
+      "dim": 128,
+      "eps": 1e-06,
+      "sha256": "a5836e19fd15710d6a0245a53e46b724e34f40a7e657c921e7de9d0a502bf4bf"
+    },
+    {
+      "case": 3,
+      "tokens": 65,
+      "heads": 2,
+      "dim": 128,
+      "eps": 1e-06,
+      "sha256": "a8492efc7e9a706ca91e8969b74104665d0d4ad8fd0479941bd90d108d6fdec4"
+    }
+  ],
+  "source_sha256": {
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/third_party/flash_linear_attention/ops/l2norm.py": "81465425b0bc974e7ef20ee98ae68c9d16dc09c320fa7bb4b7a444d97ea22652",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/kernels.py": "6f5865164682e2ea475995fbdeb1df6942baecfb06abeee3a4468c7c6344775e",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/fused_recurrent.py": "fa7f1eab41907d93b90d1d08aee2399df45c49a161620d1b790949a6f8a8c7a7"
+  },
+  "fixture_header_sha256": "5e9105e31024d839a1184f46b81ec4d31af8547a01217bef30e86e990eeaea46"
+}

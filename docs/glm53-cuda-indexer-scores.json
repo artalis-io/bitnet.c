@@ -1,0 +1,385 @@
+{
+  "checkpoint": "GLM-5.3 Flash native pre-indexer/cache/causal score composition",
+  "whole_goal_complete": false,
+  "artifact_root": "/tmp/bitnet-goal-glm-cuda-indexer-score-chain",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "source_sha256": {
+    "src/transformer/bf16.c": "ddcdf7524e30e143d7d083df522788186c690684e99654d2852aa45202620480",
+    "src/transformer/bf16_internal.h": "e70a83a53c448f991c90fa1b9418ee5fc5be99485734b9fec39a201e15596583",
+    "test/glm_indexer_layout_checks.h": "d360b24de01c5590b08f18566a470ad528f029a4f6b37350d4a88a709601e058",
+    "test/reference_glm_preindexer.py": "036306a9a81b911d2976abe740a79cc615ecd6546e96419267b295cad0e27f92",
+    "test/reference_glm_indexer_scores.py": "dc9b4afe658c93d93408e37d41a8d30f3c1f937707dd22a12f0bda2f9f428c6f",
+    "test/test_cuda_glm_indexer_scores.c": "1ad7307ea65679ecb9a7ef143aeec956345b76e28e44cf6e13c339c222336fd8",
+    "Makefile": "1f17716e1ef7e78dbe8112d049b00b6b2fa5b2e20aa81b9a6c86c1b7b35ea294"
+  },
+  "harness_sha256": {
+    "build.py": "80817a6758a3c3f2239823719f50d0a794e02448edfd2f5e7d64ca639874ce70",
+    "qualify.py": "8b55211e929f778679752ae4edb169947df6151344ca223b39b046e571f5fed5",
+    "references.py": "b3ea52c5f41ec6177876114b89a5f6dea573d4c961077241de17c69d20b81398",
+    "sanitize.py": "ecd63c5115abb23921938b63d4d3e1217094674f33dbaa737fb0da01d72057e5",
+    "sanitize.c": "0a93ee217a819494ce22194a8a6b684c2cb20757fb1924c0af141f732aad7a3f",
+    "trace.c": "b4665a59641f48cd994ec0100de225951c47b713b76d6eeb72ddf5d0fdf3cbd8",
+    "schedules.json": "e54aa3fb727bedc5794ac5e531b08ebef9b9c4270aa22c124a10ead6087e6202"
+  },
+  "preserved_user_binary_sha256": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "stages": {
+    "preindexer": 0,
+    "clean": 0,
+    "standard": 0,
+    "benches": 0,
+    "preindexer-repeat": 0,
+    "sanitize": 0,
+    "cuda": 0,
+    "chain-memcheck": 0,
+    "cache-regression": 0,
+    "chain": 0,
+    "scores-repeat": 0,
+    "dense-regression": 0,
+    "cache-repeat": 0,
+    "trace-build": 0,
+    "build": 0,
+    "cache": 0,
+    "scores": 0,
+    "moe-regression": 0,
+    "nsys": 0,
+    "nsys-export": 0,
+    "replay-build": 0,
+    "chain-synccheck": 0
+  },
+  "independent_complete_reference_repeat": {
+    "preindexer": {
+      "files": 323,
+      "all_byte_identical": true
+    },
+    "cache": {
+      "files": 70,
+      "all_byte_identical": true
+    },
+    "scores": {
+      "files": 25,
+      "all_byte_identical": true
+    }
+  },
+  "schedules": [
+    {
+      "case": 0,
+      "schedule": [
+        1
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 1,
+          "keys": 0,
+          "score_elements": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "schedule": [
+        2
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 2,
+          "keys": 0,
+          "score_elements": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "schedule": [
+        3,
+        1
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 3,
+          "keys": 0,
+          "score_elements": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "position": 3,
+          "tokens": 1,
+          "keys": 1,
+          "score_elements": 1,
+          "sha256": "637fae961992f0397e21dbea8a38b95e3159d777195b3f8b478105b5b2878e15"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "schedule": [
+        2049
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 2049,
+          "keys": 512,
+          "score_elements": 1049088,
+          "sha256": "50771c00d54a8093d1fc57ebc357680be4980693cd5f03c22e4ba09b8029c30b"
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "schedule": [
+        4097
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 4097,
+          "keys": 1024,
+          "score_elements": 4195328,
+          "sha256": "7503960e7a9336ae28936e6f8e2563882a07f7aeded2eee2bd10a4e890c752ce"
+        }
+      ]
+    },
+    {
+      "case": 5,
+      "schedule": [
+        1025,
+        1024,
+        1,
+        3
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 1025,
+          "keys": 256,
+          "score_elements": 262400,
+          "sha256": "8d1a5ac74309778e24236a7b350851fc2f90c530ce2ae7786e1079353dad94f0"
+        },
+        {
+          "position": 1025,
+          "tokens": 1024,
+          "keys": 512,
+          "score_elements": 524288,
+          "sha256": "b68f2e429f20984ccd42e0e717b8bc8297f0f7892248fad787cf0be9cd5c4623"
+        },
+        {
+          "position": 2049,
+          "tokens": 1,
+          "keys": 512,
+          "score_elements": 512,
+          "sha256": "352e0be55806504256b5958324e37c13811da166711d50c749416cc0b1b23b5e"
+        },
+        {
+          "position": 2050,
+          "tokens": 3,
+          "keys": 513,
+          "score_elements": 1539,
+          "sha256": "97138f5cb27c5f34b8de78bef58d8632b5af205b4b6226ce773e69e72e549b09"
+        }
+      ]
+    },
+    {
+      "case": 6,
+      "schedule": [
+        3,
+        1025,
+        1024,
+        1,
+        3
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 3,
+          "keys": 0,
+          "score_elements": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "position": 3,
+          "tokens": 1025,
+          "keys": 257,
+          "score_elements": 263425,
+          "sha256": "3977793d9be793e00543b22bec8bf599d5e805f31b19766d30083267be3f05d8"
+        },
+        {
+          "position": 1028,
+          "tokens": 1024,
+          "keys": 513,
+          "score_elements": 525312,
+          "sha256": "e0243f3655c140c3dbfd66c515fb4765999884919daedd77e01e659dbd9f06b8"
+        },
+        {
+          "position": 2052,
+          "tokens": 1,
+          "keys": 513,
+          "score_elements": 513,
+          "sha256": "23efaee2b2c2485697e061126d0a71f4914ba102be9ce5cb399c3b7f64567e8c"
+        },
+        {
+          "position": 2053,
+          "tokens": 3,
+          "keys": 514,
+          "score_elements": 1542,
+          "sha256": "898fb498ebf359e338edc171cad0aac055dc39b16102c4a05142b8f007ca2928"
+        }
+      ]
+    },
+    {
+      "case": 7,
+      "schedule": [
+        2049,
+        1,
+        1,
+        1,
+        1
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 2049,
+          "keys": 512,
+          "score_elements": 1049088,
+          "sha256": "30502cd5fb36edc9a69340da1039e86660fefe57e5817a9ccc69c5033f52f00d"
+        },
+        {
+          "position": 2049,
+          "tokens": 1,
+          "keys": 512,
+          "score_elements": 512,
+          "sha256": "114d8b04cde00d8dea2112d1b786cbe9f98b025df45e750bbe6fe51ab0cce63e"
+        },
+        {
+          "position": 2050,
+          "tokens": 1,
+          "keys": 512,
+          "score_elements": 512,
+          "sha256": "dbc2de19834978a56233d119c351e9b1247de44b16b8fdcafef1b64417fefe94"
+        },
+        {
+          "position": 2051,
+          "tokens": 1,
+          "keys": 513,
+          "score_elements": 513,
+          "sha256": "9e6188e9f2eac33a811a7e32f20254542abf1b56d16a4f9214670c41ddd70e3f"
+        },
+        {
+          "position": 2052,
+          "tokens": 1,
+          "keys": 513,
+          "score_elements": 513,
+          "sha256": "e843c69388e7ff6f3bd9a74c336511bd0fe979c3ffabc90508fb1ad6c7ffd42b"
+        }
+      ]
+    },
+    {
+      "case": 8,
+      "schedule": [
+        4097,
+        1,
+        3
+      ],
+      "phases": [
+        {
+          "position": 0,
+          "tokens": 4097,
+          "keys": 1024,
+          "score_elements": 4195328,
+          "sha256": "a62c81af1f8416567c2146ca008a471e1c7ddb6df226bb56ed673eb32345bb35"
+        },
+        {
+          "position": 4097,
+          "tokens": 1,
+          "keys": 1024,
+          "score_elements": 1024,
+          "sha256": "a2e3273e245cac3a394e07a844e46be3a5b9585410f0e8fe7f729ef5172a7086"
+        },
+        {
+          "position": 4098,
+          "tokens": 3,
+          "keys": 1025,
+          "score_elements": 3075,
+          "sha256": "11de6611dfc3684a17943f79ab8daea5d4a14bc7f46f297d9a5718f838c6eaa3"
+        }
+      ]
+    }
+  ],
+  "exact_native_elements": {
+    "preindexer_cache": 146404112,
+    "causal_scores": 12074513,
+    "total": 158478625
+  },
+  "cpu_failure_probes": "All 21 upstream score aliases, malformed metadata/alignment/absent callback, zero keys, eleven submission failures; ASAN/UBSAN passed.",
+  "device_sanitizers": "memcheck/synccheck zero errors for complete actual native chain",
+  "regressions": "Historical cache chain, actual dense and MoE references, complete standard and CUDA suites passed",
+  "trace": {
+    "kernel_counts": {
+      "Kernel2": 1,
+      "cache_append_kernel": 1,
+      "cache_gather_kernel": 1,
+      "cast_bf16_f32": 1,
+      "cuda_bf16_q8_mma_kernel": 3,
+      "fwht_kernel": 1,
+      "layernorm_kernel": 1,
+      "pool_kernel": 1,
+      "quantize_bf16_q8_batch_kernel": 3,
+      "score_kernel": 1,
+      "splitKreduce_kernel": 1,
+      "tail_kernel": 1,
+      "weight_scale_kernel": 1
+    },
+    "total_kernels": 17,
+    "runtime_calls": {
+      "cuKernelGetFunction": 1,
+      "cuKernelGetName": 15,
+      "cuLaunchKernel": 1,
+      "cuStreamGetGreenCtx": 2,
+      "cudaLaunchKernelExC_v11060": 1,
+      "cudaLaunchKernel_v7000": 15,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "memcpy_activity_records": 0,
+    "synchronization_records": [
+      [
+        26738200,
+        29616798,
+        0,
+        1,
+        0,
+        18,
+        2997,
+        316343484153856,
+        null,
+        3,
+        4294967295,
+        0
+      ],
+      [
+        29621155,
+        29625231,
+        0,
+        1,
+        0,
+        4294967295,
+        2998,
+        316343484153856,
+        null,
+        4,
+        4294967295,
+        0
+      ]
+    ],
+    "scope": "Warmed native pre-indexer/cache/scorer, actual4097-token chunk, from x/normalizedQR. All staging and readback outside capture, one caller final stream fence. Raw CUPTI synchronization records retained, including context synchronization without matching runtime API. Not whole-model throughput/paged decode qualification."
+  },
+  "remaining": "Native pool selection/expansion, direct paged decode scorer, latent MLA attention, whole-model admission/generation, expert placement, other backend/model and matched vLLM/serving requirements remain incomplete."
+}

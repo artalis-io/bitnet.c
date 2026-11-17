@@ -1,0 +1,11 @@
+--- a/vllm_gguf_plugin/weights_adapter/qwen3_5.py
++++ b/vllm_gguf_plugin/weights_adapter/qwen3_5.py
+@@ -37,7 +37,7 @@
+ QWEN35_MOE_MTP_MODEL_TYPES = ("qwen3_5_moe_mtp",)
+ QWEN35_ARCHITECTURES = {
+     "qwen3_5": "Qwen3_5ForConditionalGeneration",
+-    "qwen3_5_text": "Qwen3_5ForConditionalGeneration",
++    "qwen3_5_text": "Qwen3_5ForCausalLM",
+     "qwen3_5_moe": "Qwen3_5MoeForConditionalGeneration",
+     "qwen3_5_moe_text": "Qwen3_5MoeForConditionalGeneration",
+ }

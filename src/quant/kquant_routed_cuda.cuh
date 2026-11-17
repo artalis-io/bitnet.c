@@ -5,11 +5,13 @@
  * type specialization: contraction changes its numerical behavior. */
 static __global__ void kquant_routed_mmq_kernel(
     float *out, const void *weights, const BnCudaBlockQ8Mmq *input,
-    int rows, int cols, int type, int nt, int jwidth, int grid, const int *ids, int experts, int k, int repeat) {
+    int rows, int cols, int type, int nt, int jwidth, int grid, const int *ids, int experts, int k, int repeat,
+    int borrowed_expert = -1) {
     int lane = threadIdx.x & 7;
     int row = blockIdx.x * (blockDim.x / 8) + threadIdx.x / 8;
     int token = blockIdx.y;
-    int expert = ids[token], rank = ids[nt*k+token];
+    int expert = borrowed_expert >= 0 ? borrowed_expert : ids[token];
+    int rank = borrowed_expert >= 0 ? token : ids[nt*k+token];
     if (row >= rows) return;
     unsigned mask = __activemask();
     int groups = cols / 32, nb = cols / 256;
@@ -30,7 +32,7 @@ static __global__ void kquant_routed_mmq_kernel(
         float acc = 0.0f;
         for (int base = begin * 8; base < end * 8; base += 8) {
             int g = base + lane, group = g & 7;
-            size_t block = ((size_t)expert * rows + row) * nb + g / 8;
+            size_t block = ((size_t)(borrowed_expert >= 0 ? 0 : expert) * rows + row) * nb + g / 8;
             int dot = 0;
             float wd = 0.0f, wm = 0.0f, xd = 0.0f, xs = 0.0f;
             if (type == BN_GGUF_TENSOR_Q6_K) {
@@ -122,7 +124,7 @@ template<int type> static __global__ void kquant_routed_mmvq_kernel(float*out,co
  __shared__ float partial[3][32];int row=blockIdx.x,item=blockIdx.y,tid=threadIdx.x,lane=tid&31,warp=tid/32,nb=cols/256;float sum=0;
  int group=type==BN_GGUF_TENSOR_Q6_K?32:16;
  for(int b=tid/group;b<nb;b+=blockDim.x/group){
-  size_t wi=((size_t)ids[item]*rows+row)*nb+b;
+  size_t wi=((size_t)(ids ? ids[item] : 0)*rows+row)*nb+b;
   const BnCudaBlockQ8_1 *xb=x+(size_t)(item/repeat)*(cols/32)+b*8;
   sum+=type==BN_GGUF_TENSOR_Q4_K?cuda_vec_dot_q4k_q8_1((const BnBlockQ4K*)weights+wi,xb,2*(tid&15)):type==BN_GGUF_TENSOR_Q5_K?cuda_vec_dot_q5k_q8_1((const BnBlockQ5K*)weights+wi,xb,2*(tid&15)):cuda_vec_dot_q6k_q8_1_mmvq((const BnBlockQ6K*)weights+wi,xb,tid&31);
  }

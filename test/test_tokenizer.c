@@ -327,15 +327,15 @@ static void test_tokenizer_gemma4_metaspace(void) {
 
 /* Deliberately admit cross-boundary vocabulary entries and misleading scores.
  * Only pretokenization and the explicit pair table may authorize a merge. */
-static BnGGUFFile *build_ranked_fixture(uint8_t *buf, const char *model, const char *pre,
+static BnGGUFFile *build_ranked_typed_fixture(uint8_t *buf, const char *model, const char *pre,
                                       const char *const *vocab, size_t nv,
-                                      const char *const *merges, size_t nm) {
+                                      const char *const *merges, size_t nm, const int32_t *types) {
     size_t pos = 0;
     #define PUT(d,n) do { memcpy(buf + pos, (d), (n)); pos += (n); } while (0)
     #define U32(v) do { uint32_t x_ = (v); PUT(&x_, 4); } while (0)
     #define U64(v) do { uint64_t x_ = (v); PUT(&x_, 8); } while (0)
     #define STR(s) do { const char *s_ = (s); size_t n_ = strlen(s_); U64(n_); PUT(s_, n_); } while (0)
-    U32(0x46554747); U32(3); U64(0); U64(pre ? 4 : 3);
+    U32(0x46554747); U32(3); U64(0); U64((pre ? 4 : 3) + (types ? 1 : 0));
     STR("tokenizer.ggml.model"); U32(BN_GGUF_TYPE_STRING); STR(model);
     if (pre) { STR("tokenizer.ggml.pre"); U32(BN_GGUF_TYPE_STRING); STR(pre); }
     STR("tokenizer.ggml.tokens"); U32(BN_GGUF_TYPE_ARRAY);
@@ -344,11 +344,22 @@ static BnGGUFFile *build_ranked_fixture(uint8_t *buf, const char *model, const c
     STR("tokenizer.ggml.merges"); U32(BN_GGUF_TYPE_ARRAY);
     U32(BN_GGUF_TYPE_STRING); U64(nm);
     for (size_t i = 0; i < nm; i++) STR(merges[i]);
+    if (types) {
+        STR("tokenizer.ggml.token_type"); U32(BN_GGUF_TYPE_ARRAY);
+        U32(BN_GGUF_TYPE_INT32); U64(nv);
+        for (size_t i = 0; i < nv; i++) U32(types[i]);
+    }
     #undef PUT
     #undef U32
     #undef U64
     #undef STR
     return bn_gguf_open(buf, pos);
+}
+
+static BnGGUFFile *build_ranked_fixture(uint8_t *buf, const char *model, const char *pre,
+                                      const char *const *vocab, size_t nv,
+                                      const char *const *merges, size_t nm) {
+    return build_ranked_typed_fixture(buf, model, pre, vocab, nv, merges, nm, NULL);
 }
 
 static void assert_encoding(BnTokenizer *t, const char *text,
@@ -357,6 +368,21 @@ static void assert_encoding(BnTokenizer *t, const char *text,
     int n = bn_tokenizer_encode(t, text, 0, actual, 128);
     assert(n == count);
     assert(memcmp(actual, expected, (size_t)count * sizeof(int)) == 0);
+    if(!t->metaspace) {
+        BnTokenizerGGUFScratch scratch={0};size_t bytes,capacity=strlen(text);if(!capacity)capacity=1;
+        assert(!bn_tokenizer_gguf_scratch_plan(t,capacity,&bytes));
+        assert(!bn_tokenizer_gguf_scratch_init(&scratch,t,capacity,bytes));
+        for(int reuse=0;reuse<3;reuse++) {
+            memset(actual,0x5a,sizeof(actual));
+            assert(bn_tokenizer_gguf_encode(t,&scratch,text,0,actual,128)==count);
+            assert(!memcmp(actual,expected,(size_t)count*sizeof(int)));
+        }
+        if(count>1) {
+            memset(actual,0x5a,sizeof(actual));int before[128];memcpy(before,actual,sizeof(actual));
+            assert(bn_tokenizer_gguf_encode(t,&scratch,text,0,actual,count-1)==-1&&!memcmp(actual,before,sizeof(actual)));
+        }
+        bn_tokenizer_gguf_scratch_free(&scratch);
+    }
     /* Truncation must preserve the prefix and caller's guard. */
     for (int cap = 1; cap <= count; cap++) {
         actual[cap] = -123;
@@ -420,6 +446,10 @@ static void test_tokenizer_qwen_boundaries(void) {
         assert_encoding(&t, "\t\tx", tabs, 2);
         assert_encoding(&t, "    ", trailing, 1);
         assert_encoding(&t, "\xc2\xa0\xc2\xa0x", nbsp, 2);
+        /* Isolate the existing regex boundary contract. Complete qwen35 NFC
+         * encoding is independently checked by the Unicode conformance suite. */
+        assert(t.normalize_nfc == (version == 2));
+        t.normalize_nfc = 0;
         const int qwen2_marks[] = {21, 28}, qwen35_marks[] = {27};
         assert_encoding(&t, "a\xcc\x81" "b", version == 1 ? qwen2_marks : qwen35_marks,
                         version == 1 ? 2 : 1);
@@ -465,8 +495,192 @@ static void test_tokenizer_raw_bpe(void) {
     printf("PASSED\n");
 }
 
+static void test_tokenizer_glm4(void) {
+    const char *vocab[] = {"a", "b", "c", "ab", "bc", "abc", "<S>", "<S>x", "<U>",
+        "Ġ", "1", "2", "3", "4", "12", "123", "34", "1234", "<|observation|>"};
+    const char *merges[] = {"a b", "ab c", "1 2", "12 3", "3 4", "123 4"};
+    int32_t types[19];
+    for (int i = 0; i < 19; i++) types[i] = 1;
+    types[6] = 3; types[7] = 4; types[8] = 3; types[18] = 3;
+    uint8_t buf[8192];
+    BnGGUFFile *f = build_ranked_typed_fixture(buf, "gpt2", "glm4", vocab, 19, merges, 6, types);
+    BnTokenizer t;
+    assert(f && bn_tokenizer_init(&t, f) == 0);
+    assert(t.pretokenizer == BN_TOKENIZER_PRE_GLM4 && t.n_added == 4);
+    assert(bn_tokenizer_is_eog(&t, 18));
+    const int a[] = {5,7,8,5}, b[] = {5,6,8,5}, c[] = {6,7}, d[] = {6,0};
+    const int digits[] = {15,13}, spaced[] = {9,14};
+    assert_encoding(&t, "abc<S>x<U>abc", a, 4);
+    assert_encoding(&t, "abc<S><U>abc", b, 4);
+    assert_encoding(&t, "<S><S>x", c, 2);
+    assert_encoding(&t, "<S>a", d, 2);
+    assert_encoding(&t, "1234", digits, 2);
+    assert_encoding(&t, " 12", spaced, 2);
+    bn_tokenizer_free(&t);
+    int idx = bn_gguf_find_key(f, "tokenizer.ggml.token_type");
+    f->kvs[idx].value.arr.n = 1;
+    assert(bn_tokenizer_init(&t, f) == -1);
+    f->kvs[idx].value.arr.n = 19;
+    f->kvs[idx].value.arr.elem_type = BN_GGUF_TYPE_FLOAT32;
+    assert(bn_tokenizer_init(&t, f) == -1);
+    bn_gguf_free(f);
+    assert(!bn_model_tokenizer_extra_eog(NULL, 0));
+    assert(!bn_model_tokenizer_extra_eog("qwen2", 0));
+    assert(!bn_model_tokenizer_extra_eog("glm4", -1));
+    assert(!bn_model_tokenizer_extra_eog("glm4", 2));
+    printf("test_tokenizer_glm4... PASSED\n");
+}
+
+#include "tokenizer_nfc_cases.h"
+
+static void test_tokenizer_nfc(void) {
+    char byte_vocab[256][3];
+    const char *vocab[260];
+    unsigned next = 256;
+    for (unsigned byte = 0; byte < 256; byte++) {
+        unsigned cp = (byte >= 33 && byte <= 126) ||
+            (byte >= 161 && byte <= 172) || byte >= 174 ? byte : next++;
+        if (cp < 128) { byte_vocab[byte][0] = (char)cp; byte_vocab[byte][1] = 0; }
+        else {
+            byte_vocab[byte][0] = (char)(0xc0 | (cp >> 6));
+            byte_vocab[byte][1] = (char)(0x80 | (cp & 63));
+            byte_vocab[byte][2] = 0;
+        }
+        vocab[byte] = byte_vocab[byte];
+    }
+    uint8_t buf[8192];
+    BnGGUFFile *f = build_ranked_fixture(buf, "gpt2", "qwen35", vocab, 256, NULL, 0);
+    BnTokenizer t;
+    assert(f && bn_tokenizer_init(&t, f) == 0 && t.normalize_nfc);
+    size_t cases = sizeof(tokenizer_nfc_cases) / sizeof(tokenizer_nfc_cases[0]);
+    for (size_t i = 0; i < cases; i++) {
+        for (int column = 0; column < 5; column++) {
+            const char *expected = tokenizer_nfc_cases[i][column < 3 ? 1 : 3];
+            int ids[256];
+            size_t count = strlen(expected);
+            assert(count < 256);
+            ids[count] = -123;
+            int n = bn_tokenizer_encode(&t, tokenizer_nfc_cases[i][column], 0, ids, (int)count + 1);
+            assert(n == (int)count && ids[count] == -123);
+            for (int j = 0; j < n; j++) assert(ids[j] == (unsigned char)expected[j]);
+        }
+    }
+    const int acute[] = {195,161}, hangul[] = {234,176,129};
+    const int expanded[] = {204,136,204,129}, malformed[] = {97,255,204,129};
+    assert_encoding(&t, "a\xcc\x81", acute, 2);
+    assert_encoding(&t, "\xe1\x84\x80\xe1\x85\xa1\xe1\x86\xa8", hangul, 3);
+    assert_encoding(&t, "\xcd\x84", expanded, 4);
+    assert_encoding(&t, "a\xff\xcc\x81", malformed, 4);
+    int with_bos[4] = {-1,-1,-1,-123};
+    assert(bn_tokenizer_encode(&t, "a\xcc\x81", 1, with_bos, 3) == 3);
+    assert(with_bos[0] == t.bos_id && with_bos[1] == 195 && with_bos[2] == 161 && with_bos[3] == -123);
+    /* Independently checked against the pinned original NFC normalizer. */
+    const int future_barrier[] = {97,240,158,139,172,204,167};
+    assert_encoding(&t, "a\xf0\x9e\x8b\xac\xcc\xa7", future_barrier, 7);
+    size_t repeats = 4096, length = 1 + repeats * 6;
+    char *long_text = malloc(length + 1);
+    int *long_ids = malloc((length + 1) * sizeof(int));
+    assert(long_text && long_ids);
+    long_text[0] = 'a';
+    for (size_t i = 0; i < repeats; i++)
+        memcpy(long_text + 1 + i * 6, "\xcc\x95\xcc\x80\xcc\xa7", 6);
+    long_text[length] = 0;
+    long_ids[length] = -123;
+    int long_count = bn_tokenizer_encode(&t, long_text, 0, long_ids, (int)length);
+    assert(long_count == (int)length - 1 && long_ids[length] == -123);
+    assert(long_ids[0] == 195 && long_ids[1] == 160);
+    size_t offset = 2;
+    for (size_t group = 0; group < 3; group++) {
+        size_t count = group == 1 ? repeats - 1 : repeats;
+        int second = group == 0 ? 167 : group == 1 ? 128 : 149;
+        for (size_t i = 0; i < count; i++) {
+            assert(long_ids[offset++] == 204);
+            assert(long_ids[offset++] == second);
+        }
+    }
+    assert(offset == (size_t)long_count);
+    BnTokenizerGGUFScratch retained={0};size_t retained_bytes;
+    assert(!bn_tokenizer_gguf_scratch_plan(&t,length,&retained_bytes));
+    assert(!bn_tokenizer_gguf_scratch_init(&retained,&t,length,retained_bytes));
+    int *retained_ids=malloc((length+1)*sizeof(int));assert(retained_ids);
+    for(int reuse=0;reuse<2;reuse++) {
+        retained_ids[length]=-123;
+        assert(bn_tokenizer_gguf_encode(&t,&retained,long_text,0,retained_ids,(int)length)==long_count);
+        assert(retained_ids[length]==-123&&!memcmp(retained_ids,long_ids,(size_t)long_count*sizeof(int)));
+    }
+    bn_tokenizer_gguf_scratch_free(&retained);free(retained_ids);
+    free(long_text); free(long_ids);
+    bn_tokenizer_free(&t); bn_gguf_free(f);
+
+    /* Added tokens marked normalized=false are extracted before NFC. NFC must
+     * neither change them nor create a second round of added-token matches. */
+    vocab[256] = "a\xcc\x81"; vocab[257] = "<K>";
+    vocab[258] = "\xcc\x81"; vocab[259] = "\xc3\xa1";
+    int32_t types[260];
+    for (int i = 0; i < 260; i++) types[i] = i < 256 ? 1 : 3;
+    f = build_ranked_typed_fixture(buf, "gpt2", "qwen35", vocab, 260, NULL, 0, types);
+    assert(f && bn_tokenizer_init(&t, f) == 0);
+    const int added[] = {256}, barrier[] = {101,258}, original_tag[] = {257};
+    const int normalized_tag[] = {60,75,62};
+    assert_encoding(&t, "a\xcc\x81", added, 1);
+    assert_encoding(&t, "e\xcc\x81", barrier, 2);
+    assert_encoding(&t, "<K>", original_tag, 1);
+    assert_encoding(&t, "<\xe2\x84\xaa>", normalized_tag, 3);
+    assert_encoding(&t, "a\xcd\x81", acute, 2);
+    bn_tokenizer_free(&t); bn_gguf_free(f);
+    assert(bn_model_tokenizer_normalizes_nfc("qwen35"));
+    assert(!bn_model_tokenizer_normalizes_nfc("qwen2"));
+    assert(!bn_model_tokenizer_normalizes_nfc("glm4"));
+    assert(!bn_model_tokenizer_normalizes_nfc(NULL));
+    printf("test_tokenizer_nfc... PASSED (%zu independent Unicode checks)\n", cases * 5);
+}
+
+#include "native_vocab_checks.h"
+#include "native_encode_checks.h"
+#include "native_stream_checks.h"
+#include "native_tokenmap_checks.h"
+static void test_gguf_scratch(void) {
+    uint8_t data[8192];size_t n=build_tokenizer_gguf(data,sizeof(data));BnGGUFFile *f=bn_gguf_open(data,n);assert(f);
+    BnTokenizer t;assert(!bn_tokenizer_init(&t,f));BnTokenizerGGUFScratch scratch={0};size_t bytes=0;
+    assert(!bn_tokenizer_gguf_scratch_plan(&t,10,&bytes)&&bytes>80);
+    assert(bn_tokenizer_gguf_scratch_init(&scratch,&t,10,bytes-1)==-1&&!scratch.state);
+    assert(!bn_tokenizer_gguf_scratch_init(&scratch,&t,10,bytes));void *state=scratch.state;
+    assert(bn_tokenizer_gguf_scratch_init(&scratch,&t,10,bytes)==-1&&scratch.state==state);
+    int out[4]={99,98,97,96};
+    assert(bn_tokenizer_gguf_encode(&t,&scratch,"hellohello",0,out,4)==2&&out[0]==9&&out[1]==9&&out[2]==97);
+    out[0]=99;out[1]=98;
+    assert(bn_tokenizer_gguf_encode(&t,&scratch,"hello",1,out,1)==-1&&out[0]==99&&out[1]==98);
+    assert(bn_tokenizer_gguf_encode(&t,&scratch,"hello",1,out,4)==2&&out[0]==0&&out[1]==9);
+    out[0]=99;assert(bn_tokenizer_gguf_encode(&t,&scratch,"hellohellohello",0,out,4)==-1&&out[0]==99);
+    BnTokenizerGGUFScratch copy=scratch;assert(bn_tokenizer_gguf_encode(&t,&copy,"hello",0,out,4)==-1);
+    bn_tokenizer_gguf_scratch_free(&copy);assert(scratch.state==state);
+    BnTokenizer other=t;assert(bn_tokenizer_gguf_encode(&other,&scratch,"hello",0,out,4)==-1);
+    assert(!bn_tokenizer_gguf_encode(&t,&scratch,"",0,out,4)&&out[0]==99);
+    assert(bn_tokenizer_gguf_encode(&t,&scratch,"",1,out,4)==1&&out[0]==0);
+    bn_tokenizer_gguf_scratch_free(&scratch);bn_tokenizer_gguf_scratch_free(&scratch);
+    size_t before=7;assert(bn_tokenizer_gguf_scratch_plan(&t,SIZE_MAX,&before)==-1&&before==7);
+    t.metaspace=1;
+    assert(bn_tokenizer_gguf_scratch_plan(&t,10,&before)==-1&&before==7);t.metaspace=0;t.normalize_nfc=1;
+    assert(!bn_tokenizer_gguf_scratch_plan(&t,10,&before)&&before>bytes);
+    assert(!bn_tokenizer_gguf_scratch_init(&scratch,&t,10,before));
+    assert(bn_tokenizer_gguf_encode(&t,&scratch,"hello",0,out,4)==1&&out[0]==9);
+    bn_tokenizer_gguf_scratch_free(&scratch);t.normalize_nfc=0;
+    bn_tokenizer_free(&t);bn_gguf_free(f);
+    puts("GGUF scratch: exact BPE reuse, budget preflight, immutable ownership and whole-output capacity rejection PASSED");
+}
 int main(void) {
+    test_gguf_scratch();
+    test_native_stream();
+    if(getenv("BN_TEST_NATIVE_STREAM_ONLY"))return 0;
+    test_native_encode();
+    if(getenv("BN_TEST_NATIVE_ENCODE_ONLY"))return 0;
+    test_native_tokenmap();
+    if(getenv("BN_TEST_NATIVE_TOKENMAP_ONLY"))return 0;
+    test_native_vocab();
+    if(getenv("BN_TEST_NATIVE_VOCAB_ONLY"))return 0;
     printf("=== Tokenizer Tests ===\n");
+    test_tokenizer_nfc();
+    test_tokenizer_glm4();
     test_tokenizer_raw_bpe();
     test_tokenizer_ranked_bpe();
     test_tokenizer_qwen_boundaries();

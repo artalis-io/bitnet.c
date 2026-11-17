@@ -1,0 +1,2449 @@
+{
+  "scope": "Fixed wall-clock offered arrivals on one serialized worker; not a network/server transport benchmark or full-goal completion",
+  "offered_ms": [
+    100.0,
+    100.0,
+    100.0,
+    100.0,
+    1100.0,
+    1100.0,
+    1100.0,
+    1100.0,
+    4100.0,
+    4100.0,
+    4100.0,
+    4100.0
+  ],
+  "native_runs": [
+    {
+      "elapsed_ms": 8278.08265,
+      "output_tokens_per_second": 92.77510656407857,
+      "ttft_p50_ms": 730.234213,
+      "ttft_p95_ms": 1796.4149740000003,
+      "ttft_p99_ms": 1796.4149740000003,
+      "itl_p50_ms": 58.72392799999989,
+      "itl_p95_ms": 68.41814999999951,
+      "itl_p99_ms": 69.31022300000018,
+      "completion_p95_ms": 4347.073237,
+      "mean_decode_step_ms": 46.475522512396694,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 71,
+          "mean_ms": 37.76481321126761
+        },
+        "8": {
+          "steps": 50,
+          "mean_ms": 58.84472972
+        }
+      },
+      "worker_enqueue_delay_max_ms": 53.23551099999986,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 18,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 8290.362391,
+      "output_tokens_per_second": 92.6376874470215,
+      "ttft_p50_ms": 732.321883,
+      "ttft_p95_ms": 1799.921641,
+      "ttft_p99_ms": 1799.921641,
+      "itl_p50_ms": 58.83014000000003,
+      "itl_p95_ms": 68.48849700000028,
+      "itl_p99_ms": 69.41229900000053,
+      "completion_p95_ms": 4346.801331,
+      "mean_decode_step_ms": 46.57128020661157,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 71,
+          "mean_ms": 37.91861167605634
+        },
+        "8": {
+          "steps": 50,
+          "mean_ms": 58.85806952
+        }
+      },
+      "worker_enqueue_delay_max_ms": 52.52478499999961,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 18,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 8302.114567,
+      "output_tokens_per_second": 92.50655285494568,
+      "ttft_p50_ms": 727.315594,
+      "ttft_p95_ms": 1800.3757150000001,
+      "ttft_p99_ms": 1800.3757150000001,
+      "itl_p50_ms": 58.847717999999986,
+      "itl_p95_ms": 68.53879299999994,
+      "itl_p99_ms": 69.47103799999968,
+      "completion_p95_ms": 4343.843302,
+      "mean_decode_step_ms": 46.682244454545454,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 71,
+          "mean_ms": 38.090075521126764
+        },
+        "8": {
+          "steps": 50,
+          "mean_ms": 58.88312434
+        }
+      },
+      "worker_enqueue_delay_max_ms": 49.29636300000038,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 18,
+        "decode": 121
+      }
+    }
+  ],
+  "reference_runs": [
+    {
+      "elapsed_ms": 9510.257099056616,
+      "output_tokens_per_second": 80.75491461489331,
+      "ttft_p50_ms": 1502.872665040195,
+      "ttft_p95_ms": 3076.6353769926354,
+      "ttft_p99_ms": 3076.6353769926354,
+      "itl_p50_ms": 62.72867205552757,
+      "itl_p95_ms": 65.89714298024774,
+      "itl_p99_ms": 69.11163299810141,
+      "completion_p95_ms": 5527.40150897298,
+      "mean_decode_step_ms": 49.71884917717981,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 63,
+          "mean_ms": 37.0177691580639
+        },
+        "8": {
+          "steps": 58,
+          "mean_ms": 63.51484988759882
+        }
+      },
+      "worker_enqueue_delay_max_ms": 337.7108500339091,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 10,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 9604.727286961861,
+      "output_tokens_per_second": 79.96062533108439,
+      "ttft_p50_ms": 1525.8665890200064,
+      "ttft_p95_ms": 3156.360010942444,
+      "ttft_p99_ms": 3156.360010942444,
+      "itl_p50_ms": 63.367898925207555,
+      "itl_p95_ms": 67.31053104158491,
+      "itl_p99_ms": 69.56110009923577,
+      "completion_p95_ms": 5588.719296944328,
+      "mean_decode_step_ms": 50.12822349282551,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 63,
+          "mean_ms": 37.25331423560246
+        },
+        "8": {
+          "steps": 58,
+          "mean_ms": 64.11303872049882
+        }
+      },
+      "worker_enqueue_delay_max_ms": 355.7544719427824,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 10,
+        "decode": 121
+      }
+    },
+    {
+      "elapsed_ms": 9714.484315016307,
+      "output_tokens_per_second": 79.05720726861978,
+      "ttft_p50_ms": 1536.0060670413077,
+      "ttft_p95_ms": 3235.6068530119956,
+      "ttft_p99_ms": 3235.6068530119956,
+      "itl_p50_ms": 64.57664503250271,
+      "itl_p95_ms": 67.21979205030948,
+      "itl_p99_ms": 70.31376904342324,
+      "completion_p95_ms": 5651.433784957044,
+      "mean_decode_step_ms": 50.804348271878915,
+      "decode_by_cohort": {
+        "4": {
+          "steps": 63,
+          "mean_ms": 37.734953268978096
+        },
+        "8": {
+          "steps": 58,
+          "mean_ms": 65.00041525778842
+        }
+      },
+      "worker_enqueue_delay_max_ms": 366.48645401000977,
+      "physical_phase_counts": {
+        "prefill": 5,
+        "mixed": 10,
+        "decode": 121
+      }
+    }
+  ],
+  "native_medians": {
+    "elapsed_ms": 8290.362391,
+    "output_tokens_per_second": 92.6376874470215,
+    "ttft_p50_ms": 730.234213,
+    "ttft_p95_ms": 1799.921641,
+    "ttft_p99_ms": 1799.921641,
+    "itl_p50_ms": 58.83014000000003,
+    "itl_p95_ms": 68.48849700000028,
+    "itl_p99_ms": 69.41229900000053,
+    "completion_p95_ms": 4346.801331,
+    "mean_decode_step_ms": 46.57128020661157,
+    "worker_enqueue_delay_max_ms": 52.52478499999961,
+    "decode_by_cohort": {
+      "4": {
+        "steps_each_run": [
+          71,
+          71,
+          71
+        ],
+        "mean_ms": 37.91861167605634
+      },
+      "8": {
+        "steps_each_run": [
+          50,
+          50,
+          50
+        ],
+        "mean_ms": 58.85806952
+      }
+    }
+  },
+  "reference_medians": {
+    "elapsed_ms": 9604.727286961861,
+    "output_tokens_per_second": 79.96062533108439,
+    "ttft_p50_ms": 1525.8665890200064,
+    "ttft_p95_ms": 3156.360010942444,
+    "ttft_p99_ms": 3156.360010942444,
+    "itl_p50_ms": 63.367898925207555,
+    "itl_p95_ms": 67.21979205030948,
+    "itl_p99_ms": 69.56110009923577,
+    "completion_p95_ms": 5588.719296944328,
+    "mean_decode_step_ms": 50.12822349282551,
+    "worker_enqueue_delay_max_ms": 355.7544719427824,
+    "decode_by_cohort": {
+      "4": {
+        "steps_each_run": [
+          63,
+          63,
+          63
+        ],
+        "mean_ms": 37.25331423560246
+      },
+      "8": {
+        "steps_each_run": [
+          58,
+          58,
+          58
+        ],
+        "mean_ms": 64.11303872049882
+      }
+    }
+  },
+  "comparison": {
+    "throughput_ratio": 1.158541307843036,
+    "decode_mean_ratio": 0.9290431011040512,
+    "decode_by_cohort_ratio": {
+      "4": 1.0178587450299406,
+      "8": 0.9180358737415663
+    },
+    "itl_p99_ratio": 0.9978608575910536
+  },
+  "cross_scheduler_tokens_identical": [
+    false,
+    false,
+    false
+  ],
+  "correctness": {
+    "method": "Independent original compute controls for both actual native schedules; 144-cohort runtime diagnostic full heads exact, 143-cohort regression packed replay full heads exact. All three native timing geometries and token streams independently match the 144-cohort control.",
+    "schedules": [
+      {
+        "matrices": 143,
+        "heads": 844,
+        "bf16_words": 209582080,
+        "reference": "test/bf16_cuda_decode_aware143_reference.json"
+      },
+      {
+        "matrices": 144,
+        "heads": 848,
+        "bf16_words": 210575360,
+        "reference": "test/bf16_cuda_decode_aware144_reference.json"
+      }
+    ]
+  },
+  "measurement": {
+    "tails": "Nearest rank over 12 TTFT and 756 ITL values per run, then three-run median; TTFT starts at offered deadline, not deferred enqueue",
+    "native": "Buffers CPU row metadata; no full-head writes in timing. Includes polling, enqueue/admission, execution, sampling/publication and pool returns; excludes final teardown.",
+    "reference": "One warmup followed by three timed original-runtime loops; CPU geometry observer included; no GPU tensor or norm/GDN observation in timing.",
+    "comparison": "Scheduling differs under the same offered deadlines; phase counts and per-cohort counts are reported. No pure-prefill throughput claim for wall-clock phases.",
+    "numerics": "Free wall-clock scheduler outputs differ across engines. Native compute is independently bit-exact under its own actual schedule; cross-scheduler bit equality is not claimed."
+  },
+  "full_goal_complete": false,
+  "tail_within_5_percent": true,
+  "overall_serving_parity_qualified": false,
+  "matched_case_parity_qualified": true,
+  "open_issue": "Twelve-request matched case passes; sustained load, wider context/concurrency and full serving qualification remain open",
+  "optimization": "Exact one-token NONCP inverse initializer skips unused Gram and full triangular inverse; all other recurrent stages retained",
+  "scheduling_policy": {
+    "mixed_token_budget": 8,
+    "prefill_only_token_budget": 256,
+    "max_chunk": 64,
+    "max_prefills": 4,
+    "reference_policy": "decode-aware",
+    "reference_uncap_prefill_only": true
+  },
+  "source_sha256": {
+    "src/gpu_cuda_gdn_cp.cuh": "28c75f844643814777ecd9e642c58ef737aac46de8eb5e3a01ed4aac800e087c",
+    "src/generate_batch_plan.c": "b14e844026e589602367e7f2550066f7b94a6739182327daccdca8263a27e182",
+    "include/generate_batch_plan.h": "fa6fccbdbb6532c3ae897bfff16a10da7a5116f8c96e47ca50e278fb34e3afc9",
+    "src/generate_batch.c": "62812ccfb73b53ba5e884a4a0d8dca464533c7a7dd1676a743238037c2778967",
+    "include/generate_batch.h": "e3a22580a8635156e104cfb974892adf28b8596e616422a74ed7b91ccc9f8268",
+    "test/test_generate_batch.c": "0db35315b76ee647a255ed6294ff68894c6cf5f5d32821d8e607ce869544d8e1",
+    "bench/bench_bf16_arrivals.c": "0f73b329372ce6a84798295be4d78cdaf37c42cc79643673878b99a56bad4d84",
+    "bench/prepare_bf16_arrivals.py": "3c9ca8195fc9992ff355627b36669953dcbbe86d02a0c0c16c023a0083d1689d",
+    "test/cuda_bf16_gdn_noncp_reference.h": "84b023bdd4f022a0600270e0251309f4a2031858da19aae20ee7736307137ac9",
+    "test/bf16_cuda_decode_aware143_reference.json": "ed2a0b8f5f87d9031fb20aec556b67ad34fe8a0f60a473fb68e3c94dbc7fd9ae",
+    "test/bf16_cuda_decode_aware144_reference.json": "c756cdbb89d9b8c9908dccac9557f4d6f9a98f8e050f8fb0d8e7b835440a7865"
+  },
+  "qualification": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    },
+    "full_cuda_backend": true,
+    "cuda_diagnostic_isolation": true,
+    "cuda_recurrent_reference_words": 1356791808,
+    "standalone_inverse_memcheck_errors": 0,
+    "legacy_controlled134_exact": true
+  },
+  "evidence_directory": "/tmp/bitnet-goal-single-inverse",
+  "profile": {
+    "before": {
+      "steps": 143,
+      "phases": {
+        "other": {
+          "steps": 5,
+          "kernels": [
+            {
+              "name": "void cuda_bf16_affine_mma_kernel<BnBlockQ5K, (int)64>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 820,
+              "kernel_ms": 528.278499,
+              "per_step_ms": 105.65569980000001
+            },
+            {
+              "name": "void cuda_bf16_affine_mma_kernel<BnBlockQ4K, (int)64>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 392,
+              "kernel_ms": 180.031142,
+              "per_step_ms": 36.0062284
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 15,
+              "kernel_ms": 110.241826,
+              "per_step_ms": 22.0483652
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 204,
+              "kernel_ms": 80.551822,
+              "per_step_ms": 16.1103644
+            },
+            {
+              "name": "void cuda_bf16_q8_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 240,
+              "kernel_ms": 49.769621,
+              "per_step_ms": 9.9539242
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 1244,
+              "kernel_ms": 34.864908,
+              "per_step_ms": 6.9729816
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_128x128x64_3_64x32x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 64,
+              "kernel_ms": 22.657026,
+              "per_step_ms": 4.5314052
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_prepare(__nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, float *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 16.891834,
+              "per_step_ms": 3.3783668
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::inv<(bool)1>(__nv_bfloat16 *, const float *, const float *, const float *, int)",
+              "calls": 960,
+              "kernel_ms": 16.110124,
+              "per_step_ms": 3.2220248
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_176x128x64_2_176x16x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 60,
+              "kernel_ms": 12.316451,
+              "per_step_ms": 2.4632902000000003
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 737,
+              "kernel_ms": 12.210493,
+              "per_step_ms": 2.4420986
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)0, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 2880,
+              "kernel_ms": 11.796893,
+              "per_step_ms": 2.3593786000000003
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_192x144x64_2_48x72x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 51,
+              "kernel_ms": 9.366847,
+              "per_step_ms": 1.8733694
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 13,
+              "kernel_ms": 8.969304,
+              "per_step_ms": 1.7938607999999998
+            },
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 82,
+              "kernel_ms": 8.158805,
+              "per_step_ms": 1.6317609999999998
+            },
+            {
+              "name": "bn_cuda_gdn_cp::gram(float *, const __nv_bfloat16 *, int)",
+              "calls": 960,
+              "kernel_ms": 7.201431,
+              "per_step_ms": 1.4402862
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_store(__nv_bfloat16 *, const float *, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 6.918157,
+              "per_step_ms": 1.3836314
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)2, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 5.200019,
+              "per_step_ms": 1.0400038
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 59,
+              "kernel_ms": 5.189742,
+              "per_step_ms": 1.0379483999999999
+            },
+            {
+              "name": "q5k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ5K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 94,
+              "kernel_ms": 4.918099,
+              "per_step_ms": 0.9836197999999999
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 300,
+              "kernel_ms": 4.227721,
+              "per_step_ms": 0.8455442
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_128x112x64_3_32x56x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 26,
+              "kernel_ms": 4.018702,
+              "per_step_ms": 0.8037404
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)0>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 768,
+              "kernel_ms": 3.993486,
+              "per_step_ms": 0.7986972
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 52,
+              "kernel_ms": 3.57044,
+              "per_step_ms": 0.7140880000000001
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_init(float *, const float *, const float *, int)",
+              "calls": 960,
+              "kernel_ms": 3.468009,
+              "per_step_ms": 0.6936017999999999
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_96x256x64_2_48x64x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 17,
+              "kernel_ms": 3.117932,
+              "per_step_ms": 0.6235864
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)3, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 2.901638,
+              "per_step_ms": 0.5803276
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 2.735914,
+              "per_step_ms": 0.5471828000000001
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 320,
+              "kernel_ms": 2.566761,
+              "per_step_ms": 0.5133522
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 256,
+              "kernel_ms": 2.425214,
+              "per_step_ms": 0.4850428
+            },
+            {
+              "name": "void bn_cuda_fa2_detail::forward_kernel<(bool)1, (bool)0>(bn_fa2::Flash_fwd_params)",
+              "calls": 256,
+              "kernel_ms": 2.075365,
+              "per_step_ms": 0.415073
+            },
+            {
+              "name": "void gdn_prefill_prepare_bf16_kernel<(int)128, (bool)1>(__nv_bfloat16 *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, int, int, int, float, float, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *)",
+              "calls": 240,
+              "kernel_ms": 1.936525,
+              "per_step_ms": 0.387305
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_residual(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 960,
+              "kernel_ms": 1.916102,
+              "per_step_ms": 0.3832204
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)4, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 192,
+              "kernel_ms": 1.789121,
+              "per_step_ms": 0.3578242
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::prefill_weights<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 960,
+              "kernel_ms": 1.749223,
+              "per_step_ms": 0.3498446
+            },
+            {
+              "name": "q6k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 43,
+              "kernel_ms": 1.736548,
+              "per_step_ms": 0.3473096
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_newv(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 1.706055,
+              "per_step_ms": 0.34121100000000004
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 36,
+              "kernel_ms": 1.645477,
+              "per_step_ms": 0.32909540000000004
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 25,
+              "kernel_ms": 1.631778,
+              "per_step_ms": 0.32635559999999997
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 240,
+              "kernel_ms": 1.345315,
+              "per_step_ms": 0.269063
+            },
+            {
+              "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __nv_bfloat16, float, __nv_bfloat16, (bool)0, float, __nv_bfloat16, __nv_bfloat16, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+              "calls": 128,
+              "kernel_ms": 1.275811,
+              "per_step_ms": 0.2551622
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 260,
+              "kernel_ms": 1.165151,
+              "per_step_ms": 0.23303020000000002
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_112x256x64_2_112x32x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 18,
+              "kernel_ms": 1.149986,
+              "per_step_ms": 0.22999719999999998
+            },
+            {
+              "name": "silu_mul_stacked_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int)",
+              "calls": 64,
+              "kernel_ms": 1.138588,
+              "per_step_ms": 0.2277176
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_112x256x64_2_112x32x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 6,
+              "kernel_ms": 1.010499,
+              "per_step_ms": 0.2020998
+            },
+            {
+              "name": "q4k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ4K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 37,
+              "kernel_ms": 0.803648,
+              "per_step_ms": 0.1607296
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 80,
+              "kernel_ms": 0.743425,
+              "per_step_ms": 0.148685
+            },
+            {
+              "name": "bn_cuda_gdn_cp::stage_log_decay(float *, const float *, int)",
+              "calls": 960,
+              "kernel_ms": 0.725025,
+              "per_step_ms": 0.145005
+            },
+            {
+              "name": "q8_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 60,
+              "kernel_ms": 0.515201,
+              "per_step_ms": 0.1030402
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 1,
+              "kernel_ms": 0.461473,
+              "per_step_ms": 0.0922946
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_96x128x64_3_96x16x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 18,
+              "kernel_ms": 0.398498,
+              "per_step_ms": 0.07969960000000001
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_128x112x64_3_32x56x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 2,
+              "kernel_ms": 0.394817,
+              "per_step_ms": 0.07896339999999999
+            },
+            {
+              "name": "void bn_cuda_attention_gate::apply<(bool)1>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 256,
+              "kernel_ms": 0.38192,
+              "per_step_ms": 0.076384
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_256x112x64_2_64x56x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 6,
+              "kernel_ms": 0.367041,
+              "per_step_ms": 0.0734082
+            },
+            {
+              "name": "bn_cuda_attention::append(unsigned short *, unsigned short *, const unsigned short *, const unsigned short *, unsigned long, unsigned long)",
+              "calls": 256,
+              "kernel_ms": 0.253984,
+              "per_step_ms": 0.050796799999999996
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 48,
+              "kernel_ms": 0.159104,
+              "per_step_ms": 0.031820799999999996
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 15,
+              "kernel_ms": 0.13856,
+              "per_step_ms": 0.027711999999999997
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.11088,
+              "per_step_ms": 0.022176
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)1, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 48,
+              "kernel_ms": 0.080097,
+              "per_step_ms": 0.0160194
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.069184,
+              "per_step_ms": 0.0138368
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 5,
+              "kernel_ms": 0.054336,
+              "per_step_ms": 0.0108672
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 5,
+              "kernel_ms": 0.045376,
+              "per_step_ms": 0.0090752
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 5,
+              "kernel_ms": 0.038208,
+              "per_step_ms": 0.0076416
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.025024,
+              "per_step_ms": 0.0050048
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.024928,
+              "per_step_ms": 0.0049856
+            }
+          ]
+        },
+        "decode4": {
+          "steps": 70,
+          "kernels": [
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 5740,
+              "kernel_ms": 599.041321,
+              "per_step_ms": 8.557733157142858
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 4130,
+              "kernel_ms": 383.971001,
+              "per_step_ms": 5.4853000142857145
+            },
+            {
+              "name": "q5k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ5K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 6580,
+              "kernel_ms": 370.818159,
+              "per_step_ms": 5.297402271428571
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3640,
+              "kernel_ms": 256.854712,
+              "per_step_ms": 3.669353028571429
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 630,
+              "kernel_ms": 186.551401,
+              "per_step_ms": 2.665020014285714
+            },
+            {
+              "name": "q6k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 3010,
+              "kernel_ms": 130.171866,
+              "per_step_ms": 1.8595980857142855
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1750,
+              "kernel_ms": 122.158637,
+              "per_step_ms": 1.7451233857142856
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 2520,
+              "kernel_ms": 118.023792,
+              "per_step_ms": 1.6860541714285715
+            },
+            {
+              "name": "q4k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ4K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 2590,
+              "kernel_ms": 59.554508,
+              "per_step_ms": 0.8507786857142857
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 4200,
+              "kernel_ms": 48.977726,
+              "per_step_ms": 0.6996817999999999
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 210,
+              "kernel_ms": 46.539447,
+              "per_step_ms": 0.6648492428571429
+            },
+            {
+              "name": "q8_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 4200,
+              "kernel_ms": 36.965509,
+              "per_step_ms": 0.5280787
+            },
+            {
+              "name": "void gdn_decode_bf16_kernel<(bool)0, (bool)1, (bool)0>(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, float, const BnCudaSequenceRow *)",
+              "calls": 3360,
+              "kernel_ms": 36.67166,
+              "per_step_ms": 0.5238808571428571
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 70,
+              "kernel_ms": 32.957648,
+              "per_step_ms": 0.47082354285714284
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 4480,
+              "kernel_ms": 32.046775,
+              "per_step_ms": 0.45781107142857136
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 20510,
+              "kernel_ms": 29.344067,
+              "per_step_ms": 0.41920095714285716
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 10080,
+              "kernel_ms": 13.634183,
+              "per_step_ms": 0.19477404285714287
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 3360,
+              "kernel_ms": 11.350922,
+              "per_step_ms": 0.16215602857142858
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 8.291674,
+              "per_step_ms": 0.11845248571428572
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)1, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 3360,
+              "kernel_ms": 5.859,
+              "per_step_ms": 0.0837
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 4480,
+              "kernel_ms": 5.382488,
+              "per_step_ms": 0.07689268571428572
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 5.003657,
+              "per_step_ms": 0.07148081428571428
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 3360,
+              "kernel_ms": 4.711698,
+              "per_step_ms": 0.06730997142857142
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 3640,
+              "kernel_ms": 4.222458,
+              "per_step_ms": 0.060320828571428564
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 1120,
+              "kernel_ms": 3.68196,
+              "per_step_ms": 0.052599428571428575
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 1.840013,
+              "per_step_ms": 0.026285899999999997
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 1.808455,
+              "per_step_ms": 0.025835071428571426
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 210,
+              "kernel_ms": 1.601923,
+              "per_step_ms": 0.022884614285714287
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 70,
+              "kernel_ms": 0.63965,
+              "per_step_ms": 0.009137857142857144
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 70,
+              "kernel_ms": 0.58221,
+              "per_step_ms": 0.008317285714285715
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 70,
+              "kernel_ms": 0.158016,
+              "per_step_ms": 0.0022573714285714285
+            }
+          ]
+        },
+        "mixed_q1_8": {
+          "steps": 17,
+          "kernels": [
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1394,
+              "kernel_ms": 255.118496,
+              "per_step_ms": 15.006970352941176
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 2482,
+              "kernel_ms": 239.839478,
+              "per_step_ms": 14.108204588235296
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 884,
+              "kernel_ms": 137.568116,
+              "per_step_ms": 8.092242117647059
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1003,
+              "kernel_ms": 84.672225,
+              "per_step_ms": 4.980719117647059
+            },
+            {
+              "name": "void cuda_bf16_q8_grouped_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1020,
+              "kernel_ms": 72.889622,
+              "per_step_ms": 4.287624823529412
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1241,
+              "kernel_ms": 54.633729,
+              "per_step_ms": 3.2137487647058824
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::inv<(bool)1>(__nv_bfloat16 *, const float *, const float *, const float *, int)",
+              "calls": 3264,
+              "kernel_ms": 48.530874,
+              "per_step_ms": 2.854757294117647
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)0, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 9792,
+              "kernel_ms": 39.806827,
+              "per_step_ms": 2.3415780588235293
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_prepare(__nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, float *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 36.376601,
+              "per_step_ms": 2.1398000588235293
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 425,
+              "kernel_ms": 26.575897,
+              "per_step_ms": 1.5632880588235294
+            },
+            {
+              "name": "bn_cuda_gdn_cp::gram(float *, const __nv_bfloat16 *, int)",
+              "calls": 3264,
+              "kernel_ms": 18.256476,
+              "per_step_ms": 1.0739103529411764
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)2, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 17.644728,
+              "per_step_ms": 1.0379251764705884
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 51,
+              "kernel_ms": 16.797458,
+              "per_step_ms": 0.9880857647058823
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 17,
+              "kernel_ms": 14.958673,
+              "per_step_ms": 0.8799219411764705
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 1020,
+              "kernel_ms": 10.524831,
+              "per_step_ms": 0.619107705882353
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_init(float *, const float *, const float *, int)",
+              "calls": 3264,
+              "kernel_ms": 10.250886,
+              "per_step_ms": 0.602993294117647
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)3, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 9.836728,
+              "per_step_ms": 0.5786310588235295
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 9.249953,
+              "per_step_ms": 0.5441148823529411
+            },
+            {
+              "name": "void gdn_decode_bf16_kernel<(bool)0, (bool)1, (bool)1>(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, float, const BnCudaSequenceRow *)",
+              "calls": 816,
+              "kernel_ms": 8.603542,
+              "per_step_ms": 0.5060907058823529
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 4675,
+              "kernel_ms": 7.948144,
+              "per_step_ms": 0.4675378823529412
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 1088,
+              "kernel_ms": 6.501747,
+              "per_step_ms": 0.38245570588235295
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_residual(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 3264,
+              "kernel_ms": 6.490162,
+              "per_step_ms": 0.38177423529411764
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::prefill_weights<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 3264,
+              "kernel_ms": 5.724078,
+              "per_step_ms": 0.33671047058823533
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_newv(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 5.693682,
+              "per_step_ms": 0.33492247058823527
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_store(__nv_bfloat16 *, const float *, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 4.809168,
+              "per_step_ms": 0.2828922352941176
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 2754,
+              "kernel_ms": 4.603886,
+              "per_step_ms": 0.2708168235294118
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 1632,
+              "kernel_ms": 4.51566,
+              "per_step_ms": 0.2656270588235294
+            },
+            {
+              "name": "void gdn_prefill_prepare_bf16_kernel<(int)128, (bool)1>(__nv_bfloat16 *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, int, int, int, float, float, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *)",
+              "calls": 816,
+              "kernel_ms": 2.588363,
+              "per_step_ms": 0.15225664705882355
+            },
+            {
+              "name": "bn_cuda_gdn_cp::stage_log_decay(float *, const float *, int)",
+              "calls": 3264,
+              "kernel_ms": 2.181256,
+              "per_step_ms": 0.12830917647058823
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 272,
+              "kernel_ms": 1.728866,
+              "per_step_ms": 0.101698
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)2, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 816,
+              "kernel_ms": 1.68692,
+              "per_step_ms": 0.09923058823529411
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 1088,
+              "kernel_ms": 1.373253,
+              "per_step_ms": 0.08077958823529412
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 816,
+              "kernel_ms": 1.077347,
+              "per_step_ms": 0.06337335294117648
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 884,
+              "kernel_ms": 0.888004,
+              "per_step_ms": 0.05223552941176471
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 272,
+              "kernel_ms": 0.836931,
+              "per_step_ms": 0.049231235294117645
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 144,
+              "kernel_ms": 0.527232,
+              "per_step_ms": 0.03101364705882353
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 272,
+              "kernel_ms": 0.397058,
+              "per_step_ms": 0.02335635294117647
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 272,
+              "kernel_ms": 0.394498,
+              "per_step_ms": 0.023205764705882353
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 51,
+              "kernel_ms": 0.342499,
+              "per_step_ms": 0.020146999999999998
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 17,
+              "kernel_ms": 0.153184,
+              "per_step_ms": 0.009010823529411764
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 17,
+              "kernel_ms": 0.112128,
+              "per_step_ms": 0.006595764705882353
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 17,
+              "kernel_ms": 0.039072,
+              "per_step_ms": 0.0022983529411764706
+            }
+          ]
+        },
+        "decode8": {
+          "steps": 51,
+          "kernels": [
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 4182,
+              "kernel_ms": 767.543521,
+              "per_step_ms": 15.049872960784315
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 7446,
+              "kernel_ms": 722.006646,
+              "per_step_ms": 14.15699305882353
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 2652,
+              "kernel_ms": 413.867369,
+              "per_step_ms": 8.115046450980392
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3009,
+              "kernel_ms": 251.19667,
+              "per_step_ms": 4.925424901960785
+            },
+            {
+              "name": "void cuda_bf16_q8_grouped_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3060,
+              "kernel_ms": 218.725922,
+              "per_step_ms": 4.288743568627451
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3723,
+              "kernel_ms": 163.273173,
+              "per_step_ms": 3.2014347647058825
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1275,
+              "kernel_ms": 79.371222,
+              "per_step_ms": 1.5562984705882354
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 153,
+              "kernel_ms": 50.213492,
+              "per_step_ms": 0.984578274509804
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 51,
+              "kernel_ms": 44.857218,
+              "per_step_ms": 0.8795532941176472
+            },
+            {
+              "name": "void gdn_decode_bf16_kernel<(bool)0, (bool)1, (bool)0>(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, float, const BnCudaSequenceRow *)",
+              "calls": 2448,
+              "kernel_ms": 43.61311,
+              "per_step_ms": 0.8551590196078431
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 3060,
+              "kernel_ms": 31.554814,
+              "per_step_ms": 0.6187218431372549
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 14025,
+              "kernel_ms": 23.89696,
+              "per_step_ms": 0.4685678431372549
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 3264,
+              "kernel_ms": 19.310162,
+              "per_step_ms": 0.37863062745098036
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 8262,
+              "kernel_ms": 13.755295,
+              "per_step_ms": 0.2697116666666667
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 2448,
+              "kernel_ms": 8.030357,
+              "per_step_ms": 0.15745798039215686
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 5.256976,
+              "per_step_ms": 0.10307796078431372
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)2, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 2448,
+              "kernel_ms": 4.927724,
+              "per_step_ms": 0.09662203921568628
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 3264,
+              "kernel_ms": 4.061163,
+              "per_step_ms": 0.07963064705882353
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 2448,
+              "kernel_ms": 3.312168,
+              "per_step_ms": 0.06494447058823528
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 3.11022,
+              "per_step_ms": 0.06098470588235294
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 2652,
+              "kernel_ms": 2.654471,
+              "per_step_ms": 0.05204845098039216
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 816,
+              "kernel_ms": 2.510984,
+              "per_step_ms": 0.04923498039215687
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 1.191683,
+              "per_step_ms": 0.023366333333333333
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 1.1737,
+              "per_step_ms": 0.023013725490196077
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 153,
+              "kernel_ms": 1.028004,
+              "per_step_ms": 0.020156941176470586
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 51,
+              "kernel_ms": 0.463681,
+              "per_step_ms": 0.00909178431372549
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 51,
+              "kernel_ms": 0.337121,
+              "per_step_ms": 0.0066102156862745095
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 51,
+              "kernel_ms": 0.109505,
+              "per_step_ms": 0.0021471568627450983
+            }
+          ]
+        }
+      },
+      "execution_window_copies": [
+        {
+          "kind": "Host-to-Device",
+          "calls": 19023,
+          "bytes": 7076416,
+          "total_ms": 12.000907
+        },
+        {
+          "kind": "Device-to-Host",
+          "calls": 1428,
+          "bytes": 419169300,
+          "total_ms": 13.981514
+        },
+        {
+          "kind": "Device-to-Device",
+          "calls": 5068,
+          "bytes": 13296197632,
+          "total_ms": 6.827951
+        }
+      ],
+      "execution_window_sync": [
+        {
+          "api": "cudaStreamSynchronize_v3020",
+          "calls": 1296,
+          "inclusive_host_api_ms": 0.645451
+        },
+        {
+          "api": "cudaStreamWaitEvent_v3020",
+          "calls": 216064,
+          "inclusive_host_api_ms": 84.479765
+        }
+      ],
+      "window": "First 1024-byte input HtoD through last output DtoH; initial preparation/admission excluded, later admissions included",
+      "source": "/tmp/bitnet-goal-mixed-budget/profile"
+    },
+    "after": {
+      "steps": 143,
+      "phases": {
+        "other": {
+          "steps": 5,
+          "kernels": [
+            {
+              "name": "void cuda_bf16_affine_mma_kernel<BnBlockQ5K, (int)64>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 820,
+              "kernel_ms": 537.425426,
+              "per_step_ms": 107.4850852
+            },
+            {
+              "name": "void cuda_bf16_affine_mma_kernel<BnBlockQ4K, (int)64>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 392,
+              "kernel_ms": 183.038336,
+              "per_step_ms": 36.607667199999995
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 15,
+              "kernel_ms": 112.134254,
+              "per_step_ms": 22.4268508
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 204,
+              "kernel_ms": 81.568306,
+              "per_step_ms": 16.313661200000002
+            },
+            {
+              "name": "void cuda_bf16_q8_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 240,
+              "kernel_ms": 50.059809,
+              "per_step_ms": 10.0119618
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 1244,
+              "kernel_ms": 35.384724,
+              "per_step_ms": 7.0769448
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_128x128x64_3_64x32x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 64,
+              "kernel_ms": 23.063985,
+              "per_step_ms": 4.612797
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_prepare(__nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, float *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 16.973885,
+              "per_step_ms": 3.394777
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::inv<(bool)1>(__nv_bfloat16 *, const float *, const float *, const float *, int)",
+              "calls": 768,
+              "kernel_ms": 13.252144,
+              "per_step_ms": 2.6504288
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_176x128x64_2_176x16x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 60,
+              "kernel_ms": 12.438702,
+              "per_step_ms": 2.4877404
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 737,
+              "kernel_ms": 12.381646,
+              "per_step_ms": 2.4763292
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)0, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 2880,
+              "kernel_ms": 11.833782,
+              "per_step_ms": 2.3667564
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_192x144x64_2_48x72x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 51,
+              "kernel_ms": 9.544669,
+              "per_step_ms": 1.9089338000000002
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 13,
+              "kernel_ms": 9.160325,
+              "per_step_ms": 1.832065
+            },
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 82,
+              "kernel_ms": 8.259295,
+              "per_step_ms": 1.651859
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_store(__nv_bfloat16 *, const float *, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 6.910619,
+              "per_step_ms": 1.3821238
+            },
+            {
+              "name": "bn_cuda_gdn_cp::gram(float *, const __nv_bfloat16 *, int)",
+              "calls": 768,
+              "kernel_ms": 6.110683,
+              "per_step_ms": 1.2221366
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 59,
+              "kernel_ms": 5.249334,
+              "per_step_ms": 1.0498668
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)2, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 5.20856,
+              "per_step_ms": 1.041712
+            },
+            {
+              "name": "q5k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ5K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 94,
+              "kernel_ms": 5.022419,
+              "per_step_ms": 1.0044838
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 300,
+              "kernel_ms": 4.272167,
+              "per_step_ms": 0.8544333999999999
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)0>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 768,
+              "kernel_ms": 3.984435,
+              "per_step_ms": 0.796887
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 52,
+              "kernel_ms": 3.630828,
+              "per_step_ms": 0.7261656000000001
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_128x112x64_3_32x56x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 26,
+              "kernel_ms": 3.499563,
+              "per_step_ms": 0.6999126
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_init(float *, const float *, const float *, int)",
+              "calls": 960,
+              "kernel_ms": 3.472721,
+              "per_step_ms": 0.6945442
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_96x256x64_2_48x64x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 17,
+              "kernel_ms": 3.133226,
+              "per_step_ms": 0.6266452
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)3, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 2.889895,
+              "per_step_ms": 0.577979
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 2.729929,
+              "per_step_ms": 0.5459858
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 320,
+              "kernel_ms": 2.585709,
+              "per_step_ms": 0.5171418
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 256,
+              "kernel_ms": 2.465601,
+              "per_step_ms": 0.4931202
+            },
+            {
+              "name": "void bn_cuda_fa2_detail::forward_kernel<(bool)1, (bool)0>(bn_fa2::Flash_fwd_params)",
+              "calls": 256,
+              "kernel_ms": 2.086342,
+              "per_step_ms": 0.41726840000000004
+            },
+            {
+              "name": "void gdn_prefill_prepare_bf16_kernel<(int)128, (bool)1>(__nv_bfloat16 *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, int, int, int, float, float, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *)",
+              "calls": 240,
+              "kernel_ms": 1.938151,
+              "per_step_ms": 0.3876302
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_residual(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 960,
+              "kernel_ms": 1.922054,
+              "per_step_ms": 0.3844108
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)4, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 192,
+              "kernel_ms": 1.787205,
+              "per_step_ms": 0.357441
+            },
+            {
+              "name": "q6k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 43,
+              "kernel_ms": 1.769576,
+              "per_step_ms": 0.3539152
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::prefill_weights<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 960,
+              "kernel_ms": 1.753189,
+              "per_step_ms": 0.3506378
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_newv(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 960,
+              "kernel_ms": 1.709572,
+              "per_step_ms": 0.3419144
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 36,
+              "kernel_ms": 1.673385,
+              "per_step_ms": 0.334677
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 25,
+              "kernel_ms": 1.655718,
+              "per_step_ms": 0.3311436
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 240,
+              "kernel_ms": 1.347844,
+              "per_step_ms": 0.2695688
+            },
+            {
+              "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __nv_bfloat16, float, __nv_bfloat16, (bool)0, float, __nv_bfloat16, __nv_bfloat16, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+              "calls": 128,
+              "kernel_ms": 1.276291,
+              "per_step_ms": 0.2552582
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 260,
+              "kernel_ms": 1.182913,
+              "per_step_ms": 0.23658260000000003
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_112x256x64_2_112x32x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 18,
+              "kernel_ms": 1.163781,
+              "per_step_ms": 0.2327562
+            },
+            {
+              "name": "silu_mul_stacked_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int)",
+              "calls": 64,
+              "kernel_ms": 1.148381,
+              "per_step_ms": 0.22967620000000002
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_112x256x64_2_112x32x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 6,
+              "kernel_ms": 1.03338,
+              "per_step_ms": 0.206676
+            },
+            {
+              "name": "q4k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ4K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 37,
+              "kernel_ms": 0.818146,
+              "per_step_ms": 0.1636292
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 80,
+              "kernel_ms": 0.746691,
+              "per_step_ms": 0.1493382
+            },
+            {
+              "name": "bn_cuda_gdn_cp::stage_log_decay(float *, const float *, int)",
+              "calls": 960,
+              "kernel_ms": 0.727041,
+              "per_step_ms": 0.14540820000000002
+            },
+            {
+              "name": "q8_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 60,
+              "kernel_ms": 0.523521,
+              "per_step_ms": 0.1047042
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 1,
+              "kernel_ms": 0.462946,
+              "per_step_ms": 0.09258920000000001
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_96x128x64_3_96x16x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 18,
+              "kernel_ms": 0.400704,
+              "per_step_ms": 0.0801408
+            },
+            {
+              "name": "void bn_cuda_attention_gate::apply<(bool)1>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 256,
+              "kernel_ms": 0.383008,
+              "per_step_ms": 0.0766016
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_128x112x64_3_32x56x64_tmaAB_alignCD4_bz_TNNN",
+              "calls": 2,
+              "kernel_ms": 0.374273,
+              "per_step_ms": 0.07485460000000001
+            },
+            {
+              "name": "nvjet_sm120_tst_mma_256x112x64_2_64x56x64_tmaAB_alignCD4_splitK_TNNN",
+              "calls": 6,
+              "kernel_ms": 0.36637,
+              "per_step_ms": 0.07327399999999999
+            },
+            {
+              "name": "bn_cuda_attention::append(unsigned short *, unsigned short *, const unsigned short *, const unsigned short *, unsigned long, unsigned long)",
+              "calls": 256,
+              "kernel_ms": 0.256065,
+              "per_step_ms": 0.051212999999999995
+            },
+            {
+              "name": "bn_cuda_gdn_cp::inverse_one(__nv_bfloat16 *, const float *)",
+              "calls": 192,
+              "kernel_ms": 0.193859,
+              "per_step_ms": 0.0387718
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 48,
+              "kernel_ms": 0.16144,
+              "per_step_ms": 0.032288
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 15,
+              "kernel_ms": 0.140672,
+              "per_step_ms": 0.028134399999999997
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.11392,
+              "per_step_ms": 0.022784
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)1, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 48,
+              "kernel_ms": 0.081504,
+              "per_step_ms": 0.016300799999999997
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.069536,
+              "per_step_ms": 0.0139072
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 5,
+              "kernel_ms": 0.054305,
+              "per_step_ms": 0.010860999999999999
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 5,
+              "kernel_ms": 0.04656,
+              "per_step_ms": 0.009311999999999999
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 5,
+              "kernel_ms": 0.038369,
+              "per_step_ms": 0.0076738
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.026656,
+              "per_step_ms": 0.0053311999999999995
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 16,
+              "kernel_ms": 0.024896,
+              "per_step_ms": 0.0049792000000000005
+            }
+          ]
+        },
+        "decode4": {
+          "steps": 70,
+          "kernels": [
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 5740,
+              "kernel_ms": 606.773404,
+              "per_step_ms": 8.668191485714287
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 4130,
+              "kernel_ms": 387.745717,
+              "per_step_ms": 5.539224528571428
+            },
+            {
+              "name": "q5k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ5K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 6580,
+              "kernel_ms": 364.766125,
+              "per_step_ms": 5.210944642857143
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3640,
+              "kernel_ms": 259.722958,
+              "per_step_ms": 3.7103279714285713
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 630,
+              "kernel_ms": 189.212334,
+              "per_step_ms": 2.7030333428571427
+            },
+            {
+              "name": "q6k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 3010,
+              "kernel_ms": 129.452234,
+              "per_step_ms": 1.8493176285714286
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1750,
+              "kernel_ms": 123.778827,
+              "per_step_ms": 1.7682689571428571
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 2520,
+              "kernel_ms": 119.35805,
+              "per_step_ms": 1.7051150000000002
+            },
+            {
+              "name": "q4k_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ4K *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 2590,
+              "kernel_ms": 58.887704,
+              "per_step_ms": 0.8412529142857142
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 4200,
+              "kernel_ms": 49.953697,
+              "per_step_ms": 0.7136242428571429
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 210,
+              "kernel_ms": 47.119101,
+              "per_step_ms": 0.6731300142857143
+            },
+            {
+              "name": "void gdn_decode_bf16_kernel<(bool)0, (bool)1, (bool)0>(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, float, const BnCudaSequenceRow *)",
+              "calls": 3360,
+              "kernel_ms": 37.444708,
+              "per_step_ms": 0.5349244
+            },
+            {
+              "name": "q8_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 4200,
+              "kernel_ms": 37.371031,
+              "per_step_ms": 0.5338718714285715
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 70,
+              "kernel_ms": 33.204354,
+              "per_step_ms": 0.4743479142857143
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 4480,
+              "kernel_ms": 32.490732,
+              "per_step_ms": 0.4641533142857143
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 20510,
+              "kernel_ms": 29.861012,
+              "per_step_ms": 0.4265858857142857
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 10080,
+              "kernel_ms": 13.836788,
+              "per_step_ms": 0.1976684
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 3360,
+              "kernel_ms": 11.506556,
+              "per_step_ms": 0.16437937142857142
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 8.282434,
+              "per_step_ms": 0.11832048571428572
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)1, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 3360,
+              "kernel_ms": 6.132413,
+              "per_step_ms": 0.0876059
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 4480,
+              "kernel_ms": 5.479136,
+              "per_step_ms": 0.07827337142857142
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 5.134962,
+              "per_step_ms": 0.0733566
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 3360,
+              "kernel_ms": 4.656719,
+              "per_step_ms": 0.06652455714285714
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 3640,
+              "kernel_ms": 4.340306,
+              "per_step_ms": 0.06200437142857143
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 1120,
+              "kernel_ms": 3.699752,
+              "per_step_ms": 0.0528536
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 1.869894,
+              "per_step_ms": 0.026712771428571428
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 1120,
+              "kernel_ms": 1.81764,
+              "per_step_ms": 0.025966285714285713
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 210,
+              "kernel_ms": 1.61684,
+              "per_step_ms": 0.023097714285714287
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 70,
+              "kernel_ms": 0.629665,
+              "per_step_ms": 0.008995214285714287
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 70,
+              "kernel_ms": 0.574723,
+              "per_step_ms": 0.00821032857142857
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 70,
+              "kernel_ms": 0.15805,
+              "per_step_ms": 0.0022578571428571426
+            }
+          ]
+        },
+        "mixed_q1_8": {
+          "steps": 17,
+          "kernels": [
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1394,
+              "kernel_ms": 254.440597,
+              "per_step_ms": 14.96709394117647
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 2482,
+              "kernel_ms": 240.174019,
+              "per_step_ms": 14.127883470588234
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 884,
+              "kernel_ms": 137.588846,
+              "per_step_ms": 8.093461529411764
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1003,
+              "kernel_ms": 84.832708,
+              "per_step_ms": 4.990159294117647
+            },
+            {
+              "name": "void cuda_bf16_q8_grouped_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1020,
+              "kernel_ms": 72.85733,
+              "per_step_ms": 4.285725294117647
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1241,
+              "kernel_ms": 55.037759,
+              "per_step_ms": 3.2375152352941177
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)0, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 9792,
+              "kernel_ms": 39.703426,
+              "per_step_ms": 2.3354956470588237
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_prepare(__nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, float *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 36.356043,
+              "per_step_ms": 2.1385907647058824
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 425,
+              "kernel_ms": 26.518053,
+              "per_step_ms": 1.5598854705882352
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)2, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 17.58918,
+              "per_step_ms": 1.0346576470588236
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 51,
+              "kernel_ms": 16.836194,
+              "per_step_ms": 0.9903643529411764
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 17,
+              "kernel_ms": 14.964571,
+              "per_step_ms": 0.8802688823529411
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 1020,
+              "kernel_ms": 10.549099,
+              "per_step_ms": 0.6205352352941177
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_init(float *, const float *, const float *, int)",
+              "calls": 3264,
+              "kernel_ms": 10.204428,
+              "per_step_ms": 0.6002604705882353
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)3, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 9.733766,
+              "per_step_ms": 0.5725744705882353
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::mm<(bool)1, (int)0, (bool)0>(void *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, int, int, int, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 9.077699,
+              "per_step_ms": 0.5339822941176471
+            },
+            {
+              "name": "void gdn_decode_bf16_kernel<(bool)0, (bool)1, (bool)1>(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, float, const BnCudaSequenceRow *)",
+              "calls": 816,
+              "kernel_ms": 8.599678,
+              "per_step_ms": 0.505863411764706
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 4675,
+              "kernel_ms": 7.970335,
+              "per_step_ms": 0.46884323529411764
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 1088,
+              "kernel_ms": 6.490421,
+              "per_step_ms": 0.3817894705882353
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_residual(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 3264,
+              "kernel_ms": 6.468348,
+              "per_step_ms": 0.3804910588235294
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_newv(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const float *, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 5.677461,
+              "per_step_ms": 0.33396829411764706
+            },
+            {
+              "name": "void bn_cuda_gdn_cp::prefill_weights<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const float *, const __nv_bfloat16 *, const float *, int, int, int, float)",
+              "calls": 3264,
+              "kernel_ms": 5.668784,
+              "per_step_ms": 0.33345788235294116
+            },
+            {
+              "name": "bn_cuda_gdn_cp::prefill_store(__nv_bfloat16 *, const float *, int, int, int)",
+              "calls": 3264,
+              "kernel_ms": 4.803665,
+              "per_step_ms": 0.2825685294117647
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 2754,
+              "kernel_ms": 4.617101,
+              "per_step_ms": 0.27159417647058826
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 1632,
+              "kernel_ms": 4.506093,
+              "per_step_ms": 0.26506429411764704
+            },
+            {
+              "name": "bn_cuda_gdn_cp::inverse_one(__nv_bfloat16 *, const float *)",
+              "calls": 3264,
+              "kernel_ms": 3.165895,
+              "per_step_ms": 0.18622911764705882
+            },
+            {
+              "name": "void gdn_prefill_prepare_bf16_kernel<(int)128, (bool)1>(__nv_bfloat16 *, float *, float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, int, int, int, float, float, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *)",
+              "calls": 816,
+              "kernel_ms": 2.580366,
+              "per_step_ms": 0.15178623529411767
+            },
+            {
+              "name": "bn_cuda_gdn_cp::stage_log_decay(float *, const float *, int)",
+              "calls": 3264,
+              "kernel_ms": 2.171718,
+              "per_step_ms": 0.12774811764705882
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 272,
+              "kernel_ms": 1.724359,
+              "per_step_ms": 0.10143288235294118
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)2, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 816,
+              "kernel_ms": 1.664426,
+              "per_step_ms": 0.09790741176470588
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 1088,
+              "kernel_ms": 1.382469,
+              "per_step_ms": 0.08132170588235293
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 816,
+              "kernel_ms": 1.072969,
+              "per_step_ms": 0.06311582352941177
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 884,
+              "kernel_ms": 0.888996,
+              "per_step_ms": 0.052293882352941176
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 272,
+              "kernel_ms": 0.835331,
+              "per_step_ms": 0.049137117647058824
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 144,
+              "kernel_ms": 0.532866,
+              "per_step_ms": 0.031345058823529406
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 272,
+              "kernel_ms": 0.398145,
+              "per_step_ms": 0.02342029411764706
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 272,
+              "kernel_ms": 0.392003,
+              "per_step_ms": 0.023059
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 51,
+              "kernel_ms": 0.342529,
+              "per_step_ms": 0.020148764705882352
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 17,
+              "kernel_ms": 0.153568,
+              "per_step_ms": 0.009033411764705884
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 17,
+              "kernel_ms": 0.111552,
+              "per_step_ms": 0.006561882352941176
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 17,
+              "kernel_ms": 0.039456,
+              "per_step_ms": 0.002320941176470588
+            }
+          ]
+        },
+        "decode8": {
+          "steps": 51,
+          "kernels": [
+            {
+              "name": "iq_bf16_mmvq_kernel(__nv_bfloat16 *, const void *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 4182,
+              "kernel_ms": 772.379871,
+              "per_step_ms": 15.144703352941177
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 7446,
+              "kernel_ms": 727.945175,
+              "per_step_ms": 14.273434803921567
+            },
+            {
+              "name": "void q6k_bf16_mma_kernel<(int)24>(__nv_bfloat16 *, const BnBlockQ6K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 2652,
+              "kernel_ms": 416.986425,
+              "per_step_ms": 8.176204411764706
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ5K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3009,
+              "kernel_ms": 253.150212,
+              "per_step_ms": 4.963729647058824
+            },
+            {
+              "name": "void cuda_bf16_q8_grouped_mma_kernel<(int)64>(__nv_bfloat16 *, const BnBlockQ8_0 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3060,
+              "kernel_ms": 218.963894,
+              "per_step_ms": 4.29340968627451
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_split_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 3723,
+              "kernel_ms": 166.034148,
+              "per_step_ms": 3.2555715294117644
+            },
+            {
+              "name": "void cuda_bf16_affine_pair_resident_kernel<BnBlockQ4K>(__nv_bfloat16 *, const T1 *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 1275,
+              "kernel_ms": 79.459325,
+              "per_step_ms": 1.558025980392157
+            },
+            {
+              "name": "q3k_bf16_mmq_kernel(__nv_bfloat16 *, const BnBlockQ3K *, const BnCudaBlockQ8_1 *, int, int, int)",
+              "calls": 153,
+              "kernel_ms": 51.072703,
+              "per_step_ms": 1.0014255490196078
+            },
+            {
+              "name": "iq3s_bf16_mmvq_kernel(__nv_bfloat16 *, const BnBlockIQ3S *, const BnCudaBlockQ8_1 *, int, int)",
+              "calls": 51,
+              "kernel_ms": 44.870989,
+              "per_step_ms": 0.8798233137254903
+            },
+            {
+              "name": "void gdn_decode_bf16_kernel<(bool)0, (bool)1, (bool)0>(__nv_bfloat16 *, float *, const float *, const __nv_bfloat16 *, const __nv_bfloat16 *, const float *, const __nv_bfloat16 *, int, int, float, const BnCudaSequenceRow *)",
+              "calls": 2448,
+              "kernel_ms": 43.565084,
+              "per_step_ms": 0.8542173333333333
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 3060,
+              "kernel_ms": 31.770242,
+              "per_step_ms": 0.6229459215686275
+            },
+            {
+              "name": "quantize_bf16_q8_affine_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 14025,
+              "kernel_ms": 24.131054,
+              "per_step_ms": 0.4731579215686274
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)2, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 3264,
+              "kernel_ms": 19.396473,
+              "per_step_ms": 0.380323
+            },
+            {
+              "name": "quantize_bf16_q8_batch_kernel(BnCudaBlockQ8_1 *, const __nv_bfloat16 *)",
+              "calls": 8262,
+              "kernel_ms": 13.889288,
+              "per_step_ms": 0.27233898039215687
+            },
+            {
+              "name": "void causal_conv_silu_bf16_batch_kernel<(bool)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, int, int, const BnCudaSequenceRow *)",
+              "calls": 2448,
+              "kernel_ms": 7.986911,
+              "per_step_ms": 0.15660609803921569
+            },
+            {
+              "name": "bn_cuda_fa2_detail::decode_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 5.234549,
+              "per_step_ms": 0.10263821568627451
+            },
+            {
+              "name": "void bn_cuda_gdn::gated_norm_kernel<(int)2, (bool)0>(__nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, int, float, int)",
+              "calls": 2448,
+              "kernel_ms": 4.889428,
+              "per_step_ms": 0.09587113725490196
+            },
+            {
+              "name": "silu_mul_compiled_bf16_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long)",
+              "calls": 3264,
+              "kernel_ms": 4.186026,
+              "per_step_ms": 0.08207894117647059
+            },
+            {
+              "name": "bn_cuda_gdn::transpose_axes_kernel(__nv_bfloat16 *, const __nv_bfloat16 *, unsigned long, int, int, int)",
+              "calls": 2448,
+              "kernel_ms": 3.231438,
+              "per_step_ms": 0.0633615294117647
+            },
+            {
+              "name": "bn_cuda_fa2_detail::combine_group_kernel(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 3.137137,
+              "per_step_ms": 0.061512490196078434
+            },
+            {
+              "name": "void bn_cuda_gdn::join_columns_kernel<unsigned short>(T1 *, const T1 *, const T1 *, unsigned long, int, int)",
+              "calls": 2652,
+              "kernel_ms": 2.670069,
+              "per_step_ms": 0.052354294117647054
+            },
+            {
+              "name": "void bn_cuda_attention::qk_prep_kernel<(bool)1>(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, __nv_bfloat16 *, int, int, int, int, float, int, unsigned long, unsigned long, unsigned long, const BnCudaQKRow *, int)",
+              "calls": 816,
+              "kernel_ms": 2.502409,
+              "per_step_ms": 0.0490668431372549
+            },
+            {
+              "name": "bn_cuda_attention::append_group(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 1.183844,
+              "per_step_ms": 0.02321262745098039
+            },
+            {
+              "name": "bn_cuda_attention::gate_group(const BnCudaFA2DecodeRow *)",
+              "calls": 816,
+              "kernel_ms": 1.175172,
+              "per_step_ms": 0.02304258823529412
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)1>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 153,
+              "kernel_ms": 1.02647,
+              "per_step_ms": 0.020126862745098038
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)1, (bool)0, (int)2>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 51,
+              "kernel_ms": 0.458211,
+              "per_step_ms": 0.008984529411764705
+            },
+            {
+              "name": "void bn_cuda_gdn::tiled_norm_5120_kernel<(int)3, (bool)0, (int)3>(__nv_bfloat16 *, __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *)",
+              "calls": 51,
+              "kernel_ms": 0.335361,
+              "per_step_ms": 0.006575705882352942
+            },
+            {
+              "name": "bn_cuda_gdn::embedding_kernel(__nv_bfloat16 *, const int *, const BnBlockQ4K *, int *, unsigned long, int, int)",
+              "calls": 51,
+              "kernel_ms": 0.110465,
+              "per_step_ms": 0.0021659803921568626
+            }
+          ]
+        }
+      },
+      "execution_window_copies": [
+        {
+          "kind": "Host-to-Device",
+          "calls": 19023,
+          "bytes": 7076416,
+          "total_ms": 12.246916
+        },
+        {
+          "kind": "Device-to-Host",
+          "calls": 1428,
+          "bytes": 419169300,
+          "total_ms": 14.008785
+        },
+        {
+          "kind": "Device-to-Device",
+          "calls": 5068,
+          "bytes": 13296197632,
+          "total_ms": 6.814208
+        }
+      ],
+      "execution_window_sync": [
+        {
+          "api": "cudaStreamSynchronize_v3020",
+          "calls": 1296,
+          "inclusive_host_api_ms": 0.605336
+        },
+        {
+          "api": "cudaStreamWaitEvent_v3020",
+          "calls": 216064,
+          "inclusive_host_api_ms": 84.314316
+        }
+      ],
+      "window": "First 1024-byte input HtoD through last output DtoH; initial preparation/admission excluded, later admissions included",
+      "source": "/tmp/bitnet-goal-single-inverse/profile"
+    },
+    "scope": "Instrumented runs excluded from latency medians; schedules may differ, compare per-step kernel cost and report transfer counts separately",
+    "both_profile_schedules_independently_match": 143,
+    "transfer_counts_and_bytes_unchanged": true,
+    "synchronization_counts_unchanged": true
+  }
+}

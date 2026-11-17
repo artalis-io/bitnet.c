@@ -1,0 +1,277 @@
+{
+  "status": "Native CUDA source-correct F16 latent QKV front qualified; full attention/KV/cache/forward admission and whole goal remain open",
+  "implementation": {
+    "api": [
+      "BnGPUBackend.rope_gptj_f16_resident",
+      "BnGPUBackend.latent_qkv_f16_resident"
+    ],
+    "plans": [
+      "BnGPUGPTJF16ResidentPlan",
+      "BnGPUF16LatentQKVResidentPlan"
+    ],
+    "pipeline": "Batched immutable F16 q_a GEMM, source vector4 rank RMSNorm, batched q_b and wkv GEMMs, source strided trailing-query GPT-J rotation without Q-head normalization, and source fused pair-RMSNorm plus rotation for KV.",
+    "rounding": "KV uses the original pair summation, warp-down reduction and dtype-specific weight rounding. It is not replaced with standalone vector4 RMSNorm. BF16 weight multiplication precedes F16 conversion; F16 weights multiply the separately rounded normalized half values.",
+    "resources": "Uses existing linear_f16_reserve 48MiB private workspace/handles. Five disjoint request-owned activation views plus explicit frequency/optional position metadata. No implicit table generation, KV append, allocation, transfer, synchronization or weight upload during execution.",
+    "validation": "Preflights all three linear operations, rank norm and both rotations before checking topology and queuing any work. Malformed late KV plans preserve all outputs. Scalar dimensions are validated before subtraction/multiplication. Borrowed immutable weights belong to this backend; activation and metadata views belong to this request.",
+    "ownership": "No model/session/provider changes, model-family predicates, mutable globals or GPU handles on CPU model weights. Private GPU translation unit and validation subfile within existing CUDA backend. Existing norm arithmetic unchanged; only its preflight was extracted for composition."
+  },
+  "profile": {
+    "checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "architecture": "DeepseekV41ForCausalLM",
+    "layers": 40,
+    "hidden_size": 5120,
+    "q_rank": 1280,
+    "q_heads": 64,
+    "head_dim": 512,
+    "rotary_dim": 64,
+    "q_head_norm": false,
+    "frequency_family": "Plain main frequencies for sliding layers0/1; compressed YaRN family for layers2..39, selected from exact V4.1 source/config.",
+    "frequency_scope": "Tables generated only in independent reference capture by unchanged pinned util/rope.py with torch2.14.0+cu130. Production operation accepts explicit immutable frequency views; production derivation is not claimed.",
+    "positions": "All40 layers at rows1/7, positions0/1/65535/context-7. Layers0/2/20/39 additionally rows31/32/33/64/129/256 and non-monotonic explicit positions. Synthetic tests include large INT32 positions and strided norm padding/idle heads."
+  },
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "license": "third_party/exllamav3/LICENSE",
+    "rope_kernel": "Unchanged rope.cu kernel body with unchanged extracted sincos_accurate and warp_reduce_sum_f helpers; source GPT-J launch geometry retained.",
+    "source_wrapper": {
+      "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+      "source_sha256": {
+        "rope.cu": "256f983e5d7e27df4131065fd43dd29d7610aaf788f8a27df5c7d144db63f8bc",
+        "rope.cuh": "cfe0a945cd8ae1b0dd8941b4d8b639fd738dfd58290179ceab8159076cafeca1",
+        "util.cuh": "a16b8c0c897b96a1e244073bf2e4b66ee9996b7ded4437838332b82a4bd5da80",
+        "reduction.cuh": "30f65e8fbf651bd73768f211e97611eee71d49a73a3fbe0b335ac2e943d120e3"
+      },
+      "kernel_sha256": "6fefc3299e101b198e156a402d15414c6026ceae6ffb84502f70c99b7c9342cc",
+      "wrapper_sha256": "1fb28c3f27b29d1cd93558abb693942583e16bd7b7e608848e85fbcca18cb6f3",
+      "binary_sha256": "13da6c34769cfece929d4b7ee85cbda2084b5d000a615169a02788ddc0b3b257",
+      "compile": [
+        "/usr/local/cuda/bin/nvcc",
+        "-O3",
+        "-std=c++20",
+        "--use_fast_math",
+        "--expt-extended-lambda",
+        "-Xcudafe",
+        "--diag_suppress=20012",
+        "-shared",
+        "-Xcompiler=-fPIC",
+        "-gencode=arch=compute_120a,code=sm_120a",
+        "-I/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/torch/include",
+        "-I/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/torch/include/torch/csrc/api/include",
+        "-I/usr/include/python3.12",
+        "/tmp/bitnet-goal-native-attention-qkv/reference.cu",
+        "-L/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/torch/lib",
+        "-Xlinker",
+        "-rpath",
+        "-Xlinker",
+        "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/torch/lib",
+        "-lc10",
+        "-o",
+        "/tmp/bitnet-goal-native-attention-qkv/reference.so"
+      ]
+    },
+    "independent_weights": "120 actual q_a/q_b/wkv matrices from preserved original FP8-to-F16 captures, and BF16 q/kv norm parameters from original storage-policy captures. Candidate probe obtains handles from existing production core/parameter owner.",
+    "source_captures": "Original and paired system-cuBLAS captures are both retained; two repeated executions per source case are stable. Integrated native QKV compares against paired precision/library behavior; pure RoPE additionally compares original-library raw-projection inputs and outputs.",
+    "cross_library_different_case_counts": {
+      "qa": 164,
+      "qnorm": 156,
+      "qraw": 188,
+      "kvraw": 111,
+      "q": 188,
+      "kv": 108
+    }
+  },
+  "correctness": {
+    "unique_actual_cases": 188,
+    "native_combined_calls": 752,
+    "native_original_rope_calls": 752,
+    "comparison": "Every compared QA, normalized low-rank Q, rotated Q/KV, input, frequency and explicit-position tensor is byte-exact. Two independently owned requests persist across all cases in forward/reverse order; all allocation halos remain unchanged; execution resident_alloc count stays zero.",
+    "synthetic": "Eleven source standalone RoPE fixtures x2requests x2repeats =44 executions. Six source composed QKV fixtures x2requests x2repeats =24 executions. Covers late malformed plans, foreign requests, metadata overlap, full/slim/strided heads, dtype rounding, readonly metadata, output guards and retry without mutation.",
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "real": 0,
+        "rope-original": 0,
+        "asan-real": 0,
+        "asan-rope": 0,
+        "memcheck-qkv": 0,
+        "memcheck-rope": 0,
+        "initcheck-qkv": 0,
+        "initcheck-rope": 0,
+        "racecheck-native-rope-reference": 0,
+        "racecheck-native-qkv-reference": 0,
+        "nsys": 0,
+        "nsys-export": 0
+      },
+      "records": {
+        "real": {
+          "calls": 752,
+          "compared_bytes": 934640128,
+          "hot_allocations": 0,
+          "rope_only": 0,
+          "profile_calls": 0
+        },
+        "rope-original": {
+          "calls": 752,
+          "compared_bytes": 876231168,
+          "hot_allocations": 0,
+          "rope_only": 1,
+          "profile_calls": 0
+        },
+        "asan-real": {
+          "calls": 752,
+          "compared_bytes": 934640128,
+          "hot_allocations": 0,
+          "rope_only": 0,
+          "profile_calls": 0
+        },
+        "asan-rope": {
+          "calls": 36,
+          "compared_bytes": 324715520,
+          "hot_allocations": 0,
+          "rope_only": 1,
+          "profile_calls": 0
+        },
+        "memcheck-qkv": {
+          "calls": 36,
+          "compared_bytes": 346362880,
+          "hot_allocations": 0,
+          "rope_only": 0,
+          "profile_calls": 0
+        },
+        "memcheck-rope": {
+          "calls": 36,
+          "compared_bytes": 324715520,
+          "hot_allocations": 0,
+          "rope_only": 1,
+          "profile_calls": 0
+        },
+        "initcheck-qkv": {
+          "calls": 36,
+          "compared_bytes": 346362880,
+          "hot_allocations": 0,
+          "rope_only": 0,
+          "profile_calls": 0
+        },
+        "initcheck-rope": {
+          "calls": 36,
+          "compared_bytes": 324715520,
+          "hot_allocations": 0,
+          "rope_only": 1,
+          "profile_calls": 0
+        },
+        "nsys": {
+          "calls": 36,
+          "compared_bytes": 363402240,
+          "hot_allocations": 0,
+          "rope_only": 0,
+          "profile_calls": 1
+        }
+      },
+      "frozen_files": 752,
+      "references": {
+        "/tmp/bitnet-goal-native-attention-qkv/original-reference": "f62e1a871df6738db46022c76d49335faaad58fa797b7f3ac117f69907aa7442",
+        "/tmp/bitnet-goal-native-attention-qkv/paired-reference": "6d3aaa7e034efae42f3910f48b2b21be8bb63108d7312c4fab64db2ef47d4137"
+      },
+      "probe_sha256": "805e72669acaacb0fedf5c79d0204ede5bdb717335042fa740e46529648e9866"
+    }
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "trace": {
+    "scope": "One warmed layer39 R256 pos31 compressed-family QKV front; core/parameter setup, input/frequency writes and source comparisons outside capture",
+    "kernel_count": 8,
+    "kernel_duration_sum_ns": 134241,
+    "kernel_span_ns": 181089,
+    "kernels": [
+      {
+        "name": "nvjet_sm120_hsh_mma_128x96x64_3_64x24x64_tmaAB_alignCD4_splitK_NNNN",
+        "count": 1,
+        "duration_sum_ns": 15552
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_64x88x64_5_16x88x64_tmaAB_alignCD4_splitK_NNNN",
+        "count": 1,
+        "duration_sum_ns": 18080
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_96x256x64_2_48x64x64_tmaAB_alignCD4_bz_NNNN",
+        "count": 1,
+        "duration_sum_ns": 82977
+      },
+      {
+        "name": "void bn_cuda_native_norm::kernel<__half, __half, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+        "count": 1,
+        "duration_sum_ns": 2304
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)0>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 6368
+      },
+      {
+        "name": "void bn_cuda_native_rope_detail::rope_kernel<(int)1, (bool)1>(const __half *, __half *, const __half *, __half *, const float *, int, int, int, int, int, int, int, int, int, const unsigned int *, const unsigned int *, float, const void *, const void *, float, float, bool, int, float, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 3072
+      },
+      {
+        "name": "void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __half, float, __half, (bool)0, float, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)",
+        "count": 2,
+        "duration_sum_ns": 5888
+      }
+    ],
+    "runtime_api_counts": {
+      "cuKernelGetName": 3,
+      "cuKernelSetAttribute": 3,
+      "cuLaunchKernelEx": 3,
+      "cuStreamGetGreenCtx": 6,
+      "cudaLaunchKernelExC_v11060": 2,
+      "cudaLaunchKernel_v7000": 3,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "host_device_copies": 0,
+    "observed_allocation_free_calls": 0,
+    "caller_completion_fences": 1,
+    "limitation": "Projection, normalization and rotation only. Frequency tables supplied explicitly; no KV append/compression/selection/attention/output projection, full-model latency or vLLM parity claim."
+  },
+  "changed_previous_source_files": [
+    "Makefile",
+    "include/gpu_backend.h",
+    "src/gpu_cuda.cu",
+    "src/gpu_cuda_native_norm.cuh",
+    "test/test_cuda_backend.c"
+  ],
+  "new_source_test_files": [
+    "src/gpu_cuda_native_rope.h",
+    "src/gpu_cuda_native_rope.cu",
+    "src/gpu_cuda_native_rope_kernel.cuh",
+    "src/gpu_cuda_native_rope_validate.cuh",
+    "test/cuda_native_qkv_checks.h",
+    "test/cuda_native_qkv_reference.h"
+  ],
+  "artifacts": {
+    "root": "/tmp/bitnet-goal-native-attention-qkv",
+    "qualification": "/tmp/bitnet-goal-native-attention-qkv/qualification.json",
+    "source_inventory": "/tmp/bitnet-goal-native-attention-qkv/frozen-source.json",
+    "original_reference": "/tmp/bitnet-goal-native-attention-qkv/original-reference/reference.json",
+    "paired_reference": "/tmp/bitnet-goal-native-attention-qkv/paired-reference/reference.json",
+    "profile": "/tmp/bitnet-goal-native-attention-qkv/profile-analysis.json"
+  },
+  "limitations": [
+    "Projection/norm/rotation front only. Production frequency construction, request-owned window/compressed KV state, compression/index/candidate selection, attention, grouped output projection, Engram and complete forward/generation/CLI admission still require integration.",
+    "This F16 RoPE operation must not be substituted for an F32 attention-output de-rotation epilogue; rounding boundaries differ.",
+    "Device qualification is on the selected 188-SM sm_120a GPU only. Declared generic shape bounds are not an all-shape/all-device validation claim.",
+    "Runtime validation code inside CUDA translation units is not claimed to be host-ASAN instrumented; ASAN/UBSAN covers probe and selected model/reader/layout code, and CUDA memory/init/race tools cover device execution.",
+    "Warm trace is a single QKV front call, not a full-model or vLLM parity benchmark."
+  ]
+}

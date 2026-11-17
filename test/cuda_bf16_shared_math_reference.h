@@ -1,0 +1,10 @@
+#ifndef BN_CUDA_BF16_SHARED_MATH_REFERENCE_H
+#define BN_CUDA_BF16_SHARED_MATH_REFERENCE_H
+#include <stdint.h>
+/* Independent pinned Torch/CUDA BF16 arithmetic. Canonicalize NaN payloads only. */
+#define BN_SHARED_SIGMOID_FNV UINT64_C(0xc1623fbab1f00f4e)
+#define BN_SHARED_SHARED_FNV UINT64_C(0x28ddbe9008c69dfe)
+#define BN_SHARED_OUT_FNV UINT64_C(0x43b97158ae812465)
+#define BN_SHARED_HC_MIXED_FNV UINT64_C(0xc9504fd1bab602a8)
+#define BN_SHARED_HC_COMBINED_FNV UINT64_C(0x2e5428c1a16ff029)
+#endif

@@ -1,0 +1,65 @@
+{
+  "cases": [
+    {
+      "case": 0,
+      "heads": 2,
+      "dim": 3,
+      "tokens": 4,
+      "file": "/tmp/bitnet-goal-glm-kda/case0.npz",
+      "sha256": "be604cab9e1aa01e104a5304656643a3a2cedd5a3a6d86f008c1abd297daab05",
+      "reference_repeat_exact": true,
+      "double_state_max_abs": 5.763493216015547e-08,
+      "double_out_max_abs": 4.693864197324871e-08
+    },
+    {
+      "case": 1,
+      "heads": 1,
+      "dim": 1,
+      "tokens": 5,
+      "file": "/tmp/bitnet-goal-glm-kda/case1.npz",
+      "sha256": "2388a50645ca374f528208e8188eaa21a779efb3092a943e94b96ea13d5fc837",
+      "reference_repeat_exact": true,
+      "double_state_max_abs": 3.306195139884949e-08,
+      "double_out_max_abs": 3.306195139884949e-08
+    },
+    {
+      "case": 2,
+      "heads": 2,
+      "dim": 16,
+      "tokens": 9,
+      "file": "/tmp/bitnet-goal-glm-kda/case2.npz",
+      "sha256": "364288504a90a015b6126936d0fb8fffd43b4bd699268973b1e121afd6cb201b",
+      "reference_repeat_exact": true,
+      "double_state_max_abs": 1.4729625252840606e-07,
+      "double_out_max_abs": 3.827852948501409e-08
+    },
+    {
+      "case": 3,
+      "heads": 64,
+      "dim": 128,
+      "tokens": 17,
+      "file": "/tmp/bitnet-goal-glm-kda/case3.npz",
+      "sha256": "615e1740c61db27142888bde1da3044a7d8548d4ca379f0282a5e61b53d9adec",
+      "reference_repeat_exact": true,
+      "double_state_max_abs": 1.802627250802047e-07,
+      "double_out_max_abs": 1.2577283534098704e-08
+    },
+    {
+      "case": 4,
+      "heads": 2,
+      "dim": 128,
+      "tokens": 65,
+      "file": "/tmp/bitnet-goal-glm-kda/case4.npz",
+      "sha256": "32353d7b7f2d00727b69680abc1917df0de13648c029230cfc4a9878e9c5802e",
+      "reference_repeat_exact": true,
+      "double_state_max_abs": 4.785894622827414e-07,
+      "double_out_max_abs": 1.2486895989427538e-08
+    }
+  ],
+  "source": {
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/kernels.py": "6f5865164682e2ea475995fbdeb1df6942baecfb06abeee3a4468c7c6344775e",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/fused_recurrent.py": "fa7f1eab41907d93b90d1d08aee2399df45c49a161620d1b790949a6f8a8c7a7"
+  },
+  "fixture_header_sha256": "63f695a693a9661c04135e5926f252f48785bdff1922e4e9200fe37cc2cba4ce",
+  "scope": "New independent KDA core references: lifted BF16 inputs, F32 state/output. Not full-model GLM correctness or original BF16 output bit parity."
+}

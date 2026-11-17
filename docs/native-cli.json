@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "goal_status": "active",
+  "entry": "bitnet --native-text MODEL_DIR --profile exl3-int4-f16",
+  "source": {
+    "version": "0.23.3",
+    "file": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw/tokenizer.json",
+    "sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b"
+  },
+  "profile": "EXL3 experts; INT4 BF16 lookup adapted to Exllama F16 Engram math",
+  "cli_cases_per_binary": 23,
+  "standard_and_asan": true,
+  "explicit_sanitizer_diagnostic_scan": true,
+  "default": {
+    "prompt_bytes": 4948,
+    "prompt_tokens": 1026,
+    "prefill_rows": [
+      512,
+      512,
+      2
+    ],
+    "forwards": 8,
+    "exact_last_logit_bytes": 4136960
+  },
+  "prior_geometry": {
+    "prefill_rows": [
+      513,
+      513
+    ],
+    "forwards": 7,
+    "exact_last_logit_bytes": 3619840
+  },
+  "generated_ids": [
+    25744,
+    14,
+    223,
+    21,
+    16
+  ],
+  "output_hex": "3738392c20332e",
+  "final_position": 1031,
+  "prepared_payload_plan": {
+    "profile": "exl3-int4-f16",
+    "prompt_bytes": 4948,
+    "prompt_tokens": 1026,
+    "prefill_tokens": 512,
+    "maxseq": 4096,
+    "host_payload_peak_bytes": 757275302,
+    "device_payload_peak_bytes": 19438179617,
+    "prepared": true,
+    "excludes": "JSON/index/allocator/driver/library overhead and OS file cache"
+  },
+  "qualification": {
+    "checks": {
+      "unit": 0,
+      "asan-unit": 0,
+      "help": 0,
+      "cli": 0,
+      "asan-cli": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "native-control": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 879,
+    "reference_files": 37727,
+    "goal_status": "active",
+    "scope": "Native CUDA raw-text CLI, staged payload admission and model/request cleanup, default512+512+2 and prior513+513 source input/logit/stream checks, full23-case standard/ASAN integration, source replay and unchanged native/Qwen controls; no chat/EOS/default-path or vLLM parity claim."
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "artifacts": "/tmp/bitnet-goal-native-cli",
+  "limits": [
+    "No automatic BOS/EOS/chat policy",
+    "Only this explicit native CUDA adapter; no new native CPU/Metal/ARM whole-model claim",
+    "Prepare-only loads CUDA weights/request; no GPU-free plan yet",
+    "Caps bound planned payload, not process RSS/driver/library/metadata/file-cache overhead",
+    "Committed-token API adds decode wait before first token and forwards final token; prediction-first/performance work remains",
+    "No matched vLLM parity or serving/concurrency claim"
+  ]
+}

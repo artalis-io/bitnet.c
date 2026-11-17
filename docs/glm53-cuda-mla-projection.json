@@ -1,0 +1,221 @@
+{
+  "checkpoint": "GLM NoPE MLA projection preparation and latent-context output projection",
+  "whole_goal_complete": false,
+  "artifact_root": "/tmp/bitnet-goal-glm-mla-projection",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "source_sha256": {
+    "include/quant.h": "d16afb32e33b1b77bdb9021e85589d15a90f0059cb4c0e6d6447ee40cb259767",
+    "src/quant/registry.c": "36d9b60a1d88e6a623a6ce9dd285e5ba8719f98ca0ec168ef88d5dad7986f923",
+    "test/test_quant.c": "bf9f04a7b27ef269461444ab5e625842cc5a76e8bd640061f303bd561876f54d",
+    "include/gpu_backend.h": "4580158a46a520eefac8e47356f6eb88677c0c94de76426e6f344dbe5caba48f",
+    "src/gpu_cuda.cu": "fc346738e12fbe42d8208f68ed5b304c67e17d5b085c624420881e0ce2336ac7",
+    "src/gpu_cuda_gdn.cuh": "4b8ab5444ce93797bf7742212729868b4df7e38b60264fbc62cc66ea00de5da4",
+    "include/backend_layout.h": "f85e86b1ae665dd845c618b3d5d256ea1d943e583f0a6fd345e8724a4bea4e3e",
+    "src/backend_layout.c": "606dafd8160828531bced71a719bfbc31cc0a1d25f757d957c4b1b7d2e090aae",
+    "src/transformer/bf16.c": "d09bdef8aae2299e01982280abcece26af5b90b110f7f1c25fdb9d7f0e8a5ada",
+    "src/transformer/bf16_internal.h": "a868f73c5c3989ae474b14bff78f46948dd5deea099cb1e83e35b9761a339c35",
+    "test/glm_mla_layout_checks.h": "6ba68b4536c488d0a6a4db8752353996c44c736a2d1149cd8dd75955155aa5f5",
+    "test/test_gpu_backend.c": "693e80e2c8997e53ef862d1a32f15b0c2a24dd5a27d7a683b570ed65d4cd7e30",
+    "test/test_cuda_glm_mla_projection.c": "7e38d07ce5211d05d80f6a47b095e161aaf3351c2b79bfeb8d8189c96841c53f",
+    "test/reference_glm_mla_projection.py": "5f8a4c529cf2c46574c6b52818520c092a358e7d596549b9955ba4a4ae872b08",
+    "Makefile": "c442da5072f87bddeb908682919d3ce587a7688d9c36d66d76cca678cebf8253"
+  },
+  "final_stages": {
+    "clean": 0,
+    "build": 0,
+    "standard": 0,
+    "benches": 0,
+    "replay-build": 0,
+    "projection-final": 0,
+    "projection-memcheck": 0,
+    "projection-synccheck": 0,
+    "indexer-regression": 0,
+    "cuda": 0,
+    "sanitize": 0,
+    "prepare-trace-build": 0,
+    "prepare-nsys": 0,
+    "prepare-nsys-export": 0,
+    "output-trace-build": 0,
+    "output-nsys": 0,
+    "output-nsys-export": 0
+  },
+  "preserved_user_binary_sha256": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "comparison_profile": {
+    "library_directory": "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib",
+    "cublas_version": 130101,
+    "sha256": {
+      "libcublas.so.13": "25cde432108543626df85d887c730bf2cab96803ca16f9654e4abc8d2b45833e",
+      "libcublasLt.so.13": "1489aeb75d55ee55782798343ac66f57771d561cc1fe1e0491568deefa0e6515"
+    },
+    "scope": "Pinned same BLAS libraries as preserved original Torch reference. System CUDA13.5 BLAS changes some BF16 bmm rounding; original goldens remain unchanged."
+  },
+  "general_cuda_suite_profile": "System CUDA13.5 libraries; compilation excludes reference LD_LIBRARY_PATH to avoid mixed cuBLAS/Lt linker dependencies. Projection replay/sanitizers/traces use the paired reference libraries.",
+  "independent_reference": {
+    "files": 83,
+    "complete_recapture_byte_identical": true,
+    "manifest_sha256": "0fc4bc54b24a8fe5b879b38b7af359f7eb18f3728776d90053833cf351e2ace0",
+    "vllm_stable_extension_sha256": "e634b80e72078e964f8bd2ac541d66f2a900920773cf993544609612190bd9a9"
+  },
+  "exact_values": {
+    "original_identity_materialized_weights": 16777216,
+    "projection_and_input_BF16": 97202176
+  },
+  "resource_payload_bytes": 140513280,
+  "resource_peak_bytes": 149426176,
+  "diagnostics": {
+    "materialization": [
+      {
+        "name": "attn_k_b.weight",
+        "direct_identity_BF16_mismatches": 543286,
+        "elements": 8388608
+      },
+      {
+        "name": "attn_v_b.weight",
+        "direct_identity_BF16_mismatches": 537649,
+        "elements": 8388608
+      }
+    ],
+    "rounding": [
+      {
+        "name": "attn_k_b.weight",
+        "identity_vs_single": 122472,
+        "direct_vs_single": 477364,
+        "direct_vs_double": 0
+      },
+      {
+        "name": "attn_v_b.weight",
+        "identity_vs_single": 124348,
+        "direct_vs_single": 464267,
+        "direct_vs_double": 0
+      }
+    ],
+    "identity_basis_scale": [
+      {
+        "name": "attn_k_b.weight",
+        "identity_vs_scaled": 0,
+        "identity_vs_single": 122472,
+        "direct_vs_single": 477364,
+        "direct_vs_double": 0
+      },
+      {
+        "name": "attn_v_b.weight",
+        "identity_vs_scaled": 0,
+        "identity_vs_single": 124348,
+        "direct_vs_single": 464267,
+        "direct_vs_double": 0
+      }
+    ],
+    "development_failures_preserved": [
+      "standard-initial-policy.log",
+      "projection.log",
+      "projection-matched-blas.log",
+      "projection-vector8.log",
+      "replay-build-initial-link.log"
+    ],
+    "scope": "No goldens changed. Canonical decode and existing norm modes unchanged. Materialization profile and explicit vector8 RN-mean normalization fixed observed differences; vendor BLAS difference handled by explicit matched comparison configuration."
+  },
+  "sanitizers": "Host ASAN/UBSAN source/budget/rollback/submission probes, device memcheck/synccheck actual projection replay passed",
+  "traces": {
+    "prepare": {
+      "kernels": {
+        "Kernel2": 1,
+        "cuda_bf16_q8_mma_kernel": 3,
+        "quantize_bf16_q8_batch_kernel": 3,
+        "vector8_rmsnorm_kernel": 2
+      },
+      "kernel_count": 9,
+      "runtime_calls": {
+        "cuKernelGetFunction": 1,
+        "cuKernelGetName": 8,
+        "cuLaunchKernel": 1,
+        "cudaLaunchKernel_v7000": 8,
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "memcpy_activity_records": 0,
+      "synchronization_records": [
+        [
+          26447945,
+          26950483,
+          0,
+          1,
+          0,
+          24,
+          3083,
+          317645278674944,
+          null,
+          3,
+          4294967295,
+          0
+        ],
+        [
+          26955430,
+          26959537,
+          0,
+          1,
+          0,
+          4294967295,
+          3084,
+          317645278674944,
+          null,
+          4,
+          4294967295,
+          0
+        ]
+      ],
+      "scope": "Warmed129-token prepare stage, matched reference cuBLAS; all staging/readback outside capture, one caller stream fence. Additional unattributed CUPTI context synchronization retained. No latent attention/generation or throughput claim."
+    },
+    "output": {
+      "kernels": {
+        "Kernel2": 1,
+        "cuda_bf16_q8_mma_kernel": 1,
+        "quantize_bf16_q8_batch_kernel": 1
+      },
+      "kernel_count": 3,
+      "runtime_calls": {
+        "cuKernelGetFunction": 1,
+        "cuKernelGetName": 2,
+        "cuLaunchKernel": 1,
+        "cudaLaunchKernel_v7000": 2,
+        "cudaStreamSynchronize_v3020": 1
+      },
+      "memcpy_activity_records": 0,
+      "synchronization_records": [
+        [
+          26265936,
+          27382272,
+          0,
+          1,
+          0,
+          24,
+          3113,
+          317646369193984,
+          null,
+          3,
+          4294967295,
+          0
+        ],
+        [
+          27388591,
+          27393960,
+          0,
+          1,
+          0,
+          4294967295,
+          3114,
+          317646369193984,
+          null,
+          4,
+          4294967295,
+          0
+        ]
+      ],
+      "scope": "Warmed129-token output stage, matched reference cuBLAS; all staging/readback outside capture, one caller stream fence. Additional unattributed CUPTI context synchronization retained. No latent attention/generation or throughput claim."
+    }
+  },
+  "remaining": "Latent KV cache and sparse attention, integration with selection and its order/tie downstream numeric qualification, whole-model admission/generation, expert placement, other backend/model and matched vLLM/serving requirements remain incomplete."
+}

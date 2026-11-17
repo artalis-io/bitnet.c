@@ -77,6 +77,10 @@ int bn_gpu_policy_moe_down_small_expert_f32_cache_enabled(
     int tensor_type);
 int bn_gpu_policy_moe_quant_only_after_cache(int tensor_type,
                                              int native_quant_f16_cache);
+// Gathered-prefill kernels consume raw split gate/up rows without packed aux.
+int bn_gpu_policy_moe_gathered_prefill_quant_only_enabled(
+    const BnGPUBackend *gpu, int gate_type, int up_type, int down_type);
+
 int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
                                          int tensor_type);
 int bn_gpu_policy_matvec_disabled(const BnBackendRuntimePolicy *policy);
@@ -260,9 +264,12 @@ int bn_gpu_policy_cuda_moe_router_warp_topk_enabled(
     const BnBackendRuntimePolicy *policy, int n_experts);
 int bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(const BnBackendRuntimePolicy *policy, int routed_native_quant);
 int bn_gpu_policy_cuda_moe_block_prepared_decode_enabled(const BnBackendRuntimePolicy *policy);
+/* Experimental half-warp reductions require explicit enable flags; their
+ * accumulation order is not the routed native-quant reference contract. */
 int bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(const BnBackendRuntimePolicy *policy, int hidden_dim);
 int bn_gpu_policy_cuda_moe_down_block_4row_enabled(const BnBackendRuntimePolicy *policy, int hidden_dim);
 int bn_gpu_policy_cuda_moe_down_block_2row_enabled(const BnBackendRuntimePolicy *policy, int hidden_dim);
+int bn_gpu_policy_cuda_native_quant_mma_enabled(const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
     const BnBackendRuntimePolicy *policy,
     int all_active_two_graph_kquant);
@@ -444,6 +451,22 @@ int bn_gpu_policy_cuda_iq4nl_t8_enabled(
 int bn_gpu_policy_cuda_iq4xs_packed_enabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_prefill_dense_layer_disabled(
+    const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_prefill_qk_pair_enabled(
+    const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_gqa6_prefix_enabled(
+    const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_prefill_dense_prefix_chain_enabled(const BnGPUBackend *gpu);
+/* Experimental GGML eight-lane GDN decode reduction; default off. */
+int bn_gpu_policy_cuda_gdn_decode_order_enabled(
+    const BnBackendRuntimePolicy *policy);
+/* Experimental fused GGML HC post-combine arithmetic; default off. */
+int bn_gpu_policy_cuda_fused_hc_post_enabled(
+    const BnBackendRuntimePolicy *policy);
+/* Experimental fused GGML HC pre-gate arithmetic; default off. */
+int bn_gpu_policy_cuda_fused_hc_mean_enabled(
+    const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_dense_prefix_chain_requested(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_prefill_dense_debug_enabled(
     const BnBackendRuntimePolicy *policy);
@@ -665,6 +688,8 @@ int bn_gpu_policy_cuda_decode_graph_default_enabled(
 int bn_gpu_policy_cuda_cublas_cache_max_mb(
     const BnBackendRuntimePolicy *policy, int default_mb, int large_budget);
 int bn_gpu_policy_cuda_eager_kquant_aux_cache_enabled(
+    const BnBackendRuntimePolicy *policy);
+int bn_gpu_policy_cuda_weight_pool_enabled(
     const BnBackendRuntimePolicy *policy);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(
                                                const BnBackendRuntimePolicy *policy,

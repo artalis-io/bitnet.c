@@ -1,0 +1,189 @@
+{
+  "status": "Qualified component extension; full goal ACTIVE and incomplete",
+  "component": "DeepSeek V4.1 Flash1017 whole-model CUDA prefill across sliding-window and compressed-page boundaries",
+  "parent": "docs/deepseek-v41-1017-native-forward-grouped.json",
+  "runtime_changes": false,
+  "implementation": "test/reference_native_forward_window.py",
+  "reference": {
+    "method": "Pinned prior whole-model source graph and preserved original grouped-layer initialization; original learned router/fused expert/fixed-K gather/shared FFN; actual checkpoint selected expert components and all preceding activations; original source head with full-R or last-only M1 geometry. No candidate code or candidate expected values.",
+    "profile": "Explicit Diffbot INT4 BF16 row lookup -> Exllama F16 Engram execution adapter, not original Diffbot whole-model equivalence",
+    "blocks": 280,
+    "grouped_blocks": 80,
+    "frames": [
+      {
+        "name": "prefill129",
+        "tokens": 129,
+        "position": 0,
+        "reset": true,
+        "generated": false,
+        "argmax_all": 2808,
+        "argmax_last": 2808
+      },
+      {
+        "name": "chunk129",
+        "tokens": 129,
+        "position": 129,
+        "reset": false,
+        "generated": false,
+        "argmax_all": 36798,
+        "argmax_last": 36798
+      },
+      {
+        "name": "greedy-0",
+        "tokens": 1,
+        "position": 258,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 223,
+        "argmax_last": 223
+      },
+      {
+        "name": "greedy-1",
+        "tokens": 1,
+        "position": 259,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 29429,
+        "argmax_last": 29429
+      },
+      {
+        "name": "greedy-2",
+        "tokens": 1,
+        "position": 260,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 223,
+        "argmax_last": 223
+      },
+      {
+        "name": "greedy-3",
+        "tokens": 1,
+        "position": 261,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 29429,
+        "argmax_last": 29429
+      },
+      {
+        "name": "greedy-4",
+        "tokens": 1,
+        "position": 262,
+        "reset": false,
+        "generated": true,
+        "argmax_all": 223,
+        "argmax_last": 223
+      }
+    ],
+    "context_max": 263,
+    "expert_tiles": [
+      16,
+      32,
+      64
+    ],
+    "max_rows_per_expert": 129,
+    "hc": "Original source F32 fn path for prefill129 and resumed129, then F16 fn for greedy R1; same carried-pre ordering",
+    "heavy_reconstruction": false,
+    "libraries": {
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublas.so.13": "25cde432108543626df85d887c730bf2cab96803ca16f9654e4abc8d2b45833e",
+      "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/nvidia/cu13/lib/libcublasLt.so.13": "1489aeb75d55ee55782798343ac66f57771d561cc1fe1e0491568deefa0e6515",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20": "34e7a85fe998f33cff4e66968eb32b86ae973e10a66fc62e9ddb58d37763a1ff",
+      "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20": "b43f57b2185afdc10537b8422177edc7c1436f98cced0d2dc216b5acf9eeb00c"
+    },
+    "boundaries": {
+      "sliding_window": 128,
+      "page_source_tokens": 256,
+      "physical_swa_ring_rows": 768,
+      "source_pool_tokens": 1024,
+      "physical_swa_wrap": false,
+      "indexed_selection": false
+    }
+  },
+  "qualification": {
+    "artifact": "/tmp/bitnet-goal-native-forward-window/qualification.json",
+    "checks": {
+      "normal": 0,
+      "busy": 0,
+      "asan": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "qwen27-compat": 0
+    },
+    "records": {
+      "normal": {
+        "untapped_forwards": 14,
+        "self_fed_greedy_tokens": 10,
+        "checks": 28,
+        "exact_bytes": 77050880
+      },
+      "busy": {
+        "untapped_forwards": 14,
+        "self_fed_greedy_tokens": 10,
+        "checks": 28,
+        "exact_bytes": 77050880
+      },
+      "asan": {
+        "untapped_forwards": 14,
+        "self_fed_greedy_tokens": 10,
+        "checks": 28,
+        "exact_bytes": 77050880
+      },
+      "memcheck": {
+        "untapped_forwards": 14,
+        "self_fed_greedy_tokens": 10,
+        "checks": 28,
+        "exact_bytes": 77050880
+      },
+      "initcheck": {
+        "untapped_forwards": 14,
+        "self_fed_greedy_tokens": 10,
+        "checks": 28,
+        "exact_bytes": 77050880
+      }
+    },
+    "normal_method": "Protected product objects, normal backend callbacks; no execution spies or added intermediate readbacks. Source comparisons only after whole forward returns.",
+    "busy_method": "Separate same-graph variant rejects the 12th expert acquisition in each grouped frame after eleven completed windows. Four forced BUSY responses across two head policies; retry checks unchanged CPU logits, output ticket, staged history and committed position. Final full source results remain exact.",
+    "sanitizers": "Clang18 runtime C ASAN/UBSAN with leak detection (existing CPU expert-kernel and CUDA objects retained); CUDA memcheck full leak check and initcheck; all zero errors/leaks",
+    "source_replay": "Immutable byte-for-byte source replay, including every saved layer boundary and final logits, then independent IEEE half->float host replay",
+    "frozen_sources": 849,
+    "reference_files": 18115,
+    "zero_warnings": true,
+    "user_binaries_preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    },
+    "rebuilt_products": [
+      {
+        "file": "/home/mark/artalis.io/src/bitnet.c/bitnet",
+        "previous": "b0517b088db3f018cbded5f25051c75828315e3b741aae151dd58029d47fcaf4",
+        "current": "3693af76384f43dffc2c3098753577d0962499b5dc27cb6afab0d959d9a84b74"
+      },
+      {
+        "file": "/home/mark/artalis.io/src/bitnet.c/test_cuda_backend",
+        "previous": "e5be052028a01d2a5ac79c9d50c498ee76584dea279725f0af9ad00de4e311a6",
+        "current": "54f48537e40fb60d285e7bf97dbc7b118ba8879c9b555aa663fe4047fe0a82c4"
+      }
+    ]
+  },
+  "ownership": "Existing immutable BnModel/backend weights and bounded expert store; two independent BnSession requests, explicit planned component budgets and transactional final publication. Existing CPU history and forward result lifetime rules apply.",
+  "performance": {
+    "claim": "No performance-parity or cold/warm benchmark claim",
+    "fixture": "fused_window1, f16acc0, temporary expert admission0; grouped batched math, existing per-projection upload/allocation/fence overhead remains",
+    "source_pages": "OS page-cache warmth uncontrolled"
+  },
+  "remaining": [
+    "Whole-model R513 and heavy reconstruction with original B/M GEMM geometry",
+    "Long contexts with compressed pools>512, nontrivial index/candidate selection, physical SWA ring wrap, wider page/cache boundaries and long resumed prefill/decode",
+    "Native CPU/CUDA model coherence, native text encoder/stream decoder/chat/CLI admission, and compute-state rewind or reset/replay",
+    "Phase-specific bounded RAM/VRAM placement and measured cold/warm/miss-byte/transfer-stall accounting",
+    "Remove measured per-projection allocation/upload/synchronization overhead; qualify resident batched execution and within5% matched vLLM prefill/decode",
+    "Continuous batching, chunked serving and KV scheduling, concurrent throughput/tails, remaining named models and CPU SIMD/secondary Metal scope"
+  ],
+  "source_sha256": {
+    "test/reference_native_forward_window.py": "09dd2e52d4fc67b2527ddcb5df85ee0c2dc58d955205e9b604ebd3b91085d21d"
+  },
+  "processes": "All qualification jobs terminal before document publication; no commits or subagents"
+}

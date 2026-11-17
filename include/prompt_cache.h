@@ -52,7 +52,9 @@ int bn_prompt_cache_model_supported(const BnConfig *cfg);
 
 // Store the current session's KV prefix into the cache.
 // tokens/n_tokens: the token sequence that produced this KV state.
-// Returns 0 on success, -1 if hybrid model (SSM layers), -2 on alloc failure.
+// Returns 0 on success, -1 for hybrid models or backend-only sessions,
+// -2 on invalid arguments or allocation failure. CPU snapshots cannot capture
+// backend-owned state; restore treats backend-only sessions as a cache miss.
 int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
                           const BnSession *session,
                           const int *tokens, int n_tokens);

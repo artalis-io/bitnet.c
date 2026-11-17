@@ -1,0 +1,610 @@
+{
+  "status": "Qualified CUDA candidate-source block mask and native scoring-to-mask connection. Candidate-use gathering/remapping, full attention, model admission, and vLLM parity remain open.",
+  "architecture": "DeepseekV41ForCausalLM",
+  "apis": [
+    "bn_gpu_index_candidate_workspace",
+    "BnGPUIndexCandidateWorkspace",
+    "BnGPUIndexCandidateSourceResidentPlan",
+    "index_candidate_source_f16_resident"
+  ],
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "file": "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/modules/dsv4.py",
+    "sha256": "ed8573473ff2284fc97c0dba6f6eebf627612219719ac72ee594c90c451759ff",
+    "candidate_ast_sha256": "8690e70671e854e1dfb3f5ac72711447978aecd13f409414470b248c80c703a1",
+    "license": "MIT",
+    "torch": "2.14.0+cu130",
+    "torch_commit": "08187d9e0fba026dc8217405802ab5381dc88d90",
+    "torch_cuda_library_sha256": "9ed4b912d08ae0a59c1638e9077b6d8f0439d7bd680e4a1a274441d42dd7b3f9",
+    "method": "Unchanged AST source candidate-source branch, pinned Torch.topk; independent ordered-bit threshold membership oracle. Checkpoint matrices inherited from prior source query capture; raw queries rotated at consistent new positions before original Triton scoring. Repeated logical canonical key history remains synthetic."
+  },
+  "implementation": {
+    "mask": "Fixed block size8, retain up to2048 blocks. Input F16 index scores already carry causal negative infinity. Produce I8[rows,keys/8+1] drop mask, 1=dropped and0=retained. Finite scores and infinities admitted; NaNs outside this operation input contract.",
+    "maxima": "Include keys/8+1 blocks, with an empty extra tail when keys divisible by8. Missing tail values negative infinity. Equal maxima retain the later FP16 payload, including signed-zero sign. Pin max((pos0+row+1)/rate-1,0)/8 to positive infinity. No maximum clamp changes the source pin.",
+    "selection": "Reuse qualified radix FP16 index top-k with request-owned scratch. Mask membership matches pinned Torch.topk; unreachable negative-infinity blocks remain dropped after newest-block pinning. Selected-block scratch follows existing ordered-index top-k semantics.",
+    "kernels": "Fuse maxima, pin and drop initialization; then existing top-k (one or two kernels); scatter selected reachable blocks. Three kernels without split or four with split. Private CUDA mechanics only.",
+    "preflight": "Checked scalar workspace plan with unchanged output on failure. Exact view counts/types, canonical empty unused scratch, request identity, alignment, and pairwise overlap checked before writing any output. Caller supplies all buffers and budgets. No allocation, host transfer or completion fence inside operation.",
+    "ownership": "Immutable architecture/model configuration unchanged. Mutable scores, mask and workspace remain request/session-owned. No global mutable workspace or GPU handles on model weights.",
+    "limits": "Rows1..65535, logical keys16385..1048576, input stride>=keys, block stride>=keys/8+1, rate1..256, checked position end and newest-block range. Candidate source is only active beyond2048*8 entries."
+  },
+  "reference": {
+    "cases": 66,
+    "synthetic_cases": 16,
+    "checkpoint_derived_pipeline_cases": 50,
+    "index_layers": [
+      20,
+      24,
+      28,
+      32,
+      36
+    ],
+    "rows": [
+      1,
+      4,
+      32,
+      33,
+      273
+    ],
+    "pipeline_keys": [
+      16385,
+      32768,
+      65537,
+      16392
+    ],
+    "layouts": [
+      "contiguous",
+      "reverse paged with spare physical page"
+    ],
+    "synthetic_coverage": "Signed zeros, all256 zero-sign patterns per8-entry block, ties, positive infinity, all-negative-infinity and sparse rows, partial/empty tails, odd strides and two-byte shifted inputs, rows16/17, split threshold32767/32768 blocks, rate1/2/256 and up to1048576 entries.",
+    "independent_cpu_oracle": {
+      "cases": 66,
+      "records": [
+        {
+          "label": "synthetic-00",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "synthetic-01",
+          "block_words": 4098,
+          "mask_bytes": 4098
+        },
+        {
+          "label": "synthetic-02",
+          "block_words": 8196,
+          "mask_bytes": 8196
+        },
+        {
+          "label": "synthetic-03",
+          "block_words": 10250,
+          "mask_bytes": 10250
+        },
+        {
+          "label": "synthetic-04",
+          "block_words": 65552,
+          "mask_bytes": 65552
+        },
+        {
+          "label": "synthetic-05",
+          "block_words": 69649,
+          "mask_bytes": 69649
+        },
+        {
+          "label": "synthetic-06",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "synthetic-07",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "synthetic-08",
+          "block_words": 264579,
+          "mask_bytes": 264579
+        },
+        {
+          "label": "synthetic-09",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "synthetic-10",
+          "block_words": 131073,
+          "mask_bytes": 131073
+        },
+        {
+          "label": "synthetic-11",
+          "block_words": 32769,
+          "mask_bytes": 32769
+        },
+        {
+          "label": "synthetic-12",
+          "block_words": 32767,
+          "mask_bytes": 32767
+        },
+        {
+          "label": "synthetic-13",
+          "block_words": 32768,
+          "mask_bytes": 32768
+        },
+        {
+          "label": "synthetic-14",
+          "block_words": 524288,
+          "mask_bytes": 524288
+        },
+        {
+          "label": "synthetic-15",
+          "block_words": 557056,
+          "mask_bytes": 557056
+        },
+        {
+          "label": "l20.r1.paged0",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l20.r1.paged1",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l20.r4.paged0",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l20.r4.paged1",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l20.r32.paged0",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l20.r32.paged1",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l20.r33.paged0",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l20.r33.paged1",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l20.r273.paged0",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l20.r273.paged1",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l24.r1.paged0",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l24.r1.paged1",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l24.r4.paged0",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l24.r4.paged1",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l24.r32.paged0",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l24.r32.paged1",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l24.r33.paged0",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l24.r33.paged1",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l24.r273.paged0",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l24.r273.paged1",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l28.r1.paged0",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l28.r1.paged1",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l28.r4.paged0",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l28.r4.paged1",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l28.r32.paged0",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l28.r32.paged1",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l28.r33.paged0",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l28.r33.paged1",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l28.r273.paged0",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l28.r273.paged1",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l32.r1.paged0",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l32.r1.paged1",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l32.r4.paged0",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l32.r4.paged1",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l32.r32.paged0",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l32.r32.paged1",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l32.r33.paged0",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l32.r33.paged1",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l32.r273.paged0",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l32.r273.paged1",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l36.r1.paged0",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l36.r1.paged1",
+          "block_words": 2049,
+          "mask_bytes": 2049
+        },
+        {
+          "label": "l36.r4.paged0",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l36.r4.paged1",
+          "block_words": 16388,
+          "mask_bytes": 16388
+        },
+        {
+          "label": "l36.r32.paged0",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l36.r32.paged1",
+          "block_words": 262176,
+          "mask_bytes": 262176
+        },
+        {
+          "label": "l36.r33.paged0",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l36.r33.paged1",
+          "block_words": 67617,
+          "mask_bytes": 67617
+        },
+        {
+          "label": "l36.r273.paged0",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        },
+        {
+          "label": "l36.r273.paged1",
+          "block_words": 559650,
+          "mask_bytes": 559650
+        }
+      ],
+      "reference_sha256": "ed69d412d62d4a4d4a385f19ebb2c2ad7342436313b8028707268e9e600c9139",
+      "script_sha256": "98b9e74cc924c1c919b50ab69970c21e5095c6a0980c062d01b27060e5a11c0c",
+      "method": "Independent NumPy later-payload FP16 block maxima, causal newest-block pin, partition threshold, stable input-index cutoff membership, unreachable negative-infinity exclusion."
+    },
+    "torch_tie_membership_cases": 100,
+    "torch_zero_maxima_cases": 15,
+    "parent_manifest_sha256": "2507197d18ef0db83de55a6891a7e13f4a7dcafca21caf61c4072c70a654d830",
+    "rms_norm_epsilon": 1e-20,
+    "position_consistency": "Checkpoint-derived raw queries from actual projection matrices are rotated with original source RoPE at new consistent positions. Original unchanged Triton scorer applies the corresponding causal bounds before unchanged source candidate branch.",
+    "history_scope": "Compressed canonical key rows repeat to construct long logical histories. This is synthetic extended history using checkpoint-derived inputs, not independently qualified full-model long-prefix generation."
+  },
+  "verification": {
+    "clean_build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "real-mask": 0,
+        "asan-mask": 0,
+        "memcheck-mask": 0,
+        "initcheck-mask": 0,
+        "real-pipeline": 0,
+        "asan-pipeline": 0,
+        "memcheck-pipeline": 0,
+        "initcheck-pipeline": 0,
+        "racecheck": 0,
+        "nsys-prefill": 0,
+        "export-prefill": 0,
+        "nsys-decode": 0,
+        "export-decode": 0
+      },
+      "records": {
+        "real-mask": {
+          "calls": 264,
+          "compared_bytes": 5746730096,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "asan-mask": {
+          "calls": 264,
+          "compared_bytes": 5746730096,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "memcheck-mask": {
+          "calls": 264,
+          "compared_bytes": 5746730096,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "initcheck-mask": {
+          "calls": 264,
+          "compared_bytes": 5746730096,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "real-pipeline": {
+          "calls": 100,
+          "compared_bytes": 4087154680,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "asan-pipeline": {
+          "calls": 100,
+          "compared_bytes": 4087154680,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "memcheck-pipeline": {
+          "calls": 100,
+          "compared_bytes": 4087154680,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "initcheck-pipeline": {
+          "calls": 100,
+          "compared_bytes": 4087154680,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "nsys-prefill": {
+          "calls": 100,
+          "compared_bytes": 4087154680,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "nsys-decode": {
+          "calls": 264,
+          "compared_bytes": 5746730096,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        }
+      },
+      "frozen_files": 784,
+      "reference_sha256": "ed69d412d62d4a4d4a385f19ebb2c2ad7342436313b8028707268e9e600c9139",
+      "cases_tsv_sha256": "d23a5d7707a6751d6ff43243b001a9aa16672680a613f22810b23b9fc4aaf1b2",
+      "probe_sha256": "32b6653b878da959c9f7a5bb1074fe1778475fee86831d4e9889590f78f0c35c",
+      "host_oracle_sha256": "d649663a65f38040ba1c61d1e403a277d8dbbf7c1092ca05385a9df3d045f349"
+    },
+    "synthetic_unit_calls": 64,
+    "requests": 2,
+    "mask_calls_per_run": 264,
+    "score_to_mask_pipeline_calls_per_run": 100,
+    "host_sanitizer_scope": "Probe and inline host workspace planning instrumented; CUDA host validation translation unit not instrumented by ASan/UBSan.",
+    "gpu_sanitizers": "Both modes passed CUDA memcheck/full leak check and initcheck;64-call synthetic suite passed racecheck with zero hazards/errors/warnings.",
+    "profiles": {
+      "prefill": {
+        "kernels": [
+          {
+            "name": "score",
+            "duration_ns": 119072
+          },
+          {
+            "name": "maxima",
+            "duration_ns": 1952
+          },
+          {
+            "name": "dsa_topk_kernel",
+            "duration_ns": 6336
+          },
+          {
+            "name": "scatter",
+            "duration_ns": 1056
+          }
+        ],
+        "runtime": {
+          "cuKernelGetName": 4,
+          "cudaLaunchKernel_v7000": 4,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "transfers": {}
+      },
+      "decode": {
+        "kernels": [
+          {
+            "name": "maxima",
+            "duration_ns": 1600
+          },
+          {
+            "name": "dsa_topk_split_kernel",
+            "duration_ns": 11456
+          },
+          {
+            "name": "dsa_topk_merge_kernel",
+            "duration_ns": 17025
+          },
+          {
+            "name": "scatter",
+            "duration_ns": 1056
+          }
+        ],
+        "runtime": {
+          "cuKernelGetName": 4,
+          "cudaLaunchKernel_v7000": 4,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "transfers": {}
+      }
+    }
+  },
+  "performance": {
+    "method": "Median7 CUDA-event samples,400 candidate-mask constructions per sample through captured graphs. Source is unchanged Torch candidate-source branch, native uses preallocated buffers. GPU work only, excluding host dispatch; not full-model/vLLM performance.",
+    "cases": [
+      {
+        "label": "synthetic-00",
+        "rows": 1,
+        "keys": 16385,
+        "source_us": 39.609200954437256,
+        "native_us": 6.863759756088257,
+        "ratio": 0.17328700379448927
+      },
+      {
+        "label": "synthetic-10",
+        "rows": 1,
+        "keys": 1048576,
+        "source_us": 59.52735900878906,
+        "native_us": 31.26271963119507,
+        "ratio": 0.5251823724714414
+      },
+      {
+        "label": "l20.r32.paged0",
+        "rows": 32,
+        "keys": 65537,
+        "source_us": 66.89280033111572,
+        "native_us": 9.734079837799072,
+        "ratio": 0.14551760114116777
+      },
+      {
+        "label": "l20.r273.paged0",
+        "rows": 273,
+        "keys": 16392,
+        "source_us": 80.32079696655273,
+        "native_us": 15.099279880523682,
+        "ratio": 0.18798717705467163
+      }
+    ]
+  },
+  "limitations": [
+    "Candidate-use slab union, entry compaction/gather, dynamic active-entry scoring, per-row drop/causal masking, and entry-ID remapping remain open.",
+    "Full native attention, output projection, Engram, model admission and short/long/chunked/resumed generation remain unqualified.",
+    "Component completion fences still need asynchronous whole-model coordination.",
+    "No vLLM or serving throughput/tail-latency claim from these component measurements.",
+    "CUDA qualified on selected sm120a GPU only; CPU and Metal paths unchanged."
+  ],
+  "artifacts": "/tmp/bitnet-goal-native-candidates",
+  "frozen_source_sha256": "67371704e6d28bb6b9506302a17562542564c89155ee4bc45cb74dd1f84dec30"
+}

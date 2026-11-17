@@ -1,0 +1,152 @@
+{
+  "scope": "GLM final mHC post, four-stream average, RMS and raw Q8 logits from independent deferred FFN tuples",
+  "whole_goal_complete": false,
+  "evidence_root": "/tmp/bitnet-goal-glm-final-output",
+  "source_sha256": {
+    "include/gpu_backend.h": "8bcb153cbc7c6556b3cdb7bbf3c858e4d60b7dfb8eeb9fbfcb37d884493a1275",
+    "src/gpu_cuda.cu": "cf1d8be2068502e040960a87e9aab38282e5c9db6d56748d2efa3c40b1f90e41",
+    "src/gpu_cuda_gdn.cuh": "7152fd0f753c9636cbe7540f1c061cf671c9d62977b2963e37cdbb2131e1ceb1",
+    "src/gpu_cuda_mhc.cuh": "8bf48c163bb3530c55c46956f026ced272ee5c4f9c7b9df0de95711167a0740a",
+    "src/transformer/bf16.c": "57c447df8571ca2298ca516ced5cca9a9581bc827ff5259891c202433323eecb",
+    "src/transformer/bf16_internal.h": "4c0a5f83d90ca56e8184014087f9853e3fa0298a9bb3b1d63067d11a2e77cb07",
+    "test/test_cuda_backend.c": "6a6ca60af079ceb255caf35b87febac26728566e69bb0db6c8f6e9b975729f95",
+    "test/test_gpu_backend.c": "41ea3096a596f4370753af0e66ed0b5dfe86c5ef0fedbd4755f25b9c937afeac",
+    "test/glm_output_checks.h": "2e03cb43829a56ba858afef23d3e4dfe7ed46641d363dca00e2f4ba1f624cf65",
+    "test/glm_contract_checks.h": "13f67b41ebff8e5cb8777858222adbc2ff51eaf9d20e8d90d32d87382f9d72e3",
+    "test/cuda_glm_contract_reference.h": "d1a1bcf39d5e331732c707b198e7b22d0cbcb2fed69a60aa19a3239c3a3c062a",
+    "test/reference_cuda_glm_contract.py": "13ad8ebd2f62bcd57fe6c8540f37ffa4a812e06ffd17ee0f3afa6dfbe809be47",
+    "test/reference_glm_final_output.py": "da8275809d8b4b5c0f144951eb57d61706d6f86719b9ee70e860c87d957e779a",
+    "test/test_cuda_glm_final_output.c": "dbfaf6276e2a05faff6d272fda7a0a1bac4cbc72a816c8ffe6916e4f47724aa0",
+    "Makefile": "aa9d58008a0921be986b522f553c4c7b7abbb161362d206db27e95166e16262d"
+  },
+  "validation": {
+    "output-exit": {
+      "exit": 0
+    },
+    "sanitize-driver-exit": {
+      "exit": 0
+    },
+    "mla-block-regression-exit": {
+      "exit": 0
+    },
+    "kda-block-regression-exit": {
+      "exit": 0
+    },
+    "clean-exit": {
+      "exit": 0
+    },
+    "standard-exit": {
+      "exit": 0
+    },
+    "benches-exit": {
+      "exit": 0
+    },
+    "primitive-memcheck-exit": {
+      "exit": 0
+    },
+    "synccheck-exit": {
+      "exit": 0
+    },
+    "cuda-exit": {
+      "exit": 0
+    },
+    "trace-exit": {
+      "exit": 0
+    },
+    "primitive-repeat-exit": {
+      "exit": 0
+    },
+    "trace-export-exit": {
+      "exit": 0
+    },
+    "build-exit": {
+      "exit": 0
+    },
+    "reference-repeat-exit": {
+      "exit": 0
+    },
+    "memcheck-exit": {
+      "exit": 0
+    },
+    "replay-build-exit": {
+      "exit": 0
+    }
+  },
+  "cpu": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "output_exact_reference_elements": 191409296,
+  "primitive_exact_reference_elements": 21528576,
+  "independent_recapture_files": {
+    "primitive": 82,
+    "reference": 46
+  },
+  "prior_tuple_files_preserved": 8,
+  "tokens": [
+    1,
+    9,
+    255,
+    256,
+    257
+  ],
+  "head_modes": [
+    "all rows",
+    "final sampled row"
+  ],
+  "geometry_audit": {
+    "head": [
+      {
+        "tokens": 1,
+        "all_head_vs_sampled_last_mismatches": 0
+      },
+      {
+        "tokens": 9,
+        "all_head_vs_sampled_last_mismatches": 30
+      },
+      {
+        "tokens": 255,
+        "all_head_vs_sampled_last_mismatches": 24
+      },
+      {
+        "tokens": 256,
+        "all_head_vs_sampled_last_mismatches": 31
+      },
+      {
+        "tokens": 257,
+        "all_head_vs_sampled_last_mismatches": 24
+      }
+    ],
+    "norm255_vs_first255_of256_mismatches": 0
+  },
+  "trace": {
+    "kernels": 5,
+    "copies": 0,
+    "allocation_calls": 0,
+    "activation_transfer_bytes": 0,
+    "caller_stream_fences": 1,
+    "runtime_apis": {
+      "cuKernelGetName": 5,
+      "cudaLaunchKernel_v7000": 5,
+      "cudaStreamSynchronize_v3020": 1
+    }
+  },
+  "profile": "Original Tilelang mHC post, PyTorch sequential four-stream F32 mean with one BF16 boundary, original RMS4096 with BF16 gamma eps1e-5 and default non-batch-invariant 512/256-thread launch boundary, original raw Q8 head at the selected head batch geometry.",
+  "changes": [
+    "New stream_mean_bf16_resident callback qualified for D4096/4 streams; explicit RN non-FTZ mean operations preserve subnormals.",
+    "New plain-only RMS reduction8 and explicit resident_plain_rmsnorm_reductions capability; existing reduction kernels and common masks remain unchanged.",
+    "bn_transformer_bf16_glm_output validates all8 views before queueing and normalizes every prompt row before selecting final/all head rows; no allocation, host bridge, state commit or internal fence."
+  ],
+  "limitations": [
+    "Inputs are frozen independent layer44 FFN tuples; repeated rows exercise255/256/257 boundaries and do not represent long model histories.",
+    "No complete native token-to-logit chain or generated-token correctness claim yet.",
+    "No full-model CPU/Metal, serving, bounded RSS or vLLM performance parity claim."
+  ]
+}

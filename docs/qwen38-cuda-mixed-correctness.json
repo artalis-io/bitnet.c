@@ -1,0 +1,189 @@
+{
+  "scope": "Bounded four-request mixed case; not production staggered admission/KV pooling or full-goal completion",
+  "model_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+  "native_runs": [
+    {
+      "correct": true,
+      "steps": 66,
+      "sampled_heads": 256,
+      "performance_qualified": true,
+      "elapsed_ms": 2796.589128,
+      "output_tokens_per_second": 91.540083,
+      "initial_mixed_phase_ms": 439.61156,
+      "remaining_decode_mean_step_ms": 37.02241825396824,
+      "last_request_ttft_ms": 464.175256,
+      "ttft_ms": {
+        "samples": 4,
+        "method": "nearest_rank",
+        "p50_ms": 223.209992,
+        "p95_ms": 464.175256,
+        "p99_ms": 464.175256
+      },
+      "inter_token_ms": {
+        "samples": 252,
+        "method": "nearest_rank",
+        "p50_ms": 37.06537100000014,
+        "p95_ms": 37.209150000000136,
+        "p99_ms": 48.713769999999954
+      }
+    },
+    {
+      "correct": true,
+      "steps": 66,
+      "sampled_heads": 256,
+      "performance_qualified": true,
+      "elapsed_ms": 2822.244883,
+      "output_tokens_per_second": 90.707933,
+      "initial_mixed_phase_ms": 442.44561200000004,
+      "remaining_decode_mean_step_ms": 37.38747734920635,
+      "last_request_ttft_ms": 466.832186,
+      "ttft_ms": {
+        "samples": 4,
+        "method": "nearest_rank",
+        "p50_ms": 223.665949,
+        "p95_ms": 466.832186,
+        "p99_ms": 466.832186
+      },
+      "inter_token_ms": {
+        "samples": 252,
+        "method": "nearest_rank",
+        "p50_ms": 37.436337000000094,
+        "p95_ms": 37.53510800000004,
+        "p99_ms": 49.03393900000003
+      }
+    },
+    {
+      "correct": true,
+      "steps": 66,
+      "sampled_heads": 256,
+      "performance_qualified": true,
+      "elapsed_ms": 2842.854377,
+      "output_tokens_per_second": 90.050339,
+      "initial_mixed_phase_ms": 445.63841,
+      "remaining_decode_mean_step_ms": 37.66394347619048,
+      "last_request_ttft_ms": 470.024454,
+      "ttft_ms": {
+        "samples": 4,
+        "method": "nearest_rank",
+        "p50_ms": 224.701972,
+        "p95_ms": 470.024454,
+        "p99_ms": 470.024454
+      },
+      "inter_token_ms": {
+        "samples": 252,
+        "method": "nearest_rank",
+        "p50_ms": 37.70703100000037,
+        "p95_ms": 37.808404999999766,
+        "p99_ms": 49.26730600000002
+      }
+    }
+  ],
+  "reference_runs": [
+    {
+      "phase_scope": "first three steps contain prefill and may include decode",
+      "run": 0,
+      "requests": 4,
+      "prompt_tokens": [
+        129,
+        5,
+        129,
+        5
+      ],
+      "outputs_each": 64,
+      "model_steps": 66,
+      "prefill_steps": 3,
+      "elapsed_ms": 3064.22780896537,
+      "initial_mixed_steps_ms": 788.4097790811211,
+      "remaining_decode_steps_ms": 2275.2753408858553,
+      "remaining_decode_mean_step_ms": 36.11548160136278,
+      "ttft_batch_ms": 788.7954190373421,
+      "all_tokens_match": true
+    },
+    {
+      "phase_scope": "first three steps contain prefill and may include decode",
+      "run": 1,
+      "requests": 4,
+      "prompt_tokens": [
+        129,
+        5,
+        129,
+        5
+      ],
+      "outputs_each": 64,
+      "model_steps": 66,
+      "prefill_steps": 3,
+      "elapsed_ms": 3092.386482981965,
+      "initial_mixed_steps_ms": 798.9834480686113,
+      "remaining_decode_steps_ms": 2292.576761334203,
+      "remaining_decode_mean_step_ms": 36.39010732276513,
+      "ttft_batch_ms": 799.6559669263661,
+      "all_tokens_match": true
+    },
+    {
+      "phase_scope": "first three steps contain prefill and may include decode",
+      "run": 2,
+      "requests": 4,
+      "prompt_tokens": [
+        129,
+        5,
+        129,
+        5
+      ],
+      "outputs_each": 64,
+      "model_steps": 66,
+      "prefill_steps": 3,
+      "elapsed_ms": 3101.1071789544076,
+      "initial_mixed_steps_ms": 804.064134019427,
+      "remaining_decode_steps_ms": 2296.386419213377,
+      "remaining_decode_mean_step_ms": 36.45057808275202,
+      "ttft_batch_ms": 804.5755849452689,
+      "all_tokens_match": true
+    }
+  ],
+  "metrics": {
+    "elapsed_ms": {
+      "native": 2822.244883,
+      "reference": 3092.386482981965,
+      "native_over_reference": 0.9126430019440941
+    },
+    "initial_mixed_phase_ms": {
+      "native": 442.44561200000004,
+      "reference": 798.9834480686113,
+      "native_over_reference": 0.5537606731022114
+    },
+    "remaining_decode_mean_step_ms": {
+      "native": 37.38747734920635,
+      "reference": 36.39010732276513,
+      "native_over_reference": 1.0274077242365613
+    },
+    "last_request_ttft_ms": {
+      "native": 466.832186,
+      "reference": 799.6559669263661,
+      "native_over_reference": 0.5837912868884861
+    },
+    "output_tokens_per_second": {
+      "native": 90.707933,
+      "reference": 82.78396035192249
+    }
+  },
+  "complete_replay_heads_exact": 260,
+  "sampled_serving_heads_exact": 256,
+  "full_goal_complete": false,
+  "reference_request_tail_latency_available": false,
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "reference_image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+  "evidence_root": "/tmp/bitnet-goal-mixed-serving-trace",
+  "reference_fixture": "test/bf16_cuda_mixed_reference.json",
+  "performance_scope": "The initial three steps include four logical decode inputs and are not a pure prefill throughput measurement. Reference per-request tail timing is unavailable; native tail measurements have no reference parity claim.",
+  "source_sha256": {
+    "bench/bench_bf16_batch.c": "f6751feaff10d2a56020d70dbc885f88ff8409ad576f358e3c92006d3984d4c2",
+    "bench/bf16_batch_schedule.h": "01a9bfce6256a3b638c13bbb9f6b35f5a35fc52538b44884e4e74bd444b9cd07",
+    "bench/verify_bf16_mixed_batch.py": "e6f9b02589a85d1904ef4b15b501304d2c224fa21267ad0c3a9e9deec63be329",
+    "test/bf16_cuda_mixed_reference.json": "a60dfc185c4e46282176a2ff16dc634dfdb8f7731656ffa949e5e1a3800c397f",
+    "test/reference_cuda_bf16_mixed.c": "e26e4b9ff7881f4357c1f5d67dc1c269b0e1fdb3be3446aa8818d816128fbe53",
+    "test/prepare_bf16_mixed_reference.py": "894f122727844af55a89f55721eaea9f5ff6c927b389d5851c578b9340c18f96",
+    "test/verify_bf16_mixed_reference.py": "e54ff67a08616d8ed958a37d216b6cd9fdb7dd1516465f5dd01301c53d093be3",
+    "test/test_bf16_mixed_reference.py": "663b055583e5976c3b75af6819e954f2be129649d0093b08bc5d6f3d75423ce9",
+    "test/test_bf16_batch_schedule.c": "bfa01756edd88663399a26feb59af58ee52e75f2a9afb184555fb5603dee69d1"
+  }
+}

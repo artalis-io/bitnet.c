@@ -81,6 +81,28 @@ bn_moe_projection_buffer_layout(const BnConfig *c, const BnWeights *w) {
     return layout;
 }
 
+BnMoEProjectionBufferLayout
+bn_moe_model_projection_buffer_layout(const BnModel *model) {
+    BnMoEProjectionBufferLayout layout = {0};
+    if (!model) return layout;
+    size_t count = 0;
+    const BnMoEExpertMap *maps = bn_model_topology_experts(model, &count);
+    if (!maps) return bn_moe_projection_buffer_layout(&model->config, &model->weights);
+    if (count > BN_MODEL_ANATOMY_MAX_LAYERS) return layout;
+    for (size_t i = 0; i < count; ++i) {
+        if (maps[i].expert_gate_bytes > layout.gate_bytes)
+            layout.gate_bytes = maps[i].expert_gate_bytes;
+        if (maps[i].expert_up_bytes > layout.up_bytes)
+            layout.up_bytes = maps[i].expert_up_bytes;
+        if (maps[i].expert_down_bytes > layout.down_bytes)
+            layout.down_bytes = maps[i].expert_down_bytes;
+    }
+    layout.max_bytes = layout.gate_bytes;
+    if (layout.up_bytes > layout.max_bytes) layout.max_bytes = layout.up_bytes;
+    if (layout.down_bytes > layout.max_bytes) layout.max_bytes = layout.down_bytes;
+    return layout;
+}
+
 BnMoEAllActiveTwoRouteResourcePolicy
 bn_moe_all_active_two_route_resource_policy(const BnConfig *c) {
     BnMoEAllActiveTwoRouteResourcePolicy policy = {0};
@@ -422,4 +444,47 @@ BnMoEPrefillDenseGPUResourcePolicy bn_moe_prefill_dense_gpu_resource_policy(
     policy.routed_norm = bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_POST_NORM_2);
     policy.post_norm = bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_POST_NORM);
     return policy;
+}
+
+
+int bn_moe_exl3_plan_groups(BnMoEEXL3Plan *out,const int *counts,int E,
+    int tokens,int topk,int dim,int hidden,int fused_rows,size_t weight_scratch) {
+    if(!out||!counts||E<1||E>65536||tokens<1||tokens>16384||topk<1||topk>32||topk>E||
+       dim<128||hidden<128||dim>65536||hidden>65536||dim%128||hidden%128||
+       (size_t)dim>SIZE_MAX/(size_t)hidden/4||fused_rows<0||fused_rows>16384||
+       !weight_scratch||out->expert_capacity<(size_t)E||out->group_capacity<(size_t)E||
+       !out->order||!out->starts||!out->slot_base||!out->slot_kind||!out->groups)return -1;
+    int total=0;
+    for(int e=0;e<=E;e++) {
+        if(counts[e]<0||counts[e]>tokens||(e==E&&counts[e])||total>tokens*topk-counts[e])return -1;
+        total+=counts[e];
+    }
+    if(total!=tokens*topk)return -1;
+    size_t cap=weight_scratch/((size_t)dim*hidden*4);
+    if(cap<1)cap=1;
+    if(cap>BN_MOE_EXL3_GROUP_MAX)cap=BN_MOE_EXL3_GROUP_MAX;
+    int start=0,slots=0,nheavy=0;
+    for(int e=0;e<E;e++) {
+        int c=counts[e];out->starts[e]=start;start+=c;
+        out->slot_base[e]=0;out->slot_kind[e]=0;
+        if(c&&c<=fused_rows){out->slot_base[e]=slots;out->slot_kind[e]=1;slots+=c;}
+        if(c>fused_rows){
+            int j=nheavy;
+            while(j>0&&counts[out->order[j-1]]<c){out->order[j]=out->order[j-1];j--;}
+            out->order[j]=e;nheavy++;
+        }
+    }
+    out->starts[E]=start;
+    int fused=slots,ng=0,real=0;
+    for(int i=0;i<nheavy;i++) {
+        int e=out->order[i],c=counts[e];
+        BnMoEEXL3Group *g=ng?&out->groups[ng-1]:NULL;
+        if(g&&((size_t)(g->count+1)>cap||(g->count+1)*g->rows>16384||
+               (double)(g->count+1)*g->rows>1.1*(real+c)))g=NULL;
+        if(!g){g=&out->groups[ng++];memset(g,0,sizeof(*g));g->rows=c;g->slot=slots;real=0;}
+        out->slot_base[e]=g->slot+g->count*g->rows;out->slot_kind[e]=2;
+        g->experts[g->count++]=e;real+=c;slots=g->slot+g->count*g->rows;
+    }
+    out->group_count=ng;out->slot_count=slots;out->fused_count=fused;out->batch_cap=(int)cap;
+    return 0;
 }

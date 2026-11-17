@@ -23,6 +23,13 @@ int bn_model_activation_uses_silu_path(int activation) {
     return bn_model_arch_activation_uses_silu_path(activation);
 }
 
+BnModelBF16LayoutKind bn_model_gguf_bf16_layout(BnGGUFFile *file) {
+    if (!file) return BN_MODEL_BF16_LAYOUT_NONE;
+    const BnModelArchOps *ops = bn_model_arch_ops_for(
+        bn_gguf_get_str(file, "general.architecture"));
+    return ops ? ops->bf16_layout : BN_MODEL_BF16_LAYOUT_NONE;
+}
+
 int bn_model_gguf_uses_moe(BnGGUFFile *file) {
     return bn_model_arch_gguf_uses_moe(file);
 }
@@ -640,4 +647,19 @@ int bn_model_activation_plan_rope_dims_for_head(const BnConfig *config,
 void bn_model_activation_plan_init_rope_frequencies(
     const BnConfig *config, float *freqs, int capacity_pairs) {
     bn_model_arch_init_rope_frequencies(config, freqs, capacity_pairs);
+}
+
+int bn_model_backend_policy_uses_query_sparse_attention(const BnConfig *config) {
+    return bn_model_arch_uses_query_sparse_attention(config);
+}
+
+float bn_model_backend_policy_zero_centered_norm_storage_offset(const BnConfig *config) {
+    return bn_model_arch_zero_centered_norm_storage_offset(config);
+}
+
+int bn_model_native_engram_hash_rows(const BnModelNativeEngramLayout *layout,uint32_t mapped_pad,
+    const uint32_t *mapped_history,size_t batch,size_t history_len,size_t out_len,
+    uint64_t *out,size_t out_count) {
+    return bn_model_arch_native_engram_hash_rows(layout,mapped_pad,mapped_history,
+        batch,history_len,out_len,out,out_count);
 }

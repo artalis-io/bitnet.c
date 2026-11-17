@@ -1,0 +1,1796 @@
+{
+  "schema": 1,
+  "status": "native_decode_shared_leases_qualified",
+  "evidence_root": "/tmp/bitnet-goal-native-shared-decode",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "production_source_and_test_changes": 6,
+  "change": "Coordinate native <=8-token rows using whole-request cohorts of at most48 unique experts. Each cohort borrows common immutable expert handles once; every request retains original decode arithmetic, routing order and scratch. All consumers drain before lease release.",
+  "architecture": {
+    "ownership": "Request-local activations, decode tables, counters and scratch remain private. Model anatomy/quant semantics and GPU backend APIs/kernels unchanged. Mutable group metadata stays in transformer-owned request state.",
+    "bounds": "Union<=BN_GPU_DECODE_EXL3_MAX_EXPERTS=48, the existing singleton maximum. Fixed call-stack metadata and four sizeof-quoted group counters. Additional live or lazily populated temporary expert bundles use existing slots and may remain in the existing idle pool, bounded by its prior quota; no new activation/staging/cache quota.",
+    "lifetime": "Partial acquisition, BUSY and queued failure drain all consumers and release acquired leases. Existing full-forward publication/cancellation rules retained. Mixed small/large cohorts use existing fallback.",
+    "arithmetic": "Original source-order active lists, raw router IDs/weights, 8*topk scratch geometry, per-request kernels and shared-dense FFN retained. No partial-row reduction or expert concatenation."
+  },
+  "counters": {
+    "prefix": "native_batch_decode",
+    "fields": [
+      "coordinated_layer_steps",
+      "lease_cohorts",
+      "private_kernel_submissions",
+      "reused_expert_bindings"
+    ],
+    "interpretation": "private_kernel_submissions counts successful per-consumer trellis_decode_resident API submissions; each submission executes the existing multi-kernel decoder, so this is not an actual CUDA kernel count. Decode kernels remain per request. Reused bindings count multiple consumers of one immutable lease in a completed cohort; they do not count avoided GPU kernels or prove H2D savings on an already-cached path."
+  },
+  "correctness": {
+    "new_independent_full_vocabulary_heads": 568,
+    "products": {
+      "product-normal-domains-admit": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 800,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 53964,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107127,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204653236135,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204653236135,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 640,
+          "lease_cohorts": 640,
+          "private_kernel_submissions": 1280,
+          "reused_expert_bindings": 286
+        },
+        "experts": {
+          "upload_bytes": 670998908928,
+          "upload_ms": 27369.561611,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 74106.566416
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "decode_admission": true
+      },
+      "product-normal-domains-temporary": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 800,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 53964,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107127,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204653236135,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204653236135,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 640,
+          "lease_cohorts": 640,
+          "private_kernel_submissions": 1280,
+          "reused_expert_bindings": 286
+        },
+        "experts": {
+          "upload_bytes": 718562174976,
+          "upload_ms": 29027.954142,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 132819.740875
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "decode_admission": false
+      },
+      "product-normal-legacy": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 12,
+          "group_calls": 6,
+          "single_forwards": 10,
+          "shared_layer_steps": 240,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 11601,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642991,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534751,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765534751,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 200,
+          "lease_cohorts": 200,
+          "private_kernel_submissions": 400,
+          "reused_expert_bindings": 159
+        },
+        "experts": {
+          "upload_bytes": 353781751296,
+          "upload_ms": 13582.612871,
+          "ram_miss_bytes": 348255783936,
+          "source_read_bytes": 348255783936,
+          "source_read_ms": 26574.642822
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        },
+        "decode_admission": true
+      },
+      "product-normal-wide20": {
+        "completed": 20,
+        "full_f32_heads": 100,
+        "metrics": {
+          "completed": 20,
+          "steps": 10,
+          "group_calls": 10,
+          "single_forwards": 0,
+          "shared_layer_steps": 400,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 35854,
+          "busy_retries": 0,
+          "created": 16,
+          "reused": 4,
+          "retained_device_payload": 28206563760,
+          "peak_device_payload": 28206563760,
+          "peak_live": 16
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204614811840,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204967843904,
+          "reserved_device": 54427109232,
+          "peak_reserved_host": 204967843904,
+          "peak_reserved_device": 54427109232,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 320,
+          "lease_cohorts": 320,
+          "private_kernel_submissions": 3200,
+          "reused_expert_bindings": 12298
+        },
+        "experts": {
+          "upload_bytes": 477416948736,
+          "upload_ms": 18458.893608,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 27935.988254
+        },
+        "compute": {
+          "fused_kernel_launches": 4851,
+          "joint_fused_kernel_launches": 4541,
+          "avoided_fused_launches": 23314,
+          "individual_fused_kernel_launches": 310,
+          "folded_ffn_calls": 1625
+        },
+        "decode_admission": false
+      },
+      "product-asan-domains-admit": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 800,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 53964,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107127,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204653236135,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204653236135,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 640,
+          "lease_cohorts": 640,
+          "private_kernel_submissions": 1280,
+          "reused_expert_bindings": 286
+        },
+        "experts": {
+          "upload_bytes": 670998908928,
+          "upload_ms": 26950.564497,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 22243.56923
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "decode_admission": true
+      },
+      "product-asan-domains-temporary": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 800,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 53964,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204609107127,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204653236135,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204653236135,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 640,
+          "lease_cohorts": 640,
+          "private_kernel_submissions": 1280,
+          "reused_expert_bindings": 286
+        },
+        "experts": {
+          "upload_bytes": 718562174976,
+          "upload_ms": 28699.69262,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 19672.317937
+        },
+        "compute": {
+          "fused_kernel_launches": 5148,
+          "joint_fused_kernel_launches": 4122,
+          "avoided_fused_launches": 4122,
+          "individual_fused_kernel_launches": 1026,
+          "folded_ffn_calls": 650
+        },
+        "decode_admission": false
+      },
+      "product-asan-legacy": {
+        "completed": 4,
+        "full_f32_heads": 22,
+        "metrics": {
+          "completed": 4,
+          "steps": 12,
+          "group_calls": 6,
+          "single_forwards": 10,
+          "shared_layer_steps": 240,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 11601,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 2,
+          "retained_device_payload": 4786680158,
+          "peak_device_payload": 4786680158,
+          "peak_live": 2
+        },
+        "memory": {
+          "host_limit": 17179869184,
+          "device_limit": 91153642292,
+          "shared_host_upper": 13708642991,
+          "shared_device_upper": 44901975488,
+          "reserved_host": 13765534751,
+          "reserved_device": 49688655646,
+          "peak_reserved_host": 13765534751,
+          "peak_reserved_device": 49688655646,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 200,
+          "lease_cohorts": 200,
+          "private_kernel_submissions": 400,
+          "reused_expert_bindings": 159
+        },
+        "experts": {
+          "upload_bytes": 353781751296,
+          "upload_ms": 13815.441301,
+          "ram_miss_bytes": 348255783936,
+          "source_read_bytes": 348255783936,
+          "source_read_ms": 25799.455157
+        },
+        "compute": {
+          "fused_kernel_launches": 1047,
+          "joint_fused_kernel_launches": 801,
+          "avoided_fused_launches": 801,
+          "individual_fused_kernel_launches": 246,
+          "folded_ffn_calls": 257
+        },
+        "decode_admission": true
+      },
+      "product-asan-wide20": {
+        "completed": 20,
+        "full_f32_heads": 100,
+        "metrics": {
+          "completed": 20,
+          "steps": 10,
+          "group_calls": 10,
+          "single_forwards": 0,
+          "shared_layer_steps": 400,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 35854,
+          "busy_retries": 0,
+          "created": 16,
+          "reused": 4,
+          "retained_device_payload": 28206563760,
+          "peak_device_payload": 28206563760,
+          "peak_live": 16
+        },
+        "memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204614811840,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204967843904,
+          "reserved_device": 54427109232,
+          "peak_reserved_host": 204967843904,
+          "peak_reserved_device": 54427109232,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "decode": {
+          "coordinated_layer_steps": 320,
+          "lease_cohorts": 320,
+          "private_kernel_submissions": 3200,
+          "reused_expert_bindings": 12298
+        },
+        "experts": {
+          "upload_bytes": 477416948736,
+          "upload_ms": 18622.346544,
+          "ram_miss_bytes": 180998733312,
+          "source_read_bytes": 180998733312,
+          "source_read_ms": 18984.656066
+        },
+        "compute": {
+          "fused_kernel_launches": 4851,
+          "joint_fused_kernel_launches": 4541,
+          "avoided_fused_launches": 23314,
+          "individual_fused_kernel_launches": 310,
+          "folded_ffn_calls": 1625
+        },
+        "decode_admission": false
+      }
+    },
+    "serving": {
+      "normal-native": {
+        "full_heads": 13,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "normal-dense": {
+        "full_heads": 12,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "normal-flash": {
+        "full_heads": 9,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "normal-glm": {
+        "full_heads": 8,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "asan-native": {
+        "full_heads": 13,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "asan-dense": {
+        "full_heads": 12,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "asan-flash": {
+        "full_heads": 9,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      },
+      "asan-glm": {
+        "full_heads": 8,
+        "queued_and_live_cancel": true,
+        "same_client_id_reused": true
+      }
+    },
+    "diagnostics": {
+      "admit": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 800,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 53964,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "probe": {
+          "private_submissions": 1280,
+          "shared_leases": 286,
+          "reused_bindings": 286,
+          "all_released": true
+        },
+        "placement": {
+          "kind": "final_saved_snapshot",
+          "forward": 20,
+          "acquire_calls": 55218,
+          "busy_calls": 1254,
+          "host_hits": 36799,
+          "host_misses": 13593,
+          "host_hit_bytes": 490000175616,
+          "host_miss_bytes": 180998733312,
+          "source_bytes": 180998733312,
+          "decode_hits": 3572,
+          "decode_lookup_misses": 51646,
+          "decode_evictions": 4977,
+          "decode_charged": 8588551680,
+          "decode_capacity": 8588551680,
+          "temporary_charged": 0,
+          "temporary_allocated": 639148032,
+          "temporary_capacity": 639148032,
+          "temporary_allocated_peak": 639148032,
+          "temporary_charged_peak": 639148032,
+          "live_leases": 0,
+          "live_leases_peak": 56,
+          "upload_count": 151176,
+          "upload_bytes": 670998908928,
+          "buffer_creates": 2079,
+          "buffer_reuses": 149097,
+          "staging_payload": 13315584
+        },
+        "memcheck": false,
+        "new_cupti_capture_count": 0,
+        "logical_expert_bytes_verified": true,
+        "timing_qualification": false
+      },
+      "temporary": {
+        "completed": 8,
+        "full_f32_heads": 40,
+        "metrics": {
+          "completed": 8,
+          "steps": 20,
+          "group_calls": 20,
+          "single_forwards": 0,
+          "shared_layer_steps": 800,
+          "fallback_layer_steps": 0,
+          "shared_expert_borrows": 53964,
+          "busy_retries": 0,
+          "created": 2,
+          "reused": 6,
+          "retained_device_payload": 3525820470,
+          "peak_device_payload": 3525820470,
+          "peak_live": 2
+        },
+        "probe": {
+          "private_submissions": 1280,
+          "shared_leases": 286,
+          "reused_bindings": 286,
+          "all_released": true
+        },
+        "placement": {
+          "kind": "final_saved_snapshot",
+          "forward": 20,
+          "acquire_calls": 55228,
+          "busy_calls": 1264,
+          "host_hits": 40371,
+          "host_misses": 13593,
+          "host_hit_bytes": 537563441664,
+          "host_miss_bytes": 180998733312,
+          "source_bytes": 180998733312,
+          "decode_hits": 0,
+          "decode_lookup_misses": 55228,
+          "decode_evictions": 0,
+          "decode_charged": 0,
+          "decode_capacity": 8588551680,
+          "temporary_charged": 0,
+          "temporary_allocated": 639148032,
+          "temporary_capacity": 639148032,
+          "temporary_allocated_peak": 639148032,
+          "temporary_charged_peak": 639148032,
+          "live_leases": 0,
+          "live_leases_peak": 48,
+          "upload_count": 161892,
+          "upload_bytes": 718562174976,
+          "buffer_creates": 144,
+          "buffer_reuses": 161748,
+          "staging_payload": 13315584
+        },
+        "memcheck": true,
+        "new_cupti_capture_count": 0,
+        "logical_expert_bytes_verified": true,
+        "timing_qualification": false
+      }
+    },
+    "numerical_golds_changed": false,
+    "criteria": "Exact full F32 vocabulary bytes and input IDs against independently captured immutable values, plus greedy IDs, streamed UTF8 and positions. Four domains/revisits, original2050/1026 histories,20requests/16live; both admissions; normal/sanitized."
+  },
+  "performance": {
+    "results": {
+      "admit": {
+        "gates": {
+          "timing_filesystem_input_zero": true,
+          "all_outputs_exact": true,
+          "decode_speed_gain": false,
+          "warm_whole_burst_nonregression": true
+        },
+        "declared_decode_speed_gain_qualified": false,
+        "timing_comparison_valid": true,
+        "aggregate": {
+          "mean_decode_speedup": 1.0176980279557182,
+          "p95_decode_latency_ratio": 0.9896633264008885,
+          "warm_window_latency_ratio": 0.9985470221013081,
+          "total_process_latency_ratio": 0.9920765911751251
+        },
+        "pairs": [
+          {
+            "indices": [
+              2,
+              3
+            ],
+            "mean_decode_speedup": 1.0187873912542105,
+            "p95_decode_latency_ratio": 0.9808917184381222,
+            "warm_window_latency_ratio": 0.9985858447393717,
+            "total_process_latency_ratio": 1.0002904937214325,
+            "all_outputs_exact": true
+          },
+          {
+            "indices": [
+              4,
+              5
+            ],
+            "mean_decode_speedup": 1.0179166541466578,
+            "p95_decode_latency_ratio": 0.9923083883279447,
+            "warm_window_latency_ratio": 0.9957989014779951,
+            "total_process_latency_ratio": 0.9803412913986908,
+            "all_outputs_exact": true
+          },
+          {
+            "indices": [
+              6,
+              7
+            ],
+            "mean_decode_speedup": 1.0163914839718966,
+            "p95_decode_latency_ratio": 0.9958517726058213,
+            "warm_window_latency_ratio": 1.001263798488869,
+            "total_process_latency_ratio": 0.9957083977411401,
+            "all_outputs_exact": true
+          }
+        ],
+        "median_summary": {
+          "old": {
+            "warm_window_ms": 15149.815551,
+            "mean_decode_itl_ms": 233.287219125,
+            "p95_decode_itl_ms": 272.718415,
+            "total_process_ms": 63811.088482
+          },
+          "new": {
+            "warm_window_ms": 15124.034346,
+            "mean_decode_itl_ms": 229.1810613125,
+            "p95_decode_itl_ms": 270.069356,
+            "total_process_ms": 62853.37374
+          }
+        },
+        "old_logical_upload_bytes": 670998908928,
+        "new_logical_upload_bytes": 670998908928,
+        "logical_upload_bytes_saved": 0,
+        "logical_upload_reduction_fraction": 0.0,
+        "reused_decode_expert_bindings": 286,
+        "expert_entry_bytes": 13315584,
+        "temporary_upload_saving_equals_reused_bindings": false,
+        "all_timed_input_blocks": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_reported_rss_bytes": 182255788032,
+        "managed_payload_caps_verified": true,
+        "new_cupti_capture_count": 0
+      },
+      "temporary": {
+        "gates": {
+          "timing_filesystem_input_zero": true,
+          "all_outputs_exact": true,
+          "decode_speed_gain": true,
+          "warm_whole_burst_nonregression": true
+        },
+        "declared_decode_speed_gain_qualified": true,
+        "timing_comparison_valid": true,
+        "aggregate": {
+          "mean_decode_speedup": 1.0534924939992412,
+          "p95_decode_latency_ratio": 0.9610846342129272,
+          "warm_window_latency_ratio": 0.9909027621995343,
+          "total_process_latency_ratio": 1.0007659872418835
+        },
+        "pairs": [
+          {
+            "indices": [
+              2,
+              3
+            ],
+            "mean_decode_speedup": 1.0550708612292408,
+            "p95_decode_latency_ratio": 0.9606605627838185,
+            "warm_window_latency_ratio": 0.9892662170373688,
+            "total_process_latency_ratio": 0.9869931377827549,
+            "all_outputs_exact": true
+          },
+          {
+            "indices": [
+              4,
+              5
+            ],
+            "mean_decode_speedup": 1.051002872431542,
+            "p95_decode_latency_ratio": 0.9630021417201426,
+            "warm_window_latency_ratio": 0.9903817532294394,
+            "total_process_latency_ratio": 1.0237775358315118,
+            "all_outputs_exact": true
+          },
+          {
+            "indices": [
+              6,
+              7
+            ],
+            "mean_decode_speedup": 1.0544082737239164,
+            "p95_decode_latency_ratio": 0.959594358658274,
+            "warm_window_latency_ratio": 0.9930641601180882,
+            "total_process_latency_ratio": 0.9919228185486874,
+            "all_outputs_exact": true
+          }
+        ],
+        "median_summary": {
+          "old": {
+            "warm_window_ms": 16360.489469,
+            "mean_decode_itl_ms": 304.1376884375,
+            "p95_decode_itl_ms": 305.866399,
+            "total_process_ms": 65600.27408
+          },
+          "new": {
+            "warm_window_ms": 16207.048134,
+            "mean_decode_itl_ms": 288.5238256875,
+            "p95_decode_itl_ms": 293.833787,
+            "total_process_ms": 65233.476053
+          }
+        },
+        "old_logical_upload_bytes": 722370432000,
+        "new_logical_upload_bytes": 718562174976,
+        "logical_upload_bytes_saved": 3808257024,
+        "logical_upload_reduction_fraction": 0.005271889400921659,
+        "reused_decode_expert_bindings": 286,
+        "expert_entry_bytes": 13315584,
+        "temporary_upload_saving_equals_reused_bindings": true,
+        "all_timed_input_blocks": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_reported_rss_bytes": 182249693184,
+        "managed_payload_caps_verified": true,
+        "new_cupti_capture_count": 0
+      },
+      "wide-temporary": {
+        "gates": {
+          "timing_filesystem_input_zero": true,
+          "all_outputs_exact": true,
+          "decode_speed_gain": true,
+          "warm_whole_burst_nonregression": true
+        },
+        "declared_decode_speed_gain_qualified": true,
+        "timing_comparison_valid": true,
+        "aggregate": {
+          "mean_decode_speedup": 3.1690009409672424,
+          "p95_decode_latency_ratio": 0.3192514578936544,
+          "warm_window_latency_ratio": 0.7209700749332479,
+          "total_process_latency_ratio": 0.8356829717245481
+        },
+        "pairs": [
+          {
+            "indices": [
+              2,
+              3
+            ],
+            "mean_decode_speedup": 3.151367894784673,
+            "p95_decode_latency_ratio": 0.3219402426546358,
+            "warm_window_latency_ratio": 0.7229881481313207,
+            "total_process_latency_ratio": 0.8456106482465505,
+            "all_outputs_exact": true
+          },
+          {
+            "indices": [
+              4,
+              5
+            ],
+            "mean_decode_speedup": 3.1685066090329697,
+            "p95_decode_latency_ratio": 0.3180982395738371,
+            "warm_window_latency_ratio": 0.720805683973087,
+            "total_process_latency_ratio": 0.8256370397783404,
+            "all_outputs_exact": true
+          },
+          {
+            "indices": [
+              6,
+              7
+            ],
+            "mean_decode_speedup": 3.1872298258926737,
+            "p95_decode_latency_ratio": 0.3177328621222532,
+            "warm_window_latency_ratio": 0.7191216042565531,
+            "total_process_latency_ratio": 0.8359206375413077,
+            "all_outputs_exact": true
+          }
+        ],
+        "median_summary": {
+          "old": {
+            "warm_window_ms": 23740.68998,
+            "mean_decode_itl_ms": 2417.45912596875,
+            "p95_decode_itl_ms": 2432.778674,
+            "total_process_ms": 79066.225006
+          },
+          "new": {
+            "warm_window_ms": 17100.897254,
+            "mean_decode_itl_ms": 762.466252546875,
+            "p95_decode_itl_ms": 774.282722,
+            "total_process_ms": 66093.089215
+          }
+        },
+        "old_logical_upload_bytes": 815100158976,
+        "new_logical_upload_bytes": 497949579264,
+        "logical_upload_bytes_saved": 317150579712,
+        "logical_upload_reduction_fraction": 0.38909399810500866,
+        "reused_decode_expert_bindings": 23818,
+        "expert_entry_bytes": 13315584,
+        "temporary_upload_saving_equals_reused_bindings": true,
+        "all_timed_input_blocks": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_reported_rss_bytes": 182564257792,
+        "managed_payload_caps_verified": true,
+        "new_cupti_capture_count": 0
+      }
+    },
+    "original_study": {
+      "results": {
+        "admit": {
+          "gates": {
+            "timing_filesystem_input_zero": false,
+            "all_outputs_exact": true,
+            "decode_speed_gain": false,
+            "warm_whole_burst_nonregression": true
+          },
+          "declared_decode_speed_gain_qualified": false,
+          "timing_comparison_valid": false,
+          "aggregate": {
+            "mean_decode_speedup": 1.0356736124008712,
+            "p95_decode_latency_ratio": 0.9646578591440473,
+            "warm_window_latency_ratio": 0.9089897415028433,
+            "total_process_latency_ratio": 0.910736345445039
+          },
+          "pairs": [
+            {
+              "indices": [
+                2,
+                3
+              ],
+              "mean_decode_speedup": 1.0664840916262166,
+              "p95_decode_latency_ratio": 0.9323793953794073,
+              "warm_window_latency_ratio": 0.7575434048328827,
+              "total_process_latency_ratio": 0.7644416438822844,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                4,
+                5
+              ],
+              "mean_decode_speedup": 1.0204786394137213,
+              "p95_decode_latency_ratio": 0.9844562214138787,
+              "warm_window_latency_ratio": 0.9959010591689428,
+              "total_process_latency_ratio": 0.9814138057946089,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                6,
+                7
+              ],
+              "mean_decode_speedup": 1.0207289519456837,
+              "p95_decode_latency_ratio": 0.9779819632613783,
+              "warm_window_latency_ratio": 0.9955274284865233,
+              "total_process_latency_ratio": 1.0068887886299118,
+              "all_outputs_exact": true
+            }
+          ],
+          "median_summary": {
+            "old": {
+              "warm_window_ms": 15173.750223,
+              "mean_decode_itl_ms": 233.12325631250002,
+              "p95_decode_itl_ms": 274.559947,
+              "total_process_ms": 63825.734773
+            },
+            "new": {
+              "warm_window_ms": 15105.88454,
+              "mean_decode_itl_ms": 228.388991875,
+              "p95_decode_itl_ms": 268.157831,
+              "total_process_ms": 64019.235991
+            }
+          },
+          "old_logical_upload_bytes": 670998908928,
+          "new_logical_upload_bytes": 670998908928,
+          "logical_upload_bytes_saved": 0,
+          "logical_upload_reduction_fraction": 0.0,
+          "reused_decode_expert_bindings": 286,
+          "expert_entry_bytes": 13315584,
+          "temporary_upload_saving_equals_reused_bindings": false,
+          "all_timed_input_blocks": [
+            40089112,
+            32,
+            0,
+            0,
+            0,
+            0
+          ],
+          "max_reported_rss_bytes": 182257061888,
+          "managed_payload_caps_verified": true,
+          "new_cupti_capture_count": 0
+        },
+        "temporary": {
+          "gates": {
+            "timing_filesystem_input_zero": true,
+            "all_outputs_exact": true,
+            "decode_speed_gain": true,
+            "warm_whole_burst_nonregression": true
+          },
+          "declared_decode_speed_gain_qualified": true,
+          "timing_comparison_valid": true,
+          "aggregate": {
+            "mean_decode_speedup": 1.0534924939992412,
+            "p95_decode_latency_ratio": 0.9610846342129272,
+            "warm_window_latency_ratio": 0.9909027621995343,
+            "total_process_latency_ratio": 1.0007659872418835
+          },
+          "pairs": [
+            {
+              "indices": [
+                2,
+                3
+              ],
+              "mean_decode_speedup": 1.0550708612292408,
+              "p95_decode_latency_ratio": 0.9606605627838185,
+              "warm_window_latency_ratio": 0.9892662170373688,
+              "total_process_latency_ratio": 0.9869931377827549,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                4,
+                5
+              ],
+              "mean_decode_speedup": 1.051002872431542,
+              "p95_decode_latency_ratio": 0.9630021417201426,
+              "warm_window_latency_ratio": 0.9903817532294394,
+              "total_process_latency_ratio": 1.0237775358315118,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                6,
+                7
+              ],
+              "mean_decode_speedup": 1.0544082737239164,
+              "p95_decode_latency_ratio": 0.959594358658274,
+              "warm_window_latency_ratio": 0.9930641601180882,
+              "total_process_latency_ratio": 0.9919228185486874,
+              "all_outputs_exact": true
+            }
+          ],
+          "median_summary": {
+            "old": {
+              "warm_window_ms": 16360.489469,
+              "mean_decode_itl_ms": 304.1376884375,
+              "p95_decode_itl_ms": 305.866399,
+              "total_process_ms": 65600.27408
+            },
+            "new": {
+              "warm_window_ms": 16207.048134,
+              "mean_decode_itl_ms": 288.5238256875,
+              "p95_decode_itl_ms": 293.833787,
+              "total_process_ms": 65233.476053
+            }
+          },
+          "old_logical_upload_bytes": 722370432000,
+          "new_logical_upload_bytes": 718562174976,
+          "logical_upload_bytes_saved": 3808257024,
+          "logical_upload_reduction_fraction": 0.005271889400921659,
+          "reused_decode_expert_bindings": 286,
+          "expert_entry_bytes": 13315584,
+          "temporary_upload_saving_equals_reused_bindings": true,
+          "all_timed_input_blocks": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "max_reported_rss_bytes": 182249693184,
+          "managed_payload_caps_verified": true,
+          "new_cupti_capture_count": 0
+        },
+        "wide-temporary": {
+          "gates": {
+            "timing_filesystem_input_zero": true,
+            "all_outputs_exact": true,
+            "decode_speed_gain": true,
+            "warm_whole_burst_nonregression": true
+          },
+          "declared_decode_speed_gain_qualified": true,
+          "timing_comparison_valid": true,
+          "aggregate": {
+            "mean_decode_speedup": 3.1690009409672424,
+            "p95_decode_latency_ratio": 0.3192514578936544,
+            "warm_window_latency_ratio": 0.7209700749332479,
+            "total_process_latency_ratio": 0.8356829717245481
+          },
+          "pairs": [
+            {
+              "indices": [
+                2,
+                3
+              ],
+              "mean_decode_speedup": 3.151367894784673,
+              "p95_decode_latency_ratio": 0.3219402426546358,
+              "warm_window_latency_ratio": 0.7229881481313207,
+              "total_process_latency_ratio": 0.8456106482465505,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                4,
+                5
+              ],
+              "mean_decode_speedup": 3.1685066090329697,
+              "p95_decode_latency_ratio": 0.3180982395738371,
+              "warm_window_latency_ratio": 0.720805683973087,
+              "total_process_latency_ratio": 0.8256370397783404,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                6,
+                7
+              ],
+              "mean_decode_speedup": 3.1872298258926737,
+              "p95_decode_latency_ratio": 0.3177328621222532,
+              "warm_window_latency_ratio": 0.7191216042565531,
+              "total_process_latency_ratio": 0.8359206375413077,
+              "all_outputs_exact": true
+            }
+          ],
+          "median_summary": {
+            "old": {
+              "warm_window_ms": 23740.68998,
+              "mean_decode_itl_ms": 2417.45912596875,
+              "p95_decode_itl_ms": 2432.778674,
+              "total_process_ms": 79066.225006
+            },
+            "new": {
+              "warm_window_ms": 17100.897254,
+              "mean_decode_itl_ms": 762.466252546875,
+              "p95_decode_itl_ms": 774.282722,
+              "total_process_ms": 66093.089215
+            }
+          },
+          "old_logical_upload_bytes": 815100158976,
+          "new_logical_upload_bytes": 497949579264,
+          "logical_upload_bytes_saved": 317150579712,
+          "logical_upload_reduction_fraction": 0.38909399810500866,
+          "reused_decode_expert_bindings": 23818,
+          "expert_entry_bytes": 13315584,
+          "temporary_upload_saving_equals_reused_bindings": true,
+          "all_timed_input_blocks": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "max_reported_rss_bytes": 182564257792,
+          "managed_payload_caps_verified": true,
+          "new_cupti_capture_count": 0
+        }
+      },
+      "prospective_plan": "/tmp/bitnet-goal-native-shared-decode/plan.json",
+      "new_cupti_capture_count": 0,
+      "logical_expert_bytes_verified": true,
+      "full_goal_complete": false
+    },
+    "admitted_holdout": {
+      "results": {
+        "admit": {
+          "gates": {
+            "timing_filesystem_input_zero": true,
+            "all_outputs_exact": true,
+            "decode_speed_gain": false,
+            "warm_whole_burst_nonregression": true
+          },
+          "declared_decode_speed_gain_qualified": false,
+          "timing_comparison_valid": true,
+          "aggregate": {
+            "mean_decode_speedup": 1.0176980279557182,
+            "p95_decode_latency_ratio": 0.9896633264008885,
+            "warm_window_latency_ratio": 0.9985470221013081,
+            "total_process_latency_ratio": 0.9920765911751251
+          },
+          "pairs": [
+            {
+              "indices": [
+                2,
+                3
+              ],
+              "mean_decode_speedup": 1.0187873912542105,
+              "p95_decode_latency_ratio": 0.9808917184381222,
+              "warm_window_latency_ratio": 0.9985858447393717,
+              "total_process_latency_ratio": 1.0002904937214325,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                4,
+                5
+              ],
+              "mean_decode_speedup": 1.0179166541466578,
+              "p95_decode_latency_ratio": 0.9923083883279447,
+              "warm_window_latency_ratio": 0.9957989014779951,
+              "total_process_latency_ratio": 0.9803412913986908,
+              "all_outputs_exact": true
+            },
+            {
+              "indices": [
+                6,
+                7
+              ],
+              "mean_decode_speedup": 1.0163914839718966,
+              "p95_decode_latency_ratio": 0.9958517726058213,
+              "warm_window_latency_ratio": 1.001263798488869,
+              "total_process_latency_ratio": 0.9957083977411401,
+              "all_outputs_exact": true
+            }
+          ],
+          "median_summary": {
+            "old": {
+              "warm_window_ms": 15149.815551,
+              "mean_decode_itl_ms": 233.287219125,
+              "p95_decode_itl_ms": 272.718415,
+              "total_process_ms": 63811.088482
+            },
+            "new": {
+              "warm_window_ms": 15124.034346,
+              "mean_decode_itl_ms": 229.1810613125,
+              "p95_decode_itl_ms": 270.069356,
+              "total_process_ms": 62853.37374
+            }
+          },
+          "old_logical_upload_bytes": 670998908928,
+          "new_logical_upload_bytes": 670998908928,
+          "logical_upload_bytes_saved": 0,
+          "logical_upload_reduction_fraction": 0.0,
+          "reused_decode_expert_bindings": 286,
+          "expert_entry_bytes": 13315584,
+          "temporary_upload_saving_equals_reused_bindings": false,
+          "all_timed_input_blocks": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "max_reported_rss_bytes": 182255788032,
+          "managed_payload_caps_verified": true,
+          "new_cupti_capture_count": 0
+        }
+      },
+      "prospective_plan": "/tmp/bitnet-goal-native-shared-decode/holdout-plan.json",
+      "new_cupti_capture_count": 0,
+      "logical_expert_bytes_verified": true,
+      "full_goal_complete": false
+    },
+    "selection": "The original admitted-cache series is rejected for nonzero filesystem input. A new prospectively fixed complete three-pair holdout uses identical order and gates. Other profiles retain the original full three-pair results. Selection is based on I/O validity, never the measured speed ratio.",
+    "prospective_holdout": "/tmp/bitnet-goal-native-shared-decode/holdout-plan.json",
+    "new_cupti_capture_count": 0,
+    "logical_expert_bytes_verified": true,
+    "full_goal_complete": false
+  },
+  "protocol": {
+    "scope": "Bounded shared expert leases for native <=8-token decode cohorts; original per-request kernel arithmetic and scratch layouts retained.",
+    "full_goal_complete": false,
+    "invariants": [
+      "Every source row keeps its original active-expert order, raw router IDs/weights, 8*topk scratch geometry and private decode kernel; no row concatenation, split-K change or partial expert reduction.",
+      "Greedy whole-request cohorts have at most48 unique experts, the existing singleton bound. No new GPU cache, staging, activation or persistent model state. Bounded host stack metadata only.",
+      "All consumers drain before any cohort lease is released. BUSY releases acquired prefixes before returning; hard errors discard through existing group ownership; session history/logits publish only at full success.",
+      "Mixed <=8/>8 rows retain existing fallback; the model/quant/backend APIs and routing/admission semantics remain unchanged.",
+      "New counters separately report coordinated decode layers, lease cohorts, private kernel submissions and reused expert bindings; they do not imply joint decode GPU kernels."
+    ],
+    "acceptance": [
+      "Baseline immutable-byte audit and make test before changes.",
+      "Mock tests:1/2/4/8 rows, overlap/zero routes,48-unique split boundary, acquisition BUSY/hard failure, queued consumer error and sync poisoning.",
+      "Protected zero-warning clean CUDA/MKL build; standard/full CUDA and fresh ASAN/UBSAN.",
+      "Independent exact whole-vocabulary heads across original short/long mixed histories, all four domain histories/revisits, and wide concurrency; both decode-admission roles where applicable.",
+      "Four-family persistent-serving compatibility including cancellation/reuse and native decode-serving.",
+      "Read-only diagnostics verify actual same expert handles and bounded live leases, reconcile logical bytes; if a new CUPTI trace is captured report measured H2D separately.",
+      "Fixed untraced old/new comparisons, two excluded warmups then3pairs; preserve regressions and do not claim speed benefit before complete results."
+    ],
+    "production_scope": "Transformer module and downstream CLI/benchmark reporting; internal group stats struct extended, consumers rebuilt. No model/quant/GPU kernel changes.",
+    "performance": {
+      "profiles": [
+        "four-domain8request,2live,5outputs,195060MiB RAM/8192MiB expertGPU cache; decode admission on/off",
+        "four-domain32request,16live,5outputs,first16warmup/last16measured,195060MiB RAM/8192MiB expertGPU cache; decode admission off"
+      ],
+      "order": [
+        "old",
+        "new",
+        "old",
+        "new",
+        "new",
+        "old",
+        "old",
+        "new"
+      ],
+      "timed_pairs": [
+        [
+          2,
+          3
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "excluded_warmups": [
+        0,
+        1
+      ],
+      "acceptance": "Output exact; any claimed decode speed gain must exceed5% GM and warm whole-burst latency no worse than1.05; otherwise declare no speed gain. Transfer saving requires actual byte accounting, not borrow counters. Filesystem state disclosed and input blocks recorded.",
+      "filesystem_gate": "All timed targets must report wait4 input_blocks=0; otherwise preserve the attempt and mark the timing comparison confounded."
+    }
+  },
+  "validation": {
+    "baseline_make_test": true,
+    "protected_clean_cuda_mkl_zero_warnings": true,
+    "standard_and_full_cuda": true,
+    "fresh_host_asan_ubsan": {
+      "host_objects": 158,
+      "all_host_c_fresh": true,
+      "cpu_units": true,
+      "source_abi": "current gpu_backend.h",
+      "commands": 173
+    },
+    "asan_group_and_backend": {
+      "asan-gpu-backend": {
+        "command": [
+          "clang-18",
+          "-O1",
+          "-g",
+          "-fsanitize=address,undefined",
+          "-fno-omit-frame-pointer",
+          "-march=native",
+          "-Wall",
+          "-Wextra",
+          "-Wshadow",
+          "-std=c11",
+          "-Iinclude",
+          "-D_GNU_SOURCE",
+          "-DBN_ENABLE_MKL_VML",
+          "-I/tmp/bitnet-goal-bf16-vml/mkl/include",
+          "-mprefer-vector-width=256",
+          "-DBN_ENABLE_CUDA",
+          "-DBN_CUDA_MXFP4_SM120",
+          "-o",
+          "/tmp/bitnet-goal-native-shared-decode/asan-gpu-backend",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/platform.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gguf.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/int4_rows.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/fp8.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/exl3.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/fp16.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/dequant.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/registry.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/prepared.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/kernel_select.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/dispatch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/matvec_batch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/matmul.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/fused_gateup.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/batch_prepared_kquant_input.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/matvec_multi.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/mxfp4_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/x_quant_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/rmsnorm_q8k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/mxfp4_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/i2s_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/i2s_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/i2s_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq2_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq2_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq1_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq1_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx2_matmul.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_1_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_1_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f32_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f32_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f16_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f16_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/bf16_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/bf16_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx2_sdot.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx2_sdot.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q5k_avx512.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q5k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q5k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q3k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q3k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q2k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q2k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4nl_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4nl_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4xs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4xs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3xxs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3xxs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3s_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3s_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xxs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xxs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2s_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2s_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/turboquant.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/json.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/safetensors.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/trellis.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_arch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_session.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_gpu.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_embed.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_moe.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_layout.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_model.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_model_rows.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_session.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_session_rows.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_quant.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/runtime_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_backend_runtime.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_cache.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_io.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_cpu_kernels.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_route.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_math.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_execute.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_prefill.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_stats.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_moe_cache.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_moe_bridge.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/math_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/math_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/rmsnorm_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/rmsnorm_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/rmsnorm_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gqa_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gqa_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gqa_tq_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/batched_attn_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/batched_attn_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/cpu_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/cpu_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/cpu.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/plan.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_fallback.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_resources.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_emit.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/bf16.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/bf16_pool.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/trellis.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/kv_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/kv.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/prefill_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/prefill_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/prefill.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/ssm_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/ssm_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/tokenizer.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sampler.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sampler_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/threadpool.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sh_arena.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sh_log.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/bn_alloc.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/session.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/prompt_cache.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/generate_batch_plan.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/generate_batch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/generate.o",
+          "test/test_gpu_backend.c",
+          "src/gpu_cuda.o",
+          "src/gpu_cuda_native_frequency.o",
+          "src/gpu_cuda_native_attention.o",
+          "src/gpu_cuda_native_index.o",
+          "src/gpu_cuda_native_topk.o",
+          "src/gpu_cuda_native_candidates.o",
+          "src/gpu_cuda_native_candidate_use.o",
+          "src/gpu_cuda_compress.o",
+          "src/gpu_cuda_native_rope.o",
+          "src/gpu_cuda_exl3_decode.o",
+          "src/gpu_cuda_exl3_fused.o",
+          "src/gpu_cuda_native_moe.o",
+          "src/gpu_cuda_exl3_fold.o",
+          "src/gpu_cuda_router.o",
+          "src/gpu_cuda_hc4.o",
+          "src/gpu_cuda_fa2.o",
+          "src/gpu_cuda_mla_attention.o",
+          "-lm",
+          "-lpthread",
+          "-L/tmp/bitnet-goal-bf16-vml/mkl/lib",
+          "-Wl,--disable-new-dtags,-rpath,/tmp/bitnet-goal-bf16-vml/mkl/lib",
+          "-Wl,--no-as-needed",
+          "-lmkl_intel_lp64",
+          "-lmkl_sequential",
+          "-lmkl_core",
+          "-Wl,--as-needed",
+          "-lpthread",
+          "-lm",
+          "-ldl",
+          "-L/usr/local/cuda/bin/../lib64",
+          "-lcudart",
+          "-lcublas",
+          "/usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so"
+        ],
+        "build_exit": 0,
+        "exit": 0
+      },
+      "asan-native-group": {
+        "command": [
+          "clang-18",
+          "-O1",
+          "-g",
+          "-fsanitize=address,undefined",
+          "-fno-omit-frame-pointer",
+          "-march=native",
+          "-Wall",
+          "-Wextra",
+          "-Wshadow",
+          "-std=c11",
+          "-Iinclude",
+          "-D_GNU_SOURCE",
+          "-DBN_ENABLE_MKL_VML",
+          "-I/tmp/bitnet-goal-bf16-vml/mkl/include",
+          "-mprefer-vector-width=256",
+          "-DBN_ENABLE_CUDA",
+          "-DBN_CUDA_MXFP4_SM120",
+          "-o",
+          "/tmp/bitnet-goal-native-shared-decode/asan-native-group",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/platform.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gguf.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/int4_rows.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/fp8.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/exl3.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/fp16.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/dequant.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/registry.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/prepared.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/kernel_select.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/dispatch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/matvec_batch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/matmul.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/fused_gateup.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/batch_prepared_kquant_input.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/matvec_multi.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/mxfp4_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/x_quant_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/rmsnorm_q8k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/mxfp4_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/i2s_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/i2s_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/i2s_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq2_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq2_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq1_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/tq1_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_avx2_matmul.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_1_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4_1_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f32_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f32_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f16_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/f16_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/bf16_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/bf16_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx2_sdot.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q6k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q8k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx512_vnni.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx2_sdot.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_avx2_4row.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q4k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q5k_avx512.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q5k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q5k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q3k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q3k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q2k_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/q2k_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4nl_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4nl_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4xs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq4xs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3xxs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3xxs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3s_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq3s_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xxs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xxs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xs_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2xs_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2s_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/quant/iq2s_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/turboquant.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/json.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/safetensors.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/trellis.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_arch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_session.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_gpu.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_embed.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/model_moe.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_layout.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_model.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_model_rows.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_session.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_session_rows.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/backend_quant.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/runtime_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_backend_runtime.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_cache.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_io.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_cpu_kernels.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_route.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_math.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_execute.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_prefill.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/moe_stats.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_moe_cache.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/gpu_moe_bridge.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/math_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/math_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/rmsnorm_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/rmsnorm_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/rmsnorm_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gqa_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gqa_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gqa_tq_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/batched_attn_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/batched_attn_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/logits.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/cpu_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/cpu_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/cpu.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/plan.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_fallback.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_resources.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu_emit.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/gpu.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/bf16.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/bf16_pool.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/kv_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/kv.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/prefill_policy.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/prefill_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/prefill.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/ssm_avx2.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/transformer/ssm_scalar.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/tokenizer.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sampler.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sampler_backend.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/threadpool.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sh_arena.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/sh_log.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/bn_alloc.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/session.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/prompt_cache.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/generate_batch_plan.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/generate_batch.o",
+          "/tmp/bitnet-goal-native-shared-decode/asan/src/generate.o",
+          "test/test_native_group.c",
+          "src/gpu_cuda.o",
+          "src/gpu_cuda_native_frequency.o",
+          "src/gpu_cuda_native_attention.o",
+          "src/gpu_cuda_native_index.o",
+          "src/gpu_cuda_native_topk.o",
+          "src/gpu_cuda_native_candidates.o",
+          "src/gpu_cuda_native_candidate_use.o",
+          "src/gpu_cuda_compress.o",
+          "src/gpu_cuda_native_rope.o",
+          "src/gpu_cuda_exl3_decode.o",
+          "src/gpu_cuda_exl3_fused.o",
+          "src/gpu_cuda_native_moe.o",
+          "src/gpu_cuda_exl3_fold.o",
+          "src/gpu_cuda_router.o",
+          "src/gpu_cuda_hc4.o",
+          "src/gpu_cuda_fa2.o",
+          "src/gpu_cuda_mla_attention.o",
+          "-lm",
+          "-lpthread",
+          "-L/tmp/bitnet-goal-bf16-vml/mkl/lib",
+          "-Wl,--disable-new-dtags,-rpath,/tmp/bitnet-goal-bf16-vml/mkl/lib",
+          "-Wl,--no-as-needed",
+          "-lmkl_intel_lp64",
+          "-lmkl_sequential",
+          "-lmkl_core",
+          "-Wl,--as-needed",
+          "-lpthread",
+          "-lm",
+          "-ldl",
+          "-L/usr/local/cuda/bin/../lib64",
+          "-lcudart",
+          "-lcublas",
+          "/usr/lib/gcc/x86_64-linux-gnu/13/libstdc++.so"
+        ],
+        "build_exit": 0,
+        "exit": 0
+      }
+    },
+    "memcheck": "Diagnostic temporary-upload product case: zero reported errors, all40 full heads exact.",
+    "mock_cases": [
+      "1/2/4/8token private plans and overlap",
+      "zero-weight routes",
+      "48-expert whole-request cohort partition boundary",
+      "BUSY/partial acquisition/hard failure",
+      "queued-consumer failure and synchronization poisoning",
+      "all-consumer fences before release",
+      "unchanged grouped prefill outputs"
+    ]
+  },
+  "reproduction": {
+    "binaries": {
+      "bitnet": {
+        "path": "/tmp/bitnet-goal-native-shared-decode/qualified-bitnet",
+        "sha256": "50d2aa29aa3ee00831bacb97dbe4adb7fa346114cf7dd8a705295e32e5e8ccc1"
+      },
+      "bench_native_forward": {
+        "path": "/tmp/bitnet-goal-native-shared-decode/qualified-bench_native_forward",
+        "sha256": "93e8834ef256ead27277003dd332420bc735732afa8cc376cc23872254fba77c"
+      },
+      "asan-product": {
+        "path": "/tmp/bitnet-goal-native-shared-decode/asan-product",
+        "sha256": "b12db30774812a1a9ac73cab1cc73ae4cf4a585d7c050e4c12e9148a97700cd3"
+      }
+    },
+    "source_archive": "/tmp/bitnet-goal-native-shared-decode/source-snapshot.tar",
+    "source_manifest": "/tmp/bitnet-goal-native-shared-decode/source-snapshot-manifest.json",
+    "intentional_changes": {
+      "include/transformer_internal.h": {
+        "before": "104e9399915f5da4c473030926b925f1424781bad2f1181c4ab7df1c26a47a3e",
+        "after": "4b843c00fb08915fd74b952760f030b7e57b270c7b857e99d0085476a066bc7b"
+      },
+      "src/transformer/trellis.c": {
+        "before": "65c2c8784c643b23d6db5be2afde54cc6f51b1fe384661f0e8889dbda9877d12",
+        "after": "703035f73fb636de77cd6d464a2ebaddf618aeeb20429831ba49302970d6daea"
+      },
+      "src/transformer/trellis_group.h": {
+        "before": "19732dc5e3476d7c47ed29bbe188b9f84178e9d87f9605c831f6beb804cbfa77",
+        "after": "9a1cf51a0a78b2144e6b64d8c9f324bee8358ada77239935501a64ba65b8c76c"
+      },
+      "bench/native_text_group.h": {
+        "before": "37bdf889ccdac89e1d9f16564988442487131337ebfa911b8631a1d98b432f2e",
+        "after": "6cf47531c99588136b0c668d62d840b21be2d1ff7bbf7346985a8ebc95a6a62e"
+      },
+      "test/test_native_group.c": {
+        "before": "f353fcbd1cdc163c0d7e7c72fa59ad1ffcc797e594d510be38293eb5011df27d",
+        "after": "61d17fe867e239be184d4cc704910c9f772f9eceeb29b702997109363787dde3"
+      },
+      "src/main_native_batch.h": {
+        "before": "a6e12f4ebed5f689f8a9da9b37b33d99f69b2cfff12467feaf5866f7349f686f",
+        "after": "e3214639e70b336b00623ece02116a12521752bf4631652aa2e9147347a9ac5c"
+      }
+    },
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "environment": "CUDA_DEVICE_ORDER=PCI_BUS_ID; BN_CUDA_DEVICE=0; native LD variables unset; GLM serving retains the exact mapped13.10 cuBLAS pair.",
+    "producers": [
+      "/tmp/bitnet-goal-native-shared-decode/qualify-products.py",
+      "/tmp/bitnet-goal-native-shared-decode/run-compat.py",
+      "/tmp/bitnet-goal-native-shared-decode/run-diagnostics.py",
+      "/tmp/bitnet-goal-native-shared-decode/run-pairs.py",
+      "/tmp/bitnet-goal-native-shared-decode/assess-pairs.py",
+      "/tmp/bitnet-goal-native-shared-decode/run-holdout.py",
+      "/tmp/bitnet-goal-native-shared-decode/assess-holdout.py",
+      "/tmp/bitnet-goal-native-shared-decode/select-performance.py"
+    ]
+  },
+  "limitations": [
+    "Declared adapted DeepSeek INT4/F16 native CUDA profile; no original full-runtime equivalence or universal workload claim.",
+    "High-concurrency workload repeats four distinct histories.16live correctness does not by itself prove performance for16 unseen histories.",
+    "Initial admitted-cache timing failed the zero-filesystem-input gate and is retained as confounded. A fresh complete prospectively fixed holdout uses unchanged order and thresholds; the other two profiles retain their original full series.",
+    "No new CUPTI capture or exposed-stall/total-device-peak attribution. Logical transfer bytes and live same-handle consumers are independently checked; memcheck timing is excluded.",
+    "Managed payload caps include idle retention. Process RSS comes from wait4; CUDA context/allocator/device peaks remain separately scoped.",
+    "Internal grouped-stats layout extended; rebuild consumers. Mixed small/large fallback and private folded/decoded kernels remain counted.",
+    "Other models sustained SLOs, longer unseen histories, remaining parity and CPU/Metal qualification remain open."
+  ],
+  "next_priority": "Trace current shared-decode H2D/exposed stalls and physical peaks; qualify Flash Next and GLM sustained offload serving with explicit startup costs; then extend longer/unseen native workloads and remaining parity/CPU/Metal coverage.",
+  "historical_exception": {
+    "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+    "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+    "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+    "changed": true
+  }
+}

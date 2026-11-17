@@ -1,0 +1,61 @@
+{
+  "scope": "Unmodified original compiled cubins; fixed selected configurations and runtime input lengths",
+  "cubins": [
+    {
+      "role": "first",
+      "sha256": "65feee04b343a5fde1bf27b5c0652ade36a7fd877d67ff64dfb281b21a8a8eb0",
+      "file": "triton_red_fused__to_copy_add_rms_norm_1.cubin",
+      "cache_key": "3HBGZZ5Z4AYTMMZDOMWFPYV6ECMLJYNXEB2DU3ET32Y27Z2JOSJQ"
+    },
+    {
+      "role": "two_input",
+      "sha256": "90db097afb311dff8314f4f598711b8f4e3e9c85e21851c96288999441efd3f2",
+      "file": "triton_red_fused__to_copy_add_fused_add_rms_norm_1.cubin",
+      "cache_key": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+    },
+    {
+      "role": "three_input",
+      "sha256": "767c958f4ed38608c54e30a2fc7321bfddfedba697a10c2c81756d6ab0b5cc99",
+      "file": "triton_red_fused__to_copy_add_fused_add_rms_norm_3.cubin",
+      "cache_key": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+    }
+  ],
+  "generator_sha256": "d5f502f6a7f9ae2d03b2b7cb9bd37238d629571fda6d519d3162fa36fc098365",
+  "header_sha256": "421a6b76a4664fa767d24914d28729044906a0f58270392fc419731941b9525b",
+  "captured_model_refs_unchanged": true,
+  "image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "vllm_version": "0.1.dev21830+g8244d1c44.cu134",
+  "batch_sizes": [
+    1,
+    5,
+    17,
+    129,
+    1025
+  ],
+  "seeds": 8,
+  "dim": 5120,
+  "epsilon": 1e-06,
+  "weight_offset": 1,
+  "cases": 120,
+  "norm_words": 144629760,
+  "three_input_residual_words": 48209920,
+  "math": "Original unchanged cubins with original input/output ABI; no BitNet kernel in generator.",
+  "configurations": [
+    {
+      "role": "first",
+      "rblock": 1024,
+      "warps": 8
+    },
+    {
+      "role": "two_input",
+      "rblock": 8192,
+      "warps": 16
+    },
+    {
+      "role": "three_input",
+      "rblock": 4096,
+      "warps": 16
+    }
+  ]
+}

@@ -280,6 +280,9 @@ typedef enum {
     BN_QUANT_LAYOUT_BLOCK32 = 1,
     BN_QUANT_LAYOUT_BLOCK256 = 2,
     BN_QUANT_LAYOUT_I2S = 3,
+    BN_QUANT_LAYOUT_TRELLIS16 = 4,
+    BN_QUANT_LAYOUT_BLOCK2D = 5,
+    BN_QUANT_LAYOUT_ROW_SCALED = 6,
 } BnQuantLayout;
 
 typedef enum {
@@ -371,12 +374,66 @@ typedef enum {
 // CPU prompt evaluation must use the format's native matrix reduction order;
 // repeating its decode matvec changes floating-point results.
 #define BN_QUANT_CAP_CPU_NATIVE_PREFILL_ORDER (UINT64_C(1) << 61)
+// Optional explicit reference-prefill kernels; ordinary matmul keeps its contract.
+#define BN_QUANT_CAP_CPU_TILED_REFERENCE_PREFILL (UINT64_C(1) << 62)
+// Routed affine block32 MMQ retains original sums and global split-K geometry.
+#define BN_QUANT_CAP_GPU_ROUTED_BLOCK32_AFFINE_MMQ_DOWN (UINT64_C(1) << 63)
 
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,
                                 int8_t *x_q_buf, BnThreadPool *pool);
 typedef void (*BnQuantMatmulFn)(float *out, const BnQWeight *W, const float *X,
                                 int n_tokens, int8_t *x_q_buf,
                                 BnThreadPool *pool);
+
+// Canonical BF16 decoded-weight layouts use FP32 dequantization followed by
+// one BF16 round-to-nearest-even conversion per weight; the separately queried
+// identity profile also applies the declared activation-basis scale. Metadata,
+// not a declaration of complete BF16 inference or matrix-dispatch support.
+typedef enum {
+    BN_QUANT_BF16_DECODE_NONE = 0,
+    BN_QUANT_BF16_DECODE_IQ4_NL,
+    BN_QUANT_BF16_DECODE_IQ4_XS,
+    BN_QUANT_BF16_DECODE_IQ3_S,
+    BN_QUANT_BF16_DECODE_Q8_0,
+    BN_QUANT_BF16_DECODE_F32,
+    BN_QUANT_BF16_DECODE_Q5_1,
+    /* Q8_1 identity-projection materialization: basis activation scale rounds
+     * to FP16(1/127) before applying dot=127*q. Distinct from direct decode. */
+    BN_QUANT_BF16_DECODE_Q8_0_IDENTITY,
+} BnQuantBF16DecodeKind;
+
+// Explicit BF16 GGUF linear arithmetic, independent of decoded-layout support.
+typedef enum {
+    BN_QUANT_BF16_LINEAR_NONE = 0,
+    BN_QUANT_BF16_LINEAR_IQ4,
+    BN_QUANT_BF16_LINEAR_Q3_K,
+    BN_QUANT_BF16_LINEAR_Q8_0,
+    BN_QUANT_BF16_LINEAR_Q5_K,
+    BN_QUANT_BF16_LINEAR_Q4_K,
+    BN_QUANT_BF16_LINEAR_Q6_K,
+    BN_QUANT_BF16_LINEAR_IQ3_S,
+    /* Already-staged BF16 weights: F32 accumulation at every batch size. */
+    BN_QUANT_BF16_LINEAR_DENSE,
+} BnQuantBF16LinearKind;
+
+typedef enum {
+    BN_QUANT_BF16_EMBEDDING_NONE = 0,
+    /* Raw rows: FP16 scale products, FP16 fused multiply/subtract, then BF16. */
+    BN_QUANT_BF16_EMBEDDING_Q4_K,
+    /* Raw Q8 rows: FP16 scale * signed quant, FP16 rounding, then BF16. */
+    BN_QUANT_BF16_EMBEDDING_Q8_0,
+} BnQuantBF16EmbeddingKind;
+
+/* Gathered MoE projections retain the original input batch's MMVQ/MMQ policy.
+ * Independent of ordinary dense linear dispatch and decoded BF16 storage. */
+typedef enum {
+    BN_QUANT_BF16_MOE_NONE = 0,
+    BN_QUANT_BF16_MOE_Q4_K,
+    BN_QUANT_BF16_MOE_Q5_K,
+    BN_QUANT_BF16_MOE_Q5_1,
+    BN_QUANT_BF16_MOE_Q8_0,
+    BN_QUANT_BF16_MOE_Q6_K,
+} BnQuantBF16MoEKind;
 
 typedef struct {
     int type;
@@ -387,9 +444,149 @@ typedef struct {
     uint64_t caps;
     BnQuantMatvecFn matvec;
     BnQuantMatmulFn matmul;
+    BnQuantBF16DecodeKind bf16_decode;
+    BnQuantBF16LinearKind bf16_linear;
+    BnQuantBF16EmbeddingKind bf16_embedding;
+    BnQuantBF16MoEKind bf16_moe;
 } BnQuantFormatOps;
 
+/* Native checkpoint format IDs are separate from GGUF tensor IDs. */
+#define BN_QUANT_FORMAT_EXL3_MUL1_3 1024
+#define BN_QUANT_FORMAT_E4M3_UE8M0_32 1025
+#define BN_QUANT_FORMAT_INT4_FP16S32 1026
+
+/* Adjacent low/high offset-binary nibbles (q=nibble-8), with separate
+ * little-endian FP16 [rows,cols/32] scales. This is not GGUF Q4_0.
+ * Finite nonnegative scales only; BF16 output matches Diffbot's lookup
+ * profile (F32 product, round-to-nearest-even BF16). No allocations or
+ * floating-point environment dependence. Invalid calls leave output intact.
+ * Region inputs require exact byte counts, cols divisible by32, disjoint
+ * output, and enough output capacity. Only requested scales are validated.
+ * Source buffers must remain immutable for the duration of the call. */
+typedef enum {
+    BN_QUANT_ROW_GPU_NONE = 0,
+    BN_QUANT_ROW_GPU_INT4_FP16S32_BF16,
+} BnQuantRowDecodeKind;
+typedef struct {
+    int block_cols, weight_bits;
+    size_t scale_element_bytes;
+    int (*decode_region_bf16)(const void *weights, size_t weight_bytes,
+        const void *scales, size_t scale_bytes, int rows, int cols,
+        int row, int col, int count_rows, int count_cols,
+        uint16_t *out, size_t out_elems);
+    BnQuantRowDecodeKind gpu_decode;
+    int (*validate_scales)(const void *scales, size_t bytes);
+    /* Stronger optional domain: decoded BF16 rows cast to finite F16. */
+    int (*validate_f16)(const void *weights,size_t weight_bytes,
+        const void *scales,size_t scale_bytes,int rows,int cols);
+} BnQuantRowScaledOps;
+const BnQuantRowScaledOps *bn_quant_format_row_scaled_ops(int type);
+int bn_quant_int4_fp16s32_to_bf16(uint8_t nibble, uint16_t scale, uint16_t *out);
+/* Immutable little-endian scale words; zero bytes accepts NULL. */
+int bn_quant_int4_fp16s32_validate_scales(const void *scales, size_t bytes);
+int bn_quant_int4_fp16s32_validate_f16(const void *weights,size_t weight_bytes,
+    const void *scales,size_t scale_bytes,int rows,int cols);
+int bn_quant_int4_fp16s32_decode_region_bf16(const void *weights, size_t weight_bytes,
+    const void *scales, size_t scale_bytes, int rows, int cols,
+    int row, int col, int count_rows, int count_cols,
+    uint16_t *out, size_t out_elems);
+
+typedef enum {
+    BN_QUANT_BLOCK_SCALED_NONE = 0,
+    BN_QUANT_BLOCK_SCALED_E4M3_UE8M0_32_F16,
+} BnQuantBlockScaledDecodeKind;
+typedef struct {
+    BnQuantBlockScaledDecodeKind decode;
+    int block_rows, block_cols;
+    size_t weight_element_bytes, scale_element_bytes;
+    /* Native row-major [rows,cols] byte weights and ceil-divided block scale
+     * grid. Decode a rectangle to contiguous FP16 bits, without allocation.
+     * Exact input byte counts required; output capacity may exceed rectangle.
+     * Input/output must not overlap. Geometry, overlap and every requested
+     * source value are checked before writes. E4M3 NaN bytes and scale 255
+     * reject; FP16 overflow/underflow and signed zeros retain upstream results.
+     * Sources must remain immutable during the call. Partial edges use the
+     * same block32 grid as a zero-padded full matrix, then crop. */
+    int (*decode_region_fp16)(const void *weights, size_t weight_bytes,
+        const void *scales, size_t scale_bytes, int rows, int cols,
+        int row, int col, int count_rows, int count_cols,
+        uint16_t *out, size_t out_elems);
+} BnQuantBlockScaledOps;
+const BnQuantBlockScaledOps *bn_quant_format_block_scaled_ops(int type);
+/* Finite source pair only; output unchanged on error. No host FP arithmetic. */
+int bn_quant_e4m3_ue8m0_to_fp16(uint8_t weight, uint8_t scale, uint16_t *out);
+int bn_quant_e4m3_ue8m0_decode_region_fp16(const void *weights, size_t weight_bytes,
+    const void *scales, size_t scale_bytes, int rows, int cols,
+    int row, int col, int count_rows, int count_cols,
+    uint16_t *out, size_t out_elems);
+
+typedef enum {
+    BN_QUANT_TRELLIS_PROJECTION_NONE = 0,
+    BN_QUANT_TRELLIS_PROJECTION_EXL3_MUL1_3_F16_F32 = 1,
+} BnQuantTrellisProjectionKind;
+
+typedef enum {
+    BN_QUANT_TRELLIS_FOLDED_NONE=0,
+    /* Original-basis F16 weights: column FP16 Hadamard, row F32 butterfly
+     * narrowed to FP16, FP16 scale and sign multiplications at each boundary. */
+    BN_QUANT_TRELLIS_FOLDED_EXL3_MUL1_3_F16=1
+} BnQuantTrellisFoldedKind;
+
+typedef enum {
+    BN_QUANT_TRELLIS_FUSED_NONE=0,
+    /* Direct rotated EXL3 tensor-core SiLU FFN with F16 intermediates/down and
+     * a weighted F32 output Hadamard. Distinct from DQ/decoded GEMM paths. */
+    BN_QUANT_TRELLIS_FUSED_EXL3_MUL1_3_WEIGHTED_F32=1
+} BnQuantTrellisFusedKind;
+
+
+typedef enum {
+    BN_QUANT_TRELLIS_DECODE_NONE=0,
+    /* Original small-batch F16 GEMV / F32 activation and weighted reduction. */
+    BN_QUANT_TRELLIS_DECODE_EXL3_MUL1_3_F32=1
+} BnQuantTrellisDecodeKind;
+
+typedef struct {
+    BnQuantTrellisProjectionKind projection;
+    int tile_rows, tile_cols;
+    size_t tile_bytes;
+    uint32_t codebook_marker;
+    /* One 96-byte little-endian wire tile -> row-major [K=16,N=16]
+       FP16 bits in the rotated basis. Input/output must not overlap.
+       Returns -1 for NULL pointers. Sidecar transforms are not applied. */
+    int (*decode_tile_fp16)(const void *packed, uint16_t *out);
+    /* Decode columns [start,start+count) of a packed [K/16,N/16,48]
+       matrix to row-major [K,count], without allocating a full matrix.
+       Dimensions/column bounds are multiples of 16. packed_bytes must
+       describe exactly one matrix; out_elems may be larger than K*count.
+       Buffers must not overlap. Invalid arguments return -1 before writes. */
+    int (*decode_slice_fp16)(const void *packed, size_t packed_bytes,
+                             int k, int n, int start, int count,
+                             uint16_t *out, size_t out_elems);
+    /* A single 128-element FP16 block, in-place allowed. At most one
+       scale may be supplied. Scales contain 128 FP16 values. Pre/post
+       multiplication rounds to FP16 at the upstream boundary. */
+    int (*hadamard128_fp16)(const uint16_t *input, uint16_t *out,
+                            const uint16_t *pre, const uint16_t *post);
+    BnQuantTrellisFoldedKind folded;
+    BnQuantTrellisFusedKind fused;
+    BnQuantTrellisDecodeKind decode;
+} BnQuantTrellisOps;
+
+/* Trellis metadata and explicit projection profile; ordinary GGUF load and
+ * BnQWeight matmul capabilities remain separate. */
+const BnQuantTrellisOps *bn_quant_format_trellis_ops(int type);
+uint16_t bn_quant_exl3_mul1_codebook(uint16_t index);
+int bn_quant_exl3_mul1_decode_tile(const void *packed, uint16_t *out);
+int bn_quant_exl3_mul1_decode_slice(const void *packed, size_t packed_bytes,
+                                    int k, int n, int start, int count,
+                                    uint16_t *out, size_t out_elems);
+int bn_quant_exl3_hadamard128_fp16(const uint16_t *input, uint16_t *out,
+                                  const uint16_t *pre, const uint16_t *post);
+
 const BnQuantFormatOps *bn_quant_format_ops(int type);
+BnQuantBF16DecodeKind bn_quant_format_bf16_decode_kind(int type);
+BnQuantBF16DecodeKind bn_quant_format_bf16_identity_kind(int type);
 int      bn_quant_format_has_cap(int type, uint64_t cap);
 int      bn_quant_format_supported(int type);
 int      bn_quant_format_uses_embedded_scale(int type);
@@ -398,6 +595,7 @@ int      bn_quant_format_has_cpu_batch(int type);
 int      bn_quant_format_has_cpu_matmul(int type);
 int      bn_quant_format_cpu_matmul_matches_matvec(int type);
 int      bn_quant_format_requires_native_cpu_prefill(int type);
+int      bn_quant_format_cpu_prefill_uses_tiled(int type, int n_tokens);
 int      bn_quant_format_cpu_matvec_uses_float_input(int type);
 int      bn_quant_format_supports_prepared_kquant(int type);
 int      bn_quant_format_can_cpu_repack(int type);
@@ -453,6 +651,9 @@ int      bn_quant_format_supports_native_quant_split(int type);
 int      bn_quant_format_dense_f32_type(void);
 int      bn_quant_format_gpu_float_buffer_type(void);
 int      bn_quant_format_is_f32(int type);
+/* Resident scalar storage; zero for packed weights/unsupported scalar types.
+ * I32 is index storage only, without loadable-model/CPU-matmul capabilities. */
+size_t   bn_quant_format_resident_scalar_bytes(int type);
 int      bn_quant_format_is_bf16(int type);
 int      bn_quant_format_is_q3k(int type);
 int      bn_quant_format_is_q4k(int type);
@@ -521,6 +722,9 @@ int      bn_quant_format_supports_moe_routed_affine_mmvq(int gate_type, int up_t
 int      bn_quant_format_supports_moe_routed_ordered_kquant(int gate_type, int up_type, int down_type);
 int      bn_quant_format_supports_moe_routed_e8m0(int gate_type, int up_type, int down_type);
 int      bn_quant_format_supports_moe_merged_gateup(int gate_type, int up_type);
+int      bn_quant_format_supports_moe_gathered_kquant(int gate_type,
+                                                      int up_type,
+                                                      int down_type);
 int      bn_quant_format_supports_moe_gathered_expert_batch(int gate_type,
                                                            int up_type,
                                                            int down_type);
@@ -644,6 +848,34 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               const BnPreparedWeight *prepared,
                               const float *X, int n_tokens,
                               int8_t *x_q_buf, BnThreadPool *pool);
+// Opt-in CPU prefill entry point. Uses a supported reference-tiled kernel at
+// the format's batch floor; otherwise delegates to normal prepared matmul.
+// Query bn_quant_format_cpu_prefill_uses_tiled() for compiled route coverage.
+// x_q_buf must hold W->cols bytes. Invalid inputs or tiled-scratch allocation
+// failure return -1 before writing output. Existing GEMV APIs stay separate.
+int bn_quant_matmul_prefill_prepared(float *out, const BnQWeight *W,
+                                    const BnPreparedWeight *prepared,
+                                    const float *X, int n_tokens,
+                                    int8_t *x_q_buf, BnThreadPool *pool);
+// Shared-X variant: all weights must have the same column count. Validates
+// the entire group before writing any output. Supported reference-tiled
+// projections share one Q8_K input; other projections retain prepared matmul.
+int bn_quant_matmul_prefill_prepared_multi(
+    float **out, const BnQWeight **W, const BnPreparedWeight **prepared, int n,
+    const float *X, int n_tokens, int8_t *x_q_buf, BnThreadPool *pool);
+// Reference-prefill variant using caller-owned Q8_K activations. All weights
+// share cols, divisible by 256. q/d/bsums contain n_tokens*cols bytes,
+// n_tokens*(cols/256) floats, and n_tokens*(cols/256)*16 int16 values.
+// Tiled projections use these inputs without re-quantization or allocation.
+// Other projections retain prepared matmul using X and scratch (cols bytes).
+// X/scratch may be NULL only when every projection uses a tiled kernel.
+// q/d/bsums and X remain immutable and alive until this blocking call returns.
+// Returns -1 on invalid input before writing any output; otherwise returns 0.
+int bn_quant_matmul_prefill_prepared_kquant_input_multi(
+    float **out, const BnQWeight **W, const BnPreparedWeight **prepared,
+    int n, int n_tokens, const int8_t *q, const float *d,
+    const int16_t *bsums, const float *X, int8_t *scratch,
+    BnThreadPool *pool);
 void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
                                     const BnPreparedWeight **prepared, int n,
                                     const float *X, int n_tokens,
@@ -699,7 +931,7 @@ float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n);
 // Quantize float vector to per-block Q8_0: 32-element blocks with per-block scales.
 void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n);
 
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+#if defined(__ARM_NEON) || \
     defined(__AVX2__) || defined(__wasm_relaxed_simd__)
 void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
                          int16_t *x_bsums, int n);

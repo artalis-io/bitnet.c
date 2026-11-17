@@ -1,0 +1,281 @@
+{
+  "checkpoint": "GLM NoPE packed latent KV writer and projection/cache connection",
+  "whole_goal_complete": false,
+  "artifact_root": "/tmp/bitnet-goal-glm-mla-cache",
+  "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "source_sha256": {
+    "include/gpu_backend.h": "5fceddb61b06e8de8723767be4231abc3b13c4e487a0d936eba4e71308971b06",
+    "src/gpu_cuda.cu": "3ca72750fb54741e6d95bb68298c38fda544b96bef9bdd0ced1a673ec0d61c98",
+    "src/gpu_cuda_mla.cuh": "658de588b74c9529d03eb72b2a86dc4564bd1b7b1af00f922900f117673034dd",
+    "src/transformer/bf16.c": "7fe7f443910479fd8212fb18f26dbdc10d34fe510774fa25a6226962226e0257",
+    "src/transformer/bf16_internal.h": "5f2fe01bb7169822f6d0e2b0db325a0dd1710b54ccee70ac428ac4d119e76daf",
+    "test/glm_mla_layout_checks.h": "3ee6c1b6bb81e02768cc96e0797376eea375d7425e9ae2d62f418fb153cff824",
+    "test/test_cuda_glm_mla_cache.c": "1570f9016cca8ae8bd1ef7c8d22440ac5a59a7b701448a01da4acfe0df853c97",
+    "test/test_cuda_glm_mla_cache_chain.c": "6cdbcfbd7d524b7010b3cbec8413c60b6151d4acf3afc1755954d26b9e43c001",
+    "test/cuda_glm_mla_cache_reference.h": "958ea976425f5c12ce6ac95720e77683d06d68b2937c1a00ee49d632e7fa754c",
+    "test/reference_cuda_glm_mla_cache.py": "ee539c1e051cdcda3fc2695aa43231f43c33120a9b4478c370c6d8bda4fe7604",
+    "test/reference_glm_mla_cache_chain.py": "f97d9838501afbba6d821d2e5dde473a77f886737b26d7f3df0a9c9d31b97747",
+    "Makefile": "892b9e73a4c11a4cd3cb959066bec6b6e4e35c1afaf0c6b122c6471e41207ed1"
+  },
+  "final_stages": {
+    "clean": 0,
+    "build": 0,
+    "standard": 0,
+    "benches": 0,
+    "replay-build": 0,
+    "cache": 0,
+    "chain": 0,
+    "cache-memcheck": 0,
+    "cache-synccheck": 0,
+    "chain-memcheck": 0,
+    "chain-synccheck": 0,
+    "projection-regression": 0,
+    "indexer-regression": 0,
+    "cuda": 0,
+    "sanitize": 0,
+    "trace-build": 0,
+    "trace": 0,
+    "trace-export": 0
+  },
+  "preserved_user_binary_sha256": {
+    "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+    "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+    "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+    "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+  },
+  "exact_cache_bytes": {
+    "synthetic": 27457536,
+    "actual_projection": 5415936,
+    "total": 32873472
+  },
+  "reference": {
+    "synthetic": {
+      "records": [
+        {
+          "tokens": 0,
+          "seed": 0,
+          "blocks": 2,
+          "digest": 140131776662702885,
+          "sha256": "867b627ad728f1d5997049fc6da1fb364511c4902d9f368a08de52224baae54a"
+        },
+        {
+          "tokens": 0,
+          "seed": 1,
+          "blocks": 2,
+          "digest": 140131776662702885,
+          "sha256": "867b627ad728f1d5997049fc6da1fb364511c4902d9f368a08de52224baae54a"
+        },
+        {
+          "tokens": 1,
+          "seed": 0,
+          "blocks": 3,
+          "digest": 5299934426874494261,
+          "sha256": "3d8c03a5cb1cdaa894906c9aca044976e1d2b621180a7194e7b2b0110df4f32b"
+        },
+        {
+          "tokens": 1,
+          "seed": 1,
+          "blocks": 3,
+          "digest": 324658510249461173,
+          "sha256": "0e1afade17b2b2cbc93971743f37e769c353cd5dcb9e2d9c1d2935e05a73b96d"
+        },
+        {
+          "tokens": 2,
+          "seed": 0,
+          "blocks": 3,
+          "digest": 13509885427190868485,
+          "sha256": "67bdbc326a5103b31bfe7724388e73f4ec4ea38f88a22870bb01516e6c53be89"
+        },
+        {
+          "tokens": 2,
+          "seed": 1,
+          "blocks": 3,
+          "digest": 11189965184665150725,
+          "sha256": "0c5f4b5a32e169ebad212b0acf72d85dcb0facd122cda479d65f190642b7255b"
+        },
+        {
+          "tokens": 63,
+          "seed": 0,
+          "blocks": 3,
+          "digest": 6990273744274617102,
+          "sha256": "4b45e6b5ea111249cc96098923ac7fe7705e8a964b0336dd62184189a2775bdd"
+        },
+        {
+          "tokens": 63,
+          "seed": 1,
+          "blocks": 3,
+          "digest": 1598691824451055914,
+          "sha256": "4150a45b6053195e614dfc4632d8ba691360f0864650fd95bff49771a61689ed"
+        },
+        {
+          "tokens": 64,
+          "seed": 0,
+          "blocks": 3,
+          "digest": 2183921784360145237,
+          "sha256": "593bf0cec1229403c56f4ebff71476227f11fab57997bb2153b2e0e7d88153c6"
+        },
+        {
+          "tokens": 64,
+          "seed": 1,
+          "blocks": 3,
+          "digest": 8410658320306397722,
+          "sha256": "735d49d32b135890ea5aaf91999266dab9695e865ecbceeb4ebe3ca3c0d7a86d"
+        },
+        {
+          "tokens": 65,
+          "seed": 0,
+          "blocks": 4,
+          "digest": 14070561079127006241,
+          "sha256": "4a8167b15b0fd9eae7d533905244e4eee18c89f91eb16e1aeab435f3e461f0b4"
+        },
+        {
+          "tokens": 65,
+          "seed": 1,
+          "blocks": 4,
+          "digest": 7597854435292674805,
+          "sha256": "eb9bb450e348292d7159732e128ca03dfdda3e0d816541d15047fc6a280d5229"
+        },
+        {
+          "tokens": 129,
+          "seed": 0,
+          "blocks": 5,
+          "digest": 17985376649946742154,
+          "sha256": "7353612f2f02a0de212ca58dc133c1ef5bd4910b9bdf4fd95d5d97da9060f21a"
+        },
+        {
+          "tokens": 129,
+          "seed": 1,
+          "blocks": 5,
+          "digest": 4511046999189550822,
+          "sha256": "d46e3b455b21f1ba878f068a577fec7ef4d6d6adaa7621de5eec862b04f03421"
+        },
+        {
+          "tokens": 1025,
+          "seed": 0,
+          "blocks": 19,
+          "digest": 17718633120974796,
+          "sha256": "3df042dd486976c2f1f081303868f7cc057060f9666ab0c6e00c347cb65c2eb6"
+        },
+        {
+          "tokens": 1025,
+          "seed": 1,
+          "blocks": 19,
+          "digest": 8125806899481645555,
+          "sha256": "d9a667bf3b12c0ae306d6bb3ab1c2383d78afea944890c070f251acef661a87d"
+        },
+        {
+          "tokens": 4105,
+          "seed": 0,
+          "blocks": 67,
+          "digest": 14631944268121087519,
+          "sha256": "b8adff5c26c029c363a9e0db7f54517f0b5e79091b976a31518b65aabdbc6420"
+        },
+        {
+          "tokens": 4105,
+          "seed": 1,
+          "blocks": 67,
+          "digest": 11865291153386492322,
+          "sha256": "9b34454a8c15e871d55cf7be615ca36dbfc7ce95cf53779884e8e3a59f11f77c"
+        }
+      ],
+      "torch": "2.14.0+cu130",
+      "vllm": "0.33.0",
+      "extension_sha256": "e634b80e72078e964f8bd2ac541d66f2a900920773cf993544609612190bd9a9"
+    },
+    "actual_projection": [
+      {
+        "tokens": 1,
+        "blocks": 3,
+        "sha256": "bdb293764879a48330355e6a3acf69d949f7907dc34e3d5601332e547d146324"
+      },
+      {
+        "tokens": 2,
+        "blocks": 3,
+        "sha256": "8d3918107682efe8a87c05c4d3c41264998a874a684aa4e092bdb7cb7d62c9d9"
+      },
+      {
+        "tokens": 3,
+        "blocks": 3,
+        "sha256": "0290d8359e26287f35983b42482bed3d4597682ff3bd50b8be4e7f603be21633"
+      },
+      {
+        "tokens": 7,
+        "blocks": 3,
+        "sha256": "386934691b60d377747ce8ee51f17a610e9dab4f9d6e0112fa145376e954b7f0"
+      },
+      {
+        "tokens": 17,
+        "blocks": 3,
+        "sha256": "29606689240018670079f7bd0b49fc043bda227c32a98de60cf43e25735021ca"
+      },
+      {
+        "tokens": 65,
+        "blocks": 4,
+        "sha256": "f9862387aca5cd523b0e54342aed14f0875709e38e364fd37de6cda20fd15837"
+      },
+      {
+        "tokens": 129,
+        "blocks": 5,
+        "sha256": "fbe3b247004843becae1a95e9bd613a5ee969ebc479eca4c8278279a9c79c5df"
+      },
+      {
+        "tokens": 1025,
+        "blocks": 19,
+        "sha256": "9e576d81e790737a02ca3bd26c4610c2296fb50f20de01bf7f4cf16e8099c56d"
+      }
+    ],
+    "both_captured_twice": true
+  },
+  "comparison_profile": "Cache-only comparisons use system CUDA libraries. Actual projection chain uses paired reference cuBLAS130101 as documented for MLA projection. Complete CUDA suite/build uses system libraries.",
+  "traces": {
+    "kernels": {
+      "Kernel2": 1,
+      "cache_append_kernel": 1,
+      "cuda_bf16_q8_mma_kernel": 3,
+      "quantize_bf16_q8_batch_kernel": 3,
+      "vector8_rmsnorm_kernel": 2
+    },
+    "kernel_count": 10,
+    "runtime_calls": {
+      "cuKernelGetFunction": 1,
+      "cuKernelGetName": 9,
+      "cuLaunchKernel": 1,
+      "cudaLaunchKernel_v7000": 9,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "memcpy_activity_records": 0,
+    "synchronization_records": [
+      [
+        26465156,
+        26979923,
+        0,
+        1,
+        0,
+        32,
+        5168,
+        317941362982912,
+        null,
+        3,
+        4294967295,
+        0
+      ],
+      [
+        26983959,
+        26988356,
+        0,
+        1,
+        0,
+        4294967295,
+        5169,
+        317941362982912,
+        null,
+        4,
+        4294967295,
+        0
+      ]
+    ],
+    "scope": "Warmed129-token prepare-plus-cache chain. All staging/readbacks outside capture. One caller stream fence; unattributed CUPTI context synchronization retained."
+  },
+  "scope": "Cache writes only. Chunked/resumed cases split cache writes while projection batch geometry stays fixed. No full chunked MLA attention/generation claim.",
+  "remaining": "Native attention adapter integration, logical-to-physical sparse indices and order/tie downstream qualification, complete MLA/mHC/MoE blocks, model generation/admission and wider backend/placement/performance/serving goals."
+}

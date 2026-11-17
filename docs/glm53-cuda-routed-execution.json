@@ -1,0 +1,317 @@
+{
+  "scope": "Actual GLM supplied-route expert execution, bounded streaming banks; router/shared expert/full-model generation not qualified",
+  "whole_goal_complete": false,
+  "model": "/data/models/gguf/glm5_3_flash/ud_q4_k_xl/GLM-5.3-Flash-UD-Q4_K_XL-00001-of-00006.gguf",
+  "gpu": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "geometry": {
+    "dim": 4096,
+    "hidden_dim": 2048,
+    "n_experts": 288,
+    "k": 8
+  },
+  "formats": {
+    "gate": "Q4_K (12)",
+    "up": "Q4_K (12)",
+    "down": "Q5_K (13)"
+  },
+  "expert_bytes": 15204352,
+  "bank": {
+    "slots": 2,
+    "capacities": [
+      1,
+      3,
+      8
+    ],
+    "reserved_payload_per_memory_domain": [
+      40894464,
+      122683392,
+      327155712
+    ],
+    "activation_per_submission": true
+  },
+  "reference": {
+    "tokens": [
+      1,
+      2,
+      9,
+      64,
+      65,
+      129
+    ],
+    "experts": [
+      0,
+      1,
+      17,
+      71,
+      128,
+      191,
+      211,
+      233,
+      256,
+      271,
+      283,
+      287
+    ],
+    "weight_sha256": {
+      "gate": "e23559ef03bbbba5281e5047fafb290abea4bb9abdf21ec40dda57071a8c9dd2",
+      "up": "16b7e2843d25724f49ccc5a41ec90ee85ef0eba32706657c6464250c7256ea76",
+      "down": "91bf031b27fa85b65822bed24818c40612198ebe0db1a223ecc18c7d5362d830"
+    },
+    "cuda_extension_sha256": "19513f6a05ac8898d6ecff4c7a259326f87c3dcf185b74b2050d2a6a7fe8b561",
+    "activation_source_sha256": "bebeddbd4997f49f54471ee31ac42b22c3c11dfe25244e55d20c36f390489c05",
+    "independent_repeat_equal": true,
+    "router_inputs_provided": true,
+    "plugin_whole_moe_clamp_profile": "Installed whole GGUF MoE method omits clamp configuration; explicit original-operator composition preserves model clamp10"
+  },
+  "replay": {
+    "cases": 36,
+    "exact_words": 165888000,
+    "execution_modes": [
+      "per expert",
+      "grouped bank"
+    ],
+    "comparison": "direct byte comparison after native inverse mapping; up/activation/down/weighted/final output",
+    "upload_bytes": "exactly active expert raw payload, independent of bank capacity"
+  },
+  "trace": {
+    "kernels": 16,
+    "kernel_counts": {
+      "bank_project_grouped_mma": 8,
+      "bank_activate_grouped": 4,
+      "bank_quantize_grouped": 4
+    },
+    "api_counts": {
+      "cudaEventQuery_v3020": 4,
+      "cudaMemcpyAsync_v3020": 8,
+      "cudaEventRecord_v3020": 8,
+      "cudaStreamWaitEvent_v3020": 4,
+      "cuKernelGetName": 16,
+      "cudaLaunchKernel_v7000": 16,
+      "cudaStreamSynchronize_v3020": 1
+    },
+    "weight_upload_bytes": 182452224,
+    "descriptor_upload_bytes": 144,
+    "allocation_apis": 0,
+    "activation_transfers": 0,
+    "copy_ready_event_waits": 4,
+    "final_host_fences": 1,
+    "additional_context_sync": "unattributed CUPTI context synchronization after final kernel",
+    "capture_scope": "warm source pages, T65 capacity3, four grouped bank submissions; grouping/original quantization/final route reduction outside capture",
+    "exact_post_capture_comparisons": 6656000,
+    "observational_only": true,
+    "synchronization_records": [
+      {
+        "start": 26078891,
+        "end": 26092021,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 1490,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 1,
+        "eventId": 22,
+        "eventSyncId": 4294967295
+      },
+      {
+        "start": 28775211,
+        "end": 28778356,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 1511,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 1,
+        "eventId": 24,
+        "eventSyncId": 4294967295
+      },
+      {
+        "start": 31634931,
+        "end": 31637675,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 1532,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 1,
+        "eventId": 22,
+        "eventSyncId": 2
+      },
+      {
+        "start": 34628485,
+        "end": 34633883,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 1553,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 1,
+        "eventId": 24,
+        "eventSyncId": 4
+      },
+      {
+        "start": 38457636,
+        "end": 38462023,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 4294967295,
+        "correlationId": 1575,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 4,
+        "eventId": 4294967295,
+        "eventSyncId": 0
+      },
+      {
+        "start": 28688208,
+        "end": 28691964,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 14,
+        "correlationId": 1496,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 2,
+        "eventId": 21,
+        "eventSyncId": 1
+      },
+      {
+        "start": 31581880,
+        "end": 31584223,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 14,
+        "correlationId": 1517,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 2,
+        "eventId": 23,
+        "eventSyncId": 3
+      },
+      {
+        "start": 34535483,
+        "end": 34540220,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 14,
+        "correlationId": 1538,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 2,
+        "eventId": 21,
+        "eventSyncId": 5
+      },
+      {
+        "start": 37438659,
+        "end": 37440932,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 14,
+        "correlationId": 1559,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 2,
+        "eventId": 23,
+        "eventSyncId": 7
+      },
+      {
+        "start": 37493533,
+        "end": 38442332,
+        "deviceId": 0,
+        "contextId": 1,
+        "greenContextId": 0,
+        "streamId": 14,
+        "correlationId": 1574,
+        "globalPid": 313523116703744,
+        "deprecatedSyncType": null,
+        "syncType": 3,
+        "eventId": 4294967295,
+        "eventSyncId": 0
+      }
+    ]
+  },
+  "validation": {
+    "stages": {
+      "clean": 0,
+      "build": 0,
+      "standard": 0,
+      "benches": 0,
+      "bank-and-cache": 0,
+      "replay-build": 0,
+      "cuda": 0,
+      "routed-final": 0,
+      "dense-prefix-regression": 0,
+      "routed-memcheck": 0,
+      "routed-synccheck": 0,
+      "bank-memcheck": 0,
+      "bank-synccheck": 0,
+      "nsys": 0,
+      "nsys-export": 0,
+      "trace-summary": 0
+    },
+    "current_builds_zero_warnings": true,
+    "historical_warning": "Full-CUDA log includes a prerequisite warning from an ambiguous same-line for loop in new synthetic bank test. Formatting-only token-identical fix; bank/cache target rebuilt warning-free and both bank sanitizers rerun. Complete CUDA backend body and diagnostics had passed and were unchanged.",
+    "synthetic_bounds": [
+      "experts1/k1",
+      "experts288/k8",
+      "experts512/k32",
+      "invalid IDs leave gathered data unchanged",
+      "invalid clamp/settings/budgets leave leases unconsumed"
+    ],
+    "qwen_grouped_differential_cases": 192,
+    "prefix_regression_exact_words": 221074320,
+    "protected_user_binaries": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "source_freeze": {
+    "include/gpu_backend.h": "c042a7852b2e3ba6357f222987fe2bf6905a926ef2e638e3d70db65af5fc53fb",
+    "src/gpu_cuda_moe_resident.cuh": "d5614f9877675ec3418c48796e6b6df4f5fe0d901139ab34b4c0563cdec16106",
+    "src/gpu_cuda_moe_grouped.cuh": "8be924734ff9a53e1064524a0187581686deb5b01a30e857ce24b5d27145684b",
+    "src/gpu_cuda_expert_cache.cuh": "c56806e08effee8c43e8647775d9a3bb341ccbc6d233d341af2f113998872504",
+    "src/transformer/bf16.c": "571f486816d82ecd0ee2ff165e4c550e469c8b142901b2747310087881a00403",
+    "test/test_cuda_moe_bank.c": "bfd672887110217479064d7c3b352ca846581f13751fcc52c96c58280d698093",
+    "test/test_cuda_expert_cache.c": "547d24f13af7a497e957bafdd27329e3b0c21e43e3c0a62fdd6d00761de9f8aa",
+    "test/cuda_bf16_expert_bank_replay.h": "b67a9efb95d1436d1b82a2ad76a200ef1e94fa7346668a72cecbb3665e1e8bd9",
+    "test/reference_glm_routed_ffn.py": "7e6a88602b13ef4a895f16c16cf5ce448e6484d79cc4b04d3ddb24b842ad633e",
+    "test/test_cuda_glm_routed_ffn.c": "54d40b7e4a4b7f609a44f9f915a44b9f80453735c164121aabf262941613828e",
+    "Makefile": "a2a93f08aaf740ec313a0603ec2c96b773f626a207e2b7231fbaf45e65d67ea3"
+  },
+  "artifacts": {
+    "reference/reference.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-moe/reference/reference.json",
+      "sha256": "28819a563b5e1a02f2b1455fe67a71ca5efa10aed77f0967acb9064893093f3e"
+    },
+    "reference-repeat/reference.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-moe/reference-repeat/reference.json",
+      "sha256": "8fdceb00777ee0ba1f3db2e77c7d076619c57ded139252e58ba8a122e56b4692"
+    },
+    "resident-trace-summary.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-moe/resident-trace-summary.json",
+      "sha256": "cbb646aaa146fc3de509f0c76526d9823bf1d94c6aa989fbdd740ba4f1c0dcf4"
+    }
+  },
+  "remaining": [
+    "F32 router projection and biased sigmoid selection",
+    "shared expert and full MoE sublayer composition",
+    "RAM source-cache and GLM VRAM-cache policy qualification",
+    "indexed MLA and pooled sparse indexer",
+    "whole-model binding/execution and long-context generation",
+    "matched fully resident vLLM performance and serving tails"
+  ]
+}

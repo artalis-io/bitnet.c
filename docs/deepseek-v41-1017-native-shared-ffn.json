@@ -1,0 +1,129 @@
+{
+  "status": "Qualified native dense F16 shared FFN component; whole goal remains active",
+  "implementation": {
+    "api": "BnGPUF16FFNResidentPlan / ffn_f16_resident, include/gpu_backend.h",
+    "arithmetic": "Source dense FP16 gate/up GEMMs, half2 SiLU/product and clipping boundaries, then full-geometry F32 down GEMM. F32 routed+shared addition is captured independently but not part of this callback.",
+    "ownership": "Borrow backend-owned immutable packed F16 weights; five request-local disjoint activation views; two independent request streams/workspaces. No GPU handles on CPU weights or shared model state.",
+    "workspace": "Reuse linear_f16_reserve:32MiB FP16 handle plus existing16MiB trellis F32 handle; no additional hidden scratch.",
+    "validation": "Validate all three projections, dimensions/types/owners/counts, entire activation lifetime aliases, clip finite0..65504, even hidden width, half2 alignment and launch bounds before any queued math.",
+    "source_scope": "Pinned Deepseek GatedMLP shared expert is FP16 and has no BC/multiGu path; this qualifies its default shared FFN including small rows. It does not qualify routed <=8 specialized BC decode."
+  },
+  "references": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "torch": "2.14.0+cu130",
+    "torch_git": "08187d9e0fba026dc8217405802ab5381dc88d90",
+    "cases": 352,
+    "actual_layers": 40,
+    "actual_cases": 288,
+    "synthetic_cases": 64,
+    "explicit_active_clipping_pairs": 10,
+    "capture_policy": "332 source cases captured before native implementation/testing. A subsequent source-only coverage audit found limit10 inactive;20 additional scaled-input cases capture active clipping independently, before any native full corpus run. Both original corpora unchanged; combined manifests reference all originals without copying or replacing.",
+    "weight_provenance": "120 actual shared matrices from independently captured FP8 E8M0\u2192F16 source dequantization, hashes verified; native probe uses model-owned core checkpoint preparation for all330 matrices and borrows shared role handles.",
+    "library_policy": "Original packaged cuBLAS13.1 and paired system13.10 captures both preserved. Native matches paired corpus. Paired Python maps both bundled and preloaded libraries; ELF interposition follows the existing paired reference protocol.",
+    "original_vs_paired_differing_cases": {
+      "gate": 288,
+      "up": 286,
+      "act": 286,
+      "out": 332,
+      "final": 332
+    },
+    "reference_manifests": {
+      "original": "0992a777180eb7897264c2bc61e3eff7545cda38713dec71a1aaef5e8726411c",
+      "paired": "1a19aaa80484df52992a8e4b0dfc8de9d6d44ae871c3f41f8d43fb67c9a7d369"
+    },
+    "artifacts": "/tmp/bitnet-goal-native-shared",
+    "capture_script_sha256": {
+      "capture.py": "4945afba6ad25717e36cd81c4486d3d3de558a14a3ab7ac659074e53cf776deb",
+      "capture_extra.py": "2daad1f5698b3af3669b38ce8705083222ba00305f6bac8500e306ab3ae3e61b",
+      "capture_extra_driver.py": "4a769b5f831d7271e257827bd5e8306a1fd42423ee6559f6770a2cebdf902951",
+      "combine.py": "cad33f88f92567a087633961f2a03d619b3df0cb1280cc9f5c6b6bc2477be597",
+      "fixtures.py": "855e5f2c017d4202e4766a40625a459f5e050fddb4cd784e54cd884649a32a8f",
+      "reference.cu": "5bba43be0c3ced2e98335764dcbfb9723d7f1d566bb2f0daf255dc860f53ddff"
+    }
+  },
+  "qualification": {
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "asan-native": 0,
+      "memcheck-unit": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "records": {
+      "native": {
+        "profiles": 352,
+        "ffn_calls": 1408,
+        "compared_bytes": 3181012992,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "profiles": 352,
+        "ffn_calls": 1408,
+        "compared_bytes": 3181012992,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "profiles": 352,
+        "ffn_calls": 1408,
+        "compared_bytes": 3181012992,
+        "mismatches": 0
+      },
+      "nsys": {
+        "profiles": 1,
+        "ffn_calls": 4,
+        "compared_bytes": 5701632,
+        "mismatches": 0
+      }
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "synthetic_fixtures": 64,
+    "source_files_verified": 730,
+    "source_manifest_sha256": "b53dbd27d73e0a51e4c2b58ad874f47d2507211ab2235638d990887631f5a59b",
+    "profile": {
+      "warmed_ffn_calls": 32,
+      "kernel_count": 192,
+      "streams": 2,
+      "kernel_duration_sum_ns": 2069317,
+      "runtime_api_counts": {
+        "cuDeviceGet": 96,
+        "cuKernelGetName": 32,
+        "cuKernelSetAttribute": 96,
+        "cuLaunchKernelEx": 96,
+        "cuStreamGetGreenCtx": 192,
+        "cudaGetLastError_v3020": 256,
+        "cudaLaunchKernelExC_v11060": 64,
+        "cudaLaunchKernel_v7000": 32,
+        "cudaSetDevice_v3020": 192
+      },
+      "allocations_copies_frees_memsets_host_synchronization_in_capture": 0,
+      "scope": "Actual layer0 R64 clipping10; setup/uploads/host reference IO outside capture. This measures resident execution, not complete MoE or vLLM performance."
+    },
+    "probe_sha256": "a4852f6b2658ebf66c453e5961d35b1d81d6e1183dcbf212a58fc8f4b722cdbf",
+    "prior_attempts": "Preserved before-active-clipping and before-selector-fix: unused corpus clipping branch prompted independent extra source cases; focused selector missing return was fixed after its fallthrough reached an unrelated legacy reference assertion. No reference values replaced."
+  },
+  "limits": [
+    "Full MoE fused/heavy/shared scheduling and production store ownership integration remain incomplete.",
+    "Native full forward/generation/CLI, compressed/indexed/shared-KV attention and Engram remain unadmitted.",
+    "Current callback excludes bias, residual addition and odd hidden widths; source model uses even hidden width and no shared bias.",
+    "Source routed <=8 specialized decode profile remains separate and unported.",
+    "Actual reference inputs are synthetic activations through real weights; no full-model accuracy claim.",
+    "Resident kernel timings are diagnostic; no matched vLLM throughput/decode or serving tail-latency claim."
+  ]
+}

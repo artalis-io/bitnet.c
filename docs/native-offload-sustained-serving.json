@@ -1,0 +1,1837 @@
+{
+  "schema": 1,
+  "status": "declared_sustained_slo_passed",
+  "evidence_root": "/tmp/bitnet-goal-native-serving-slo",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "production_source_changes": 0,
+  "protocol": {
+    "schema": 1,
+    "scope": "Adapted DeepSeek native EXL3 INT4/F16 CUDA offload persistent stdio, four fixed independently referenced1026-token domain histories; no vLLM or universal traffic claim.",
+    "warmup_requests": 4,
+    "measured_requests": 128,
+    "arrival_pair_interval_seconds": 10,
+    "measured_offered_requests_per_second": 0.2,
+    "outputs": 5,
+    "live": 2,
+    "prefill_chunk": 2048,
+    "maxseq": 1280,
+    "ram_mib": 195060,
+    "gpu_mib": 8192,
+    "host_mib": 200000,
+    "device_mib": 86000,
+    "page_policy": "huge",
+    "targets": {
+      "p99_client_ttft_ms": 10000,
+      "p99_client_itl_ms": 1000,
+      "minimum_completed_requests_per_second": 0.195,
+      "max_arrival_lateness_ms": 100,
+      "rejected": 0,
+      "failed": 0
+    },
+    "percentile": "nearest rank",
+    "precision": "exl3-int4-f16 adapted profile; original routing and immutable source golds",
+    "accounting": "Process launch-to-ready, warmup, measured scheduled arrivals-to-completion, queueing and drain reported separately. Client timestamps include transport/queue latency; pairs scheduled independently of completion. Four warmup requests cover the exact four repeated corpus histories; no unseen-prompt SLO claim.",
+    "cold_precondition": "Initial process uses private model files with targeted eviction and mincore<=0.001 before launch; source cache not cleared globally. Warmup is not hidden.",
+    "memory": "Existing managed payload caps include retained idle resources. wait4 RSS is process high-water, not exact device physical peak. No observer sampler/tracing in timed run.",
+    "qualification": "Separate trace-enabled eight-request control against entire immutable F32 vocabulary; timed128requests check all token IDs, text and positions. No threshold retuning after results.",
+    "production_source_changes": 0,
+    "full_goal_complete": false
+  },
+  "control": {
+    "mode": "control",
+    "full_f32_heads": 40,
+    "requests": 8,
+    "measured_requests": 4,
+    "startup_to_ready_ms": 20431.800509,
+    "warmup_ms": 261987.192324,
+    "measured_arrivals_to_last_complete_seconds": 17.885155102,
+    "completed_requests_per_second": 0.22364916475075478,
+    "p99_client_ttft_ms": 7467.00312,
+    "p99_client_itl_ms": 321.532892,
+    "max_arrival_lateness_ms": 0.152728,
+    "gates": {
+      "p99_ttft": true,
+      "p99_itl": true,
+      "throughput": true,
+      "arrival_lateness": true,
+      "all_requests_exact": true,
+      "managed_caps": true
+    },
+    "slo_passed": null,
+    "request_metrics": [
+      {
+        "request": 4,
+        "client_ttft_ms": 7466.854733,
+        "client_total_ms": 8388.020535,
+        "client_queue_ms": 1.780291,
+        "itls_ms": [
+          265.265721,
+          202.230657,
+          222.470131,
+          231.005026
+        ]
+      },
+      {
+        "request": 5,
+        "client_ttft_ms": 7467.00312,
+        "client_total_ms": 8388.198186,
+        "client_queue_ms": 1.833803,
+        "itls_ms": [
+          265.292862,
+          202.210887,
+          222.468538,
+          231.137329
+        ]
+      },
+      {
+        "request": 6,
+        "client_ttft_ms": 6881.216883,
+        "client_total_ms": 7884.767505,
+        "client_queue_ms": 1.789796,
+        "itls_ms": [
+          321.513693,
+          237.092711,
+          207.334948,
+          237.368402
+        ]
+      },
+      {
+        "request": 7,
+        "client_ttft_ms": 6881.395806,
+        "client_total_ms": 7884.976204,
+        "client_queue_ms": 1.838731,
+        "itls_ms": [
+          321.532892,
+          237.080773,
+          207.34251,
+          237.536699
+        ]
+      }
+    ],
+    "memory": {
+      "host_limit": 209715200000,
+      "device_limit": 90177536000,
+      "shared_host_upper": 204717508744,
+      "shared_device_upper": 26220545472,
+      "reserved_host": 204761637688,
+      "reserved_device": 29746365942,
+      "peak_reserved_host": 204761637688,
+      "peak_reserved_device": 29746365942,
+      "busy": 0,
+      "idle_retained": 1
+    },
+    "batch": {
+      "completed": 8,
+      "steps": 20,
+      "group_calls": 20,
+      "single_forwards": 0,
+      "shared_layer_steps": 160,
+      "fallback_layer_steps": 640,
+      "shared_expert_borrows": 46570,
+      "busy_retries": 0,
+      "created": 2,
+      "reused": 6,
+      "retained_device_payload": 3525820470,
+      "peak_device_payload": 3525820470,
+      "peak_live": 2
+    },
+    "experts": {
+      "upload_bytes": 670998908928,
+      "upload_ms": 27790,
+      "ram_miss_bytes": 180998733312,
+      "source_read_bytes": 180998733312,
+      "source_read_ms": 242834
+    },
+    "compute": {
+      "fused_kernel_launches": 5148,
+      "joint_fused_kernel_launches": 4122,
+      "avoided_fused_launches": 4122,
+      "individual_fused_kernel_launches": 1026,
+      "folded_ffn_calls": 650
+    },
+    "rusage": {
+      "max_rss_bytes": 182245888000,
+      "input_blocks": 378307944,
+      "minor_faults": 9543286,
+      "major_faults": 52,
+      "user_cpu_seconds": 48.650912,
+      "system_cpu_seconds": 223.850269
+    },
+    "production_source_changes": 0,
+    "new_cupti_capture_count": 0,
+    "full_goal_complete": false
+  },
+  "timed": {
+    "mode": "timed",
+    "full_f32_heads": 0,
+    "requests": 132,
+    "measured_requests": 128,
+    "startup_to_ready_ms": 20459.374944,
+    "warmup_ms": 86283.473997,
+    "measured_arrivals_to_last_complete_seconds": 637.745751216,
+    "completed_requests_per_second": 0.20070694278392345,
+    "p99_client_ttft_ms": 7418.919142,
+    "p99_client_itl_ms": 274.387686,
+    "max_arrival_lateness_ms": 0.544542,
+    "gates": {
+      "p99_ttft": true,
+      "p99_itl": true,
+      "throughput": true,
+      "arrival_lateness": true,
+      "all_requests_exact": true,
+      "managed_caps": true
+    },
+    "slo_passed": true,
+    "request_metrics": [
+      {
+        "request": 4,
+        "client_ttft_ms": 7418.919142,
+        "client_total_ms": 8331.98186,
+        "client_queue_ms": 1.710905,
+        "itls_ms": [
+          263.606348,
+          200.315076,
+          219.506186,
+          229.428392
+        ]
+      },
+      {
+        "request": 5,
+        "client_ttft_ms": 7419.17267,
+        "client_total_ms": 8332.16551,
+        "client_queue_ms": 1.765348,
+        "itls_ms": [
+          263.587409,
+          200.218437,
+          219.558317,
+          229.538029
+        ]
+      },
+      {
+        "request": 6,
+        "client_ttft_ms": 7361.95561,
+        "client_total_ms": 8308.807681,
+        "client_queue_ms": 2.20491,
+        "itls_ms": [
+          271.699107,
+          234.837609,
+          205.279002,
+          234.827153
+        ]
+      },
+      {
+        "request": 7,
+        "client_ttft_ms": 7362.155706,
+        "client_total_ms": 8308.968997,
+        "client_queue_ms": 2.251701,
+        "itls_ms": [
+          271.691295,
+          234.871981,
+          205.25128,
+          234.920996
+        ]
+      },
+      {
+        "request": 8,
+        "client_ttft_ms": 6546.904572,
+        "client_total_ms": 7457.426716,
+        "client_queue_ms": 2.134913,
+        "itls_ms": [
+          262.290777,
+          198.935687,
+          219.967262,
+          229.142714
+        ]
+      },
+      {
+        "request": 9,
+        "client_ttft_ms": 6547.124538,
+        "client_total_ms": 7457.506819,
+        "client_queue_ms": 2.190098,
+        "itls_ms": [
+          262.258828,
+          198.954506,
+          219.917816,
+          229.212852
+        ]
+      },
+      {
+        "request": 10,
+        "client_ttft_ms": 6806.111626,
+        "client_total_ms": 7758.284698,
+        "client_queue_ms": 2.095593,
+        "itls_ms": [
+          272.123555,
+          235.516016,
+          207.859185,
+          236.463584
+        ]
+      },
+      {
+        "request": 11,
+        "client_ttft_ms": 6806.319904,
+        "client_total_ms": 7758.467528,
+        "client_queue_ms": 2.146351,
+        "itls_ms": [
+          272.117656,
+          235.512941,
+          207.880278,
+          236.546991
+        ]
+      },
+      {
+        "request": 12,
+        "client_ttft_ms": 6536.295006,
+        "client_total_ms": 7475.480569,
+        "client_queue_ms": 1.739238,
+        "itls_ms": [
+          261.103272,
+          199.033738,
+          242.747397,
+          236.102152
+        ]
+      },
+      {
+        "request": 13,
+        "client_ttft_ms": 6536.514411,
+        "client_total_ms": 7475.670078,
+        "client_queue_ms": 1.788343,
+        "itls_ms": [
+          261.125477,
+          199.023101,
+          242.7033,
+          236.211518
+        ]
+      },
+      {
+        "request": 14,
+        "client_ttft_ms": 6803.777438,
+        "client_total_ms": 7751.194552,
+        "client_queue_ms": 1.921978,
+        "itls_ms": [
+          271.762714,
+          234.866093,
+          205.612692,
+          234.928798
+        ]
+      },
+      {
+        "request": 15,
+        "client_ttft_ms": 6803.95527,
+        "client_total_ms": 7751.449011,
+        "client_queue_ms": 1.98221,
+        "itls_ms": [
+          271.744266,
+          234.875036,
+          205.588695,
+          235.160893
+        ]
+      },
+      {
+        "request": 16,
+        "client_ttft_ms": 6525.609995,
+        "client_total_ms": 7432.169894,
+        "client_queue_ms": 2.085948,
+        "itls_ms": [
+          260.497026,
+          198.664212,
+          218.99119,
+          228.245233
+        ]
+      },
+      {
+        "request": 17,
+        "client_ttft_ms": 6525.766304,
+        "client_total_ms": 7432.287093,
+        "client_queue_ms": 2.137406,
+        "itls_ms": [
+          260.511878,
+          198.668509,
+          218.984159,
+          228.300057
+        ]
+      },
+      {
+        "request": 18,
+        "client_ttft_ms": 6795.219238,
+        "client_total_ms": 7742.021963,
+        "client_queue_ms": 1.73348,
+        "itls_ms": [
+          271.506613,
+          235.040979,
+          205.406137,
+          234.689562
+        ]
+      },
+      {
+        "request": 19,
+        "client_ttft_ms": 6795.411031,
+        "client_total_ms": 7742.140314,
+        "client_queue_ms": 1.796937,
+        "itls_ms": [
+          271.490548,
+          235.030374,
+          205.41503,
+          234.734411
+        ]
+      },
+      {
+        "request": 20,
+        "client_ttft_ms": 6528.996191,
+        "client_total_ms": 7439.503984,
+        "client_queue_ms": 2.36848,
+        "itls_ms": [
+          261.807519,
+          199.201784,
+          219.929013,
+          229.366276
+        ]
+      },
+      {
+        "request": 21,
+        "client_ttft_ms": 6529.202226,
+        "client_total_ms": 7439.60625,
+        "client_queue_ms": 2.433159,
+        "itls_ms": [
+          261.810733,
+          199.191309,
+          219.922923,
+          229.428872
+        ]
+      },
+      {
+        "request": 22,
+        "client_ttft_ms": 6808.736917,
+        "client_total_ms": 7762.733257,
+        "client_queue_ms": 1.803687,
+        "itls_ms": [
+          274.378302,
+          236.685433,
+          207.24683,
+          235.471387
+        ]
+      },
+      {
+        "request": 23,
+        "client_ttft_ms": 6808.946938,
+        "client_total_ms": 7762.919712,
+        "client_queue_ms": 1.86476,
+        "itls_ms": [
+          274.387686,
+          236.626383,
+          207.298278,
+          235.570389
+        ]
+      },
+      {
+        "request": 24,
+        "client_ttft_ms": 6523.908014,
+        "client_total_ms": 7432.870545,
+        "client_queue_ms": 2.032106,
+        "itls_ms": [
+          261.549525,
+          198.983801,
+          219.590105,
+          228.70145
+        ]
+      },
+      {
+        "request": 25,
+        "client_ttft_ms": 6524.061379,
+        "client_total_ms": 7432.957398,
+        "client_queue_ms": 2.080941,
+        "itls_ms": [
+          261.604118,
+          198.955688,
+          219.60705,
+          228.688331
+        ]
+      },
+      {
+        "request": 26,
+        "client_ttft_ms": 6816.33423,
+        "client_total_ms": 7765.678038,
+        "client_queue_ms": 2.044795,
+        "itls_ms": [
+          272.202897,
+          235.400829,
+          206.037572,
+          235.468202
+        ]
+      },
+      {
+        "request": 27,
+        "client_ttft_ms": 6816.529438,
+        "client_total_ms": 7765.866456,
+        "client_queue_ms": 2.0936,
+        "itls_ms": [
+          272.233243,
+          235.382331,
+          205.966153,
+          235.661067
+        ]
+      },
+      {
+        "request": 28,
+        "client_ttft_ms": 6518.289537,
+        "client_total_ms": 7427.657488,
+        "client_queue_ms": 2.349161,
+        "itls_ms": [
+          261.449942,
+          199.189436,
+          219.603285,
+          228.889407
+        ]
+      },
+      {
+        "request": 29,
+        "client_ttft_ms": 6518.486969,
+        "client_total_ms": 7427.86155,
+        "client_queue_ms": 2.430114,
+        "itls_ms": [
+          261.419846,
+          199.189826,
+          219.673432,
+          228.992565
+        ]
+      },
+      {
+        "request": 30,
+        "client_ttft_ms": 6800.701056,
+        "client_total_ms": 7755.29583,
+        "client_queue_ms": 1.902528,
+        "itls_ms": [
+          272.770775,
+          237.315896,
+          207.609695,
+          236.711973
+        ]
+      },
+      {
+        "request": 31,
+        "client_ttft_ms": 6800.940162,
+        "client_total_ms": 7755.490698,
+        "client_queue_ms": 1.974378,
+        "itls_ms": [
+          272.789783,
+          237.249796,
+          207.612138,
+          236.80168
+        ]
+      },
+      {
+        "request": 32,
+        "client_ttft_ms": 6558.539604,
+        "client_total_ms": 7467.159632,
+        "client_queue_ms": 2.104176,
+        "itls_ms": [
+          261.425485,
+          199.074159,
+          219.422509,
+          228.466311
+        ]
+      },
+      {
+        "request": 33,
+        "client_ttft_ms": 6558.766922,
+        "client_total_ms": 7467.396694,
+        "client_queue_ms": 2.18532,
+        "itls_ms": [
+          261.411834,
+          199.065495,
+          219.433476,
+          228.630472
+        ]
+      },
+      {
+        "request": 34,
+        "client_ttft_ms": 6802.925977,
+        "client_total_ms": 7751.478857,
+        "client_queue_ms": 2.087,
+        "itls_ms": [
+          271.822626,
+          235.010142,
+          206.741407,
+          234.769776
+        ]
+      },
+      {
+        "request": 35,
+        "client_ttft_ms": 6803.1637,
+        "client_total_ms": 7751.699184,
+        "client_queue_ms": 2.192832,
+        "itls_ms": [
+          271.790897,
+          235.007238,
+          206.748418,
+          234.882698
+        ]
+      },
+      {
+        "request": 36,
+        "client_ttft_ms": 6525.193338,
+        "client_total_ms": 7435.705968,
+        "client_queue_ms": 48.648332,
+        "itls_ms": [
+          261.950567,
+          199.408731,
+          219.75754,
+          229.197218
+        ]
+      },
+      {
+        "request": 37,
+        "client_ttft_ms": 6525.425623,
+        "client_total_ms": 7435.904431,
+        "client_queue_ms": 48.862059,
+        "itls_ms": [
+          261.930306,
+          199.387718,
+          219.753134,
+          229.311143
+        ]
+      },
+      {
+        "request": 38,
+        "client_ttft_ms": 6820.303546,
+        "client_total_ms": 7766.799171,
+        "client_queue_ms": 2.06159,
+        "itls_ms": [
+          271.506172,
+          234.73395,
+          205.325233,
+          234.730675
+        ]
+      },
+      {
+        "request": 39,
+        "client_ttft_ms": 6820.551014,
+        "client_total_ms": 7767.017895,
+        "client_queue_ms": 2.158398,
+        "itls_ms": [
+          271.462735,
+          234.699197,
+          205.352986,
+          234.837428
+        ]
+      },
+      {
+        "request": 40,
+        "client_ttft_ms": 6506.106807,
+        "client_total_ms": 7413.231309,
+        "client_queue_ms": 2.11326,
+        "itls_ms": [
+          260.825288,
+          198.722531,
+          218.982066,
+          228.404056
+        ]
+      },
+      {
+        "request": 41,
+        "client_ttft_ms": 6506.347025,
+        "client_total_ms": 7413.468261,
+        "client_queue_ms": 2.175535,
+        "itls_ms": [
+          260.760608,
+          198.763334,
+          218.983638,
+          228.477558
+        ]
+      },
+      {
+        "request": 42,
+        "client_ttft_ms": 6820.062217,
+        "client_total_ms": 7767.738577,
+        "client_queue_ms": 2.184098,
+        "itls_ms": [
+          271.854364,
+          235.176897,
+          205.429192,
+          235.056283
+        ]
+      },
+      {
+        "request": 43,
+        "client_ttft_ms": 6820.303726,
+        "client_total_ms": 7767.856197,
+        "client_queue_ms": 2.25093,
+        "itls_ms": [
+          271.807122,
+          235.174073,
+          205.436563,
+          235.077045
+        ]
+      },
+      {
+        "request": 44,
+        "client_ttft_ms": 6552.392449,
+        "client_total_ms": 7467.353729,
+        "client_queue_ms": 2.033378,
+        "itls_ms": [
+          262.865927,
+          200.183795,
+          221.428654,
+          230.219391
+        ]
+      },
+      {
+        "request": 45,
+        "client_ttft_ms": 6552.626237,
+        "client_total_ms": 7467.585873,
+        "client_queue_ms": 2.130266,
+        "itls_ms": [
+          262.845134,
+          200.162593,
+          221.39307,
+          230.457635
+        ]
+      },
+      {
+        "request": 46,
+        "client_ttft_ms": 6798.238833,
+        "client_total_ms": 7751.990949,
+        "client_queue_ms": 2.036773,
+        "itls_ms": [
+          273.602937,
+          236.419847,
+          207.003017,
+          236.546741
+        ]
+      },
+      {
+        "request": 47,
+        "client_ttft_ms": 6798.476306,
+        "client_total_ms": 7752.123071,
+        "client_queue_ms": 2.13294,
+        "itls_ms": [
+          273.574794,
+          236.376681,
+          206.995315,
+          236.63763
+        ]
+      },
+      {
+        "request": 48,
+        "client_ttft_ms": 6537.440958,
+        "client_total_ms": 7446.701474,
+        "client_queue_ms": 1.956491,
+        "itls_ms": [
+          261.490354,
+          199.198829,
+          219.383129,
+          229.012535
+        ]
+      },
+      {
+        "request": 49,
+        "client_ttft_ms": 6537.686733,
+        "client_total_ms": 7446.81007,
+        "client_queue_ms": 2.016833,
+        "itls_ms": [
+          261.439166,
+          199.211829,
+          219.40366,
+          229.025596
+        ]
+      },
+      {
+        "request": 50,
+        "client_ttft_ms": 6803.804428,
+        "client_total_ms": 7752.259028,
+        "client_queue_ms": 2.129524,
+        "itls_ms": [
+          272.357904,
+          235.321799,
+          205.593292,
+          234.97529
+        ]
+      },
+      {
+        "request": 51,
+        "client_ttft_ms": 6804.013698,
+        "client_total_ms": 7752.447816,
+        "client_queue_ms": 2.208585,
+        "itls_ms": [
+          272.310662,
+          235.360237,
+          205.57827,
+          235.097085
+        ]
+      },
+      {
+        "request": 52,
+        "client_ttft_ms": 6548.323921,
+        "client_total_ms": 7457.786836,
+        "client_queue_ms": 1.832301,
+        "itls_ms": [
+          261.237638,
+          198.940104,
+          219.683557,
+          229.363322
+        ]
+      },
+      {
+        "request": 53,
+        "client_ttft_ms": 6548.515534,
+        "client_total_ms": 7457.982385,
+        "client_queue_ms": 1.892342,
+        "itls_ms": [
+          261.301946,
+          198.895956,
+          219.670688,
+          229.502615
+        ]
+      },
+      {
+        "request": 54,
+        "client_ttft_ms": 6790.834466,
+        "client_total_ms": 7737.314788,
+        "client_queue_ms": 2.655398,
+        "itls_ms": [
+          271.65501,
+          234.868976,
+          205.253443,
+          234.549499
+        ]
+      },
+      {
+        "request": 55,
+        "client_ttft_ms": 6791.054012,
+        "client_total_ms": 7737.403123,
+        "client_queue_ms": 2.752297,
+        "itls_ms": [
+          271.592163,
+          234.912323,
+          205.259472,
+          234.543419
+        ]
+      },
+      {
+        "request": 56,
+        "client_ttft_ms": 6525.404501,
+        "client_total_ms": 7443.074871,
+        "client_queue_ms": 2.146471,
+        "itls_ms": [
+          263.400504,
+          200.44891,
+          221.23571,
+          232.419052
+        ]
+      },
+      {
+        "request": 57,
+        "client_ttft_ms": 6525.571377,
+        "client_total_ms": 7443.199612,
+        "client_queue_ms": 2.197669,
+        "itls_ms": [
+          263.429858,
+          200.451604,
+          221.227978,
+          232.452303
+        ]
+      },
+      {
+        "request": 58,
+        "client_ttft_ms": 6837.713796,
+        "client_total_ms": 7793.718144,
+        "client_queue_ms": 2.031876,
+        "itls_ms": [
+          275.431311,
+          237.425384,
+          206.623547,
+          236.326524
+        ]
+      },
+      {
+        "request": 59,
+        "client_ttft_ms": 6837.930868,
+        "client_total_ms": 7793.8987,
+        "client_queue_ms": 2.097576,
+        "itls_ms": [
+          275.416688,
+          237.428208,
+          206.642937,
+          236.390933
+        ]
+      },
+      {
+        "request": 60,
+        "client_ttft_ms": 6565.329301,
+        "client_total_ms": 7475.519989,
+        "client_queue_ms": 2.130446,
+        "itls_ms": [
+          263.448937,
+          198.990902,
+          219.137724,
+          228.441983
+        ]
+      },
+      {
+        "request": 61,
+        "client_ttft_ms": 6565.547515,
+        "client_total_ms": 7475.770211,
+        "client_queue_ms": 2.195145,
+        "itls_ms": [
+          263.43102,
+          198.975327,
+          219.162782,
+          228.499352
+        ]
+      },
+      {
+        "request": 62,
+        "client_ttft_ms": 6829.463356,
+        "client_total_ms": 7783.560349,
+        "client_queue_ms": 2.132099,
+        "itls_ms": [
+          273.558318,
+          236.695909,
+          207.140297,
+          236.504396
+        ]
+      },
+      {
+        "request": 63,
+        "client_ttft_ms": 6829.67546,
+        "client_total_ms": 7783.761076,
+        "client_queue_ms": 2.179301,
+        "itls_ms": [
+          273.529684,
+          236.702449,
+          207.132636,
+          236.63132
+        ]
+      },
+      {
+        "request": 64,
+        "client_ttft_ms": 6534.065307,
+        "client_total_ms": 7443.390382,
+        "client_queue_ms": 2.051986,
+        "itls_ms": [
+          261.430893,
+          199.060338,
+          219.474428,
+          229.156957
+        ]
+      },
+      {
+        "request": 65,
+        "client_ttft_ms": 6534.271172,
+        "client_total_ms": 7443.58513,
+        "client_queue_ms": 2.099088,
+        "itls_ms": [
+          261.424744,
+          199.011322,
+          219.465745,
+          229.310842
+        ]
+      },
+      {
+        "request": 66,
+        "client_ttft_ms": 6801.278979,
+        "client_total_ms": 7749.851388,
+        "client_queue_ms": 1.573435,
+        "itls_ms": [
+          272.20497,
+          235.222437,
+          205.763943,
+          235.203648
+        ]
+      },
+      {
+        "request": 67,
+        "client_ttft_ms": 6801.494378,
+        "client_total_ms": 7750.02222,
+        "client_queue_ms": 1.632515,
+        "itls_ms": [
+          272.203588,
+          235.156085,
+          205.817846,
+          235.267005
+        ]
+      },
+      {
+        "request": 68,
+        "client_ttft_ms": 6541.10702,
+        "client_total_ms": 7455.322309,
+        "client_queue_ms": 1.863538,
+        "itls_ms": [
+          262.805624,
+          200.35727,
+          220.702666,
+          230.161942
+        ]
+      },
+      {
+        "request": 69,
+        "client_ttft_ms": 6541.313576,
+        "client_total_ms": 7455.554494,
+        "client_queue_ms": 1.9105,
+        "itls_ms": [
+          262.791542,
+          200.340535,
+          220.707733,
+          230.319493
+        ]
+      },
+      {
+        "request": 70,
+        "client_ttft_ms": 6794.708707,
+        "client_total_ms": 7752.980902,
+        "client_queue_ms": 2.122664,
+        "itls_ms": [
+          272.010393,
+          235.758226,
+          212.93945,
+          237.396009
+        ]
+      },
+      {
+        "request": 71,
+        "client_ttft_ms": 6794.913831,
+        "client_total_ms": 7753.089297,
+        "client_queue_ms": 2.184548,
+        "itls_ms": [
+          272.015891,
+          235.765156,
+          212.96555,
+          237.377871
+        ]
+      },
+      {
+        "request": 72,
+        "client_ttft_ms": 6536.792306,
+        "client_total_ms": 7449.013447,
+        "client_queue_ms": 2.100149,
+        "itls_ms": [
+          261.280423,
+          199.144546,
+          220.35855,
+          231.254883
+        ]
+      },
+      {
+        "request": 73,
+        "client_ttft_ms": 6536.94551,
+        "client_total_ms": 7449.146861,
+        "client_queue_ms": 2.148964,
+        "itls_ms": [
+          261.265059,
+          199.216247,
+          220.349425,
+          231.296967
+        ]
+      },
+      {
+        "request": 74,
+        "client_ttft_ms": 6832.047866,
+        "client_total_ms": 7786.70138,
+        "client_queue_ms": 1.992125,
+        "itls_ms": [
+          274.052664,
+          236.82119,
+          207.029678,
+          236.534312
+        ]
+      },
+      {
+        "request": 75,
+        "client_ttft_ms": 6832.253631,
+        "client_total_ms": 7786.875035,
+        "client_queue_ms": 2.039928,
+        "itls_ms": [
+          274.032783,
+          236.849223,
+          207.022668,
+          236.634134
+        ]
+      },
+      {
+        "request": 76,
+        "client_ttft_ms": 6547.589889,
+        "client_total_ms": 7456.540572,
+        "client_queue_ms": 1.742383,
+        "itls_ms": [
+          261.51347,
+          199.165218,
+          219.598277,
+          228.481023
+        ]
+      },
+      {
+        "request": 77,
+        "client_ttft_ms": 6547.820732,
+        "client_total_ms": 7456.717773,
+        "client_queue_ms": 1.79239,
+        "itls_ms": [
+          261.468651,
+          199.170867,
+          219.60006,
+          228.571992
+        ]
+      },
+      {
+        "request": 78,
+        "client_ttft_ms": 6833.147877,
+        "client_total_ms": 7787.773278,
+        "client_queue_ms": 2.100801,
+        "itls_ms": [
+          274.164735,
+          236.948425,
+          206.954783,
+          236.199661
+        ]
+      },
+      {
+        "request": 79,
+        "client_ttft_ms": 6833.348153,
+        "client_total_ms": 7788.081929,
+        "client_queue_ms": 2.150497,
+        "itls_ms": [
+          274.165657,
+          236.953312,
+          206.952099,
+          236.564348
+        ]
+      },
+      {
+        "request": 80,
+        "client_ttft_ms": 6525.418172,
+        "client_total_ms": 7436.052778,
+        "client_queue_ms": 2.036713,
+        "itls_ms": [
+          261.598379,
+          199.356911,
+          219.961082,
+          229.492329
+        ]
+      },
+      {
+        "request": 81,
+        "client_ttft_ms": 6525.603565,
+        "client_total_ms": 7436.22369,
+        "client_queue_ms": 2.118888,
+        "itls_ms": [
+          261.583677,
+          199.422822,
+          219.872376,
+          229.660256
+        ]
+      },
+      {
+        "request": 82,
+        "client_ttft_ms": 6805.262889,
+        "client_total_ms": 7752.821959,
+        "client_queue_ms": 1.612294,
+        "itls_ms": [
+          271.893503,
+          235.06687,
+          205.553411,
+          234.81233
+        ]
+      },
+      {
+        "request": 83,
+        "client_ttft_ms": 6805.428612,
+        "client_total_ms": 7753.012581,
+        "client_queue_ms": 1.6947,
+        "itls_ms": [
+          271.881986,
+          235.109775,
+          205.55277,
+          234.951403
+        ]
+      },
+      {
+        "request": 84,
+        "client_ttft_ms": 6525.039873,
+        "client_total_ms": 7433.589473,
+        "client_queue_ms": 2.096183,
+        "itls_ms": [
+          261.525398,
+          198.847503,
+          219.468779,
+          228.534826
+        ]
+      },
+      {
+        "request": 85,
+        "client_ttft_ms": 6525.19491,
+        "client_total_ms": 7433.789088,
+        "client_queue_ms": 2.170978,
+        "itls_ms": [
+          261.647174,
+          198.706377,
+          219.532837,
+          228.620717
+        ]
+      },
+      {
+        "request": 86,
+        "client_ttft_ms": 6799.494241,
+        "client_total_ms": 7753.726992,
+        "client_queue_ms": 2.155124,
+        "itls_ms": [
+          273.913041,
+          236.694467,
+          206.903004,
+          236.5463
+        ]
+      },
+      {
+        "request": 87,
+        "client_ttft_ms": 6799.732345,
+        "client_total_ms": 7800.537646,
+        "client_queue_ms": 2.232262,
+        "itls_ms": [
+          273.877346,
+          236.698683,
+          206.89331,
+          283.248758
+        ]
+      },
+      {
+        "request": 88,
+        "client_ttft_ms": 6524.511457,
+        "client_total_ms": 7433.335706,
+        "client_queue_ms": 2.053439,
+        "itls_ms": [
+          261.361787,
+          199.001899,
+          219.446786,
+          228.813592
+        ]
+      },
+      {
+        "request": 89,
+        "client_ttft_ms": 6524.750893,
+        "client_total_ms": 7433.516763,
+        "client_queue_ms": 2.116095,
+        "itls_ms": [
+          261.343529,
+          198.976029,
+          219.452755,
+          228.90349
+        ]
+      },
+      {
+        "request": 90,
+        "client_ttft_ms": 6831.870815,
+        "client_total_ms": 7790.075016,
+        "client_queue_ms": 1.990452,
+        "itls_ms": [
+          274.140078,
+          237.352622,
+          207.7114,
+          238.787936
+        ]
+      },
+      {
+        "request": 91,
+        "client_ttft_ms": 6832.024119,
+        "client_total_ms": 7790.281641,
+        "client_queue_ms": 2.069353,
+        "itls_ms": [
+          274.179528,
+          237.35723,
+          207.712161,
+          238.903713
+        ]
+      },
+      {
+        "request": 92,
+        "client_ttft_ms": 6518.563275,
+        "client_total_ms": 7427.165235,
+        "client_queue_ms": 1.791558,
+        "itls_ms": [
+          261.459978,
+          198.913333,
+          219.422789,
+          228.621428
+        ]
+      },
+      {
+        "request": 93,
+        "client_ttft_ms": 6518.773477,
+        "client_total_ms": 7427.358441,
+        "client_queue_ms": 1.841725,
+        "itls_ms": [
+          261.572209,
+          198.728851,
+          219.486306,
+          228.719398
+        ]
+      },
+      {
+        "request": 94,
+        "client_ttft_ms": 6835.828754,
+        "client_total_ms": 7787.88029,
+        "client_queue_ms": 2.045546,
+        "itls_ms": [
+          274.250065,
+          236.416011,
+          205.903166,
+          235.264812
+        ]
+      },
+      {
+        "request": 95,
+        "client_ttft_ms": 6836.044453,
+        "client_total_ms": 7788.061027,
+        "client_queue_ms": 2.117526,
+        "itls_ms": [
+          274.191316,
+          236.496935,
+          205.878668,
+          235.361089
+        ]
+      },
+      {
+        "request": 96,
+        "client_ttft_ms": 6561.372884,
+        "client_total_ms": 7470.35173,
+        "client_queue_ms": 1.949549,
+        "itls_ms": [
+          261.335968,
+          199.088591,
+          219.502802,
+          228.860233
+        ]
+      },
+      {
+        "request": 97,
+        "client_ttft_ms": 6561.585219,
+        "client_total_ms": 7470.485775,
+        "client_queue_ms": 1.996361,
+        "itls_ms": [
+          261.325492,
+          199.092577,
+          219.515721,
+          228.901035
+        ]
+      },
+      {
+        "request": 98,
+        "client_ttft_ms": 6786.798598,
+        "client_total_ms": 7733.631579,
+        "client_queue_ms": 1.725648,
+        "itls_ms": [
+          271.350344,
+          235.096715,
+          205.535634,
+          234.633948
+        ]
+      },
+      {
+        "request": 99,
+        "client_ttft_ms": 6787.050213,
+        "client_total_ms": 7733.798825,
+        "client_queue_ms": 1.785319,
+        "itls_ms": [
+          271.303291,
+          235.02805,
+          205.541283,
+          234.793111
+        ]
+      },
+      {
+        "request": 100,
+        "client_ttft_ms": 6527.526715,
+        "client_total_ms": 7438.058424,
+        "client_queue_ms": 2.015741,
+        "itls_ms": [
+          262.51513,
+          199.262718,
+          219.741295,
+          228.832722
+        ]
+      },
+      {
+        "request": 101,
+        "client_ttft_ms": 6527.712539,
+        "client_total_ms": 7438.189595,
+        "client_queue_ms": 2.064055,
+        "itls_ms": [
+          262.506197,
+          199.280674,
+          219.715807,
+          228.907576
+        ]
+      },
+      {
+        "request": 102,
+        "client_ttft_ms": 6813.62532,
+        "client_total_ms": 7760.456688,
+        "client_queue_ms": 2.194074,
+        "itls_ms": [
+          271.397005,
+          235.031825,
+          205.496815,
+          234.713199
+        ]
+      },
+      {
+        "request": 103,
+        "client_ttft_ms": 6813.832216,
+        "client_total_ms": 7760.634129,
+        "client_queue_ms": 2.26978,
+        "itls_ms": [
+          271.39367,
+          235.033528,
+          205.541083,
+          234.741892
+        ]
+      },
+      {
+        "request": 104,
+        "client_ttft_ms": 6543.363299,
+        "client_total_ms": 7450.999243,
+        "client_queue_ms": 1.981078,
+        "itls_ms": [
+          261.073878,
+          198.766969,
+          219.160699,
+          228.445098
+        ]
+      },
+      {
+        "request": 105,
+        "client_ttft_ms": 6543.522563,
+        "client_total_ms": 7451.160459,
+        "client_queue_ms": 2.029101,
+        "itls_ms": [
+          261.123723,
+          198.74773,
+          219.146908,
+          228.541666
+        ]
+      },
+      {
+        "request": 106,
+        "client_ttft_ms": 6793.001208,
+        "client_total_ms": 7740.129741,
+        "client_queue_ms": 1.930551,
+        "itls_ms": [
+          271.691595,
+          234.998595,
+          205.434199,
+          234.869238
+        ]
+      },
+      {
+        "request": 107,
+        "client_ttft_ms": 6793.212201,
+        "client_total_ms": 7740.215562,
+        "client_queue_ms": 1.983121,
+        "itls_ms": [
+          271.677603,
+          234.986917,
+          205.447109,
+          234.848496
+        ]
+      },
+      {
+        "request": 108,
+        "client_ttft_ms": 6554.156555,
+        "client_total_ms": 7464.126235,
+        "client_queue_ms": 1.892993,
+        "itls_ms": [
+          261.340384,
+          199.217298,
+          219.497173,
+          229.705635
+        ]
+      },
+      {
+        "request": 109,
+        "client_ttft_ms": 6554.370281,
+        "client_total_ms": 7464.305088,
+        "client_queue_ms": 1.945022,
+        "itls_ms": [
+          261.335628,
+          199.196405,
+          219.502752,
+          229.814812
+        ]
+      },
+      {
+        "request": 110,
+        "client_ttft_ms": 6818.600674,
+        "client_total_ms": 7775.510516,
+        "client_queue_ms": 2.099018,
+        "itls_ms": [
+          275.060204,
+          236.985922,
+          207.656566,
+          237.00413
+        ]
+      },
+      {
+        "request": 111,
+        "client_ttft_ms": 6818.784355,
+        "client_total_ms": 7775.704062,
+        "client_queue_ms": 2.175345,
+        "itls_ms": [
+          275.046332,
+          237.012743,
+          207.670017,
+          237.088409
+        ]
+      },
+      {
+        "request": 112,
+        "client_ttft_ms": 6519.153147,
+        "client_total_ms": 7426.280353,
+        "client_queue_ms": 2.091737,
+        "itls_ms": [
+          260.619663,
+          198.935016,
+          219.149151,
+          228.228889
+        ]
+      },
+      {
+        "request": 113,
+        "client_ttft_ms": 6519.35787,
+        "client_total_ms": 7426.464144,
+        "client_queue_ms": 2.168454,
+        "itls_ms": [
+          260.563958,
+          199.024022,
+          219.110893,
+          228.316271
+        ]
+      },
+      {
+        "request": 114,
+        "client_ttft_ms": 6826.28608,
+        "client_total_ms": 7778.062877,
+        "client_queue_ms": 1.81882,
+        "itls_ms": [
+          274.023199,
+          235.345104,
+          205.747038,
+          236.451966
+        ]
+      },
+      {
+        "request": 115,
+        "client_ttft_ms": 6826.513177,
+        "client_total_ms": 7778.249803,
+        "client_queue_ms": 1.89723,
+        "itls_ms": [
+          274.009027,
+          235.266955,
+          205.812347,
+          236.554433
+        ]
+      },
+      {
+        "request": 116,
+        "client_ttft_ms": 6527.636472,
+        "client_total_ms": 7436.688309,
+        "client_queue_ms": 1.736814,
+        "itls_ms": [
+          260.915355,
+          199.058595,
+          219.591347,
+          229.261276
+        ]
+      },
+      {
+        "request": 117,
+        "client_ttft_ms": 6527.853153,
+        "client_total_ms": 7436.900924,
+        "client_queue_ms": 1.78662,
+        "itls_ms": [
+          260.849474,
+          199.104275,
+          219.614182,
+          229.393598
+        ]
+      },
+      {
+        "request": 118,
+        "client_ttft_ms": 6788.644209,
+        "client_total_ms": 7736.099591,
+        "client_queue_ms": 1.559173,
+        "itls_ms": [
+          272.263369,
+          234.961649,
+          205.413147,
+          234.621458
+        ]
+      },
+      {
+        "request": 119,
+        "client_ttft_ms": 6788.791845,
+        "client_total_ms": 7736.285756,
+        "client_queue_ms": 1.609871,
+        "itls_ms": [
+          272.318934,
+          234.970832,
+          205.40141,
+          234.709532
+        ]
+      },
+      {
+        "request": 120,
+        "client_ttft_ms": 6531.228483,
+        "client_total_ms": 7440.050339,
+        "client_queue_ms": 1.908547,
+        "itls_ms": [
+          261.420908,
+          199.122162,
+          219.332751,
+          228.730525
+        ]
+      },
+      {
+        "request": 121,
+        "client_ttft_ms": 6531.437933,
+        "client_total_ms": 7440.236824,
+        "client_queue_ms": 1.9888,
+        "itls_ms": [
+          261.457714,
+          199.08114,
+          219.270105,
+          228.901647
+        ]
+      },
+      {
+        "request": 122,
+        "client_ttft_ms": 6840.155217,
+        "client_total_ms": 7793.724363,
+        "client_queue_ms": 2.105368,
+        "itls_ms": [
+          273.378423,
+          236.278862,
+          207.061706,
+          236.615166
+        ]
+      },
+      {
+        "request": 123,
+        "client_ttft_ms": 6840.34079,
+        "client_total_ms": 7793.952672,
+        "client_queue_ms": 2.211881,
+        "itls_ms": [
+          273.399536,
+          236.279462,
+          207.058012,
+          236.773136
+        ]
+      },
+      {
+        "request": 124,
+        "client_ttft_ms": 6530.070442,
+        "client_total_ms": 7439.045903,
+        "client_queue_ms": 1.756204,
+        "itls_ms": [
+          261.155582,
+          199.045416,
+          219.781797,
+          228.823678
+        ]
+      },
+      {
+        "request": 125,
+        "client_ttft_ms": 6530.276006,
+        "client_total_ms": 7439.224666,
+        "client_queue_ms": 1.803196,
+        "itls_ms": [
+          261.12768,
+          199.035009,
+          219.792294,
+          228.907005
+        ]
+      },
+      {
+        "request": 126,
+        "client_ttft_ms": 6815.431099,
+        "client_total_ms": 7765.016837,
+        "client_queue_ms": 2.040489,
+        "itls_ms": [
+          273.54663,
+          235.442504,
+          205.472578,
+          234.913655
+        ]
+      },
+      {
+        "request": 127,
+        "client_ttft_ms": 6815.651335,
+        "client_total_ms": 7765.202621,
+        "client_queue_ms": 2.088913,
+        "itls_ms": [
+          273.538318,
+          235.433199,
+          205.398044,
+          235.090355
+        ]
+      },
+      {
+        "request": 128,
+        "client_ttft_ms": 6527.406371,
+        "client_total_ms": 7444.603588,
+        "client_queue_ms": 2.096805,
+        "itls_ms": [
+          264.201678,
+          201.189632,
+          221.11735,
+          230.48768
+        ]
+      },
+      {
+        "request": 129,
+        "client_ttft_ms": 6527.663725,
+        "client_total_ms": 7444.78187,
+        "client_queue_ms": 2.185741,
+        "itls_ms": [
+          264.173955,
+          201.126917,
+          221.13803,
+          230.600313
+        ]
+      },
+      {
+        "request": 130,
+        "client_ttft_ms": 6796.839595,
+        "client_total_ms": 7745.390602,
+        "client_queue_ms": 1.992926,
+        "itls_ms": [
+          272.084195,
+          235.460661,
+          205.759306,
+          235.042412
+        ]
+      },
+      {
+        "request": 131,
+        "client_ttft_ms": 6797.042125,
+        "client_total_ms": 7745.579711,
+        "client_queue_ms": 2.046208,
+        "itls_ms": [
+          272.092688,
+          235.448342,
+          205.773558,
+          235.130556
+        ]
+      }
+    ],
+    "memory": {
+      "host_limit": 209715200000,
+      "device_limit": 90177536000,
+      "shared_host_upper": 204717508744,
+      "shared_device_upper": 26220545472,
+      "reserved_host": 204761637688,
+      "reserved_device": 29746365942,
+      "peak_reserved_host": 204761637688,
+      "peak_reserved_device": 29746365942,
+      "busy": 0,
+      "idle_retained": 1
+    },
+    "batch": {
+      "completed": 132,
+      "steps": 330,
+      "group_calls": 330,
+      "single_forwards": 0,
+      "shared_layer_steps": 2640,
+      "fallback_layer_steps": 10560,
+      "shared_expert_borrows": 768405,
+      "busy_retries": 0,
+      "created": 2,
+      "reused": 130,
+      "retained_device_payload": 3525820470,
+      "peak_device_payload": 3525820470,
+      "peak_live": 2
+    },
+    "experts": {
+      "upload_bytes": 10934025223680,
+      "upload_ms": 446967,
+      "ram_miss_bytes": 180998733312,
+      "source_read_bytes": 180998733312,
+      "source_read_ms": 67581
+    },
+    "compute": {
+      "fused_kernel_launches": 84942,
+      "joint_fused_kernel_launches": 68013,
+      "avoided_fused_launches": 68013,
+      "individual_fused_kernel_launches": 16929,
+      "folded_ffn_calls": 10725
+    },
+    "rusage": {
+      "max_rss_bytes": 182249439232,
+      "input_blocks": 379069504,
+      "minor_faults": 450197,
+      "major_faults": 73,
+      "user_cpu_seconds": 519.542414,
+      "system_cpu_seconds": 56.020697
+    },
+    "production_source_changes": 0,
+    "new_cupti_capture_count": 0,
+    "full_goal_complete": false
+  },
+  "independent_assessment": {
+    "control": {
+      "all_events_generations_and_arrivals_verified": true,
+      "scheduled_arrivals_independent_of_completion": true,
+      "kernel_counts_match_fixed_corpus": true,
+      "mean_client_ttft_ms": 7174.117635500001,
+      "p50_client_ttft_ms": 6881.395806,
+      "p95_client_ttft_ms": 7467.00312,
+      "p99_client_ttft_ms": 7467.00312,
+      "max_client_ttft_ms": 7467.00312,
+      "p99_client_itl_ms": 321.532892,
+      "max_client_itl_ms": 321.532892,
+      "p99_server_queue_ms": 1.3266780376434326,
+      "p99_client_queue_ms": 1.838731,
+      "completed_requests_per_second": 0.22364949200020673,
+      "measured_requests": 4,
+      "token_gaps": 16
+    },
+    "timed": {
+      "all_events_generations_and_arrivals_verified": true,
+      "scheduled_arrivals_independent_of_completion": true,
+      "kernel_counts_match_fixed_corpus": true,
+      "mean_client_ttft_ms": 6695.4454176875,
+      "p50_client_ttft_ms": 6787.050213,
+      "p95_client_ttft_ms": 6837.930868,
+      "p99_client_ttft_ms": 7418.919142,
+      "max_client_ttft_ms": 7419.17267,
+      "p99_client_itl_ms": 274.387686,
+      "max_client_itl_ms": 283.248758,
+      "p99_server_queue_ms": 2.1302759647369385,
+      "p99_client_queue_ms": 48.648332,
+      "completed_requests_per_second": 0.20070696451014472,
+      "measured_requests": 128,
+      "token_gaps": 512
+    }
+  },
+  "runtime": "/tmp/bitnet-goal-ram-page-policy/qualified-bitnet",
+  "new_independent_full_vocabulary_heads": 40,
+  "source_and_numerical_golds_unchanged": true,
+  "initial_file_cache_resident_fractions": {
+    "control": 0.0,
+    "timed": 0.0
+  },
+  "accounting": "Client monotonic timestamps begin at send, not admission; queueing and transport included. Pairs are sent against absolute10s schedule independent of completions. Four cold corpus-warmup requests and process initialization explicitly excluded from warm SLO and separately reported. No timing trace or sampler.",
+  "managed_memory": "Caps cover existing managed payload quotes, including retained idle state. wait4 reports full-process RSS high-water. No total physical VRAM peak guarantee.",
+  "source_io": "Final source-read and RAM-miss bytes equal the independently enumerated four-history180998733312-byte expert union. Repeats preserve routing and reuse the admitted RAM working set. Input blocks cover the entire process including cold initialization/warmup.",
+  "scope": [
+    "Adapted DeepSeek EXL3 INT4/F16 CUDA profile on one RTX PRO6000 Max-Q; not original-runtime equivalence or vLLM parity.",
+    "Exactly four fixed1026-token domain histories with five outputs, two live requests and declared large RAM /8GiB GPU expert cache. Not arbitrary unseen prompts, long generation, saturation or overload qualification.",
+    "Timed128requests check every output token ID, text and position. Separate trace-enabled eight-request control checks40 entire independent F32 vocabulary heads and input IDs.",
+    "Previously qualified runtime reused; no implementation or API changes, rebuild or new sanitizer run in this measurement-only phase.",
+    "No new CUPTI capture, exposed-transfer-stall attribution or device physical-peak measurement. Prior transfer evidence remains separately scoped."
+  ],
+  "next_priority": "Extend shared folded/decode GPU execution and qualify remaining resident model/vLLM parity; add unseen-history and longer-output offload SLO profiles.",
+  "historical_exception": {
+    "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+    "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+    "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+    "changed": true
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "milestone": "Bounded backend-owned native FP16 core weight materialization",
+  "status": "Qualified preparation component; whole inference/vLLM parity objective remains active",
+  "implementation": {
+    "frontend": "bn_backend_layout_native_f16_init reads native FP8/scale block rows through immutable safetensors index and the registered numeric decoder. One raw/scale tile allocation, no whole host decoded matrix.",
+    "backend": "Synchronous buffer_create_f16_rows reads ascending 32-row chunks and packs native [N,K] FP16 bits into immutable CUDA [K,N] storage using bounded host/device tiles. Final stream completion precedes publication and scratch release.",
+    "ownership": "GPU handles and packed data live in backend layout resources; source index borrowed only during init. Model-owned backend container frees layouts after consumers complete. Dedicated handles bypass inactive weight pool and ordinary host matvec/matmul reject them.",
+    "budget": "Device bound covers final native weight payload plus one device transfer tile. Host bound covers explicit raw/scale/F16 tiles. Other backend/context/allocator/driver allocations are separate.",
+    "errors": "Metadata/format/geometry/budget preflight rejects before GPU creation; reader/device failure drains queued packing and frees unpublished allocations. Output layout unchanged on failure.",
+    "diagnostic": "CUDA-only readback of completed native [K,N] handles; not called by inference."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "native": 0,
+      "asan-native": 0,
+      "memcheck": 0,
+      "racecheck": 0,
+      "nsys": 0,
+      "nsys-export": 0,
+      "memcheck-unit": 0,
+      "initcheck-unit": 0
+    },
+    "whole_checkpoint_matrices": 10,
+    "packed_fp16_words_per_run": 324534272,
+    "mismatches": 0,
+    "original_reference": "Frozen unchanged upstream FP8-to-FP16 outputs from the prior stage, compared after transpose/packing.",
+    "runs": {
+      "native": {
+        "matrices": 10,
+        "packed_fp16_words": 324534272,
+        "resident_payload_bytes": 649068544,
+        "device_budget_bytes": 649592832,
+        "predicted_peak_payload_bytes": 649396224,
+        "host_staging_budget_bytes": 786688,
+        "model_release_callbacks": 1,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "matrices": 10,
+        "packed_fp16_words": 324534272,
+        "resident_payload_bytes": 649068544,
+        "device_budget_bytes": 649592832,
+        "predicted_peak_payload_bytes": 649396224,
+        "host_staging_budget_bytes": 786688,
+        "model_release_callbacks": 1,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "matrices": 10,
+        "packed_fp16_words": 324534272,
+        "resident_payload_bytes": 649068544,
+        "device_budget_bytes": 649592832,
+        "predicted_peak_payload_bytes": 649396224,
+        "host_staging_budget_bytes": 786688,
+        "model_release_callbacks": 1,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      },
+      "nsys": {
+        "matrices": 10,
+        "packed_fp16_words": 324534272,
+        "resident_payload_bytes": 649068544,
+        "device_budget_bytes": 649592832,
+        "predicted_peak_payload_bytes": 649396224,
+        "host_staging_budget_bytes": 786688,
+        "model_release_callbacks": 1,
+        "idle_pool_added_bytes": 0,
+        "mismatches": 0
+      }
+    },
+    "gpu_synthetic": "Partial shapes and all 65536 FP16 bit patterns, budget rejection, wrong owner/capacity, ordinary matvec/matmul rejection, three mid-reader abort/retry cycles; 68906 directly checked words.",
+    "cpu_synthetic": "Exact budget boundaries, raw/scale decoding, 1x1/35x67 partial grids, source independence, late NaN rollback and failed allocation callback.",
+    "publication_fences": 10,
+    "traced_native_allocations": 20,
+    "traced_native_frees": 20,
+    "traced_all_heap_allocations": 24,
+    "traced_all_heap_frees": 24,
+    "traced_peak_native_payload_bytes": 649396224,
+    "declared_native_device_budget_bytes": 649592832,
+    "traced_native_resident_payload_bytes": 649068544,
+    "explicit_host_staging_bound_bytes": 786688,
+    "h2d_tiles": 2728,
+    "h2d_bytes": 649068544,
+    "inactive_pool_added_bytes": 0
+  },
+  "limitations": [
+    "No native dense GEMM/forward operator added yet; full numeric execution config, HC4, router, compressed attention, Engram and generation remain unfinished.",
+    "Payload bound is not total VRAM: trace also records 100795392 bytes of pre-constructor backend heap payload, plus separate static/driver/library allocations.",
+    "Host bound excludes model/index metadata, CUDA internal pageable-copy staging, allocator overhead and test reference/readback arrays. No total RSS claim.",
+    "No cold-storage/throughput or vLLM parity claim.",
+    "CUDA is implemented; Metal/NEON/WASM materialization is not qualified here."
+  ],
+  "documentation_clarification": {
+    "file": "include/gpu_backend.h",
+    "tested_sha256": "37dd847b200b88206a93a4b9b9ef7b2e1c4138cb3a69c076779ac139e46a32da",
+    "current_sha256": "f50c7daba0347226e93f2fbf596f8536bc6a98dea0a55f912a9ec2d269bc85d0",
+    "change": "Comment now specifies exact 32-row chunks except final, matching constructor and block-source reader.",
+    "preprocessed_tokens_unchanged": true,
+    "preprocessed_sha256": "8c12c6083943d29b39d2ada3676ab15823797f31ca350bb146af504ec91482fd"
+  },
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-f16-core-layout/qualification.json",
+    "profile": "/tmp/bitnet-goal-f16-core-layout/profile-analysis.json",
+    "trace": "/tmp/bitnet-goal-f16-core-layout/lifetime.nsys-rep",
+    "continuation": "/tmp/bitnet-goal-f16-core-layout/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "f50c7daba0347226e93f2fbf596f8536bc6a98dea0a55f912a9ec2d269bc85d0",
+    "include/gpu_cuda.h": "937fca75d57768d33cb349e62262e62db8b827818dbfaaa51f5c79a30de24864",
+    "src/gpu_cuda.cu": "4686113a782be6eb77edf85da08ebf275702d55e63dbbba408eb6fa4d5834918",
+    "src/gpu_cuda_f16_rows.cuh": "d1c7558ad8e8463edbf267de80380fff3225d0b91ab74cb3b636ccd9bcecfb8b",
+    "include/backend_layout.h": "a85bf8baca9f3536f9d854f71f1d0e147ddef0fbe0e86d005d233d46ac515393",
+    "src/backend_layout.c": "b89adaef40288ab765e937542e2f8e0c0119436cbaff629c5e54865a893af8e2",
+    "test/cuda_f16_rows_checks.h": "5f0ac70e511bbb4b07c33da6fe451f9764b28edf6292f63d0c6629462808f740",
+    "test/native_f16_layout_checks.h": "5794aa4b329217fe0be961c93199e8eba7cb0a866b5c1d63e2779b1e1f91e146",
+    "test/test_moe.c": "b7675267047cbe8533b10fa10f2d5fe38910ca96124a4227303e100d17052390",
+    "test/test_cuda_backend.c": "52dd8dd7d8938f22dd3c4dd85066765cf74cdc96eb7b799c1c5f0f745fa575be",
+    "Makefile": "6db30589b9c98ae414ebe66f7d51e6fa2890cc5de726e664d5666acf49b16485"
+  }
+}

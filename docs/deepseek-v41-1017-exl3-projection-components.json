@@ -1,0 +1,228 @@
+{
+  "exit": 0,
+  "transforms": [
+    {
+      "mode": 0,
+      "blocks": 732,
+      "fp16_words": 93696,
+      "exact": true
+    },
+    {
+      "mode": 1,
+      "blocks": 732,
+      "fp16_words": 93696,
+      "exact": true
+    },
+    {
+      "mode": 2,
+      "blocks": 732,
+      "fp16_words": 93696,
+      "exact": true
+    }
+  ],
+  "matrices": [
+    {
+      "name": "l0-e0-w1",
+      "fp16_words": 11796480,
+      "full_and_five_column_slices_exact": true,
+      "seconds_diagnostic": 0.12233378295786679
+    },
+    {
+      "name": "l0-e0-w2",
+      "fp16_words": 11796480,
+      "full_and_five_column_slices_exact": true,
+      "seconds_diagnostic": 0.10704177408479154
+    },
+    {
+      "name": "l0-e0-w3",
+      "fp16_words": 11796480,
+      "full_and_five_column_slices_exact": true,
+      "seconds_diagnostic": 0.11104900704231113
+    },
+    {
+      "name": "l39-e383-w1",
+      "fp16_words": 11796480,
+      "full_and_five_column_slices_exact": true,
+      "seconds_diagnostic": 0.09644980693701655
+    },
+    {
+      "name": "l39-e383-w2",
+      "fp16_words": 11796480,
+      "full_and_five_column_slices_exact": true,
+      "seconds_diagnostic": 0.09503474400844425
+    },
+    {
+      "name": "l39-e383-w3",
+      "fp16_words": 11796480,
+      "full_and_five_column_slices_exact": true,
+      "seconds_diagnostic": 0.09624993102625012
+    }
+  ],
+  "capture": {
+    "exit": 0,
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "runs": [
+      {
+        "name": "transform",
+        "exit": 0
+      },
+      {
+        "name": "l0-e0-w1",
+        "exit": 0
+      },
+      {
+        "name": "l0-e0-w2",
+        "exit": 0
+      },
+      {
+        "name": "l0-e0-w3",
+        "exit": 0
+      },
+      {
+        "name": "l39-e383-w1",
+        "exit": 0
+      },
+      {
+        "name": "l39-e383-w2",
+        "exit": 0
+      },
+      {
+        "name": "l39-e383-w3",
+        "exit": 0
+      }
+    ],
+    "sha256": {
+      "l0-e0-w3.original": "1f79c005428e9769f52de9f80c8b32fe32df8fb34f4ff7ec87f7f99e53587661",
+      "l0-e0-w2.original": "a7377cf08fd4161b27b3f84c3d8f3edb8fb774ce968112ef738f2fde12be5dbd",
+      "transform-2.original": "ae213ef2e6d20e28be23b87403fc35d3c18d75dd6a68aeafbf588baec7c2f89e",
+      "transform-0.original": "f7eee80565f18bd7a8d781a7cdf6e47e8a13e0c1ac5bf2533342b1dacfb8d5d7",
+      "l0-e0-w1.original": "0d4d1d70c9c58c7ee11ab1cd1d8f433887ff3d6e6d408ed786b7cd94e76f2934",
+      "l39-e383-w1.original": "b3d1b14c7085522d2ae4a2e5822e46ba0d124971db1d68edf59ae97b2941f1a9",
+      "transform-1.original": "8f7669f94d3ff64e66dbfabcb2b78a7a278d3a13a2cd872995a16295b2bc9543",
+      "l39-e383-w3.original": "b33bf14bc300caef83c2f6b3e7ca5b7792f7e7a76949dcb980dbd07acea40f82",
+      "l39-e383-w2.original": "3ea97c3064cb6a3bffb65150129f229802d84cf336480eb36a785b3d358bfc56"
+    },
+    "scope": "Unchanged upstream tile reconstruction and FP16 Hadamard kernels only; no GEMM execution."
+  },
+  "inputs": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "matrices": [
+      {
+        "name": "l0-e0-w1",
+        "tensor": "layers.0.ffn.experts.0.w1",
+        "k": 5120,
+        "n": 2304,
+        "packed_sha256": "da540eccfa1c37c80cef4d167d1d9b7b7d32b286f13a362a756dc693f266691a"
+      },
+      {
+        "name": "l0-e0-w2",
+        "tensor": "layers.0.ffn.experts.0.w2",
+        "k": 2304,
+        "n": 5120,
+        "packed_sha256": "2fd15951efee87e3be113a4e83fcc472ae53713431fe818ed3a02c116bdac678"
+      },
+      {
+        "name": "l0-e0-w3",
+        "tensor": "layers.0.ffn.experts.0.w3",
+        "k": 5120,
+        "n": 2304,
+        "packed_sha256": "02d8d2939c8b8422e7ae6f3b63c4f8349416b2cbbccf760771c500f25fd4c482"
+      },
+      {
+        "name": "l39-e383-w1",
+        "tensor": "layers.39.ffn.experts.383.w1",
+        "k": 5120,
+        "n": 2304,
+        "packed_sha256": "b93e30353b13331ae5e32f4f8c71e37876fb9b8251a4a2f13936feed9d807dff"
+      },
+      {
+        "name": "l39-e383-w2",
+        "tensor": "layers.39.ffn.experts.383.w2",
+        "k": 2304,
+        "n": 5120,
+        "packed_sha256": "91d12445252446b414947748257433052db1069aea394c8e0839be0b1748601d"
+      },
+      {
+        "name": "l39-e383-w3",
+        "tensor": "layers.39.ffn.experts.383.w3",
+        "k": 5120,
+        "n": 2304,
+        "packed_sha256": "ffada5dda1a622fe63dbb8f0971443bbbc678f2fbc5a6804dfab3d7068279358"
+      }
+    ],
+    "transform_blocks": 732,
+    "inputs_sha256": "b3787aaeeee6875521da1285f7bfa07326d68a987cfa08bf8736f5b50b79ffe9",
+    "scales_sha256": "296099518fcee101114223c4b3ed107e2e370ebcdc6cd648c6919d2a57d68286",
+    "original_had_kernel_sha256": "1d6895e9dc4b5592183786e115865d7f5315d97a2e4657824a1a2a2f6c9fb719",
+    "original_hadamard_inner_sha256": "8d8e437aced88735e919563301ffac0e4a2aac28cc542ed3f738e1216ea0c36b"
+  },
+  "scope": "Native rotated matrix/slice reconstruction and FP16 projection transforms only. No GEMM or complete projection execution yet.",
+  "focused_checks": {
+    "shared-build": 0,
+    "native-reference": 0,
+    "scalar-build": 0,
+    "scalar": 0,
+    "avx2-build": 0,
+    "avx2": 0,
+    "avx512-build": 0,
+    "avx512": 0,
+    "asan-synthetic-build": 0,
+    "asan-synthetic": 0,
+    "asan-checkpoint-build": 0,
+    "asan-l0-e0-w1": 0,
+    "asan-l0-e0-w2": 0,
+    "asan-l0-e0-w3": 0,
+    "asan-l39-e383-w1": 0,
+    "asan-l39-e383-w2": 0,
+    "asan-l39-e383-w3": 0,
+    "asan-transform-build": 0,
+    "asan-transform": 0
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "source_sha256": {
+    "include/quant.h": "98cce0794d135e28696f6b1a5d318b61ef4d94785f37f6ca57aecd6960b60beb",
+    "src/quant/exl3.c": "78f55f186524a885354eba745595847668713cd2007ce295e1e4c4241c7f6cda",
+    "src/quant/registry.c": "95f5bb360fd6a4f2372deb0f6d385fdc6bbb2c1298f1d440779f6cdf4b6121e1",
+    "test/test_exl3.c": "c9721f88340a37d0065bf6417cb4d08804f6c660dc7f7d54d599081d4cd22fcb",
+    "test/test_quant.c": "dc91b2f540c7aadbfa116cb3af493d61009eef0da2370005892fab8e7bc45a37",
+    "Makefile": "c0a1f95195fff17cfa31fec84ed7fa4a917eb3fe758e282838b17b01360f3176"
+  },
+  "artifact_directory": "/tmp/bitnet-goal-exl3-projection",
+  "full_matrix_fp16_words_exact": 70778880,
+  "transform_fp16_words_exact": 281088,
+  "transform_inplace_and_separate_exact": true,
+  "model_free_fixtures": {
+    "matrix_k": 1024,
+    "matrix_n": 128,
+    "matrix_full_and_middle_slice_exact": true,
+    "hadamard_blocks_each_mode": 384,
+    "hadamard_modes": [
+      "none",
+      "pre_fp16",
+      "post_fp16"
+    ],
+    "frozen_upstream_hashes_in": "test/test_exl3.c"
+  },
+  "limitations": [
+    "Projection preparation primitives only: no GEMM, complete projection, model admission, or performance parity claim.",
+    "The upstream GEMM may use FP16 partial accumulation at larger batch sizes, and upstream fuses basis transforms into weights for rows >=1024; these paths have not been ported or qualified.",
+    "Matrix sampling covers all three projection roles for two actual checkpoint experts, not every expert.",
+    "AVX2/AVX512 checks compile and execute this scalar primitive; no SIMD acceleration claim.",
+    "No ARM NEON hardware execution, Metal, or WASM qualification in this stage."
+  ],
+  "reference_source_notes": {
+    "source": "https://github.com/turboderp-org/exllamav3/tree/bd1f519172406a9560bd5c90e61000691bb69a07",
+    "kernel_capture": "Original reconstruct_tile/reconstruct_kernel and had_hf_r_128_kernel bodies copied without changes; original hadamard_inner.cuh included directly. Host allocation/serialization wrapper only.",
+    "build_warnings": "Pinned original util.cuh defaulted-device-constructor nvcc annotation warnings only. Native clean product build has zero warnings."
+  }
+}

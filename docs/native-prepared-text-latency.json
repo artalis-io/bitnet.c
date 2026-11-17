@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "goal_status": "active",
+  "entry": "bench_native_forward MODEL_DIR REF_DIR VOCAB_JSON 32 4 0 --predict-text --text-timing",
+  "changes": "Benchmark and synthetic recorder validation only; runtime/API/CLI/model arithmetic unchanged",
+  "hardware": {
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05, 595.104.02",
+    "cpu": {
+      "lscpu": [
+        {
+          "field": "Architecture:",
+          "data": "x86_64"
+        },
+        {
+          "field": "CPU op-mode(s):",
+          "data": "32-bit, 64-bit"
+        },
+        {
+          "field": "Address sizes:",
+          "data": "52 bits physical, 57 bits virtual"
+        },
+        {
+          "field": "Byte Order:",
+          "data": "Little Endian"
+        },
+        {
+          "field": "CPU(s):",
+          "data": "128"
+        },
+        {
+          "field": "On-line CPU(s) list:",
+          "data": "0-127"
+        },
+        {
+          "field": "Vendor ID:",
+          "data": "AuthenticAMD"
+        },
+        {
+          "field": "Model name:",
+          "data": "AMD Ryzen Threadripper 9980X 64-Cores"
+        },
+        {
+          "field": "CPU family:",
+          "data": "26"
+        },
+        {
+          "field": "Model:",
+          "data": "8"
+        },
+        {
+          "field": "Thread(s) per core:",
+          "data": "2"
+        },
+        {
+          "field": "Core(s) per socket:",
+          "data": "64"
+        },
+        {
+          "field": "Socket(s):",
+          "data": "1"
+        },
+        {
+          "field": "Stepping:",
+          "data": "1"
+        },
+        {
+          "field": "Frequency boost:",
+          "data": "enabled"
+        },
+        {
+          "field": "CPU(s) scaling MHz:",
+          "data": "25%"
+        },
+        {
+          "field": "CPU max MHz:",
+          "data": "5476.2891"
+        },
+        {
+          "field": "CPU min MHz:",
+          "data": "1220.6190"
+        },
+        {
+          "field": "BogoMIPS:",
+          "data": "6390.20"
+        },
+        {
+          "field": "Flags:",
+          "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d debug_swap amd_lbr_pmc_freeze"
+        },
+        {
+          "field": "Virtualization:",
+          "data": "AMD-V"
+        },
+        {
+          "field": "L1d cache:",
+          "data": "3 MiB (64 instances)"
+        },
+        {
+          "field": "L1i cache:",
+          "data": "2 MiB (64 instances)"
+        },
+        {
+          "field": "L2 cache:",
+          "data": "64 MiB (64 instances)"
+        },
+        {
+          "field": "L3 cache:",
+          "data": "256 MiB (8 instances)"
+        },
+        {
+          "field": "NUMA node(s):",
+          "data": "1"
+        },
+        {
+          "field": "NUMA node0 CPU(s):",
+          "data": "0-127"
+        },
+        {
+          "field": "Vulnerability Gather data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Ghostwrite:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Indirect target selection:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Itlb multihit:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability L1tf:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Meltdown:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Mmio stale data:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Old microcode:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Reg file data sampling:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Retbleed:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Spec rstack overflow:",
+          "data": "Mitigation; Reduced Speculation"
+        },
+        {
+          "field": "Vulnerability Spec store bypass:",
+          "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+        },
+        {
+          "field": "Vulnerability Spectre v1:",
+          "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+        },
+        {
+          "field": "Vulnerability Spectre v2:",
+          "data": "Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected"
+        },
+        {
+          "field": "Vulnerability Srbds:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsa:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Tsx async abort:",
+          "data": "Not affected"
+        },
+        {
+          "field": "Vulnerability Vmscape:",
+          "data": "Mitigation; IBPB before exit to userspace"
+        }
+      ]
+    }
+  },
+  "clock_scope": "Host observer entry at final prompt forward completion to first token/byte callback entry; total request API entry through return includes encoding and bounded collector bookkeeping. No extra GPU calls/fences/logit copies or reference IO in callbacks.",
+  "preparation": "Model/codec/session preparation calls occur outside timer. Any dynamic allocation or readiness required by API execution remains inside the request interval.",
+  "correctness": {
+    "source_control": "Unchanged numerical --text/--predict-text controls compare every actual input ID and last F32 word",
+    "timing": "Timing run comparisons happen after stop: all encoded/actual input IDs and generated IDs/chunks/bytes. Timing callbacks do not copy/check F32 vectors.",
+    "prompt_bytes": 4948,
+    "prompt_tokens": 1026,
+    "prefill": [
+      512,
+      512,
+      2
+    ],
+    "outputs": 5,
+    "ids": [
+      25744,
+      14,
+      223,
+      21,
+      16
+    ],
+    "hex": "3738392c20332e",
+    "committed_forwards": 8,
+    "prediction_forwards": 7,
+    "synthetic": "Wrong callback order, geometry, vocab, backwards/NaN clocks, output bounds, empty token/UTF8 flush availability, missing/duplicate flush and duplicate finish reject",
+    "asan_ubsan": true,
+    "qwen_parity": "192/192"
+  },
+  "observations": {
+    "retained_later_request_delta_ms": 112.32080200000019,
+    "retained_later_expert_upload_delta_bytes": 2942744064,
+    "interpretation": "Post-prompt output delay improves, but overall request time is not universally faster. Retained cache populations differ; the prediction run uploads more on later requests. Prefill remains the main measured cost."
+  },
+  "performance_comparisons": {
+    "bypass": {
+      "initial_request": {
+        "committed_post_prefill_first_byte_ms": 227.060259,
+        "prediction_post_prefill_first_byte_ms": 0.471941
+      },
+      "later_pass_medians": {
+        "committed_post_prefill_first_byte_ms": 225.026541,
+        "prediction_post_prefill_first_byte_ms": 0.474815
+      },
+      "committed_full_metrics": {
+        "request_ms": 14368.768733,
+        "prefill_ms": 13210.772964,
+        "first_token_ms": 13442.630372,
+        "first_byte_ms": 13442.630372,
+        "post_prefill_first_token_ms": 225.026541,
+        "post_prefill_first_byte_ms": 225.026541,
+        "generation_tail_ms": 1123.993875,
+        "expert_upload_bytes": 209693816832,
+        "ram_misses": 15748,
+        "ram_miss_bytes": 209693816832,
+        "decode_hits": 0,
+        "decode_misses": 15748
+      },
+      "prediction_full_metrics": {
+        "request_ms": 14096.749939,
+        "prefill_ms": 13174.531459,
+        "first_token_ms": 13175.006274,
+        "first_byte_ms": 13175.006274,
+        "post_prefill_first_token_ms": 0.474815,
+        "post_prefill_first_byte_ms": 0.474815,
+        "generation_tail_ms": 921.966255,
+        "expert_upload_bytes": 206498076672,
+        "ram_misses": 15508,
+        "ram_miss_bytes": 206498076672,
+        "decode_hits": 0,
+        "decode_misses": 15508
+      }
+    },
+    "retained": {
+      "initial_request": {
+        "committed_post_prefill_first_byte_ms": 755.324545,
+        "prediction_post_prefill_first_byte_ms": 0.472562
+      },
+      "later_pass_medians": {
+        "committed_post_prefill_first_byte_ms": 21.983791,
+        "prediction_post_prefill_first_byte_ms": 0.362564
+      },
+      "committed_full_metrics": {
+        "request_ms": 11566.94883,
+        "prefill_ms": 11457.067796,
+        "first_token_ms": 11479.051587,
+        "first_byte_ms": 11479.051587,
+        "post_prefill_first_token_ms": 21.983791,
+        "post_prefill_first_byte_ms": 21.983791,
+        "generation_tail_ms": 109.873222,
+        "expert_upload_bytes": 168681818112,
+        "ram_misses": 12668,
+        "ram_miss_bytes": 168681818112,
+        "decode_hits": 3080,
+        "decode_misses": 12668
+      },
+      "prediction_full_metrics": {
+        "request_ms": 11679.269632,
+        "prefill_ms": 11589.486707,
+        "first_token_ms": 11589.960481,
+        "first_byte_ms": 11589.960481,
+        "post_prefill_first_token_ms": 0.362564,
+        "post_prefill_first_byte_ms": 0.362564,
+        "generation_tail_ms": 88.274069,
+        "expert_upload_bytes": 171624562176,
+        "ram_misses": 12889,
+        "ram_miss_bytes": 171624562176,
+        "decode_hits": 2619,
+        "decode_misses": 12889
+      }
+    }
+  },
+  "performance_plan": {
+    "scope": "Prepared model/codec/session. API entry through API return, including prompt encoding and bounded callback recording; reference verification and counter snapshots outside timer.",
+    "prompt_tokens": 1026,
+    "prefill": [
+      512,
+      512,
+      2
+    ],
+    "context_capacity": 1280,
+    "generated": 5,
+    "window": 32,
+    "runs": 4,
+    "sequence": [
+      [
+        "bypass",
+        "committed",
+        48,
+        false
+      ],
+      [
+        "bypass",
+        "prediction",
+        48,
+        false
+      ],
+      [
+        "retained",
+        "prediction",
+        1024,
+        true
+      ],
+      [
+        "retained",
+        "committed",
+        1024,
+        true
+      ]
+    ],
+    "analysis": "Report first request separately, then medians of passes1..3. Main phase metric is final-prompt completion callback to first token/byte callback. Total request/prefill are descriptive, not causal speedups.",
+    "limitations": [
+      "Host-clock observer entry timestamps; no GPU kernel duration or stdout/network delivery claim",
+      "Existing full-logit source controls are separate; timing runs validate encoded/input IDs and output IDs/chunks/bytes after timer",
+      "Expert stores start empty in each process, then persist naturally; retained cache contents differ with omitted final forward",
+      "Identical prompt replay is not general cache hit rate; filesystem warmth and GPU clocks uncontrolled",
+      "No matched vLLM, concurrency or serving-tail qualification"
+    ]
+  },
+  "raw_performance": "/tmp/bitnet-goal-native-prepared-latency/performance.json",
+  "qualification": {
+    "checks": {
+      "unit": 0,
+      "asan-unit": 0,
+      "committed-control": 0,
+      "prediction-control": 0,
+      "asan-committed-timing": 0,
+      "asan-prediction-timing": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "native-control": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 883,
+    "reference_files": 38656,
+    "goal_status": "active",
+    "scope": "Prepared native text timing recorder and benchmark; source comparisons outside timed callbacks, existing numerical text controls unchanged, actual timing recorder exercised under ASAN; no vLLM performance claim"
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "artifacts": "/tmp/bitnet-goal-native-prepared-latency",
+  "limits": [
+    "Callbacks indicate availability to an API consumer, not stdout/network delivery",
+    "Benchmark context1280 and 48/1024 expert-triple quotas differ from CLI defaults; no exact CLI latency claim",
+    "Natural later-pass caches differ between modes after omitted final forward; no identical-cache or general request-hit-rate claim",
+    "Identical prompt replay, uncontrolled filesystem warmth/clocks, three later samples per configuration; no sustained-serving or tail claim",
+    "No matched vLLM parity or whole-goal completion",
+    "expert_upload_ms is the existing host-side upload counter, not an isolated GPU transfer or exposed-stall measurement; it must not be added to overlapping request phases",
+    "Explicit EXL3/INT4 BF16 lookup to Exllama F16 Engram adapter, not original Diffbot full-runtime equivalence",
+    "Historical driver watchdog remains preserved in parent evidence; this run does not establish a driver fix"
+  ]
+}

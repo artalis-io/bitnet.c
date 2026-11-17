@@ -1,0 +1,349 @@
+{
+  "status": "Qualified runtime optimization; full goal ACTIVE and incomplete",
+  "parent": "docs/native-forward-profiling.json",
+  "component": "Bounded backend-owned reusable temporary expert projection buffers",
+  "runtime_changes": true,
+  "files": {
+    "test/native_trellis_store_checks.h": {
+      "before": "bd6dafa5657e1121fd353ba1626320ce3e33f7a581ffc798597452ce3a22bfd1",
+      "after": "7c7f19346e3703d1900490c0765986f7464a879623dfb3183925f774800d2420"
+    },
+    "test/cuda_exl3_ffn_checks.h": {
+      "before": "74d64ff0b1766fd45c1a7728221dc41fb2d09603029237839655653559b818f0",
+      "after": "bd1fc1235b714693a902bbcb3c0394166e426e0da738eb069fabb1a21e7ddc7b"
+    },
+    "src/gpu_cuda.cu": {
+      "before": "175aa51fe6c43bf3d858b5f4bb5a46f3f9931c030b830f5249eab3061f42dfd4",
+      "after": "c8046c8e2d17a8e05f3026444173a1ba412eaa256ce2ef94a0ee9558613d68eb"
+    },
+    "src/gpu_moe_bridge.c": {
+      "before": "a436210a493ab366c8521c0a1dd7cc465b6017b43777730e6b95065849d236cc",
+      "after": "33cfce21379835f2c2a45a6d2c22cdb81ce6345e977a5c59142923f07c0401d9"
+    },
+    "src/gpu_cuda_exl3.cuh": {
+      "before": "fc15b3d70700c6d8b0556adc2dec5ae7a04f90caf38daeb8bf6d517165eeb474",
+      "after": "39cae02ec956b3b60c7724298325a1f234228708dbfb7960597a884f60773376"
+    },
+    "include/gpu_backend.h": {
+      "before": "7810ecbe6f1f2c475306a164d13112f7c884396880fca200e2d74fbfb4c8e464",
+      "after": "7fb195a87527fbb3f2521a83dce7a23d700c49d47f2e5ef0bd12db28a2dba1d0"
+    },
+    "include/gpu_moe_bridge.h": {
+      "before": "9d3b90effb12911afa0aecf994e41921b2491d1b161e29b7ced162fe7015f923",
+      "after": "7537bae1c5f4cb996b5acf7ee8176d9c8ad1779bdff525551e753cf0ddb6b8ea"
+    },
+    "bench/bench_native_forward.c": {
+      "before": "3f2e27e92fc645544a3fa28d1ca1ea569f51e41ab5d63ecf5d3d66bcef77b7dc",
+      "after": "8712cfee4a8402dc7ce96d86d145fb9b23e36f708136c1d51cd20a1c3a1f8305"
+    }
+  },
+  "behavior": {
+    "scope": "Existing internal native forward/placement API, not new CLI/model admission",
+    "backend": "CUDA opts into synchronous exclusive-idle-buffer refill; backends without refill support keep create/destroy behavior",
+    "ownership": "Backend expert store owns one lazy triplet per temporary reservation slot. Immutable model anatomy/CPU weights/core tensors are unchanged. Pending slot prevents reuse while a lease is live; only released idle storage may be overwritten.",
+    "layout": "Original context, format, k/n geometry, marker and exact byte count must match. Different idle layout is destroyed before replacement; no changed expert routing/grouping, quant arithmetic or source head geometry.",
+    "publication": "Refill keeps cudaMemcpy followed by default-stream completion before publication, preserving the cross-nonblocking-consumer guarantee. Existing request completion before lease release remains.",
+    "failure": "Reject invalid shape/context/marker without writes. Transfer failure may poison data; store destroys the entire affected triplet, aborts reservation, leaves caller output unpublished. Cached decode handles and other slots are untouched.",
+    "lifetime": "Idle temporary storage is retained until store close, still inside the same temporary quota. Close refuses live leases and frees all retained storage.",
+    "accounting": "temporary_allocated_payload/temporary_peak_payload include idle and leased reusable storage. temporary.charged_payload counts active reservations and overlaps that allocation, so do not add the two. Backends without refill support report zero reusable allocation; their active storage remains charged by reservations."
+  },
+  "workload": {
+    "model": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "profile": "Explicit Diffbot INT4 BF16 row lookup -> Exllama F16 Engram execution adapter; not original Diffbot full-runtime equivalence",
+    "fixture": "513 fresh + 513 resumed + five source-self-fed greedy tokens; context1031, maxseq1280, f16acc0",
+    "timing": "Three plain passes per configuration, no observer callbacks. Monotonic host time for history staging through completed CPU-logit publication; preparation and verification excluded.",
+    "warmth": "OS/disk page-cache warmth and clocks uncontrolled. Repeated fixed sequence, not a serving-arrival distribution or general hit-rate prediction."
+  },
+  "measurements": {
+    "plain-window1": {
+      "before": {
+        "prefill_pair_samples_ms": [
+          22625.657476,
+          22679.015803000002,
+          22438.536413
+        ],
+        "prefill_pair_median_ms": 22625.657476,
+        "prefill_tokens_per_second": 45.346748534857916,
+        "later_decode_median_ms": 295.30881,
+        "later_decode_samples_ms": [
+          309.511619,
+          303.531831,
+          295.153168,
+          293.946364,
+          296.817892,
+          295.36443,
+          297.121164,
+          293.568096,
+          295.25319,
+          294.731664
+        ]
+      },
+      "after": {
+        "prefill_pair_samples_ms": [
+          18343.951422,
+          18241.468784999997,
+          18259.67797
+        ],
+        "prefill_pair_median_ms": 18259.67797,
+        "prefill_tokens_per_second": 56.18938086891134,
+        "later_decode_median_ms": 223.589126,
+        "later_decode_samples_ms": [
+          223.558279,
+          223.9583,
+          222.127662,
+          222.045056,
+          224.231718,
+          224.30526,
+          222.329911,
+          224.902613,
+          221.466482,
+          223.619973
+        ]
+      }
+    },
+    "plain-window32": {
+      "before": {
+        "prefill_pair_samples_ms": [
+          17790.156169,
+          17603.061067000002,
+          17684.534848
+        ],
+        "prefill_pair_median_ms": 17684.534848,
+        "prefill_tokens_per_second": 58.01679313697265,
+        "later_decode_median_ms": 296.87924499999997,
+        "later_decode_samples_ms": [
+          297.045879,
+          297.067072,
+          297.029765,
+          295.064312,
+          295.43682,
+          298.425067,
+          295.643697,
+          297.751058,
+          296.728725,
+          294.799557
+        ]
+      },
+      "after": {
+        "prefill_pair_samples_ms": [
+          13243.444365,
+          13004.099053,
+          13006.519221
+        ],
+        "prefill_pair_median_ms": 13006.519221,
+        "prefill_tokens_per_second": 78.88351853149504,
+        "later_decode_median_ms": 223.501442,
+        "later_decode_samples_ms": [
+          226.592616,
+          222.396824,
+          223.599973,
+          220.925666,
+          224.766776,
+          223.497956,
+          224.140589,
+          222.32238,
+          223.504928,
+          223.245871
+        ]
+      }
+    },
+    "plain-phase32": {
+      "before": {
+        "prefill_pair_samples_ms": [
+          17786.096727,
+          16408.139101,
+          16417.816389
+        ],
+        "prefill_pair_median_ms": 16417.816389,
+        "prefill_tokens_per_second": 62.493085297714984,
+        "later_decode_median_ms": 21.5937025,
+        "later_decode_samples_ms": [
+          21.811981,
+          21.589231,
+          21.590342,
+          21.597063,
+          21.530821,
+          21.807154,
+          21.633599,
+          21.583282,
+          21.651967,
+          21.541458
+        ]
+      },
+      "after": {
+        "prefill_pair_samples_ms": [
+          13293.099056,
+          12168.173761,
+          12283.843069999999
+        ],
+        "prefill_pair_median_ms": 12283.843069999999,
+        "prefill_tokens_per_second": 83.524349354945,
+        "later_decode_median_ms": 21.57882,
+        "later_decode_samples_ms": [
+          21.679459,
+          21.60177,
+          21.50986,
+          21.576532,
+          21.552235,
+          21.674252,
+          21.631236,
+          21.559006,
+          21.581108,
+          21.57548
+        ]
+      }
+    }
+  },
+  "comparison": {
+    "window32_prefill_throughput_gain_fraction": 0.3596669906462746,
+    "unchanged_bypass_expert_io_and_upload_bytes": true,
+    "unchanged_observed_kernel_categories_and_explicit_request_sync_counts": true
+  },
+  "memory": {
+    "temporary_budget_bytes": 639148032,
+    "window32_reusable_peak_bytes": 426098688,
+    "window1_reusable_peak_bytes": 79893504,
+    "tracked_device_peak_before_bytes": 28110765417,
+    "tracked_device_peak_after_bytes": 28110765417,
+    "tracked_final_bytes": 0,
+    "notes": "Device peak from separate Nsight allocation events; excludes untracked driver/context/rounding overhead. Idle footprint rises versus immediate release but remains within the pre-existing temporary budget; peak for this workload is unchanged. RAM/VRAM core, cache, activation and mapped-file budgets remain separate."
+  },
+  "first_prefill": {
+    "expert_projection_uploads": 23001,
+    "expert_upload_bytes": 102090582528,
+    "projection_buffer_creates": 96,
+    "projection_buffer_refills": 22905,
+    "cuda_malloc_before": 23001,
+    "cuda_malloc_after": 96,
+    "cuda_free_before": 23001,
+    "cuda_free_after": 0
+  },
+  "ram_limited_vram_supplement": {
+    "source_exact_forwards": 14,
+    "ram_budget_bytes": 13635158016,
+    "decode_budget_bytes": 639148032,
+    "temporary_budget_bytes": 639148032,
+    "warm_decode_median_ms": 217.734741,
+    "ram_hits_per_warm_token": 240,
+    "vram_hits_per_warm_token": 0,
+    "source_reader_bytes_per_warm_token": 0,
+    "expert_h2d_bytes_per_warm_token": 3195740160,
+    "notes": "Two passes, 48 VRAM expert slots versus 1024 RAM slots. Replayed decode hits RAM but misses VRAM; GPU transfers and decode-cache create/eviction costs remain. This tests actual RAM-warm offloading, not full VRAM residency or disk-cold behavior."
+  },
+  "validation": {
+    "qualification": {
+      "checks": {
+        "plain-window1": 0,
+        "plain-window32": 0,
+        "plain-phase32": 0,
+        "observed-window1": 0,
+        "observed-window32": 0,
+        "observed-phase32": 0,
+        "all-logits-window32": 0,
+        "busy": 0,
+        "asan-busy": 0,
+        "asan-phase32": 0,
+        "memcheck-phase32": 0,
+        "initcheck-phase32": 0,
+        "qwen27-compat": 0
+      },
+      "frozen_sources": 854,
+      "reference_files": 24957,
+      "goal_status": "active",
+      "scope": "Bounded reusable native expert buffers: geometry-preserving whole-model window1/window32 and phase-policy timing/counters, exact independent CPU/GPU source values, BUSY and poisoned-refill ownership tests, sanitizer/compatibility gates. Not vLLM parity."
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "main_source_exact": {
+      "forwards": 168,
+      "checks": 336,
+      "bytes": 924610560,
+      "self_fed_tokens": 120
+    },
+    "supplement_source_exact_forwards": 28,
+    "supplement_source_exact_checks": 56,
+    "synthetic_tests": "Budget/pinned isolation, stale and malformed lease rejection, refill data across keys, partial poisoned-refill cleanup, create rollback and complete teardown",
+    "cuda_tests": "Wrong size/shape/format/marker/context rejected; zero/refill/restore precedes unchanged original EXL3 FFN reference checks",
+    "busy": "Four interruptions per probe; normal and ASan/UBSan probes preserve host publication/history, drain partial lease, retain original query106/score132/topk132 totals and reproduce source values",
+    "asan_ubsan": "Passed",
+    "cuda_memcheck": "0 errors; 0 bytes leaked in 0 allocations",
+    "cuda_initcheck": "0 errors",
+    "qwen27": {
+      "token_matches": 192,
+      "total_tokens": 192,
+      "token_count_mismatches": 0,
+      "prompts": 8,
+      "word_prefix_matches": 147,
+      "total_words": 147
+    }
+  },
+  "trace": {
+    "scope": "Supplementary Nsight trace only; separate from uninstrumented performance samples",
+    "phase_interval": "Embedding CUDA dispatch through the start of the external half-logit verification transfer; includes original final-logit publication and synchronization, excludes setup/reset, initial embedding upload, external verification",
+    "all_forward_cuda_malloc_calls_equal_buffer_create_count": true,
+    "all_forward_cuda_free_calls": 0,
+    "warm_decode_cuda_malloc_and_free_calls": 0,
+    "warm_decode_stream_sync_calls": 173,
+    "notes": "Separate Nsight trace, excluded from performance table. Fourteen source-exact forwards. ROI begins at embedding dispatch and stops before external verification, including normal final-logit publication; setup/reset/initial embedding upload/verification excluded. Whole-process totals include setup."
+  },
+  "artifacts": {
+    "qualification.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/qualification.json",
+      "sha256": "a5780dbe96bc9566f42b048db6e4000fc2982116922189eec8b1ae85bb83f637"
+    },
+    "records.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/records.json",
+      "sha256": "6c0598dedeb933a5159f37d6b60edb7e4f91aef5813fd229f765a806b298bfa7"
+    },
+    "intentional-source-changes.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/intentional-source-changes.json",
+      "sha256": "90a366ceb28ce6a5519fe50152dcb56f8ef938a75ee315e168aea81148d61854"
+    },
+    "rebuilt-artifacts.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/rebuilt-artifacts.json",
+      "sha256": "faeba0192845e4b18a08c231278a3fe6bd5eafbedb0e6e0f35418b238e18b92c"
+    },
+    "frozen-source.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/frozen-source.json",
+      "sha256": "2f7becdb61bee09a40131405acf470bc8dfe9755c23a26607f1397c9a21676b5"
+    },
+    "reference-audit.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/reference-audit.json",
+      "sha256": "8b54bc0cdb8178afa8001f7c515b6311de34717f2a5778932a58417ca15b3512"
+    },
+    "trace-analysis.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/trace-analysis.json",
+      "sha256": "2416bc9f7c787cf2319eb018863e2f444aaaa0ef83dfea9b685b8efa1f30d35b"
+    },
+    "native-phase-trace.nsys-rep": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/native-phase-trace.nsys-rep",
+      "sha256": "a302b08049f105d76f746fe4b24ce962489b0f41a8c659dc38c4678b8ddcf7fc"
+    },
+    "native-phase-trace.sqlite": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/native-phase-trace.sqlite",
+      "sha256": "36ad6f28505d2829519a207d4612c4cf56fcb28317b30e1d23ef9ff280e71dc5"
+    },
+    "ram-warm-vram-small.json": {
+      "path": "/tmp/bitnet-goal-native-temp-reuse/ram-warm-vram-small.json",
+      "sha256": "db76fbedd519b1c19efdced8d80d1fc3e38f6e2047e3bc4e9b2f3f807b71ff72"
+    }
+  },
+  "limits": [
+    "No vLLM parity comparison for this adapter; fully resident matched comparisons remain required",
+    "Decode-cache eviction still creates/destroys its own buffers; only temporary expert storage is reused",
+    "Upload publication remains blocking and per projection; no claimed transfer overlap or removed synchronization wait",
+    "No new production tokenizer/CLI/serving admission, continuous batching or KV scheduling",
+    "Whole-model large-context two-level candidates, CPU native execution and all-model/backend acceptance remain incomplete"
+  ],
+  "goal_complete": false
+}

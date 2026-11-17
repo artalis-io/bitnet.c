@@ -1,0 +1,131 @@
+{
+  "milestone": "Native mapped-token n-gram rows and coupled RAM-cache/CUDA lookup",
+  "status": "qualified component; full goal remains active",
+  "parent": "docs/deepseek-v41-1017-native-engram-layout.json",
+  "api": {
+    "public_model_adapter": "bn_model_native_engram_hash_rows(layout,mapped_pad,mapped_history,batch,history_len,out_len,out,out_count)",
+    "architecture": "bn_model_arch_native_engram_hash_rows",
+    "implementation": [
+      "src/model_arch.c",
+      "src/model_policy.c"
+    ],
+    "contract": "Immutable resolver layout and compressed uint32 token history. Exact uint64 row output in batch/token/ngram/head order. mapped_pad is compressed, independent of raw layout.pad_token. Source current-pad behavior preserved: pad can end a gram, then resets following context. No allocation or retained history/position state.",
+    "preflight": "All layout, shape/overflow, buffer aliasing and every history token checked before output writes. Rejection preserves output; empty out_len is an explicit native no-op with zero output count and no data needed. Original source -0 slicing is not executed."
+  },
+  "independent_reference": {
+    "original_manifest": "/tmp/bitnet-goal-native-engram/reference-final/manifest.json",
+    "manifest_sha256": "92875f3309c982a04a8d7bbea0221f729454af3c4be387019e610e97df8778ae",
+    "unit_generator": "test/reference_native_ngram_rows.py",
+    "unit_golden_header": "test/native_ngram_rows_reference.h",
+    "unit_header_sha256": "c6b4153f2286b18c2abfba04733316aa20ea5672909c338f4557fc7fc0821994",
+    "lookup_capture": "/tmp/bitnet-goal-native-ngram-rows/capture-lookups.py",
+    "lookup_reference": "/tmp/bitnet-goal-native-ngram-rows/lookup-reference/reference.json",
+    "lookup_kernel": "/tmp/bitnet-goal-native-engram-rows/original_kernel.py",
+    "lookup_kernel_sha256": "312f05a642037ec54c02c7f5dc40f0aa2deb3b3d1094b0ed45ed0906e18fc04f",
+    "lookup_semantics": "Unmodified source hash row IDs plus unchanged original Triton int4 lookup, BF16 output. Real physical checkpoint rows compacted in source ID order including repeats. No candidate runtime import."
+  },
+  "validation": {
+    "clean_product_build": "zero warnings",
+    "standard_suite": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "normal_and_asan_probe_builds": "zero warnings",
+    "frozen_sources": 821,
+    "checks": {
+      "ngram-unit": 0,
+      "asan-ngram-unit": 0,
+      "ngram-reference-replay": 0,
+      "negative-ngram-reference": 0,
+      "layout-unit": 0,
+      "asan-layout-unit": 0,
+      "negative-reference": 0,
+      "reference-replay": 0,
+      "row-binding-unit": 0,
+      "asan-row-binding-unit": 0,
+      "normal-probe": 0,
+      "asan-probe": 0,
+      "memcheck-probe": 0,
+      "initcheck-probe": 0,
+      "bounded-row-race": 0,
+      "source-lookup-replay": 0,
+      "qwen27-compat": 0
+    },
+    "cpu_per_probe": {
+      "original_cases": 108,
+      "batch_sizes": [
+        1,
+        2
+      ],
+      "lengths": [
+        1,
+        2,
+        3,
+        4,
+        7,
+        17,
+        64,
+        129,
+        513
+      ],
+      "layers": [
+        1,
+        14
+      ],
+      "profiles": [
+        "text",
+        "pad-boundaries",
+        "repeated"
+      ],
+      "windows": [
+        "whole",
+        "implicit initial pads",
+        "chunks1/2/7/31/128 with carried context",
+        "suffix of full history",
+        "successful retry after rejected late token"
+      ],
+      "successful_source_window_calls": 15660,
+      "exact_uint64_words": 2716416,
+      "rejected_replays_preserving_output": 108,
+      "linked_hot_heap_calls": 0
+    },
+    "coupled_lookup_per_probe": {
+      "source_input_cases": 4,
+      "source_batch": 2,
+      "source_token_lengths": [
+        7,
+        129
+      ],
+      "layers": [
+        1,
+        14
+      ],
+      "sessions": 2,
+      "new_native_hash_calls": 4,
+      "source_physical_rows": 13056,
+      "reference_checked_row_submits": 208,
+      "exact_bf16_bytes": 13369344,
+      "max_raw_rows_per_submit": 128,
+      "note": "Raw row chunks are not whole LLM prefill/decode batches. Hash output directly feeds existing canonical native request row staging; no complete Engram consumer."
+    },
+    "prior_row_pipeline_regression": {
+      "calls": 72,
+      "exact_bf16_bytes": 4202496,
+      "tables": 2,
+      "cache_host_bound": 525360,
+      "cache_host_allocated": 525296,
+      "session_row_host": 600,
+      "session_row_pinned": 65536,
+      "session_row_device": 167936
+    },
+    "qwen27": "Fresh strict llama.cpp sampled-ID parity192/192; first8/8; token-count mismatch0/8.",
+    "sanitizer_scope": "ASAN/UBSAN C hash/model/runtime and unit/probe source instrumentation; legacy moe_cpu_kernels.o and CUDA translation units normal build. CUDA memcheck full leak check0bytes/0allocations and initcheck0errors. Unchanged row kernel bounded racecheck only; no whole-core racecheck.",
+    "integrity": "All original corpus payloads, independent lookup payloads, sources/probes/binaries frozen and hash-checked. Reference replay byte-identical. Modified histories/differing outputs rejected by reference tool. Four protected user binaries preserved."
+  },
+  "qualification_artifacts": "/tmp/bitnet-goal-native-ngram-rows",
+  "not_claimed": [
+    "Native tokenizer/normalizer or token-map construction",
+    "Request-local history ownership or complete-model reset/rewind/resume qualification",
+    "BF16-to-F16 projection precision adapter, PLE/HCA or whole forward/generation admission",
+    "vLLM parity or cold/warm offload performance, transfer latency or serving concurrency",
+    "New ARM/Metal/WASM execution coverage or CUDA kernels"
+  ]
+}

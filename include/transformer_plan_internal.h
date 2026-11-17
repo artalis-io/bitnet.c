@@ -215,6 +215,20 @@ uint32_t bn_transformer_gpu_matvec_native_quant_flags(int tensor_type,
                                                        int enabled);
 uint32_t bn_transformer_gpu_matvec_quant_dot_flags(int tensor_type,
                                                    int enabled);
+uint32_t bn_transformer_gpu_moe_backend_route_flags(
+    const BnGPUBackend *gpu, const BnConfig *c);
+uint32_t bn_transformer_gpu_attention_output_reference_flags(
+    const BnGPUBackend *gpu, int tensor_type, int group_type, int reference_math);
+uint32_t bn_transformer_gpu_attention_projection_reference_flags(
+    const BnGPUBackend *gpu, int tensor_type, int group_type, int reference_math);
+uint32_t bn_transformer_gpu_hyper_projection_matvec_flags(
+    const BnGPUBackend *gpu, int tensor_type, int use_native_quant);
+int bn_transformer_gpu_hyper_host_reference_order(
+    const BnGPUBackend *gpu, int use_native_quant);
+int bn_transformer_gpu_moe_fused_weighted_sum_enabled(
+    const BnGPUBackend *gpu, int experts, int preserve_output);
+int bn_transformer_gpu_moe_shared_host_reference_enabled(
+    const BnGPUBackend *gpu, int reference_math);
 uint32_t bn_transformer_gpu_matvec_block_q8_activation_flags(
     int tensor_type,
     int enabled);
@@ -225,6 +239,12 @@ uint32_t bn_transformer_gpu_moe_expert_projection_matvec_flags(
     const BnMoEExpertMap *map,
     int proj,
     int use_quant_dot);
+uint32_t bn_transformer_gpu_moe_expert_projection_matvec_flags_for(
+    const BnGPUBackend *gpu, const BnMoEExpertMap *map,
+    int proj, int use_quant_dot);
+uint32_t bn_transformer_gpu_moe_shared_gateup_matvec_flags(
+    const BnGPUBackend *gpu, int tensor_type, int use_quant_dot,
+    int reference_accumulation);
 uint32_t bn_transformer_gpu_moe_shared_down_matvec_flags(
     const BnGPUBackend *gpu,
     int tensor_type,

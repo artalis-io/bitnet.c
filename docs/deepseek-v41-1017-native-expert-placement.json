@@ -1,0 +1,249 @@
+{
+  "status": "Qualified production bridge for native expert placement; full model executor and whole goal remain incomplete",
+  "implementation": {
+    "api": "include/gpu_moe_bridge.h: BnGPUMoETrellisStore and BnGPUMoETrellisLease; init/acquire/release/stats/close",
+    "source": "src/gpu_moe_bridge.c",
+    "ownership": "Executor/backend-owned placement store bound to one borrowed immutable model and backend; both must outlive store. Serialized access. Caller releases each lease only after ALL queued consumers finish. No changes to model or CPU weight ownership.",
+    "reuse": "Existing model-owned BnTrellisSource catalog and BnMoEExpertReader; existing pinned host LRU; existing GPU reservation/lease LRU. No alternate cache or arithmetic engine.",
+    "decode": "Acquire/promote GPU hit; reserve decode slot before host read/upload on miss; host misses admit into RAM LRU; commit transfers immutable raw handle ownership and returns pinned GPU lease.",
+    "prefill": "Borrow decode hits without promotion; misses reserve separate temporary capacity before reading/uploading. Host misses use bounded staging without RAM admission. Temporary stays charged/pending until last consumer completes, then all handles destroyed before reservation abort. Decode entries are never evicted for prefill scans.",
+    "backpressure": "Pinned/full cache, unavailable policy capacity or same temporary key pending returns BUSY without reading or uploading. Executor may share one lease across consumers; it must wait for all before release.",
+    "rollback": "Partial upload failures destroy acquired handles before aborting reservation; host pin released on all paths; output unchanged on failure. Store close refuses live leases.",
+    "telemetry": "Reader bytes/time, host hit/miss counters; successful upload payload bytes/count and blocking allocation/upload wall time; decode and temporary cache payload/pin/reservation counters; staging size and live lease count.",
+    "allocation_scope": "Host payload slab/staging are reserved at init; GPU slot is charged before upload allocation. Raw immutable uploader has no decoded or auxiliary layout cache. Payload budgets exclude metadata, allocator, CUDA/library/context and activation overhead."
+  },
+  "references": {
+    "original_source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "manifest_sha256": {
+      "reference.json": "f932c817f7ffa6ec65a182147e7f960bfc689ef1f09fced9cb250bad1e705288",
+      "extra-reference.json": "6d9bd4f6d12413570be46ae27bafd8932f2a3248483c9e5e95e9740af5a33a6b",
+      "probe-reference.json": "8ae836946298a44db717eb517b1193967dfb5a603f245a4fcd0ca7854d2bdb14"
+    },
+    "model": "deepseek-v4.1-flash-1017-diffbot-exl3-3bpw",
+    "catalog": "40 layers,384 experts; metadata only, no full forward admission",
+    "actual_expert_triples": [
+      "layer0 expert0",
+      "layer39 expert383"
+    ],
+    "shape": {
+      "dim": 5120,
+      "hidden": 2304
+    },
+    "cases": "22 frames \u00d725 source widths =550 profiles per full run; R1/7/16/17/32/33/64/65/128/129/256, clipping0/10; both actual experts active",
+    "policy": "Independent original weighted F32 slots and source ordered final outputs, unchanged since capture. Entire preserved reference corpus rehashed before execution. Two concurrent request states share leases until both finish.",
+    "artifacts": "/tmp/bitnet-goal-native-store"
+  },
+  "validation": {
+    "synthetic": "Synthetic checkpoint/recording backend tests exercise reserve-before-allocation, combined payload peak, shared pinned hits, no-I/O BUSY paths, live-output rejection, prefill decode preservation, stale reservation rejection, shutdown refusal, all three partial upload failures, retry, disabled policy, source read failure and index invalidation.",
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "decode-window1": 0,
+      "prefill-window1": 0,
+      "decode-window32": 0,
+      "prefill-window32": 0,
+      "asan-decode": 0,
+      "asan-prefill": 0,
+      "memcheck-decode": 0,
+      "memcheck-prefill": 0
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "sanitizer_harness_compile_warnings": {
+      "count": 3,
+      "kind": "Clang unused static helpers in unchanged src/moe_cpu_kernels.c",
+      "names": [
+        "moe_reduce_16_avx2",
+        "moe_reduce_8_avx2",
+        "moe_reference_exp_avx2"
+      ],
+      "production_build_zero_warnings": true
+    },
+    "source_files_verified": 728,
+    "source_manifest_sha256": "32a607d1173a1005251bf82e236dd3fda05e3aeb18335c72eb7d65975b076653",
+    "probe_sha256": "9d5e15f6f2e43faf1d60d657667dfe27d3fcc0817911dd72a33937a8b593c395",
+    "records": {
+      "decode-window1": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 13315584,
+        "max_staging_payload": 13315584,
+        "hits": 0,
+        "misses": 1100,
+        "evictions": 1078,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 585885696,
+          "host_hits": 1056,
+          "host_misses": 44,
+          "uploaded_payload_bytes": 14647142400,
+          "reader_ms": 56.380026,
+          "blocking_upload_ms": 718.637904
+        }
+      },
+      "prefill-window1": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 550,
+        "misses": 572,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 7616514048,
+          "host_hits": 0,
+          "host_misses": 572,
+          "uploaded_payload_bytes": 7616514048,
+          "reader_ms": 393.459394,
+          "blocking_upload_ms": 387.324313
+        }
+      },
+      "decode-window32": {
+        "profiles": 550,
+        "launches": 2200,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 1056,
+        "misses": 44,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 585885696,
+          "host_hits": 0,
+          "host_misses": 44,
+          "uploaded_payload_bytes": 585885696,
+          "reader_ms": 61.696488,
+          "blocking_upload_ms": 31.820428
+        }
+      },
+      "prefill-window32": {
+        "profiles": 550,
+        "launches": 2200,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 550,
+        "misses": 572,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 7616514048,
+          "host_hits": 0,
+          "host_misses": 572,
+          "uploaded_payload_bytes": 7616514048,
+          "reader_ms": 389.672887,
+          "blocking_upload_ms": 385.721219
+        }
+      },
+      "asan-decode": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 13315584,
+        "max_staging_payload": 13315584,
+        "hits": 0,
+        "misses": 1100,
+        "evictions": 1078,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 585885696,
+          "host_hits": 1056,
+          "host_misses": 44,
+          "uploaded_payload_bytes": 14647142400,
+          "reader_ms": 134.999938,
+          "blocking_upload_ms": 820.110739
+        }
+      },
+      "asan-prefill": {
+        "profiles": 550,
+        "launches": 4400,
+        "compared_bytes": 4595712000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 550,
+        "misses": 572,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 7616514048,
+          "host_hits": 0,
+          "host_misses": 572,
+          "uploaded_payload_bytes": 7616514048,
+          "reader_ms": 575.733163,
+          "blocking_upload_ms": 431.815078
+        }
+      },
+      "memcheck-decode": {
+        "profiles": 25,
+        "launches": 200,
+        "compared_bytes": 3072000,
+        "max_payload": 13315584,
+        "max_staging_payload": 13315584,
+        "hits": 0,
+        "misses": 50,
+        "evictions": 49,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 26631168,
+          "host_hits": 48,
+          "host_misses": 2,
+          "uploaded_payload_bytes": 665779200,
+          "reader_ms": 7.666217,
+          "blocking_upload_ms": 37.221138
+        }
+      },
+      "memcheck-prefill": {
+        "profiles": 25,
+        "launches": 200,
+        "compared_bytes": 3072000,
+        "max_payload": 26631168,
+        "max_staging_payload": 13315584,
+        "hits": 25,
+        "misses": 26,
+        "evictions": 0,
+        "mismatches": 0,
+        "placement": {
+          "bytes": 346205184,
+          "host_hits": 0,
+          "host_misses": 26,
+          "uploaded_payload_bytes": 346205184,
+          "reader_ms": 21.070066,
+          "blocking_upload_ms": 20.813127
+        }
+      }
+    }
+  },
+  "payload_bounds": {
+    "expert_bundle_bytes": 13315584,
+    "ram_cache_bytes": 26631168,
+    "separate_staging_bytes": 13315584,
+    "decode_window1_peak_bytes": 13315584,
+    "prefill_window1_combined_decode_and_temporary_peak_bytes": 26631168,
+    "note": "Window32 runs have only two active experts; reported maximum is live payload, not full device peak. Each source frame creates a fresh store, so total counters include22 repeated cold starts. Prefill runs include seeding one decode/RAM entry per frame."
+  },
+  "limits": [
+    "Production bridge API is implemented, but a full-model executor/generation/CLI has not been wired or admitted.",
+    "The probe still synchronizes requests explicitly between expert windows; asynchronous IO/transfer overlap, separate transfer-stall attribution and serving scheduling remain incomplete.",
+    "Actual arithmetic proof covers two expert triples. Synthetic reservation tests cover policies and rollback, not all384 real expert weights.",
+    "Reader byte counts may be served by OS page cache; no physical disk IO claim. Blocking upload timings include allocation and synchronous completion and are diagnostic, not matched performance benchmarks.",
+    "ASAN covers full550-profile decode and prefill corpora plus whole CPU MoE suite; CUDA memcheck covers selected25-width real frame for both policies, not the entire550-profile corpus.",
+    "Shared F16 FFN composition, heavy/fused tier scheduler, source <=8 specialized decode profile, compressed/indexed/shared-KV attention and Engram execution still require qualification.",
+    "No full-model accuracy, matched vLLM parity, throughput or tail-latency claim."
+  ]
+}

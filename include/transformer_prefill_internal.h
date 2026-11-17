@@ -16,9 +16,30 @@ typedef struct BnGPUBackend BnGPUBackend;
 #endif
 typedef struct BnBackendModel BnBackendModel;
 
+/* Batched PLE row IDs, with independent chronological predecessor contexts
+ * [requests, ngram-1] and starts[requests+1]. Empty requests are allowed.
+ * Exact extents, nonnegative token IDs, disjoint output. All validation precedes
+ * writes. Hash products wrap in 64 bits; remainder follows signed Torch math.
+ */
+int bn_transformer_prefill_ple_ids(const BnConfig *config,
+    const int32_t *tokens, int n_tokens, const int32_t *starts, int n_requests,
+    const int32_t *context, size_t context_count, int32_t *out, size_t out_count);
+
+/* Shared admission for prefill with and without logits. The host-orchestrated
+ * batch fallback remains a batch even when native GPU chaining is unavailable. */
+int bn_transformer_prefill_gpu_batch_available(
+    const BnGPUBackend *gpu, const BnConfig *config);
+
 int bn_transformer_prefill_host_reference_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *config);
+
+int bn_transformer_prefill_prepared_attention_requested(
+    const BnGPUBackend *gpu, const BnConfig *config);
+
+int bn_transformer_prefill_selects_last_ffn_row(
+    const BnGPUBackend *gpu, int all_logits, int layer, int n_layers,
+    int n_tokens);
 
 #define BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES 16
 
@@ -964,6 +985,17 @@ void bn_transformer_prefill_quant_matmul_prepared_multi(
     const float *x,
     int n_tokens,
     int8_t *quantized_buf,
+    BnThreadPool *pool);
+
+// Explicit reference-prefill arithmetic. Failures propagate to orchestration.
+int bn_transformer_prefill_quant_matmul_reference_multi(
+    float **out, const BnQWeight **weights, const BnPreparedWeight **prepared,
+    int n_tasks, const float *x, int n_tokens, int8_t *scratch,
+    BnThreadPool *pool);
+int bn_transformer_prefill_quant_matmul_reference_kquant_input_multi(
+    float **out, const BnQWeight **weights, const BnPreparedWeight **prepared,
+    int n_tasks, int n_tokens, const int8_t *quantized, const float *scales,
+    const int16_t *block_sums, const float *x, int8_t *scratch,
     BnThreadPool *pool);
 
 void bn_transformer_prefill_quant_matmul_float_x(

@@ -1,0 +1,132 @@
+{
+  "milestone": "Native shared-weight vector4 FP16/F32 RMSNorm execution",
+  "status": "Qualified standalone normalization operator; whole inference/vLLM goal remains active",
+  "implementation": {
+    "api": "BnGPUVector4RMSNormResidentPlan and rmsnorm_vector4_f16_f32_resident; CUDA SM80+ callback. Reads immutable model-owned raw F16/BF16 gamma, or unweighted NULL.",
+    "arithmetic": "Original vector4 sequential FMA sum, XOR warp/block reduction, FTZ arithmetic, approximate divide/rsqrt, FP16 input clamp. Weighted result multiplies x by gamma+bias before inverse-rms*scale. PTX forms preserve upstream compiler contraction choices without changing global compiler flags.",
+    "ownership": "Only input/output activation views are request-owned. Gamma remains shared in model backend resources. Validate owner, type, exact extent, groups, alignment and lifetime generation before enqueue. Device failure poisons request.",
+    "views": "n_tokens counts flattened rows. Gamma group is row modulo weight_groups. dim positive multiple4; FP16/F32 input/output. Exact same-type alias supported; partial overlap rejected. Finite constants and positive epsilon required.",
+    "execution": "No setup workspace/reserve, allocation, host copy or synchronization in execution. No residual/span-head mode; existing BF16 norm paths unchanged.",
+    "license": "Adapted from MIT exllamav3 norm.cu at bd1f519172406a9560bd5c90e61000691bb69a07; notice/LICENSE retained under third_party/exllamav3."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "asan-native": 0,
+      "memcheck": 0,
+      "initcheck": 0,
+      "racecheck": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "actual_norm_parameters": 173,
+    "batch_sizes": [
+      1,
+      7,
+      64,
+      256
+    ],
+    "cases": 2888,
+    "reference_words": 752302816,
+    "records": {
+      "native": {
+        "cases": 2888,
+        "repeated_words": 2256908448,
+        "chunk_words": 750019296,
+        "alias_words": 376151408,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "cases": 2888,
+        "repeated_words": 2256908448,
+        "chunk_words": 750019296,
+        "alias_words": 376151408,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "cases": 2888,
+        "repeated_words": 2256908448,
+        "chunk_words": 750019296,
+        "alias_words": 376151408,
+        "mismatches": 0
+      },
+      "nsys": {
+        "cases": 1,
+        "repeated_words": 3932160,
+        "chunk_words": 1310720,
+        "alias_words": 1310720,
+        "mismatches": 0
+      }
+    },
+    "reference": "Unchanged original RES_NONE kernel, helpers and vector types extracted, original launch geometry replayed with upstream --use_fast_math. Includes original compiled-kernel FP16 clamp and BF16/F16 weight loads; not Torch mathematical approximation or native-generated expected values.",
+    "synthetic": "120 frozen source-kernel fixtures, digest checks cover9924768 output words across two requests/alias runs; direct byte comparisons also include these cases in the actual probe. Dimensions4/32/128/1280/5120, F16/BF16/unweighted gamma, all F16/F32 I/O pairs, zero/tiny/large/half Inf+NaN inputs, bias/scale variants, guards and rejected plans.",
+    "chunking": "Group-aligned split execution equals whole-row reference; exact in-place execution also matches. These are operator checks, not resumed whole-model inference.",
+    "sanitizers": "Clang18 address/undefined sanitizer host+actual0; CUDA memcheck0errors0leaks; initcheck0errors; racecheck0hazards/errors/warnings.",
+    "profile": {
+      "scope": "Warmed root/output RMSNorm, F32 input/output, shared model-owned BF16 gamma, M256 D5120,64 calls. Model preparation and request allocation outside capture.",
+      "calls": 64,
+      "kernels": [
+        {
+          "name": "void bn_cuda_native_norm::kernel<float, float, __nv_bfloat16>(const T1 *, T2 *, const T3 *, int, int, int, float, float, float)",
+          "count": 64,
+          "total_ns": 335970
+        }
+      ],
+      "apis": {
+        "cuKernelGetName": 64,
+        "cudaGetLastError_v3020": 64,
+        "cudaLaunchKernel_v7000": 64,
+        "cudaSetDevice_v3020": 64
+      },
+      "allocation_copy_free_sync_calls": [],
+      "memcpy_records": 0,
+      "sqlite_sha256": "1353b786fcf2da4fb88b7ed6cac2b8714b2515a3213a7862be361d6b15caa3bd",
+      "limitations": "One warmed operator shape; no full-layer/model throughput or vLLM parity claim. Context/module/library/driver memory is separate."
+    },
+    "reference_sha256": "b6aa21663405f94e657430939853080c70fc8ef4992326ceaf10deaef8c329ec",
+    "prior_attempts": [
+      "Initial original-kernel capture omitted upstream --use_fast_math; retained under strict-reference and not used as the target. Recompiled/captured with original fast flags before production implementation.",
+      "Initial native fixture97 affine FP16->F32 mismatch: explicit .rn qualifiers on add/mul introduced a rounding barrier absent from upstream PTX. Removed those qualifiers (kept FTZ/approx op forms); all2888 original fast-kernel cases then matched in separate prototype before final clean rebuild. Initial build/test logs retained.",
+      "Initial test C header misleading-indentation warning corrected before final clean build."
+    ]
+  },
+  "limitations": [
+    "Standalone normalization only; native embedding/HC4/routing/attention/Engram/session/complete generation integration remains unfinished.",
+    "Fused attention/compressor norm paths may have distinct arithmetic and require separate reference qualification.",
+    "No BF16 activation input/output, residual-add or span-head execution profile added here.",
+    "No complete model correctness, CPU/NEON/Metal/WASM execution or vLLM throughput/decode parity claim."
+  ],
+  "artifacts": {
+    "qualification": "/tmp/bitnet-goal-native-rmsnorm/qualification.json",
+    "reference": "/tmp/bitnet-goal-native-rmsnorm/reference.json",
+    "profile": "/tmp/bitnet-goal-native-rmsnorm/profile-analysis.json",
+    "trace": "/tmp/bitnet-goal-native-rmsnorm/warmed.nsys-rep",
+    "continuation": "/tmp/bitnet-goal-native-rmsnorm/NEXT.txt"
+  },
+  "source_sha256": {
+    "include/gpu_backend.h": "a82c4e59a0d4b30e96aa41399348a434c9a9af9c3f43b05170179852cbf5270f",
+    "src/gpu_cuda.cu": "01243e68d765b0ba5995cf51b1b35d9838e49954e31ec98b42e79aad188319ba",
+    "src/gpu_cuda_native_norm.cuh": "d896826506f0c0d1081dcecc90b4f5f03bec20d753475f44d9174e98efe8a6fe",
+    "test/cuda_native_norm_checks.h": "de01c3493cb30eaa548c43ae6e0e42c51e566f7b2f9c6aeacbcf6d39ca43add5",
+    "test/cuda_native_norm_reference.h": "f641a506299cee4ac281646d46cd863347fad7e21bb15e72ffcbec70e6fef77f",
+    "test/test_cuda_backend.c": "4fc2a2d0b5d31cab635611ace857926e84825b4b6e74a8ff98e09af7920d2215",
+    "Makefile": "88f67ffb862ed765cc4a95b75c8ea2ddfe4e3d9ea38969e669d0dc016eb9086f",
+    "third_party/exllamav3/LICENSE": "27a32b6263fcd96c79d3beeecf221c4366780bdf15ad51986f48650bd7369bff"
+  }
+}

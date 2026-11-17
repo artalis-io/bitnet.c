@@ -1,6 +1,5 @@
 #include "model_internal.h"
 #include "moe.h"
-
 int bn_model_load_moe_expert_map(BnGGUFFile *file,
                                  const BnMoEExpertTensorNames *names,
                                  int n_experts,

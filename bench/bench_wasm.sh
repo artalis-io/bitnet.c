@@ -78,6 +78,7 @@ emcc \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/transformer/cpu.c" \
     "$PROJECT_DIR/src/transformer/gpu.c" \
+    "$PROJECT_DIR/src/transformer/bf16.c" \
     "$PROJECT_DIR/src/transformer/gpu_emit.c" \
     "$PROJECT_DIR/src/transformer/kv.c" \
     "$PROJECT_DIR/src/transformer/logits.c" \

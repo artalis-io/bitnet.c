@@ -1,0 +1,11 @@
+--- a/vllm_gguf_plugin/csrc/gguf/moe.cuh
++++ b/vllm_gguf_plugin/csrc/gguf/moe.cuh
+@@ -74,7 +74,7 @@
+ 
+       if (threadIdx.x < n_per_r / QK8_1) {
+         const auto kby = threadIdx.x % (WARP_SIZE_GGUF / QI8_1);
+-        const int col_y_eff = token_offs[threadIdx.y] / top_k;
++        const int col_y_eff = token_offs[0] / top_k;
+         const int block_x =
+             ib0 * (qk / QK8_1) + ir * (WARP_SIZE_GGUF / QI8_1) + kby;
+ 

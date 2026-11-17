@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "goal_status": "active",
+  "entry": "bitnet --native-text MODEL_DIR --profile exl3-int4-f16 --prompt-file prompt.txt -n 5 --prediction-first",
+  "semantics": {
+    "default": "Unchanged committed-token mode",
+    "prediction": "Publish before decode; skip final decode; final reported token absent from history",
+    "history": "prompt_tokens + max(generated-1,0)",
+    "capacity": "prompt_tokens + max(max_new_tokens-1,0)",
+    "error": "May follow partial output; nonzero exit and full cleanup"
+  },
+  "correctness": {
+    "cases_per_binary": 35,
+    "normal_and_asan": true,
+    "old_cases_preserved": 23,
+    "new_prediction_cases": 12,
+    "explicit_sanitizer_logs_scanned": 38,
+    "source_prefix": "512+512+2 then four decoded inputs for five outputs; every I32 input and last F32 word exact",
+    "prior_prefix": "513+513 then four decoded inputs",
+    "generated_ids": [
+      25744,
+      14,
+      223,
+      21,
+      16
+    ],
+    "output_hex": "3738392c20332e",
+    "position": 1030,
+    "zero_and_one_output": true,
+    "prepared_context_boundary": "1026 prompt + 254 committed generation inputs fits maxseq1280 with -n255; old -n255/predicted -n256 reject before GPU",
+    "stdout_failure": "Three prefill frames, no decode forward",
+    "trace_collision_preserved": true,
+    "qwen_token_parity": "192/192"
+  },
+  "latency": {
+    "scope": "Fresh CLI process: launch to first observed stdout byte and process exit",
+    "per_mode_medians": {
+      "committed": {
+        "first_byte_ms": 29154.325386,
+        "process_exit_ms": 30279.141087,
+        "expert_upload_bytes": 209693816832.0
+      },
+      "prediction_first": {
+        "first_byte_ms": 28800.094272000002,
+        "process_exit_ms": 29933.906378500003,
+        "expert_upload_bytes": 206498076672.0
+      }
+    },
+    "paired_comparisons": [
+      {
+        "pair": 0,
+        "first_byte_delta_ms": 377.3541580000019,
+        "exit_delta_ms": 380.69450199999847,
+        "expert_upload_delta_bytes": -3195740160
+      },
+      {
+        "pair": 1,
+        "first_byte_delta_ms": 126.34896099999969,
+        "exit_delta_ms": 134.52895900000294,
+        "expert_upload_delta_bytes": -3195740160
+      },
+      {
+        "pair": 2,
+        "first_byte_delta_ms": -649.7402600000023,
+        "exit_delta_ms": -661.4986449999997,
+        "expert_upload_delta_bytes": -3195740160
+      },
+      {
+        "pair": 3,
+        "first_byte_delta_ms": -649.746991,
+        "exit_delta_ms": -640.3312849999966,
+        "expert_upload_delta_bytes": -3195740160
+      }
+    ],
+    "median_first_byte_delta_ms": -261.6956495000013,
+    "median_exit_delta_ms": -252.9011629999968,
+    "expert_upload_reduction_bytes": [
+      3195740160
+    ],
+    "latency_gain_established": false,
+    "interpretation": "Two pairs improved and two worsened: descriptive process medians do not establish a reliable latency gain; prepared-model timing is needed",
+    "plan": {
+      "scope": "Fresh CLI process: launch to first observed stdout byte and process exit",
+      "pairs": 4,
+      "order": "Alternating committed/prediction and prediction/committed pairs",
+      "prefill_tokens": 512,
+      "maxseq": 4096,
+      "new_tokens": 5,
+      "ram_cache_mib": 640,
+      "gpu_cache_mib": 640,
+      "admit_decode": false,
+      "source_pins": {
+        "/home/mark/artalis.io/src/bitnet.c/bitnet": "f01b32ff8b7ff5bf882a2297214aa3116aafeecf38c184391a538be11d8af90e",
+        "/tmp/bitnet-goal-native-cli/paired/text-reference.json": "70d90c33660003f2f99ef405aed6497fe9be8eef197a40e8e51ba81dc1b78aed",
+        "/tmp/bitnet-goal-native-cli/paired/text.prompt.utf8": "7dfa13ad21659929e5e0dab43fb2bbc0d164dd74420d1c2b8f3056dcd8488113",
+        "/tmp/bitnet-goal-native-cli/paired/text.skip1.full.utf8": "33682059a34d39fd845bdc5458f6190ae31bb781e565371e90677ae98f60f526",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw/config.json": "d0c1867b26c99c5721e8e75816c2e4a2ac527d4651bcc5a32aa970b73b7ddf17",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw/tokenizer.json": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+        "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw/model.safetensors.index.json": "45a7cf66bf4063ffe23568bba5e00690cdccfe9ab658a5c884696d4ed8da7498"
+      },
+      "hardware": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05, 595.104.02",
+      "environment": {
+        "CUDA_VISIBLE_DEVICES": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+        "BN_CUDA_DEVICE": "0",
+        "CUDA_DEVICE_ORDER": "PCI_BUS_ID"
+      },
+      "limitations": [
+        "No prepared-request TTFT, token ITL or vLLM comparison",
+        "Fresh managed caches per process; OS file cache and clocks uncontrolled",
+        "Pipe observation includes host scheduling; reads may coalesce chunks",
+        "Small paired diagnostic; no statistical significance or general speedup claim"
+      ]
+    },
+    "raw_results": "/tmp/bitnet-goal-native-predict-cli/latency/result.json",
+    "limits": [
+      "No prepared-request TTFT, token ITL or vLLM comparison",
+      "Fresh managed caches per process; OS file cache and clocks uncontrolled",
+      "Pipe observation includes host scheduling; reads may coalesce chunks",
+      "Small paired diagnostic; no statistical significance or general speedup claim"
+    ]
+  },
+  "qualification": {
+    "checks": {
+      "unit": 0,
+      "asan-unit": 0,
+      "api-unit": 0,
+      "api-asan-unit": 0,
+      "api-tsan-unit": 0,
+      "help": 0,
+      "cli": 0,
+      "asan-cli": 0,
+      "source-replay": 0,
+      "host-replay": 0,
+      "native-control": 0,
+      "qwen27-compat": 0
+    },
+    "frozen_sources": 880,
+    "reference_files": 38156,
+    "goal_status": "active",
+    "scope": "Explicit --prediction-first native CUDA CLI, preserved default committed behavior, 35 standard and 35 ASAN CLI cases including zero/one, context and output/trace failures, independent unchanged source prefixes; no vLLM parity claim"
+  },
+  "build": {
+    "clean_build": true,
+    "zero_warnings": true,
+    "standard": true,
+    "cuda_suite_and_diagnostics": true,
+    "preserved": {
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492"
+    },
+    "initial_cuda_make_exit": 2,
+    "initial_failure": "Prepared-attention assertion followed NVIDIA watchdog Xid8 for test process; root cause not proven",
+    "focused_window_retest_exit": 0,
+    "full_core_retest_exit": 0,
+    "diagnostic_isolation_exit": 0,
+    "recovery_logs": [
+      "/tmp/bitnet-goal-native-predict-cli/gpu-watchdog.log",
+      "/tmp/bitnet-goal-native-predict-cli/window-diagnostic.log",
+      "/tmp/bitnet-goal-native-predict-cli/cuda-recovery.log",
+      "/tmp/bitnet-goal-native-predict-cli/cuda-diagnostics.log"
+    ],
+    "limitation": "Initial driver watchdog retained as observed; passing retests do not establish its root cause or a driver fix"
+  },
+  "artifacts": "/tmp/bitnet-goal-native-predict-cli",
+  "limits": [
+    "Explicit native CUDA EXL3/INT4 BF16 row lookup to Exllama F16 Engram adapter, not original Diffbot whole-runtime equivalence",
+    "One initial CUDA suite process hit NVIDIA watchdog Xid8; focused and full retests passed without source changes; root cause/driver fix not established",
+    "Prepared context-boundary test does not qualify 255-token inference",
+    "No prepared-request TTFT, token ITL, serving/concurrency or matched vLLM performance claim",
+    "Timing harness pins checkpoint metadata; full checkpoint weight files are not rehashed by that harness",
+    "No automatic BOS/EOS/chat policy or additional backend qualification"
+  ]
+}

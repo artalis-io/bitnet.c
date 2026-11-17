@@ -1,0 +1,99 @@
+{
+  "milestone": "Bounded native BPE/ByteLevel vocabulary loading and per-token decoding",
+  "status": "qualified component; full goal remains active",
+  "parent": "docs/deepseek-v41-1017-native-ngram-rows.json",
+  "json": {
+    "new_api": [
+      "bn_json_init_limits",
+      "bn_json_member"
+    ],
+    "limits": "Explicit max_bytes/max_nodes per document. Default init remains16MiB/65536nodes; depth remains64. Input extents above PTRDIFF_MAX rejected. Array growth uses selected node cap with overflow checks.",
+    "member_order": "Sorted decoded-key order, borrowed immutable key/value; invalid access preserves key output.",
+    "budget_scope": "Serialized input/value node caps; allocator overhead and exact owned heap bytes are not represented by these two caps."
+  },
+  "vocabulary": {
+    "type": "BnTokenizerVocab",
+    "api": [
+      "bn_tokenizer_vocab_plan",
+      "bn_tokenizer_vocab_init_json",
+      "bn_tokenizer_vocab_free",
+      "bn_tokenizer_vocab_size",
+      "bn_tokenizer_vocab_raw",
+      "bn_tokenizer_vocab_decode_info",
+      "bn_tokenizer_vocab_decode"
+    ],
+    "profile": "ID-indexed BPE vocabulary with ByteLevel decoder. Core and added IDs must fill the expected range; identical core/added overlap allowed, conflicting or repeated added IDs rejected.",
+    "ownership": "One budgeted metadata allocation; immutable strings borrowed from the JSON document. The document must remain initialized and unchanged throughout use. Destructor frees only owned metadata.",
+    "decode_semantics": "Per-token decode([id],skip_special_tokens=false), matching Rust ByteLevel and UTF-8 lossy error-prefix replacement. Unmapped Unicode scalars retain original UTF-8. Output is length-counted and may contain NUL; no terminator is appended. contains_replacement includes literal U+FFFD, matching Engram raw-token fallback.",
+    "failure": "Invalid ID/capacity preserves output. Direct overlaps with current raw piece, metadata/handle or written are rejected. Caller output must be disjoint from all borrowed document storage.",
+    "hot_path": "No allocation, retained streaming state or locale dependency. Caller owns output buffers."
+  },
+  "independent_reference": {
+    "generator": "test/reference_native_vocab.py",
+    "rust_tokenizers": "0.23.3",
+    "actual_checkpoint": "/data/models/safetensors/deepseek-v4.1-flash-1017-diffbot-exl3-3bpw/tokenizer.json",
+    "actual_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+    "original_engram_manifest_sha256": "92875f3309c982a04a8d7bbea0221f729454af3c4be387019e610e97df8778ae",
+    "actual_outputs": "All Rust decoded strings and replacement flags rechecked against the original pinned Engram capture. Raw ID strings come from Rust id_to_token. No candidate runtime import.",
+    "synthetic": "Every single byte and byte pair, selected three/four-byte boundary patterns, empty tokens and unmapped Unicode; expected results produced directly by the Rust ByteLevel decoder.",
+    "unit_header": "test/native_vocab_reference.h",
+    "corpus": "/tmp/bitnet-goal-native-vocab/reference/reference.json",
+    "extra_future_reference": "Length-counted original canonical Engram key blobs are included for the next normalization/map stage; not produced by the new native decoder."
+  },
+  "validation": {
+    "clean_product_build": "zero warnings",
+    "standard_suite": "passed",
+    "full_cuda_suite_and_diagnostics": "passed",
+    "probe_and_asan_builds": "zero warnings",
+    "frozen_sources": 825,
+    "checks": {
+      "json-unit": 0,
+      "vocab-unit": 0,
+      "asan-json-unit": 0,
+      "asan-vocab-unit": 0,
+      "normal-probe": 0,
+      "asan-probe": 0,
+      "reference-replay": 0,
+      "negative-reference": 0,
+      "qwen27-compat": 0
+    },
+    "corpus_records": [
+      {
+        "case": "actual",
+        "vocabulary": 129280,
+        "raw_bytes": 1289455,
+        "decoded_bytes": 877479,
+        "replacement_tokens": 1484,
+        "json_node_cap": 266059,
+        "vocab_host_bytes": 4136976,
+        "hot_heap_calls": 0
+      },
+      {
+        "case": "pairs",
+        "vocabulary": 66317,
+        "raw_bytes": 217893,
+        "decoded_bytes": 253638,
+        "replacement_tokens": 47748,
+        "json_node_cap": 66325,
+        "vocab_host_bytes": 2122160,
+        "hot_heap_calls": 0
+      }
+    ],
+    "total_tokens": 195597,
+    "actual_tokens_with_decoded_NUL": 1,
+    "actual_empty_decoded_tokens": 0,
+    "allocation_failures": "Insufficient metadata budget rejects before allocation; denied constructor allocation preserves empty handle and borrowed JSON; successful retry matches full corpus. Exact JSON node caps pass; one-node-short and default config caps reject both wider documents atomically.",
+    "hot_heap_calls": 0,
+    "sanitizer_scope": "ASAN/UBSAN instrument all JSON/tokenizer/vocabulary/probe C code. No GPU code or kernel added; no new GPU sanitizer claim. Full existing CUDA suite and diagnostics passed separately.",
+    "reference_integrity": "Immutable replay byte-identical. Modified checkpoint/parent manifest rejected before output creation; conflicting reference preserved. Original corpus/new payloads and Rust library/source/binary hashes audited throughout. Four protected user binaries preserved.",
+    "qwen27": "Fresh strict sampled token-ID parity192/192, first8/8, count mismatch0/8."
+  },
+  "qualification_artifacts": "/tmp/bitnet-goal-native-vocab",
+  "not_claimed": [
+    "Native Unicode Engram normalization or compressed token-map construction",
+    "Text encoding or multi-token streaming decoding through this vocabulary view",
+    "Request-local mapped history ownership or complete-model reset/rewind qualification",
+    "PLE/HCA/full forward/generation admission",
+    "vLLM performance parity or new ARM/Metal/WASM execution coverage"
+  ]
+}

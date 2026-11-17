@@ -19,6 +19,12 @@ double       bn_platform_time_ms(void);
 size_t       bn_platform_rss_bytes(void);  // current resident set size, 0 if unavailable
 void        *bn_platform_aligned_alloc(size_t alignment, size_t size);
 void         bn_platform_aligned_free(void *ptr);
+/* Best-effort huge-page hint for full OS pages inside a caller-owned span.
+ * Does not allocate, touch or discard data, change ownership or require a
+ * different free function. Unsupported platforms/kernel refusals are no-ops.
+ * The allocation's entire size must already be included in its memory budget.
+ */
+void         bn_platform_advise_huge_pages(void *ptr, size_t size);
 char *const *bn_platform_environment(void);
 
 #endif // BN_PLATFORM_H

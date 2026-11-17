@@ -1,0 +1,95 @@
+{
+  "status": "Qualified prepared native CUDA attention session controller: attention, grouped projection and SWA update with completion-gated ring commit. QKV/compressor production, Engram, full native forward/generation admission and vLLM parity remain open.",
+  "apis": [
+    "BnTransformerTrellisAttentionOptions",
+    "BnTransformerTrellisAttentionWorkspace",
+    "bn_transformer_trellis_attention_session_plan",
+    "bn_transformer_trellis_prepare_session_projected_attention",
+    "BnTransformerTrellisAttentionResult",
+    "bn_transformer_trellis_attention_project"
+  ],
+  "implementation": {
+    "ownership": "Additional request-local buffers in the existing native FFN/KV/SWA/index session; weights remain immutable backend-owned native core/parameter handles. Architecture anatomy owns groups/ranks/sharing.",
+    "quota": "Additional group-major attention output, direct concatenated projection intermediate, F32 delta, and maxima of split attention partials over all legal short chunk lengths. Setup validates quotas before allocation, is transactional/idempotent, and forbids live upgrades.",
+    "sequence": "Require active index begin epoch, fresh owner pool and current selection revision; consume PRE-update ring/current prepared Q/KV, native attention, grouped projection, ring update on one request stream. One completion fence precedes ring cursor/begin commit; whole-model position is unchanged.",
+    "failure": "Metadata rejection leaves output/state unchanged. Backend rejection or completion failure destroys request; reset/setup required. One success per layer and begin epoch.",
+    "index_revision": "Index results carry owner pool_generation (including dense/no-new-row publications) and selection_revision for each producing gathered selection within a begin epoch. Shared readers retain them. Attention rejects stale results after same-extent republication, source overwrite or a new begin."
+  },
+  "references": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "method": "Original unchanged dsa_attn wrapper/kernels/SMEM picker plus grouped projection and LinearFP16.forward ASTs. F32 hgemm.cu original argument/workspace policy replay; not compiled full PyTorch extension.",
+    "geometry": "H64/D512/G8, synthetic hidden dimension128/output rank128. Synthetic FP8 WoA/WoB constant0.125, scales127, zero learned sinks, finite prepared queries/KV and pooled latents.",
+    "sequences": "Six chunks: (pos,rows)=(0,273),(273,273),(546,1),(547,7),(554,33),(546,33). Sliding layer0 and dense pooled layer2, two requests, two reset/recreate repetitions.",
+    "scope": "Real controller integration with independently computed nonzero outputs and ring contents. Prepared Q/KV/latents; not QKV/compressor producer qualification or full-prefix model forward. Actual checkpoint attention/projection primitives qualified in preceding component artifacts."
+  },
+  "artifacts": "/tmp/bitnet-goal-native-attention-session",
+  "remaining": [
+    "Full QKV/compressor/attention controller and HCA forward integration",
+    "Engram hashing/table access/projection/gating",
+    "Independent full-model generation qualification and native admission",
+    "Matched vLLM prefill/decode performance, expert offload and serving acceptance criteria"
+  ],
+  "qualification": {
+    "frozen_files": 799,
+    "clean_build": "Zero warnings: product, standard suite, full CUDA suite, BF16 diagnostics and diagnostic isolation.",
+    "real_cuda": {
+      "calls": 48,
+      "compared_bytes": 40288256,
+      "hot_allocations": 0,
+      "hot_writes": 0,
+      "hot_reads": 0,
+      "completion_fences": 48
+    },
+    "sanitizers": "48 sequence calls each under normal execution, ASAN/UBSAN, CUDA memcheck/full leak check and initcheck: exact, zero errors/leaks.",
+    "host_tests": "Normal and ASAN: quotas, five allocation failures, setup completion failure, stale begin/pool/source/revision, cross-request isolation, replay/decode, gathered candidate-source/shared-reader/candidate-use, operation/completion failures.",
+    "asan_scope": "C orchestration/model/session/metadata code compiled with ASAN/UBSAN. Unrelated existing MoE CPU SIMD TU uses its normal object (Clang reports three unused inline helpers); CUDA host/kernel TUs are not ASAN instrumented.",
+    "race_scope": "Bounded already-qualified attention and projection fixtures only. No full-core/controller race run (prior resource hazard). Both bounded runs zero hazards.",
+    "legacy_index_session": "136 independent captured calls pass after rebuilding with the final index-result ABI.",
+    "qwen27": "Fresh strict CUDA comparison:192/192 continuation IDs,8/8 first-token IDs,equal counts.",
+    "reference_integrity": "Own payload/source/library manifests verified before/after; parent5575 payloads across7 manifests audited; independent golden values preserved; four user binaries restored/hash verified.",
+    "build_history": "Earlier clean run passed before adding dense pool_generation; full clean build and suites repeated after that final runtime change. First qualifier stopped before execution on three pre-existing Clang unused MoE SIMD helpers; scope correction retained the normal object for that unrelated TU. Final qualifier passed with zero build warnings."
+  },
+  "traces": {
+    "prefill": {
+      "rows": 273,
+      "pos0": 273,
+      "layer": 2,
+      "fixture_dim": 128,
+      "fixture_output_rank": 128,
+      "kernel_count": 20,
+      "attention_kernels": 1,
+      "projection_kernels": 18,
+      "ring_kernels": 1,
+      "kernel_ns": 352545,
+      "device_span_ns": 340833,
+      "attention_projection_activity_overlap_ns": 32,
+      "transfer_bytes": 0,
+      "hot_allocations": 0,
+      "completion_fences": 1,
+      "stream_count": 1,
+      "projection_policy": "Nine tensor-core GEMM kernels with nine split-K reductions",
+      "scope": "Actual prepared controller; single profiled sample, no source/vLLM performance comparison. Index selection and KV publication precede this scope and retain their own fences."
+    },
+    "decode": {
+      "rows": 1,
+      "pos0": 546,
+      "layer": 2,
+      "fixture_dim": 128,
+      "fixture_output_rank": 128,
+      "kernel_count": 12,
+      "attention_kernels": 2,
+      "projection_kernels": 9,
+      "ring_kernels": 1,
+      "kernel_ns": 71808,
+      "device_span_ns": 213984,
+      "attention_projection_activity_overlap_ns": 0,
+      "transfer_bytes": 0,
+      "hot_allocations": 0,
+      "completion_fences": 1,
+      "stream_count": 1,
+      "projection_policy": "Nine cuBLAS GEMV kernels for the small-rank synthetic fixture",
+      "scope": "Actual prepared controller; single profiled sample, no source/vLLM performance comparison. Index selection and KV publication precede this scope and retain their own fences."
+    },
+    "interpretation": "Same-stream launch/start order and exact independent output checks support composition. CUPTI prefill activity bounds overlap32ns at attention/projection boundary; no claim of strict timestamp-interval separation. Single samples are not a source/vLLM performance benchmark."
+  }
+}

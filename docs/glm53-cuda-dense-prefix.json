@@ -1,0 +1,205 @@
+{
+  "scope": "SM120 actual checkpoint token embedding and first three complete dense KDA decoder blocks; deferred FFN output",
+  "whole_goal_complete": false,
+  "whole_glm_generation": false,
+  "vllm_performance_parity": false,
+  "gpu": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+  "model": "/data/models/gguf/glm5_3_flash/ud_q4_k_xl/GLM-5.3-Flash-UD-Q4_K_XL-00001-of-00006.gguf",
+  "dense_ffn": {
+    "layers": [
+      0,
+      1,
+      2
+    ],
+    "dim": 4096,
+    "hidden_dim": 12288,
+    "clamp": 10,
+    "cases": 27,
+    "phases": 69,
+    "exact_words": 22609920,
+    "gpu_payload_bytes_per_layer": 160432128,
+    "host_concat_bytes": 106954752
+  },
+  "prefix": {
+    "cases": 12,
+    "phases": 46,
+    "exact_words": 221074320,
+    "cold_and_native_three_token_warmup": true,
+    "gpu_weight_payload_bytes": 1604782984,
+    "chunk_schedules": [
+      [
+        9
+      ],
+      [
+        2,
+        7
+      ],
+      [
+        3,
+        3,
+        3
+      ],
+      [
+        7,
+        1,
+        1
+      ],
+      [
+        6,
+        3
+      ],
+      [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "comparison": "direct byte comparisons including F32 state/coefficients"
+  },
+  "activation_fixture": {
+    "cases": 8,
+    "output_words": 262144,
+    "comparison": "original output byte hashes; every finite BF16 gate; clamp bounds 10, 1.234567, 20.1, 0; canaries and input preservation"
+  },
+  "deferred_attention_regression_exact_words": 58644448,
+  "trace": {
+    "kernels": 78,
+    "streams": [
+      14
+    ],
+    "copy_bytes": 4,
+    "copy_purpose": "four-byte embedding-error status at final fence",
+    "allocation_apis": 0,
+    "inter_operation_synchronization": false,
+    "explicit_stream_fences": 1,
+    "additional_synchronization": "unattributed CUPTI context synchronization after last kernel",
+    "observational_only": true,
+    "kernel_counts": {
+      "embedding_q8_kernel": 1,
+      "join_columns_kernel": 2,
+      "mhc_project_kernel": 1,
+      "mhc_coeff_kernel": 6,
+      "mhc_collapse_kernel": 6,
+      "quantize_bf16_q8_batch_kernel": 18,
+      "cuda_bf16_q8_mma_kernel": 18,
+      "split_columns_kernel": 9,
+      "causal_conv_silu_bf16_batch_kernel": 3,
+      "kda_recurrent_kernel": 3,
+      "gated_norm_kernel": 3,
+      "mhc_fused_project_kernel": 5,
+      "clamped_swiglu_kernel": 3
+    },
+    "api_counts": {
+      "cuKernelGetName": 78,
+      "cudaLaunchKernel_v7000": 78,
+      "cudaMemcpyAsync_v3020": 1,
+      "cudaStreamSynchronize_v3020": 1
+    }
+  },
+  "validation": {
+    "stages": {
+      "clean": 0,
+      "build": 0,
+      "standard": 0,
+      "benches": 0,
+      "protected-build": 0,
+      "replay-build": 0,
+      "cuda": 0,
+      "fixture-repeat": 0,
+      "dense-final": 0,
+      "prefix-final": 0,
+      "deferred-regression": 0,
+      "activation-memcheck": 0,
+      "activation-synccheck": 0,
+      "dense-memcheck": 0,
+      "prefix-memcheck": 0,
+      "prefix-synccheck": 0,
+      "nsys": 0,
+      "nsys-export": 0,
+      "trace-summary": 0
+    },
+    "host_asan_ubsan": "modified layout and orchestration code instrumented; mock ownership/failure/alias paths passed",
+    "zero_build_warnings": true,
+    "preserved_user_binaries": {
+      "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+      "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+      "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+      "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+    }
+  },
+  "reference_sources": {
+    "/tmp/bitnet-goal-vllm-gguf-plugin/vllm_gguf_plugin/quantization/linear.py": "d62018a1ac03159da93638abff2ef60a963dbc504689598bcbcfbc1de86ea13a",
+    "/tmp/bitnet-goal-vllm-gguf-plugin/vllm_gguf_plugin/quantization/vocal_embeds.py": "8312ad417b7d680d200f6f277011230ca7d2ea6f424c9aadab583b70ed032cb9",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/model_executor/layers/activation.py": "bebeddbd4997f49f54471ee31ac42b22c3c11dfe25244e55d20c36f390489c05",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/model_executor/layers/mhc.py": "433d750a4d669ad468679b1faf0a3f1e846410198fb4a1eeee2d14cfe55e6a55",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/model_executor/kernels/mhc/tilelang.py": "f9b13bf93ce42426d2137e1065b2d0bee36c17d3b6d7657e1a959e9e4365137d",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/model_executor/layers/mamba/ops/causal_conv1d.py": "52f56188b2a08f1214dbe70e04235fb1260f94ffaaae2b5ab8f72f281643fad2",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/models/glm5next/nvidia/ops/third_party/kda/kernels.py": "6f5865164682e2ea475995fbdeb1df6942baecfb06abeee3a4468c7c6344775e",
+    "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/third_party/flash_linear_attention/ops/kda.py": "10ee5bc177770eeba34da96001957d07c8c23473ecad972e2a46bea57421a677"
+  },
+  "artifacts": {
+    "activation-fixture.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-dense/activation-fixture.json",
+      "sha256": "5b61cb51d8af4780041fa22aeb2a312b315bddaf74c23efa666e379606ab4649"
+    },
+    "fixture-repeat.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-dense/fixture-repeat.json",
+      "sha256": "5b61cb51d8af4780041fa22aeb2a312b315bddaf74c23efa666e379606ab4649"
+    },
+    "reference/reference.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-dense/reference/reference.json",
+      "sha256": "c97d58ff523866ee113286b401c9ca3333177f79064b6b0a204b4a7e6cf32bb3"
+    },
+    "prefix-reference/reference.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-dense/prefix-reference/reference.json",
+      "sha256": "2a26cc98940b2972a4c86c8fd7c22377429e9e4bc09b43838318bab0d11f72bb"
+    },
+    "prefix-repeat/reference.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-dense/prefix-repeat/reference.json",
+      "sha256": "2a26cc98940b2972a4c86c8fd7c22377429e9e4bc09b43838318bab0d11f72bb"
+    },
+    "resident-trace-summary.json": {
+      "path": "/tmp/bitnet-goal-glm-cuda-dense/resident-trace-summary.json",
+      "sha256": "f7082931064ce4455af1605003247e52ba81ef96fc275c695f45b9adb4b1d347"
+    }
+  },
+  "source_freeze": {
+    "include/gpu_backend.h": "28c51a6d8e4c3c108ebd09525d424ac3084077b458b06f2487ddee4f29a06c58",
+    "include/backend_layout.h": "cc1c4e03cea6273174d32e48aeec16cfe6f91e244e2889795e3c75ac7a56e956",
+    "src/backend_layout.c": "4271df20f222a5e6d80bb859347f91b4f009b90ccae75d72a40815071b335385",
+    "src/gpu_cuda_gdn.cuh": "188a4c859993d4ef75aa1c2d65c0280a323c086f7084153b040955304f792e5a",
+    "src/gpu_cuda.cu": "ee2efc61263f45a23aa886a9dcb35c0823397d637eb5d852bcad1100d442224a",
+    "src/transformer/bf16_internal.h": "8147073ff0f8231b2f459df8b07936d6a59f6972081988de4b6d98cd77373378",
+    "src/transformer/bf16.c": "dec396c8c4d19be7878df36515047086738615a21f56b6c3966df2661c86c195",
+    "test/test_gpu_backend.c": "f867c26861ae603d698623c6490c2c8561f81f571fd262e86d8dd6f498c99936",
+    "test/glm_dense_ffn_checks.h": "8cf797aec46fd4885d544abbfffdda54b00149236d8b134071f3f268297ffdd4",
+    "test/glm_mhc_layout_checks.h": "f59c923b1b49498eef33dde979d4844318716f235349581ef8541b0e603da321",
+    "test/test_cuda_backend.c": "ad5d7e320042e2890b81a9a641df20aa40a5cbf18f92acddb6ded94dc41ac43d",
+    "test/cuda_clamped_swiglu_checks.h": "68013f5c29aa7cfdf805d6fa2adeb1422ba2820dbaa0c835de437cef182aa66f",
+    "test/cuda_clamped_swiglu_reference.h": "95ebd3028bec5a34cc29768f1a139e239d2675de2bfcdc49cd2c6ee9ca7cf2ae",
+    "test/reference_cuda_clamped_swiglu.py": "b22cb801e5c067611b9ec6b796663677bf77f3c13cbd9d9ef049ba5a2a76cfe0",
+    "test/reference_glm_dense_ffn.py": "d9317ce46295fc028c91a41aa4d97e51ba35c121dd2cfd39425d3e7fd32ae60d",
+    "test/reference_glm_dense_prefix.py": "ef78e7d5ab8c33db6fa2d368f0523296fdfafd9293a17449a80b7331e7131f4c",
+    "test/test_cuda_glm_dense_ffn.c": "61de51bade5c7dffd394b6cdd8ee565de82320fad4dd1fc757a3b458de63d0bc",
+    "test/test_cuda_glm_dense_prefix.c": "5fa0a360d06133225a9dbd21bbe7d9e93bee6eb1280aa82197544e1d1a254639",
+    "Makefile": "aa1bb71f3fe4a35e3638e0dd12d96befc0b0549990cbb3da71f59f977d72583a"
+  },
+  "remaining": [
+    "indexed MLA and pooled sparse indexer",
+    "routed/shared MoE and bounded offload binding",
+    "dedicated whole-model backend/session resources and complete executor",
+    "long/chunk-optimized KDA prefill and full generation correctness",
+    "matched fully resident prefill/decode vLLM performance and serving tails",
+    "CPU AVX2/AVX512/NEON model qualification; secondary Metal"
+  ],
+  "notes": [
+    "An initial dedicated sanitizer selector missed its early return; that run was stopped and retained under interrupted-selector-sanitizer. Selector fixed; full CUDA/diagnostics and all dedicated sanitizer checks passed afterward.",
+    "Nsight exports versioned API names; trace parser corrected for cudaLaunchKernel_v7000, using the same captured trace without rerunning inference."
+  ]
+}

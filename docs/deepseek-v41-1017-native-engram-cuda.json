@@ -1,0 +1,391 @@
+{
+  "status": "resident CUDA separate-scale row decoder and pinned-cache probe coupling qualified; whole Engram/model integration remains open",
+  "artifact_directory": "/tmp/bitnet-goal-native-engram-cuda",
+  "implementation": {
+    "registry": "BnQuantRowDecodeKind/BN_QUANT_ROW_GPU_INT4_FP16S32_BF16 in BnQuantRowScaledOps; platform-neutral metadata controls backend dispatch.",
+    "operator": "Existing quant_rows_bf16_resident/BnGPUQuantRowsBF16ResidentPlan extended with separate request-owned F16 scales. Legacy IQ4_NL embedded-scale path retained.",
+    "source": "src/gpu_cuda_rows.cuh, included by the existing CUDA translation unit. No new kernel translation unit or global fast-math changes.",
+    "math": "Four adjacent nibble values per thread, one FP16 scale per32 values; exact F32 integer-times-half product (__fmul_rn), explicit BF16 RNE store. Signed zeros retained.",
+    "geometry": "bn_gpu_scaled_rows_shape: raw rows1..1048576,cols32..65536 divisible32,count<=INT32_MAX. Exact I32 packed count=rows*cols/8,F16 scale count=rows*cols/32,BF16 out count=rows*cols;packed stride=cols/2.",
+    "validation": "Owner/type/count/generation/overlap/geometry validation before launch. GPU tensor values are a caller precondition: finite nonnegative source scales must be established before upload. The coupled probe validates raw host scales through the scalar quant-domain helper.",
+    "lifetime": "Request-owned disjoint views; caller retains them through stream completion. No allocation, copy or completion fence inside decoder."
+  },
+  "reference": {
+    "primary": "Unchanged Diffbot Triton BF16 lookup from previous row-reference capture; source/payload SHAs verified before and after.",
+    "exhaustive": "Every one of31744 finite nonnegative FP16 scales and all16 nibbles (twice),1015808 original BF16 words compared directly byte for byte, beyond the in-tree unit checksum.",
+    "unit": "36 valid guarded calls,4497536 BF16 words; two requests/two repetitions, freshly poisoned output each call. Geometry through65536 columns, bad owner/type/count/generation/alias/null cases and stale views after resize.",
+    "coupled": "Two actual tables,1026 sampled rows each,32KiB/256KiB host-cache budgets,two passes,72 calls5384448 raw/BF16 bytes exact; each probe also runs the standalone exhaustive call. All explicit test readbacks outside trace ROI.",
+    "placement": "Probe uses existing two-slot pinned upload API: direct cache gather into acquired leases,domain check,two async H2D submissions,one decoder kernel. Not yet a production backend-owned staging controller.",
+    "payload_bounds": "Host cache allocations262112/32632 bytes; pinned payload32768 bytes; max staged device payload84240 bytes including guards. Separate index/source/caller/allocator/context overhead not included."
+  },
+  "validation": {
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "qualification": {
+      "checks": {
+        "unit": 0,
+        "normal-probe": 0,
+        "asan-probe": 0,
+        "memcheck-probe": 0,
+        "initcheck-probe": 0,
+        "memcheck-unit": 0,
+        "initcheck-unit": 0,
+        "racecheck-unit": 0,
+        "nsys-rows128": 0,
+        "export-rows128": 0,
+        "nsys-row1": 0,
+        "export-row1": 0,
+        "nsys-stage128": 0,
+        "export-stage128": 0,
+        "nsys-stage1": 0,
+        "export-stage1": 0,
+        "source-replay": 0,
+        "qwen27-compat": 0
+      },
+      "records": {
+        "normal-probe": [
+          {
+            "layer": 1,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 1,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          },
+          {
+            "layer": 14,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 14,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          }
+        ],
+        "asan-probe": [
+          {
+            "layer": 1,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 1,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          },
+          {
+            "layer": 14,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 14,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          }
+        ],
+        "memcheck-probe": [
+          {
+            "layer": 1,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 1,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          },
+          {
+            "layer": 14,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 14,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          }
+        ],
+        "initcheck-probe": [
+          {
+            "layer": 1,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 1,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          },
+          {
+            "layer": 14,
+            "budget": 262144,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 262112,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 1026,
+            "hits": 1026,
+            "source_bytes_requested": 147744
+          },
+          {
+            "layer": 14,
+            "budget": 32768,
+            "calls": 18,
+            "exact_bytes": 1346112,
+            "host_cache_allocated": 32632,
+            "pinned_payload": 32768,
+            "resident_payload_with_guards": 84240,
+            "misses": 2052,
+            "hits": 0,
+            "source_bytes_requested": 295488
+          }
+        ]
+      },
+      "frozen_sources": 810,
+      "asan_scope": "Coupled probe plus CPU cache/source, storage, JSON/platform and scalar scale-domain helper. CUDA host/kernel translation unit not ASan instrumented; candidate GPU kernel covered by MEMCHECK/INITCHECK/RACECHECK.",
+      "race_scope": "36 bounded new row primitive unit calls only; no full-core/controller race run.",
+      "profile_scope": "Warm code, one candidate kernel; stage profiles also include real cache gather and two pinned H2D submits. All explicit test readbacks outside ROI. One caller completion fence inside ROI.",
+      "goal_status": "active"
+    },
+    "traces": {
+      "rows128": {
+        "rows": 128,
+        "cols": 256,
+        "kernel": "bn_cuda_rows::int4_fp16s32_kernel(__nv_bfloat16 *, const unsigned char *, const __half *, unsigned long, int)",
+        "kernel_ns": 896,
+        "stream": 14,
+        "transfers": [],
+        "transfer_bytes": 0,
+        "device_allocations": 0,
+        "caller_completion_fences": 1,
+        "api": {
+          "cuKernelGetName": 1,
+          "cudaLaunchKernel_v7000": 1,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "sqlite_sha256": "a4534e1711256eb1f030536349a76467d351452420bacbf739e03cfa5457c32f",
+        "scope": "One warmed-code sample, actual table rows; not source/vLLM latency parity. Explicit test readbacks outside ROI. Stage ROI also contains cache gather, domain validation and two pinned upload submissions; primitive ROI contains decoder and caller completion only."
+      },
+      "row1": {
+        "rows": 1,
+        "cols": 256,
+        "kernel": "bn_cuda_rows::int4_fp16s32_kernel(__nv_bfloat16 *, const unsigned char *, const __half *, unsigned long, int)",
+        "kernel_ns": 864,
+        "stream": 14,
+        "transfers": [],
+        "transfer_bytes": 0,
+        "device_allocations": 0,
+        "caller_completion_fences": 1,
+        "api": {
+          "cuKernelGetName": 1,
+          "cudaLaunchKernel_v7000": 1,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "sqlite_sha256": "c5525edd9bb637a6a38335cc0a5a4c8304d142f963e260add373faa3a6d640e1",
+        "scope": "One warmed-code sample, actual table rows; not source/vLLM latency parity. Explicit test readbacks outside ROI. Stage ROI also contains cache gather, domain validation and two pinned upload submissions; primitive ROI contains decoder and caller completion only."
+      },
+      "stage128": {
+        "rows": 128,
+        "cols": 256,
+        "kernel": "bn_cuda_rows::int4_fp16s32_kernel(__nv_bfloat16 *, const unsigned char *, const __half *, unsigned long, int)",
+        "kernel_ns": 832,
+        "stream": 14,
+        "transfers": [
+          {
+            "bytes": 16384,
+            "device_ns": 896,
+            "source_kind": "Pinned",
+            "destination_kind": "Device"
+          },
+          {
+            "bytes": 2048,
+            "device_ns": 384,
+            "source_kind": "Pinned",
+            "destination_kind": "Device"
+          }
+        ],
+        "transfer_bytes": 18432,
+        "device_allocations": 0,
+        "caller_completion_fences": 1,
+        "api": {
+          "cuKernelGetName": 1,
+          "cudaEventRecord_v3020": 2,
+          "cudaLaunchKernel_v7000": 1,
+          "cudaMemcpyAsync_v3020": 2,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "sqlite_sha256": "324f56739d3d1970b453f5ef05c1929b3c51bc381d124c8a23490dce6bcc5f91",
+        "scope": "One warmed-code sample, actual table rows; not source/vLLM latency parity. Explicit test readbacks outside ROI. Stage ROI also contains cache gather, domain validation and two pinned upload submissions; primitive ROI contains decoder and caller completion only."
+      },
+      "stage1": {
+        "rows": 1,
+        "cols": 256,
+        "kernel": "bn_cuda_rows::int4_fp16s32_kernel(__nv_bfloat16 *, const unsigned char *, const __half *, unsigned long, int)",
+        "kernel_ns": 864,
+        "stream": 14,
+        "transfers": [
+          {
+            "bytes": 128,
+            "device_ns": 288,
+            "source_kind": "Pinned",
+            "destination_kind": "Device"
+          },
+          {
+            "bytes": 16,
+            "device_ns": 384,
+            "source_kind": "Pinned",
+            "destination_kind": "Device"
+          }
+        ],
+        "transfer_bytes": 144,
+        "device_allocations": 0,
+        "caller_completion_fences": 1,
+        "api": {
+          "cuKernelGetName": 1,
+          "cudaEventRecord_v3020": 2,
+          "cudaLaunchKernel_v7000": 1,
+          "cudaMemcpyAsync_v3020": 2,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "sqlite_sha256": "306a6da6aa831aa5e036031c87418f2f1f42681123848f8e20d9bcd3b1333495",
+        "scope": "One warmed-code sample, actual table rows; not source/vLLM latency parity. Explicit test readbacks outside ROI. Stage ROI also contains cache gather, domain validation and two pinned upload submissions; primitive ROI contains decoder and caller completion only."
+      }
+    },
+    "qwen27": {
+      "strict_cuda_continuation_ids": "192/192",
+      "first_token_ids": "8/8",
+      "count_mismatches": "0/8"
+    },
+    "terminal_handles": {
+      "baseline": 85389,
+      "initial_target": 29001,
+      "first_clean_name_guard_failure": 83106,
+      "architecture_guard_after_rename": 98795,
+      "final_protected_clean_full_build_and_tests": 46776,
+      "final_probe_builds": 31346,
+      "final_frozen_qualifier": 18489
+    },
+    "build_note": "First standard check rejected type name RowGPU because its text contains wgpu across word boundaries. Renamed type to BnQuantRowDecodeKind; architecture gate unchanged, final clean build/CPU/CUDA/diagnostic checks all passed with zero warnings."
+  },
+  "limits": [
+    "Raw-row counts1/128 in traces are not complete LLM decode/prefill workloads or token counts. Single warmed code samples are not source/vLLM performance comparisons.",
+    "Pinned coupling is demonstrated by a probe using production primitives; native model/session staging lifecycle and whole Engram forward admission remain open.",
+    "No GPU table cache, phase-specific placement policy, overlapping multi-chunk serving or matched resident vLLM parity is claimed.",
+    "Original BF16 lookup output does not establish compatibility with an FP16 Engram projection profile; any cast/precision adapter must be qualified explicitly.",
+    "No native token-map/hash metadata/normalizer/PCG64/reset-rewind or complete DeepSeek generation qualification in this milestone.",
+    "SM80+ validation, tested on the selected SM120 GPU; no new Metal/NEON/WASM execution claim."
+  ]
+}

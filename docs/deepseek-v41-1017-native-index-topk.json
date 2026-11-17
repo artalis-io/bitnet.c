@@ -1,0 +1,229 @@
+{
+  "status": "Qualified source-compatible F16 index selection and native score-to-selection connection. Full attention, model admission, candidate hierarchy, and vLLM parity remain open.",
+  "architecture": "DeepseekV41ForCausalLM",
+  "source": {
+    "commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "file": "/tmp/bitnet-goal-exl3-source-bd1f5191/exllamav3/exllamav3_ext/dsa_topk.cu",
+    "sha256": "22eb368458b5079f8141ac4aa37f3776afaadb0c94362b92b448084a808ced95",
+    "device_sha256": "d89b70f8b14f05a484ae5ed44816a23fe09de4e42d96a732fbd838c531cd72ab",
+    "license": "MIT License\n\nCopyright (c) 2025 Turboderp\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
+  },
+  "apis": [
+    "bn_gpu_index_topk_workspace",
+    "BnGPUF16IndexTopKWorkspace",
+    "BnGPUF16IndexTopKResidentPlan",
+    "index_topk_f16_resident"
+  ],
+  "semantics": {
+    "ordered_keys": "For FP16 bits u: negative values map to bitwise complement(u), others to u|0x8000. Only keys > 0x03ff (negative infinity) participate. Negative NaNs excluded, positive NaN payloads participate and order above positive infinity. Signed zeros remain distinct. This preserves source bit semantics rather than substituting a finite-value filter.",
+    "emission": "Determine kth ordered-bit threshold; emit strictly greater keys in ascending input index order, then enough threshold ties in ascending input index order. Emit -1 for all remaining k_pad slots. k=0 fills the whole output with -1. k can exceed the number of participating values.",
+    "parallelism": "1024-thread radix histogram and ordered compaction. Aligned stride multiple8 allows 16-byte score loads; otherwise scalar fallback. R<=16,T>=32768,k_pad<=4096,k>0 uses G=min(32,max(2,T/(8*k))) split spans and merge when aligned.",
+    "workspace": "No global mutable map or workspace. Planner reports potential split indices/scores/counts sizes; exact disjoint request-owned views must be supplied even when alignment selects fallback. Caller preallocates before execution. Empty workspaces must be canonical empty for nonsplit shapes. Preflight all views before writing.",
+    "shape_limits": "Rows1..65535, static logical key count0..1048576, positive score stride >=key count, k_pad1..1048576, 0<=k<=k_pad, k>0 requires nonempty keys. Score F16[rows,stride], output I32[rows,k_pad]. No device-side dynamic T override in this API.",
+    "ownership": "Private CUDA device kernels retain original MIT notice. Backend validates request identity, exact counts/types, alignment and pairwise overlap. Output and workspace belong to request/session. No allocation, host transfer or completion fence inside the operation. k=0 uses a device memset."
+  },
+  "reference": {
+    "cases": 424,
+    "synthetic_cases": 40,
+    "checkpoint_derived_score_cases": 384,
+    "oracle": "Unmodified pinned device kernels with independent C ABI launch wrapper, default split and forced legacy each checked against independent NumPy threshold/index-order oracle; all FP16 payloads preserved.",
+    "all_fp16_words": "One 65536-element fixture enumerates all FP16 bit payloads through an odd affine permutation.",
+    "layouts": "Aligned and two-byte-shifted inputs; odd/even row strides; tail lengths, underfilled and empty-result rows, k0, k1, k512, k4096, k4097, k_pad beyond split threshold, R16/R17 split boundary, up to1048576 logical keys.",
+    "history_scope": "Checkpoint-derived scores originate from independent actual-matrix query captures and canonical compressed key rows, extended synthetically for long logical history. This is not a whole-model long-prefix generation proof.",
+    "manifest_sha256": "b71186fa0b026379a112aaaa9d23e0001f95611a7da38eec2d07151bd5829d48",
+    "parent_manifest_sha256": "2507197d18ef0db83de55a6891a7e13f4a7dcafca21caf61c4072c70a654d830"
+  },
+  "verification": {
+    "clean_build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "qualification": {
+      "checks": {
+        "probe-build": 0,
+        "asan-probe-build": 0,
+        "real-select": 0,
+        "asan-select": 0,
+        "memcheck-select": 0,
+        "initcheck-select": 0,
+        "real-pipeline": 0,
+        "asan-pipeline": 0,
+        "memcheck-pipeline": 0,
+        "initcheck-pipeline": 0,
+        "racecheck": 0,
+        "nsys-prefill": 0,
+        "export-prefill": 0,
+        "nsys-decode": 0,
+        "export-decode": 0
+      },
+      "records": {
+        "real-select": {
+          "calls": 1696,
+          "compared_bytes": 5219002624,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "asan-select": {
+          "calls": 1696,
+          "compared_bytes": 5219002624,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "memcheck-select": {
+          "calls": 1696,
+          "compared_bytes": 5219002624,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "initcheck-select": {
+          "calls": 1696,
+          "compared_bytes": 5219002624,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        },
+        "real-pipeline": {
+          "calls": 768,
+          "compared_bytes": 7419895296,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "asan-pipeline": {
+          "calls": 768,
+          "compared_bytes": 7419895296,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "memcheck-pipeline": {
+          "calls": 768,
+          "compared_bytes": 7419895296,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "initcheck-pipeline": {
+          "calls": 768,
+          "compared_bytes": 7419895296,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "nsys-prefill": {
+          "calls": 768,
+          "compared_bytes": 7419895296,
+          "hot_allocations": 0,
+          "score_pipeline": 1
+        },
+        "nsys-decode": {
+          "calls": 1696,
+          "compared_bytes": 5219002624,
+          "hot_allocations": 0,
+          "score_pipeline": 0
+        }
+      },
+      "frozen_files": 779,
+      "reference_sha256": "b71186fa0b026379a112aaaa9d23e0001f95611a7da38eec2d07151bd5829d48",
+      "cases_tsv_sha256": "b2746f76069f38ef068c4508cfcc23cd2a0a6ddcd40e7365f98d3bc6f1cb9997",
+      "probe_sha256": "37e5b4bb45c4c970c4790e5b91dee3938e90eccb2f3676da9c0f3a0bdb683842"
+    },
+    "synthetic_unit_calls": 160,
+    "selection_calls_per_run": 1696,
+    "score_to_selection_pipeline_calls_per_run": 768,
+    "requests": 2,
+    "host_sanitizer_scope": "Probe and inline host planning code instrumented with ASan/UBSan. CUDA host validation translation unit not instrumented by that build.",
+    "gpu_sanitizers": "CUDA memcheck with full leak check and initcheck on both replay modes; racecheck on160 synthetic calls. Zero reported errors/leaks/hazards.",
+    "profiles": {
+      "prefill": {
+        "kernels": [
+          {
+            "name": "score",
+            "duration_ns": 50208
+          },
+          {
+            "name": "dsa_topk_kernel",
+            "duration_ns": 3136
+          }
+        ],
+        "runtime": {
+          "cuKernelGetName": 2,
+          "cudaLaunchKernel_v7000": 2,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "transfers": {}
+      },
+      "decode": {
+        "kernels": [
+          {
+            "name": "dsa_topk_split_kernel",
+            "duration_ns": 4992
+          },
+          {
+            "name": "dsa_topk_merge_kernel",
+            "duration_ns": 13056
+          }
+        ],
+        "runtime": {
+          "cuKernelGetName": 2,
+          "cudaLaunchKernel_v7000": 2,
+          "cudaStreamSynchronize_v3020": 1
+        },
+        "transfers": {}
+      }
+    }
+  },
+  "performance": {
+    "method": "Median7 CUDA-event samples,400 top-k calls per sample through captured graphs; device kernels only versus pinned source, not vLLM or a full model.",
+    "cases": [
+      {
+        "label": "synthetic-08-0",
+        "rows": 1,
+        "keys": 32768,
+        "groups": 8,
+        "source_us": 17.975759506225586,
+        "native_us": 17.970479726791382,
+        "ratio": 0.9997062833738749
+      },
+      {
+        "label": "synthetic-16-0",
+        "rows": 1,
+        "keys": 1048576,
+        "groups": 0,
+        "source_us": 423.1291198730469,
+        "native_us": 423.0739974975586,
+        "ratio": 0.999869726821201
+      },
+      {
+        "label": "synthetic-09-0",
+        "rows": 16,
+        "keys": 32769,
+        "groups": 8,
+        "source_us": 17.000160217285156,
+        "native_us": 16.9925594329834,
+        "ratio": 0.9995528992547947
+      },
+      {
+        "label": "checkpoint-024",
+        "rows": 32,
+        "keys": 4097,
+        "groups": 0,
+        "source_us": 3.2820799946784973,
+        "native_us": 3.2820799946784973,
+        "ratio": 1.0
+      }
+    ]
+  },
+  "limitations": [
+    "Candidate source/use hierarchy and logical-entry remapping are not implemented by this component.",
+    "No full native attention, model admission, short/long/chunked/resumed generation qualification, serving throughput/tail-latency proof, or vLLM parity claim.",
+    "Static logical width only; source graph t_ptr/t_seq and tiled top-k APIs remain unexposed.",
+    "Current explicit component completion fences need coordinated asynchronous whole-model execution.",
+    "CUDA qualified on selected sm120a only. CPU and Metal paths unchanged."
+  ],
+  "artifacts": "/tmp/bitnet-goal-native-index-topk",
+  "frozen_source_sha256": "48d2c4560a993b6aacce40970a9b66b3b8e7b2432fe4c0438b443a7cc9c614f1"
+}

@@ -32,11 +32,19 @@ test_gpu_validate
 bitnet_test_*
 test_*
 !test/*.c
+!test/*.cu
 !test/*.sh
+!test/*.py
 
 # Bench binaries
 bench_kernels
 bench_prefill
+bench_bf16_latency
+bench_native_forward
+bench_bf16_concurrency
+bench_bf16_batch
+bench_checkpoint_gdn
+bench_checkpoint_attention
 bench_scalar
 bench_scalar_layers
 bench_avx2
@@ -78,3 +86,15 @@ Thumbs.db
 
 # Python
 __pycache__/
+.deps/
+src/gpu_cuda_fa2.d
+
+/reference_cuda_bf16_mixed
+
+/test_bf16_pool
+
+/test_generate_batch_plan
+
+/test_generate_batch
+
+/bench_bf16_arrivals

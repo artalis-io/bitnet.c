@@ -1,0 +1,543 @@
+{
+  "status": "Reusable production learned-router Trellis FFN request executor qualified; full-model admission and vLLM parity remain open; whole goal active",
+  "implementation": {
+    "module": "src/transformer/trellis.c within the existing transformer module, following the resident BF16 profile split",
+    "api_header": "include/transformer_internal.h; internal component API, not ordinary generation admission",
+    "methods": [
+      "bn_transformer_trellis_session_plan",
+      "bn_transformer_trellis_prepare_session",
+      "bn_transformer_trellis_session_input",
+      "bn_transformer_trellis_run_learned"
+    ],
+    "ownership": "One request container owned by the existing BnBackendSession. Request-local metadata/index/activation/fused/folded/shared buffers and backend workspace are allocated during setup, then reused across calls and shape changes. Cleanup uses its own request/destroy hook and never dereferences model/weight storage.",
+    "schedule": [
+      "Learned native router and assignment index",
+      "CPU planning from one counts read, preserving upstream expert/group order, exact padded rows and the source 256 MiB TWO-slab batch heuristic",
+      "All three fused row tiers, retaining FULL-tier group widths across residency windows",
+      "Source-shaped grouped gather and folded FFN using one decoded slab sequentially",
+      "One fixed-top-k reduction, native shared F16 FFN and final device F32 addition"
+    ],
+    "placement": "Existing expert-bridge statistics/leases/admission only; the executor never accesses cache internals. Prefill borrows cache hits and uses separately budgeted temporaries on misses, while decode admits/promotes. Fully cached experts require no temporary pool.",
+    "failure": "Structural/input/model/budget rejection preserves output arguments. BUSY and failed batches complete outstanding consumers before releasing partly acquired leases. Reported stream-completion failure destroys/drains the private request before releasing weights, leaving reset/setup required. Previous result views expire at the next attempt.",
+    "boundaries": "An F16 scalar role was added to the existing backend scalar abstraction. The bridge and top-level GPU sequencer are byte-identical to the prior stage; the boundary guard was not modified; AGENTS.md/CLAUDE.md describe the transformer subfile ownership. No model-family predicates or CPU activation fallback were introduced."
+  },
+  "budgets": {
+    "workspace_queries": {
+      "prefill-window1": {
+        "device": 2433196815,
+        "host": 39680,
+        "cap": 5,
+        "slots": 54068,
+        "group_rows": 16384
+      },
+      "prefill-window5": {
+        "device": 2463605519,
+        "host": 39680,
+        "cap": 5,
+        "slots": 54068,
+        "group_rows": 16384
+      },
+      "resident-prefill": {
+        "device": 2668864271,
+        "host": 39680,
+        "cap": 5,
+        "slots": 54068,
+        "group_rows": 16384
+      }
+    },
+    "scope": "Device quota is a conservative bound on explicit activation and backend-workspace payloads, counting shared backend workspace independently. Host quota covers executor-owned heap payload. Shared weights/expert caches, BnSession host logits/history, backend request metadata, caller stack, library/driver and allocator overhead are separate; this is not whole-process RSS/VRAM admission.",
+    "heavy_group_cap": 5,
+    "group_row_cap": 16384,
+    "slot_row_cap_at_8192": 54068,
+    "cold_expert_store": "Five entries each in RAM, decode and temporary pools; entry13315584 bytes, each pool66577920 bytes, host staging13315584 bytes. The one-expert fused window does not shrink heavy groups.",
+    "resident_expert_store": "All384 layer39 expert triples cached in decode placement; temporary pool disabled. Execution reads/uploads zero expert bytes. This is a resident layer, not the full large model."
+  },
+  "validation": {
+    "unique_source_variants": 10,
+    "rows": [
+      64,
+      256,
+      1024,
+      4096,
+      8192
+    ],
+    "layer": 39,
+    "dim": 5120,
+    "hidden": 2304,
+    "experts": 384,
+    "topk": 6,
+    "fp16_partial_policies": [
+      0,
+      1
+    ],
+    "normal_reference_comparisons": 100,
+    "normal_compared_bytes": 55298293760,
+    "asan_reference_comparisons": 42,
+    "memcheck_reference_comparisons": 6,
+    "initcheck_reference_comparisons": 4,
+    "reuse": "Forward and reverse shape order on the same two policy-specific requests; zero execution activation allocations and zero execution request creations in every run.",
+    "synthetic": "Recording backend exercises query/output rejection, scalar roles, insufficient budgets, every activation-allocation rollback point, idempotence, incompatible setup, model identity, reset/free and rejection before GPU work when router weights are missing.",
+    "real_failures": "Real CUDA setup allocation fault, pending-key BUSY after partial acquisition, and an injected completion failure with asynchronous work queued. Weight destruction is checked to occur after request drain; every request is destroyed exactly once and all leases are released.",
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-moe-unit-build": 0,
+      "asan-moe-unit": 0,
+      "prefill-window1": 0,
+      "decode-window1": 0,
+      "prefill-window5": 0,
+      "decode-window5": 0,
+      "asan-prefill": 0,
+      "asan-decode": 0,
+      "resident-prefill": 0,
+      "asan-resident": 0,
+      "memcheck-prefill": 0,
+      "memcheck-decode": 0,
+      "memcheck-resident": 0,
+      "nsys": 0,
+      "nsys-export": 0
+    },
+    "records": {
+      "prefill-window1": {
+        "cases": 20,
+        "compared_bytes": 11059658752,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 32170450944,
+        "execution_upload_bytes": 32170450944,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "decode-window1": {
+        "cases": 20,
+        "compared_bytes": 11059658752,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 32170450944,
+        "execution_upload_bytes": 32170450944,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "prefill-window5": {
+        "cases": 20,
+        "compared_bytes": 11059658752,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 32170450944,
+        "execution_upload_bytes": 32170450944,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "decode-window5": {
+        "cases": 20,
+        "compared_bytes": 11059658752,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 32170450944,
+        "execution_upload_bytes": 32170450944,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "asan-prefill": {
+        "cases": 20,
+        "compared_bytes": 11059658752,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 32170450944,
+        "execution_upload_bytes": 32170450944,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "asan-decode": {
+        "cases": 20,
+        "compared_bytes": 11059658752,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 32170450944,
+        "execution_upload_bytes": 32170450944,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "resident-prefill": {
+        "cases": 20,
+        "compared_bytes": 11059658752,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 1,
+        "execution_reader_bytes": 0,
+        "execution_upload_bytes": 0,
+        "busy_cleanup": 0,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "asan-resident": {
+        "cases": 2,
+        "compared_bytes": 3339288576,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 1,
+        "execution_reader_bytes": 0,
+        "execution_upload_bytes": 0,
+        "busy_cleanup": 0,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "memcheck-prefill": {
+        "cases": 2,
+        "compared_bytes": 3339288576,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 3515314176,
+        "execution_upload_bytes": 3515314176,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "memcheck-decode": {
+        "cases": 2,
+        "compared_bytes": 3339288576,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 0,
+        "execution_reader_bytes": 3515314176,
+        "execution_upload_bytes": 3515314176,
+        "busy_cleanup": 1,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "memcheck-resident": {
+        "cases": 2,
+        "compared_bytes": 3339288576,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 0,
+        "resident": 1,
+        "execution_reader_bytes": 0,
+        "execution_upload_bytes": 0,
+        "busy_cleanup": 0,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      },
+      "nsys": {
+        "cases": 2,
+        "compared_bytes": 3339288576,
+        "execution_activation_allocations": 0,
+        "execution_request_creations": 0,
+        "created": 4,
+        "destroyed": 4,
+        "profile_calls": 1,
+        "resident": 1,
+        "execution_reader_bytes": 0,
+        "execution_upload_bytes": 0,
+        "busy_cleanup": 0,
+        "completion_failure_cleanup": 1,
+        "setup_rollback": 1,
+        "mismatches": 0
+      }
+    },
+    "initcheck": {
+      "initcheck-fp32-acc": {
+        "log_sha256": "61116c81057148d349976c4dd33d7298c05c899b57c81d327664b6d52a68376f",
+        "record": {
+          "cases": 2,
+          "compared_bytes": 3339288576,
+          "execution_activation_allocations": 0,
+          "execution_request_creations": 0,
+          "created": 4,
+          "destroyed": 4,
+          "profile_calls": 0,
+          "resident": 0,
+          "execution_reader_bytes": 3515314176,
+          "execution_upload_bytes": 3515314176,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1,
+          "mismatches": 0
+        }
+      },
+      "initcheck-fp16-partials": {
+        "log_sha256": "38de866d067236f92f53f5b5d3449c2d6e084fd1d481526464ead64aee0448dd",
+        "record": {
+          "cases": 2,
+          "compared_bytes": 3339288576,
+          "execution_activation_allocations": 0,
+          "execution_request_creations": 0,
+          "created": 4,
+          "destroyed": 4,
+          "profile_calls": 0,
+          "resident": 0,
+          "execution_reader_bytes": 3515314176,
+          "execution_upload_bytes": 3515314176,
+          "busy_cleanup": 1,
+          "completion_failure_cleanup": 1,
+          "setup_rollback": 1,
+          "mismatches": 0
+        }
+      }
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "sanitizer_harness_compile_warnings": {
+      "asan-moe-unit-build": [
+        "moe_reduce_16_avx2",
+        "moe_reduce_8_avx2",
+        "moe_reference_exp_avx2"
+      ]
+    },
+    "warning_note": "Normal/probe builds are warning-free. The whole-module Clang ASAN unit build retains the three source-hash-verified pre-existing unused helpers in unchanged moe_cpu_kernels.c, without suppression.",
+    "source_and_module_guide_files_reverified": 738,
+    "unchanged_provider_and_sequencer": {
+      "src/gpu_moe_bridge.c": true,
+      "include/gpu_moe_bridge.h": true,
+      "src/transformer/gpu.c": true
+    },
+    "boundary_guard_sha256": "ca6c47462e4544eb30d78119435230e3924e577046f0e734a89af126c281e20c"
+  },
+  "profile": {
+    "scope": "One warmed R8192, layer39, FP16-partial-policy1, fully cached 384-expert layer with zero temporary pool and fused window32. Input writes, cache/model/request setup and reference comparisons are outside capture. This is not full-model or vLLM throughput.",
+    "kernel_count": 131,
+    "kernel_duration_sum_ns": 32740924,
+    "kernel_groups": [
+      {
+        "name": "<unnamed>::clear_counts(int *, int)",
+        "count": 1,
+        "duration_sum_ns": 640
+      },
+      {
+        "name": "<unnamed>::finish(const int *, const __half *, const int *, int *, int *, __half *, int, int)",
+        "count": 1,
+        "duration_sum_ns": 16192
+      },
+      {
+        "name": "<unnamed>::folded_batch(__half *, BnCudaFoldPointers, int, unsigned long)",
+        "count": 39,
+        "duration_sum_ns": 3733391
+      },
+      {
+        "name": "<unnamed>::group_rows(BnCudaNativeMoEGroup, const __half *, const int *, __half *, int, int, int, int, int)",
+        "count": 13,
+        "duration_sum_ns": 1333127
+      },
+      {
+        "name": "<unnamed>::prepare(const int *, int *, int *, int *, int, int)",
+        "count": 1,
+        "duration_sum_ns": 8832
+      },
+      {
+        "name": "<unnamed>::quant_a_kernel(const __half *, signed char *, signed char *, float *, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 39360
+      },
+      {
+        "name": "<unnamed>::reduce_slots(float *, const float *, const int *, const int *, const int *, const int *, const int *, const __half *, int, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 845378
+      },
+      {
+        "name": "<unnamed>::routing_gemm_i8_kernel(const signed char *, const signed char *, const float *, const signed char *, const signed char *, const float *, __half *, float *, int, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 291457
+      },
+      {
+        "name": "bn_cuda_exl3::silu_mul(__half *, const __half *, const __half *, unsigned long, float)",
+        "count": 14,
+        "duration_sum_ns": 226720
+      },
+      {
+        "name": "bn_cuda_gdn::add_f32_kernel(float *, const float *, const float *, unsigned long)",
+        "count": 1,
+        "duration_sum_ns": 316865
+      },
+      {
+        "name": "nvjet_sm120_hsh_mma_128x160x64_2_64x40x64_tmaAB_alignCD4_bz_NNNN",
+        "count": 2,
+        "duration_sum_ns": 1262853
+      },
+      {
+        "name": "nvjet_sm120_hss_mma_256x128x64_2_64x64x64_tmaAB_alignCD4_bz_NNNN",
+        "count": 1,
+        "duration_sum_ns": 673122
+      },
+      {
+        "name": "void <unnamed>::f16acc::gemm_kernel<(bool)0, (int)128, (bool)1>(const __half *, const __half *, void *, int, int, int, int, long long, long long, long long)",
+        "count": 24,
+        "duration_sum_ns": 10049285
+      },
+      {
+        "name": "void <unnamed>::f16acc::gemm_kernel<(bool)0, (int)64, (bool)1>(const __half *, const __half *, void *, int, int, int, int, long long, long long, long long)",
+        "count": 2,
+        "duration_sum_ns": 652450
+      },
+      {
+        "name": "void <unnamed>::f16acc::gemm_kernel<(bool)1, (int)128, (bool)1>(const __half *, const __half *, void *, int, int, int, int, long long, long long, long long)",
+        "count": 13,
+        "duration_sum_ns": 5321877
+      },
+      {
+        "name": "void <unnamed>::routing_ds3_nogroup_topk_kernel<(int)1>(const __half *, const __half *, int *, __half *, float, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 28672
+      },
+      {
+        "name": "void bn_cuda_fused_detail::exl3_moe_kernel<(int)3, (int)128, (int)2, (int)32, (bool)0, (bool)0>(const __half *, __half *, __half *, __half *, __half *, float *, BnCudaFusedEXL3Pointers, const int *, const int *, const __half *, int, int, int, int, int, int, float, int, int, int, int, int *, float *, const int *, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 226177
+      },
+      {
+        "name": "void bn_cuda_fused_detail::exl3_moe_kernel<(int)3, (int)128, (int)2, (int)64, (bool)0, (bool)0>(const __half *, __half *, __half *, __half *, __half *, float *, BnCudaFusedEXL3Pointers, const int *, const int *, const __half *, int, int, int, int, int, int, float, int, int, int, int, int *, float *, const int *, int, int, int, int)",
+        "count": 2,
+        "duration_sum_ns": 7324828
+      },
+      {
+        "name": "void bn_cuda_fused_detail::exl3_moe_kernel<(int)3, (int)256, (int)2, (int)16, (bool)0, (bool)0>(const __half *, __half *, __half *, __half *, __half *, float *, BnCudaFusedEXL3Pointers, const int *, const int *, const __half *, int, int, int, int, int, int, float, int, int, int, int, int *, float *, const int *, int, int, int, int)",
+        "count": 1,
+        "duration_sum_ns": 332641
+      },
+      {
+        "name": "void cub::_V_300500_SM_1200::detail::radix_sort::DeviceRadixSortExclusiveSumKernel<cub::_V_300500_SM_1200::detail::radix_sort::policy_selector_from_types<int, int, unsigned int>, unsigned int>(T2 *)",
+        "count": 1,
+        "duration_sum_ns": 1184
+      },
+      {
+        "name": "void cub::_V_300500_SM_1200::detail::radix_sort::DeviceRadixSortHistogramKernel<cub::_V_300500_SM_1200::detail::radix_sort::policy_selector_from_types<int, int, unsigned int>, (cub::_V_300500_SM_1200::SortOrder)0, int, unsigned int, cub::_V_300500_SM_1200::detail::identity_decomposer_t>(T4 *, const T3 *, T4, int, int, T5)",
+        "count": 1,
+        "duration_sum_ns": 2945
+      },
+      {
+        "name": "void cub::_V_300500_SM_1200::detail::radix_sort::DeviceRadixSortInitKernel<cub::_V_300500_SM_1200::detail::radix_sort::policy_selector_from_types<int, int, unsigned int>, int, int>(T2 *, unsigned long, T3 *, unsigned long)",
+        "count": 4,
+        "duration_sum_ns": 14368
+      },
+      {
+        "name": "void cub::_V_300500_SM_1200::detail::radix_sort::DeviceRadixSortInitKernel<cub::_V_300500_SM_1200::detail::radix_sort::policy_selector_from_types<int, int, unsigned int>, int, unsigned int>(T2 *, unsigned long, T3 *, unsigned long)",
+        "count": 1,
+        "duration_sum_ns": 2208
+      },
+      {
+        "name": "void cub::_V_300500_SM_1200::detail::radix_sort::DeviceRadixSortOnesweepKernel<cub::_V_300500_SM_1200::detail::radix_sort::policy_selector_from_types<int, int, unsigned int>, (cub::_V_300500_SM_1200::SortOrder)0, int, int, unsigned int, int, int, cub::_V_300500_SM_1200::detail::identity_decomposer_t>(T7 *, T7 *, T5 *, const T5 *, T3 *, const T3 *, T4 *, const T4 *, T6, int, int, T8)",
+        "count": 4,
+        "duration_sum_ns": 36352
+      }
+    ],
+    "runtime_api_counts": {
+      "cuDeviceGet": 3,
+      "cuKernelGetName": 113,
+      "cuKernelSetAttribute": 3,
+      "cuLaunchKernelEx": 3,
+      "cuStreamGetGreenCtx": 6,
+      "cudaDeviceGetAttribute_v5000": 1,
+      "cudaGetDevice_v3020": 3,
+      "cudaGetLastError_v3020": 143,
+      "cudaLaunchCooperativeKernel_v9000": 4,
+      "cudaLaunchKernelExC_v11060": 11,
+      "cudaLaunchKernel_v7000": 113,
+      "cudaMemcpyAsync_v3020": 3,
+      "cudaMemsetAsync_v3020": 1,
+      "cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags_v7000": 1,
+      "cudaPeekAtLastError_v3020": 11,
+      "cudaSetDevice_v3020": 65,
+      "cudaStreamSynchronize_v3020": 21
+    },
+    "host_to_device_metadata": {
+      "copies": 2,
+      "bytes": 3072
+    },
+    "device_to_host_counts": {
+      "copies": 1,
+      "bytes": 1540
+    },
+    "stream_synchronizations": 21,
+    "allocations_frees": 0,
+    "heavy_groups": 13,
+    "folded_reconstructions": 39,
+    "adaptive_fp16_partial_gemms": 39,
+    "shared_vendor_gemms": 3,
+    "fused_launches": 4,
+    "expert_io_bytes": 0,
+    "expert_upload_bytes": 0,
+    "limitation": "17 lease-boundary waits plus counts, metadata write and final completion waits remain; a resident lease-borrowing fast path can remove per-window/group fences without changing source geometry."
+  },
+  "evidence": {
+    "directory": "/tmp/bitnet-goal-native-executor",
+    "qualification_sha256": "ab9484daed2f96abd3780953ccfd8dd612510433532419a32a477014a545a8fd",
+    "initcheck_qualification_sha256": "f64598a3563c1b316223b8e4bb8279817c8e6f33db77b2e62be5ebc86c31641f",
+    "source_freeze_sha256": "5920caef7171eb396fbaebc57771d4e4f305744757f972e5be9f22419e51964c",
+    "probe_sha256": "a635870cc751ea3e5fd3bbacdeb6aa314bd13428e96677ff0d16995cc9147767",
+    "paired_reference_sha256": "a7a4b0ef42022891cb9b91850c049cadbd681656e7de2ca34bc4e7ec7693685f",
+    "independent_oracles": "docs/deepseek-v41-1017-native-moe-layer-reference.json",
+    "preceding_session_lifecycle": "docs/deepseek-v41-1017-native-sessions.json"
+  },
+  "remaining": [
+    "The API explicitly selects learned routing and supports the general prefill profile, tokens>8. V4.1 defaults to zero hash-routing layers, so every layer uses learned routing. Specialized <=8 BC decode was outside this prefill qualification.",
+    "Full attention, compressed/indexed/shared KV, Engram, full forward/generation/CLI and end-to-end short/long/chunked/resumed correctness remain required for this native model path.",
+    "The executor currently waits at each lease boundary and performs host counts planning. The warm trace measures21 synchronizations and3 metadata transfers; resident lease retention and asynchronous placement are future performance work.",
+    "No active-call cancellation or concurrent store mutation is supported; caller serializes access. Continuous batching, chunked serving/KV admission, tail latency and full resource accounting remain open.",
+    "This reference qualification is not matched vLLM performance parity. Original packaged-library and paired-system-library references remain preserved independently."
+  ]
+}

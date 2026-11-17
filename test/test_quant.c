@@ -12,6 +12,7 @@
 #endif
 #if defined(__ARM_NEON)
 #include "quant_kernels_neon.h"
+#include "quant_neon_helpers.h"
 #include "simd_helpers.h"
 #endif
 #include <stdio.h>
@@ -20,6 +21,49 @@
 #include <math.h>
 #include <assert.h>
 #include <limits.h>
+
+static void test_neon_dot4_i8(void) {
+#ifdef __ARM_NEON
+    printf("test_neon_dot4_i8... ");
+    const int32_t initial[4] = {0, 101, -103, INT32_MAX - 4};
+    for (int pattern = 0; pattern < 256; pattern++) {
+        int8_t a[16], b[16];
+        int32_t got[4];
+        for (int i = 0; i < 16; i++) {
+            a[i] = pattern ? (int8_t)(pattern * 37 + i * 53) : -128;
+            b[i] = pattern ? (int8_t)(pattern * 19 - i * 17) : -128;
+        }
+        vst1q_s32(got, bn_neon_dot4_i8(vld1q_s32(initial), vld1q_s8(a), vld1q_s8(b)));
+        for (int lane = 0; lane < 4; lane++) {
+            uint32_t expected = (uint32_t)initial[lane], bits;
+            for (int i = lane * 4; i < lane * 4 + 4; i++)
+                expected += (uint32_t)((int32_t)a[i] * (int32_t)b[i]);
+            memcpy(&bits, got + lane, sizeof(bits));
+            assert(bits == expected);
+        }
+        int32x4_t acc = vld1q_s32(initial);
+        int8x16_t av = vld1q_s8(a), bv = vld1q_s8(b);
+        int32x4_t lane_outputs[4] = {
+            bn_neon_dot4_laneq_i8(acc, av, bv, 0),
+            bn_neon_dot4_laneq_i8(acc, av, bv, 1),
+            bn_neon_dot4_laneq_i8(acc, av, bv, 2),
+            bn_neon_dot4_laneq_i8(acc, av, bv, 3)
+        };
+        for (int source = 0; source < 4; source++) {
+            vst1q_s32(got, lane_outputs[source]);
+            for (int lane = 0; lane < 4; lane++) {
+                uint32_t expected = (uint32_t)initial[lane], bits;
+                for (int j = 0; j < 4; j++)
+                    expected += (uint32_t)((int32_t)a[lane * 4 + j] *
+                                           (int32_t)b[source * 4 + j]);
+                memcpy(&bits, got + lane, sizeof(bits));
+                assert(bits == expected);
+            }
+        }
+    }
+    printf("PASSED\n");
+#endif
+}
 
 static uint16_t test_fp32_to_bf16(float f) {
     uint32_t bits;
@@ -112,7 +156,7 @@ static void test_quant_policy_helpers(void) {
         INT_MAX, INT_MAX, INT_MAX, INT_MAX));
 
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
-    assert(bn_quant_format_cpu_matmul_matches_matvec(BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_quant_format_cpu_matmul_matches_matvec(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_cpu_matmul_matches_matvec(BN_GGUF_TENSOR_Q5_K));
     assert(bn_quant_format_cpu_matmul_matches_matvec(BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_cpu_matmul_matches_matvec(BN_GGUF_TENSOR_IQ3_S));
@@ -213,10 +257,20 @@ static void test_quant_policy_helpers(void) {
     BnQWeight policy_q4k = {
         policy_q4k_data, BN_GGUF_TENSOR_Q4_K, 8, BN_QK_K, 1.0f
     };
+    /* Q4_K prepared layouts are available only on x86. ARM's native
+     * route reads the original weights, including without SDOT. */
+#if defined(__AVX2__) || \
+    (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
+    const int q4k_prepared_available = 1;
+#else
+    const int q4k_prepared_available = 0;
+#endif
     assert(bn_quant_matvec_uses_prepared_weight(
-               &policy_q4k, 0, NULL) == !q4k_dot_default);
+               &policy_q4k, 0, NULL) ==
+           (q4k_prepared_available && !q4k_dot_default));
     assert(bn_quant_matvec_uses_prepared_weight(
-        &policy_q4k, BN_MATVEC_TASK_NATIVE_QUANT, NULL));
+        &policy_q4k, BN_MATVEC_TASK_NATIVE_QUANT, NULL) ==
+           q4k_prepared_available);
     assert(!bn_quant_matvec_uses_prepared_weight(
         &policy_q4k, BN_MATVEC_TASK_FORCE_FLOAT_KQUANT, NULL));
     assert(bn_quant_policy_reference_q6_dot_enabled(TEST_QUANT_POLICY(), 0) == q6_dot_default);
@@ -312,7 +366,93 @@ static void test_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_IQ4_XS));
     assert(!bn_quant_format_supports_f16_float_cache_matvec(
         BN_GGUF_TENSOR_Q4_K));
+    const BnQuantFormatOps *exl3 = bn_quant_format_ops(BN_QUANT_FORMAT_EXL3_MUL1_3);
+    const BnQuantFormatOps *fp8 = bn_quant_format_ops(BN_QUANT_FORMAT_E4M3_UE8M0_32);
+    const BnQuantFormatOps *rows = bn_quant_format_ops(BN_QUANT_FORMAT_INT4_FP16S32);
+    const BnQuantRowScaledOps *row_ops = bn_quant_format_row_scaled_ops(BN_QUANT_FORMAT_INT4_FP16S32);
+    assert(rows && rows->layout == BN_QUANT_LAYOUT_ROW_SCALED && !rows->caps);
+    assert(!bn_quant_format_supported(BN_QUANT_FORMAT_INT4_FP16S32));
+    assert(!bn_quant_format_data_size(BN_QUANT_FORMAT_INT4_FP16S32, 32, 32));
+    assert(row_ops && row_ops->block_cols == 32 && row_ops->weight_bits == 4 && row_ops->scale_element_bytes == 2);
+    assert(row_ops->decode_region_bf16 == bn_quant_int4_fp16s32_decode_region_bf16);
+    assert(row_ops->gpu_decode == BN_QUANT_ROW_GPU_INT4_FP16S32_BF16);
+    assert(row_ops->validate_scales == bn_quant_int4_fp16s32_validate_scales);
+    assert(!bn_quant_format_row_scaled_ops(BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_quant_format_row_scaled_ops(BN_QUANT_FORMAT_E4M3_UE8M0_32));
+    const BnQuantBlockScaledOps *block = bn_quant_format_block_scaled_ops(BN_QUANT_FORMAT_E4M3_UE8M0_32);
+    assert(fp8 && fp8->layout == BN_QUANT_LAYOUT_BLOCK2D && !fp8->caps && !fp8->matvec && !fp8->matmul);
+    assert(!bn_quant_format_supported(BN_QUANT_FORMAT_E4M3_UE8M0_32));
+    assert(!bn_quant_format_data_size(BN_QUANT_FORMAT_E4M3_UE8M0_32, 64, 64));
+    assert(block && block->decode == BN_QUANT_BLOCK_SCALED_E4M3_UE8M0_32_F16);
+    assert(block->block_rows == 32 && block->block_cols == 32 && block->weight_element_bytes == 1 && block->scale_element_bytes == 1);
+    assert(block->decode_region_fp16 == bn_quant_e4m3_ue8m0_decode_region_fp16);
+    assert(!bn_quant_format_block_scaled_ops(BN_GGUF_TENSOR_F16) && !bn_quant_format_block_scaled_ops(BN_QUANT_FORMAT_EXL3_MUL1_3));
+    const BnQuantTrellisOps *trellis = bn_quant_format_trellis_ops(BN_QUANT_FORMAT_EXL3_MUL1_3);
+    assert(exl3 && exl3->layout == BN_QUANT_LAYOUT_TRELLIS16);
+    assert(exl3->caps == 0 && !exl3->matvec && !exl3->matmul);
+    assert(!bn_quant_format_supported(BN_QUANT_FORMAT_EXL3_MUL1_3));
+    assert(!bn_quant_format_allows_stacked_layout(BN_QUANT_FORMAT_EXL3_MUL1_3));
+    assert(bn_quant_format_data_size(BN_QUANT_FORMAT_EXL3_MUL1_3, 16, 16) == 0);
+    assert(trellis && trellis->tile_rows == 16 && trellis->tile_cols == 16);
+    assert(trellis->projection == BN_QUANT_TRELLIS_PROJECTION_EXL3_MUL1_3_F16_F32);
+    assert(trellis->folded == BN_QUANT_TRELLIS_FOLDED_EXL3_MUL1_3_F16);
+    assert(trellis->fused == BN_QUANT_TRELLIS_FUSED_EXL3_MUL1_3_WEIGHTED_F32);
+    assert(trellis->decode == BN_QUANT_TRELLIS_DECODE_EXL3_MUL1_3_F32);
+    assert(trellis->tile_bytes == 96 && trellis->codebook_marker == UINT32_C(0x83dcd12d));
+    assert(trellis->decode_tile_fp16 == bn_quant_exl3_mul1_decode_tile);
+    assert(trellis->decode_slice_fp16 == bn_quant_exl3_mul1_decode_slice);
+    assert(trellis->hadamard128_fp16 == bn_quant_exl3_hadamard128_fp16);
+    assert(!bn_quant_format_trellis_ops(BN_GGUF_TENSOR_Q3_K));
+    assert(!bn_quant_format_trellis_ops(-1));
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q3_K)->bf16_linear == BN_QUANT_BF16_LINEAR_Q3_K);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q8_0)->bf16_linear == BN_QUANT_BF16_LINEAR_Q8_0);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q5_K)->bf16_linear == BN_QUANT_BF16_LINEAR_Q5_K);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q4_K)->bf16_linear == BN_QUANT_BF16_LINEAR_Q4_K);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q6_K)->bf16_linear == BN_QUANT_BF16_LINEAR_Q6_K);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_Q4_K) == BN_QUANT_BF16_DECODE_NONE);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_Q6_K) == BN_QUANT_BF16_DECODE_NONE);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_Q5_K) == BN_QUANT_BF16_DECODE_NONE);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_Q8_0) == BN_QUANT_BF16_DECODE_Q8_0);
+    assert(bn_quant_format_bf16_identity_kind(BN_GGUF_TENSOR_Q8_0)==BN_QUANT_BF16_DECODE_Q8_0_IDENTITY);
+    assert(bn_quant_format_bf16_identity_kind(BN_GGUF_TENSOR_F32)==BN_QUANT_BF16_DECODE_NONE);
+    assert(bn_quant_format_bf16_identity_kind(BN_GGUF_TENSOR_Q4_K)==BN_QUANT_BF16_DECODE_NONE);
+    assert(bn_quant_format_bf16_identity_kind(-1)==BN_QUANT_BF16_DECODE_NONE);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_F32) == BN_QUANT_BF16_DECODE_F32);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_Q5_1) == BN_QUANT_BF16_DECODE_Q5_1);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q5_1)->bf16_linear == BN_QUANT_BF16_LINEAR_NONE);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q4_K)->bf16_moe == BN_QUANT_BF16_MOE_Q4_K);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q5_K)->bf16_moe == BN_QUANT_BF16_MOE_Q5_K);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q5_1)->bf16_moe == BN_QUANT_BF16_MOE_Q5_1);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q8_0)->bf16_moe == BN_QUANT_BF16_MOE_Q8_0);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q6_K)->bf16_moe == BN_QUANT_BF16_MOE_Q6_K);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_IQ4_XS)->bf16_linear == BN_QUANT_BF16_LINEAR_IQ4);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_IQ3_S)->bf16_linear == BN_QUANT_BF16_LINEAR_IQ3_S);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q2_K)->bf16_linear == BN_QUANT_BF16_LINEAR_NONE);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_BF16)->bf16_linear == BN_QUANT_BF16_LINEAR_DENSE);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_IQ4_NL) == BN_QUANT_BF16_DECODE_IQ4_NL);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_IQ4_XS) == BN_QUANT_BF16_DECODE_IQ4_XS);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_Q3_K) == BN_QUANT_BF16_DECODE_NONE);
+    assert(bn_quant_format_bf16_decode_kind(BN_GGUF_TENSOR_IQ3_S) == BN_QUANT_BF16_DECODE_IQ3_S);
+    assert(bn_quant_format_bf16_decode_kind(-1) == BN_QUANT_BF16_DECODE_NONE);
     assert(bn_quant_format_is_bf16(BN_GGUF_TENSOR_BF16));
+    assert(bn_quant_format_resident_scalar_bytes(BN_GGUF_TENSOR_I8) == 1);
+    assert(!bn_quant_format_supported(BN_GGUF_TENSOR_I8));
+    assert(!bn_quant_format_has_cpu_matvec(BN_GGUF_TENSOR_I8));
+    assert(!bn_quant_format_ops(BN_GGUF_TENSOR_I8)->matvec);
+    assert(!bn_quant_format_ops(BN_GGUF_TENSOR_I8)->matmul);
+    assert(bn_quant_format_resident_scalar_bytes(BN_GGUF_TENSOR_I32) == 4);
+    assert(bn_quant_format_resident_scalar_bytes(BN_GGUF_TENSOR_F32) == 4);
+    assert(bn_quant_format_resident_scalar_bytes(BN_GGUF_TENSOR_BF16) == 2);
+    assert(bn_quant_format_resident_scalar_bytes(BN_GGUF_TENSOR_F16) == 2);
+    assert(bn_quant_format_resident_scalar_bytes(BN_GGUF_TENSOR_Q4_K) == 0);
+    assert(bn_quant_format_resident_scalar_bytes(-1) == 0);
+    assert(!bn_quant_format_supported(BN_GGUF_TENSOR_I32));
+    assert(!bn_quant_format_has_cpu_matvec(BN_GGUF_TENSOR_I32));
+    assert(!bn_quant_format_ops(BN_GGUF_TENSOR_I32)->matvec);
+    assert(!bn_quant_format_ops(BN_GGUF_TENSOR_I32)->matmul);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q4_K)->bf16_embedding == BN_QUANT_BF16_EMBEDDING_Q4_K);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q8_0)->bf16_embedding == BN_QUANT_BF16_EMBEDDING_Q8_0);
+    assert(bn_quant_format_ops(BN_GGUF_TENSOR_Q3_K)->bf16_embedding == BN_QUANT_BF16_EMBEDDING_NONE);
     assert(!bn_quant_format_is_bf16(BN_GGUF_TENSOR_F16));
     assert(bn_quant_format_is_q3k(BN_GGUF_TENSOR_Q3_K));
     assert(!bn_quant_format_is_q3k(BN_GGUF_TENSOR_Q4_K));
@@ -404,6 +544,11 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_gpu_matvec_block_q8_activation_flag(
                BN_GGUF_TENSOR_Q4_0, 1) ==
            BN_QUANT_GPU_MATVEC_FLAG_BLOCK_Q8_ACTIVATION);
+    assert(bn_quant_format_gpu_matvec_block_q8_activation_flag(
+               BN_GGUF_TENSOR_Q5_1, 1) ==
+           BN_QUANT_GPU_MATVEC_FLAG_BLOCK_Q8_ACTIVATION);
+    assert(bn_quant_format_gpu_matvec_block_q8_activation_flag(
+               BN_GGUF_TENSOR_Q5_1, 0) == 0);
     assert(bn_quant_format_gpu_matvec_reference_kquant_flag(
                BN_GGUF_TENSOR_Q4_K, 1) ==
            BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT);
@@ -931,6 +1076,18 @@ static void test_q51_x86_exact(void) {
     }
     assert(bn_quant_format_has_cap(BN_GGUF_TENSOR_Q5_1,
         BN_QUANT_CAP_CPU_X86_GEMV_ORDER_MATMUL));
+    assert(bn_quant_format_has_cap(BN_GGUF_TENSOR_Q5_1,
+        BN_QUANT_CAP_GPU_ROUTED_BLOCK32_AFFINE_MMQ_DOWN));
+    assert(bn_quant_format_supports_moe_gathered_expert_batch(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_1));
+    assert(bn_quant_format_supports_moe_gathered_expert_batch(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_supports_moe_gathered_expert_batch(
+        BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_supports_moe_gathered_kquant(
+        BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_supports_moe_gathered_kquant(
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
     /* Include the tiled scratch bound and the wide-input fallback. */
     const int counts[] = {1, 3, 20, 80, 256, 257};
     const char *old_env = getenv("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH");
@@ -1382,6 +1539,45 @@ static void test_q4_matmul_correctness(void) {
     free(out_multi0); free(out_multi1);
     free(x_q); free(prepared.qs); free(prepared.scales);
     printf("PASSED\n");
+}
+
+static void test_q8_neon_float_tiles(void) {
+#if defined(__ARM_NEON) && !defined(BN_FORCE_SCALAR)
+    enum { rows = 5, cols = 96, tokens = 9 };
+    BnBlockQ8_0 blocks[rows * (cols / 32)];
+    float x[tokens * cols], expected[tokens * rows];
+    float guarded[tokens * rows + 2];
+    int8_t scratch[cols];
+    for (int b = 0; b < rows * (cols / 32); b++) {
+        blocks[b].d = bn_fp32_to_fp16(0.003f * (b + 1));
+        for (int j = 0; j < 32; j++)
+            blocks[b].qs[j] = (int8_t)((b * 17 + j * 23) % 256 - 128);
+    }
+    for (int j = 0; j < tokens * cols; j++)
+        x[j] = 0.017f * ((j * 37) % 101 - 50);
+    BnQWeight weight = {blocks, BN_GGUF_TENSOR_Q8_0, rows, cols, 1.0f};
+    BnQ8Ctx ref = {expected, &weight, x};
+    for (int t = 0; t < tokens; t++) {
+        ref.out = expected + t * rows;
+        ref.x = x + t * cols;
+        bn_quant_q8_neon_range(&ref, 0, rows);
+    }
+    for (int n = 1; n <= tokens; n++) {
+        for (int j = 0; j < tokens * rows + 2; j++) guarded[j] = 12345.0f;
+        BnKQuantFloatMatmulCtx ctx = {guarded + 1, &weight, x, n, cols};
+        bn_quant_q8_neon_float_matmul_range(&ctx, 0, 2);
+        bn_quant_q8_neon_float_matmul_range(&ctx, 2, rows);
+        assert(memcmp(guarded + 1, expected, (size_t)n * rows * sizeof(float)) == 0);
+        assert(guarded[0] == 12345.0f && guarded[n * rows + 1] == 12345.0f);
+#ifndef __ARM_FEATURE_DOTPROD
+        bn_quant_matmul(guarded + 1, &weight, x, n, scratch, NULL);
+        assert(memcmp(guarded + 1, expected, (size_t)n * rows * sizeof(float)) == 0);
+#else
+        (void)scratch;
+#endif
+    }
+    printf("test_q8_neon_float_tiles... PASSED\n");
+#endif
 }
 
 static void test_q8_matmul_correctness(void) {
@@ -3546,7 +3742,6 @@ static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
     bn_quant_matmul_prepared_kquant_input(
         out6, &W6, n_tokens, x_q, x_d, x_bsums, X, NULL);
 
-    float prepared_max_diff = 0.0f;
     for (int i = 0; i < rows * n_tokens; i++) {
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
         assert(out4[i] == ref4[i]);
@@ -3562,6 +3757,7 @@ static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
         multi_out, multi_w, NULL, 3, n_tokens, x_q, x_d, x_bsums, X, NULL);
 
 #if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
+    float prepared_max_diff = 0.0f;
     BnPreparedWeight prepared4a = { 0 };
     BnPreparedWeight prepared4b = { 0 };
     BnPreparedWeightKind kind4a = BN_PREPARED_WEIGHT_NONE;
@@ -4279,14 +4475,603 @@ static void test_q5k_public_gemv_matmul_order(void) {
     printf("PASSED\n");
 }
 
+#ifdef __AVX2__
+static uint64_t test_prefill_hash(const float *values, int n) {
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (int i = 0; i < n; i++) {
+        uint32_t bits;
+        memcpy(&bits, values + i, sizeof(bits));
+        hash = (hash ^ bits) * UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+#endif
+
+static void test_reference_prefill_multi(void) {
+#ifdef __AVX2__
+    printf("test_reference_prefill_multi... ");
+    enum { rows = 137, q4rows = 136, nb = 3, cols = nb * 256, tokens = 33 };
+    BnBlockQ5K q5[rows * nb];
+    BnBlockQ6K q6[rows * nb];
+    BnBlockQ3K q3[rows * nb];
+    BnBlockQ4K q4[q4rows * nb];
+    float fw[3 * cols], X[tokens * cols];
+    float o5[tokens * rows + 2], o6[tokens * rows + 2];
+    float o4[tokens * q4rows + 2], of[tokens * 3 + 2], o3[tokens * rows + 2];
+    float old5[tokens * rows], oldf[tokens * 3];
+    int8_t scratch[cols], qp[tokens * cols];
+    float dp[tokens * nb];
+    int16_t bp[tokens * nb * 16];
+    for (int b = 0; b < rows * nb; b++) {
+        q5[b].d = q6[b].d = bn_fp32_to_fp16(0.002f * (b % 19 + 1));
+        q3[b].d = q5[b].d;
+        for (int i = 0; i < 32; i++) q3[b].hmask[i] = (uint8_t)(b * 31 + i * 37);
+        for (int i = 0; i < 64; i++) q3[b].qs[i] = (uint8_t)(b * 31 + (32 + i) * 37);
+        for (int i = 0; i < 12; i++) q3[b].scales[i] = (uint8_t)(b * 31 + (96 + i) * 37);
+        q5[b].dmin = bn_fp32_to_fp16(0.001f * (b % 13 + 1));
+        for (int i = 0; i < 12; i++) q5[b].scales[i] = (uint8_t)(b * 17 + i * 23);
+        for (int i = 0; i < 32; i++) q5[b].qh[i] = (uint8_t)(b * 19 + i * 29);
+        for (int i = 0; i < 128; i++) {
+            q5[b].qs[i] = (uint8_t)(b * 31 + i * 37);
+            q6[b].ql[i] = (uint8_t)(b * 31 + i * 37);
+        }
+        for (int i = 0; i < 64; i++) q6[b].qh[i] = (uint8_t)(b * 31 + (128 + i) * 37);
+        for (int i = 0; i < 16; i++) q6[b].scales[i] = (int8_t)(uint8_t)(b * 17 + i * 23);
+        if (b < q4rows * nb) {
+            q4[b].d = q5[b].d;
+            q4[b].dmin = q5[b].dmin;
+            memcpy(q4[b].scales, q5[b].scales, sizeof(q4[b].scales));
+            memcpy(q4[b].qs, q5[b].qs, sizeof(q4[b].qs));
+        }
+    }
+    for (int i = 0; i < tokens * cols; i++) X[i] = sinf((float)i * 0.13f);
+    for (int t = 0; t < tokens; t++)
+        bn_quant_x_to_q8k(X + t * cols, qp + t * cols, dp + t * nb,
+                          bp + t * nb * 16, cols);
+    for (int i = 0; i < 3 * cols; i++) fw[i] = cosf((float)i * 0.071f);
+    BnQWeight w5 = {q5, BN_GGUF_TENSOR_Q5_K, rows, cols, 1};
+    BnQWeight w6 = {q6, BN_GGUF_TENSOR_Q6_K, rows, cols, 1};
+    BnQWeight w3 = {q3, BN_GGUF_TENSOR_Q3_K, rows, cols, 1};
+    BnQWeight w4 = {q4, BN_GGUF_TENSOR_Q4_K, q4rows, cols, 1};
+    BnQWeight wf = {fw, BN_GGUF_TENSOR_F32, 3, cols, 1};
+    const BnQWeight *weights[5] = {&w5, &w4, &wf, &w6, &w3};
+    SHArena *arena = sh_arena_create(2 * 1024 * 1024);
+    BnPreparedWeight packed = {0};
+    assert(arena && bn_quant_prepare_qweight(&packed, &w4, arena) == 0);
+    const BnPreparedWeight *prepared[5] = {NULL, &packed, NULL, NULL, NULL};
+    float *outputs[5] = {o5 + 1, o4 + 1, of + 1, o6 + 1, o3 + 1};
+    float *guarded[5] = {o5, o4, of, o6, o3};
+    const int sizes[5] = {rows, q4rows, 3, rows, rows};
+    /* Independent oracle values from reference_cpu_{q5k_tiled,q6k_tiled,
+     * q4k_repack,q3k_tiled}; the prepared Q4_K path must survive mixed grouping. */
+    const int counts[] = {8, 9, 17, 33}, groups[] = {1, 3, 4, 5};
+    const uint64_t h5[] = {UINT64_C(0xd27e28ddca30fd90), UINT64_C(0xce366a1a252cbcde),
+        UINT64_C(0x327a5597e0fa97df), UINT64_C(0x70681b51dd7592e2)};
+    const uint64_t h3[] = {UINT64_C(0x633824f40736ed36), UINT64_C(0x314c5f2937d8e41b),
+        UINT64_C(0x32d7151f19c55dc7), UINT64_C(0x92429e736b36187b)};
+    const uint64_t h6[] = {UINT64_C(0x920ffd3fe606ae9d), UINT64_C(0xd2977fc323a6e933),
+        UINT64_C(0xf8de855ec9772a04), UINT64_C(0xb08923f4f2bb6cd4)};
+    const uint64_t h4[] = {UINT64_C(0xe8ea677b77ca9d99), UINT64_C(0xb3c00cff70ddc3fc),
+        UINT64_C(0xefcc5b90c6041802), UINT64_C(0xf4a48c90ea1948c9)};
+    BnThreadPool *pool = bn_tp_create(3);
+    assert(pool);
+    for (int threaded = 0; threaded < 2; threaded++) {
+        BnThreadPool *active = threaded ? pool : NULL;
+        for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+            int n_tokens = counts[c];
+            bn_quant_matmul_prepared(old5, &w5, NULL, X, n_tokens, scratch, active);
+            bn_quant_matmul_prepared(oldf, &wf, NULL, X, n_tokens, scratch, active);
+            for (int api = 0; api < 2; api++)
+            for (unsigned g = 0; g < sizeof(groups) / sizeof(groups[0]); g++) {
+                int n = groups[g];
+                for (int m = 0; m < 5; m++)
+                    for (int i = 0; i < tokens * sizes[m] + 2; i++) guarded[m][i] = NAN;
+                if (api)
+                    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+                        outputs, weights, prepared, n, n_tokens, qp, dp, bp,
+                        X, scratch, active) == 0);
+                else
+                    assert(bn_quant_matmul_prefill_prepared_multi(outputs, weights,
+                        prepared, n, X, n_tokens, scratch, active) == 0);
+                if (bn_quant_format_cpu_prefill_uses_tiled(w5.type, n_tokens))
+                    assert(test_prefill_hash(outputs[0], n_tokens * rows) == h5[c]);
+                else
+                    assert(memcmp(outputs[0], old5, (size_t)n_tokens * rows * sizeof(float)) == 0);
+                if (n >= 3) {
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+                    assert(test_prefill_hash(outputs[1], n_tokens * q4rows) == h4[c]);
+#else
+                    (void)h4;
+                    float reference[tokens * q4rows];
+                    bn_quant_matmul_prepared(reference, &w4, &packed, X,
+                        n_tokens, scratch, active);
+                    assert(memcmp(outputs[1], reference,
+                        (size_t)n_tokens * q4rows * sizeof(float)) == 0);
+#endif
+                    assert(memcmp(outputs[2], oldf, (size_t)n_tokens * 3 * sizeof(float)) == 0);
+                }
+                if (n >= 4) assert(test_prefill_hash(outputs[3], n_tokens * rows) == h6[c]);
+                if (n >= 5) assert(test_prefill_hash(outputs[4], n_tokens * rows) == h3[c]);
+                for (int m = 0; m < 5; m++) {
+                    assert(isnan(guarded[m][0]));
+                    int start = m < n ? n_tokens * sizes[m] + 1 : 1;
+                    for (int i = start; i < tokens * sizes[m] + 2; i++)
+                        assert(isnan(guarded[m][i]));
+                }
+            }
+        }
+    }
+    /* A bad late projection must not leave earlier outputs half-written. */
+    for (int m = 0; m < 5; m++)
+        for (int i = 0; i < tokens * sizes[m] + 2; i++) guarded[m][i] = NAN;
+    BnQWeight wrong_width = w6;
+    wrong_width.cols = cols - 256;
+    weights[4] = &wrong_width;
+    assert(bn_quant_matmul_prefill_prepared_multi(outputs, weights, prepared,
+        5, X, tokens, scratch, pool) == -1);
+    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+        outputs, weights, prepared, 5, tokens, qp, dp, bp,
+        X, scratch, pool) == -1);
+    weights[4] = NULL;
+    assert(bn_quant_matmul_prefill_prepared_multi(outputs, weights, prepared,
+        5, X, tokens, scratch, pool) == -1);
+    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+        outputs, weights, prepared, 5, tokens, qp, dp, bp,
+        X, scratch, pool) == -1);
+    weights[4] = &w3;
+    outputs[4] = NULL;
+    assert(bn_quant_matmul_prefill_prepared_multi(outputs, weights, prepared,
+        5, X, tokens, scratch, pool) == -1);
+    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+        outputs, weights, prepared, 5, tokens, qp, dp, bp,
+        X, scratch, pool) == -1);
+    for (int m = 0; m < 5; m++)
+        for (int i = 0; i < tokens * sizes[m] + 2; i++) assert(isnan(guarded[m][i]));
+    bn_tp_free(pool);
+    sh_arena_free(arena);
+    printf("PASSED\n");
+#endif
+}
+
+static void test_reference_prefill_prequant_contract(void) {
+    printf("test_reference_prefill_prequant_contract... ");
+    float weights[256], x[256], output = 19.0f;
+    int8_t q[256] = {0}, scratch[256];
+    float d = 0.0f;
+    int16_t bsums[16] = {0};
+    for (int i = 0; i < 256; i++) { weights[i] = 1.0f; x[i] = 2.0f; }
+    BnQWeight w = {weights, BN_GGUF_TENSOR_F32, 1, 256, 1};
+    float *outs[] = {&output};
+    const BnQWeight *wp[] = {&w};
+    /* Delegated F32 must use original floats, not these zero Q8_K inputs. */
+    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+        outs, wp, NULL, 1, 1, q, &d, bsums, x, scratch, NULL) == 0);
+    assert(output == 512.0f);
+    for (int missing = 0; missing < 5; missing++) {
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            outs, wp, NULL, 1, 1, missing == 0 ? NULL : q,
+            missing == 1 ? NULL : &d, missing == 2 ? NULL : bsums,
+            missing == 3 ? NULL : x, missing == 4 ? NULL : scratch,
+            NULL) == -1);
+        assert(output == 512.0f);
+    }
+    for (int bad = 0; bad < 4; bad++) {
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            bad == 0 ? NULL : outs, bad == 1 ? NULL : wp, NULL,
+            bad == 2 ? 0 : 1, bad == 3 ? 0 : 1,
+            q, &d, bsums, x, scratch, NULL) == -1);
+        assert(output == 512.0f);
+    }
+    w.cols = 1;
+    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+        outs, wp, NULL, 1, 1, q, &d, bsums, x, scratch, NULL) == -1);
+    assert(output == 512.0f);
+    printf("PASSED\n");
+}
+
+static void test_reference_prefill_api_contract(void) {
+    printf("test_reference_prefill_api_contract... ");
+    float weight = 3.0f, x = 2.0f, output = 0.0f;
+    int8_t scratch;
+    BnQWeight w = {&weight, BN_GGUF_TENSOR_F32, 1, 1, 1};
+    assert(bn_quant_matmul_prefill_prepared(&output, &w, NULL,
+        &x, 1, &scratch, NULL) == 0);
+    assert(output == 6.0f);
+    assert(bn_quant_matmul_prefill_prepared(&output, &w, NULL,
+        &x, 0, &scratch, NULL) == -1);
+    assert(bn_quant_matmul_prefill_prepared(&output, NULL, NULL,
+        &x, 1, &scratch, NULL) == -1);
+    assert(bn_quant_matmul_prefill_prepared(&output, &w, NULL,
+        NULL, 1, &scratch, NULL) == -1);
+    assert(bn_quant_matmul_prefill_prepared(&output, &w, NULL,
+        &x, 1, NULL, NULL) == -1);
+    BnQWeight invalid = w;
+    invalid.type = -1;
+    assert(bn_quant_matmul_prefill_prepared(&output, &invalid, NULL,
+        &x, 1, &scratch, NULL) == -1);
+    invalid = w;
+    invalid.type = BN_GGUF_TENSOR_Q5_K;
+    assert(bn_quant_matmul_prefill_prepared(&output, &invalid, NULL,
+        &x, 1, &scratch, NULL) == -1);
+    assert(output == 6.0f);
+    assert(!bn_quant_format_cpu_prefill_uses_tiled(BN_GGUF_TENSOR_Q5_K, 7));
+    assert(!bn_quant_format_cpu_prefill_uses_tiled(BN_GGUF_TENSOR_Q6_K, 7));
+    assert(!bn_quant_format_cpu_prefill_uses_tiled(BN_GGUF_TENSOR_Q3_K, 7));
+    assert(!bn_quant_format_cpu_prefill_uses_tiled(BN_GGUF_TENSOR_Q4_K, 33));
+    assert(!bn_quant_format_cpu_prefill_uses_tiled(-1, 33));
+    printf("PASSED\n");
+}
+
+static void test_iq_tiled_reference_case(int type, size_t block_size,
+                                         const uint64_t expected[6]) {
+#ifdef __AVX2__
+    printf("test_iq_tiled_reference type=%d... ", type);
+    enum { rows = 137, nb = 3, cols = nb * BN_QK_K, tokens = 33 };
+    uint8_t blocks[rows * nb * 136];
+    float x[tokens * cols], d[tokens * nb], output[tokens * rows + 2];
+    int8_t q[tokens * cols], scratch[cols];
+    float other[4][tokens * rows + 2];
+    int16_t bsums[tokens * nb * 16];
+    for (int b = 0; b < rows * nb; b++) {
+        uint8_t *p = blocks + b * block_size;
+        uint16_t scale = bn_fp32_to_fp16(0.002f * (b % 19 + 1));
+        for (size_t i = 2; i < block_size; i++) p[i] = (uint8_t)(b * 31 + i * 37);
+        memcpy(p, &scale, sizeof(scale));
+    }
+    for (int t = 0; t < tokens; t++) {
+        for (int i = 0; i < cols; i++)
+            x[t * cols + i] = sinf((float)(t * cols + i) * 0.13f);
+        bn_quant_x_to_q8k(x + t * cols, q + t * cols, d + t * nb,
+                          bsums + t * nb * 16, cols);
+    }
+    /* Independent GGML CPU graph hashes; reference_cpu_iq_tiled.c.
+     * Covers short/partial token tiles and odd threaded output-row tails. */
+    const int counts[] = {8, 9, 10, 11, 17, 33};
+    BnQWeight weight = {blocks, type, rows, cols, 1};
+    BnThreadPool *pool = bn_tp_create(3);
+    assert(pool);
+    for (int threaded = 0; threaded < 2; threaded++) {
+        for (int api = 0; api < 4; api++) {
+            for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                for (int i = 0; i < tokens * rows + 2; i++) output[i] = NAN;
+                BnKQuantMatmulCtx ctx = {output + 1, &weight, q, d, bsums,
+                                         counts[c], cols, NULL, NULL};
+                BnTPTask task = {bn_quant_iq_panel_avx2_tiled_matmul_range, &ctx, rows};
+                if (api >= 2) {
+                    float *outs[5] = {output + 1, other[0] + 1, other[1] + 1,
+                                      other[2] + 1, other[3] + 1};
+                    const BnQWeight *weights[5] = {&weight, &weight, &weight,
+                                                  &weight, &weight};
+                    for (int j = 0; j < 4; j++)
+                        for (int k = 0; k < tokens * rows + 2; k++) other[j][k] = NAN;
+                    if (api == 3)
+                        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+                            outs, weights, NULL, 5, counts[c], q, d, bsums,
+                            NULL, NULL, threaded ? pool : NULL) == 0);
+                    else
+                        assert(bn_quant_matmul_prefill_prepared_multi(outs, weights,
+                            NULL, 5, x, counts[c], scratch, threaded ? pool : NULL) == 0);
+                    for (int j = 0; j < 4; j++) {
+                        assert(memcmp(outs[j + 1], output + 1,
+                            (size_t)counts[c] * rows * sizeof(float)) == 0);
+                        assert(isnan(other[j][0]));
+                        for (int k = counts[c] * rows + 1; k < tokens * rows + 2; k++)
+                            assert(isnan(other[j][k]));
+                    }
+                } else if (api) {
+                    assert(bn_quant_format_cpu_prefill_uses_tiled(weight.type, counts[c]));
+                    assert(bn_quant_matmul_prefill_prepared(output + 1, &weight, NULL,
+                        x, counts[c], scratch, threaded ? pool : NULL) == 0);
+                } else {
+                    bn_tp_dispatch(threaded ? pool : NULL, &task, 1);
+                }
+                uint64_t hash = UINT64_C(14695981039346656037);
+                for (int i = 0; i < counts[c] * rows; i++) {
+                    uint32_t bits;
+                    memcpy(&bits, output + 1 + i, sizeof(bits));
+                    hash = (hash ^ bits) * UINT64_C(1099511628211);
+                }
+                assert(hash == expected[c]);
+                assert(isnan(output[0]));
+                for (int i = counts[c] * rows + 1; i < tokens * rows + 2; i++)
+                    assert(isnan(output[i]));
+            }
+        }
+    }
+    float baseline[7 * rows];
+    for (int count = 1; count <= 7; count += 6) {
+        assert(!bn_quant_format_cpu_prefill_uses_tiled(weight.type, count));
+        bn_quant_matmul_prepared(baseline, &weight, NULL, x, count, scratch, pool);
+        assert(bn_quant_matmul_prefill_prepared(output, &weight, NULL,
+            x, count, scratch, pool) == 0);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+        float *outs[] = {output};
+        const BnQWeight *weights[] = {&weight};
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            outs, weights, NULL, 1, count, q, d, bsums,
+            x, scratch, pool) == 0);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            outs, weights, NULL, 1, count, q, d, bsums,
+            NULL, NULL, pool) == -1);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+    }
+    bn_tp_free(pool);
+    printf("PASSED\n");
+#else
+    (void)type; (void)block_size; (void)expected;
+#endif
+}
+
+static void test_iq_tiled_reference(void) {
+    const uint64_t iq4_xs[] = {UINT64_C(0xddfbb754524d6559), UINT64_C(0xd33bba2730d56737), UINT64_C(0x771b8ec6e6188b1c), UINT64_C(0xf48b9fa4dd08d2f9), UINT64_C(0xb923568e3022996f), UINT64_C(0x7f42193378ce4d61)};
+    test_iq_tiled_reference_case(BN_GGUF_TENSOR_IQ4_XS, 136, iq4_xs);
+    const uint64_t iq3_s[] = {UINT64_C(0xc6e8ea8e29c611ae), UINT64_C(0xdbb064988094e847), UINT64_C(0xb722da52b492cb1b), UINT64_C(0x1e9eff4b2f83a083), UINT64_C(0x0925357c949beb78), UINT64_C(0x2bda244ff01d3ea8)};
+    test_iq_tiled_reference_case(BN_GGUF_TENSOR_IQ3_S, 110, iq3_s);
+    const uint64_t iq3_xxs[] = {UINT64_C(0xa34a27aafe5050e1), UINT64_C(0x673df7b9e33126f8), UINT64_C(0xbbec685c4845b7ff), UINT64_C(0x9b6a3a1bbd9150dc), UINT64_C(0xda0c779acbf1c7e5), UINT64_C(0x128f5079c956cc1e)};
+    test_iq_tiled_reference_case(BN_GGUF_TENSOR_IQ3_XXS, 98, iq3_xxs);
+}
+
+static void test_q3k_tiled_reference(void) {
+#ifdef __AVX2__
+    printf("test_q3k_tiled_reference... ");
+    enum { rows = 137, nb = 3, cols = nb * BN_QK_K, tokens = 33 };
+    BnBlockQ3K blocks[rows * nb];
+    float x[tokens * cols], d[tokens * nb], output[tokens * rows + 2];
+    int8_t q[tokens * cols], scratch[cols];
+    int16_t bsums[tokens * nb * 16];
+    for (int b = 0; b < rows * nb; b++) {
+        blocks[b].d = bn_fp32_to_fp16(0.002f * (b % 19 + 1));
+        for (int i = 0; i < 32; i++) blocks[b].hmask[i] = (uint8_t)(b * 31 + i * 37);
+        for (int i = 0; i < 64; i++) blocks[b].qs[i] = (uint8_t)(b * 31 + (32 + i) * 37);
+        for (int i = 0; i < 12; i++) blocks[b].scales[i] = (uint8_t)(b * 31 + (96 + i) * 37);
+    }
+    for (int t = 0; t < tokens; t++) {
+        for (int i = 0; i < cols; i++)
+            x[t * cols + i] = sinf((float)(t * cols + i) * 0.13f);
+        bn_quant_x_to_q8k(x + t * cols, q + t * cols, d + t * nb,
+                          bsums + t * nb * 16, cols);
+    }
+    /* Independent GGML CPU graph hashes; reference_cpu_q3k_tiled.c.
+     * Covers short/partial token tiles and odd threaded output-row tails. */
+    const int counts[] = {8, 9, 10, 11, 17, 33};
+    const uint64_t expected[] = {UINT64_C(0x633824f40736ed36),
+        UINT64_C(0x314c5f2937d8e41b), UINT64_C(0x3b479f54591ae06b),
+        UINT64_C(0x06545c137692522e), UINT64_C(0x32d7151f19c55dc7),
+        UINT64_C(0x92429e736b36187b)};
+    BnQWeight weight = {blocks, BN_GGUF_TENSOR_Q3_K, rows, cols, 1};
+    BnThreadPool *pool = bn_tp_create(3);
+    assert(pool);
+    for (int threaded = 0; threaded < 2; threaded++) {
+        for (int api = 0; api < 3; api++) {
+            for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                for (int i = 0; i < tokens * rows + 2; i++) output[i] = NAN;
+                BnKQuantMatmulCtx ctx = {output + 1, &weight, q, d, bsums,
+                                         counts[c], cols, NULL, NULL};
+                BnTPTask task = {bn_quant_q3k_avx2_tiled_matmul_range, &ctx, rows};
+                if (api == 2) {
+                    float *outs[] = {output + 1};
+                    const BnQWeight *weights[] = {&weight};
+                    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+                        outs, weights, NULL, 1, counts[c], q, d, bsums,
+                        NULL, NULL, threaded ? pool : NULL) == 0);
+                } else if (api) {
+                    assert(bn_quant_format_cpu_prefill_uses_tiled(weight.type, counts[c]));
+                    assert(bn_quant_matmul_prefill_prepared(output + 1, &weight, NULL,
+                        x, counts[c], scratch, threaded ? pool : NULL) == 0);
+                } else {
+                    bn_tp_dispatch(threaded ? pool : NULL, &task, 1);
+                }
+                uint64_t hash = UINT64_C(14695981039346656037);
+                for (int i = 0; i < counts[c] * rows; i++) {
+                    uint32_t bits;
+                    memcpy(&bits, output + 1 + i, sizeof(bits));
+                    hash = (hash ^ bits) * UINT64_C(1099511628211);
+                }
+                assert(hash == expected[c]);
+                assert(isnan(output[0]));
+                for (int i = counts[c] * rows + 1; i < tokens * rows + 2; i++)
+                    assert(isnan(output[i]));
+            }
+        }
+    }
+    float baseline[7 * rows];
+    for (int count = 1; count <= 7; count += 6) {
+        assert(!bn_quant_format_cpu_prefill_uses_tiled(weight.type, count));
+        bn_quant_matmul_prepared(baseline, &weight, NULL, x, count, scratch, pool);
+        assert(bn_quant_matmul_prefill_prepared(output, &weight, NULL,
+            x, count, scratch, pool) == 0);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+        float *outs[] = {output};
+        const BnQWeight *weights[] = {&weight};
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            outs, weights, NULL, 1, count, q, d, bsums,
+            x, scratch, pool) == 0);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            outs, weights, NULL, 1, count, q, d, bsums,
+            NULL, NULL, pool) == -1);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+    }
+    bn_tp_free(pool);
+    printf("PASSED\n");
+#endif
+}
+
+static void test_q6k_tiled_reference(void) {
+#ifdef __AVX2__
+    printf("test_q6k_tiled_reference... ");
+    enum { rows = 137, nb = 3, cols = nb * BN_QK_K, tokens = 33 };
+    BnBlockQ6K blocks[rows * nb];
+    float x[tokens * cols], d[tokens * nb], output[tokens * rows + 2];
+    int8_t q[tokens * cols], scratch[cols];
+    int16_t bsums[tokens * nb * 16];
+    for (int b = 0; b < rows * nb; b++) {
+        blocks[b].d = bn_fp32_to_fp16(0.002f * (b % 19 + 1));
+        for (int i = 0; i < 128; i++)
+            blocks[b].ql[i] = (uint8_t)(b * 31 + i * 37);
+        for (int i = 0; i < 64; i++)
+            blocks[b].qh[i] = (uint8_t)(b * 31 + (128 + i) * 37);
+        for (int i = 0; i < 16; i++)
+            blocks[b].scales[i] = (int8_t)(uint8_t)(b * 17 + i * 23);
+    }
+    for (int t = 0; t < tokens; t++) {
+        for (int i = 0; i < cols; i++)
+            x[t * cols + i] = sinf((float)(t * cols + i) * 0.13f);
+        bn_quant_x_to_q8k(x + t * cols, q + t * cols, d + t * nb,
+                          bsums + t * nb * 16, cols);
+    }
+    /* Independent GGML CPU graph hashes; reference_cpu_q6k_tiled.c.
+     * Covers short/partial token tiles and odd threaded output-row tails. */
+    const int counts[] = {8, 9, 17, 33};
+    const uint64_t expected[] = {UINT64_C(0x920ffd3fe606ae9d),
+        UINT64_C(0xd2977fc323a6e933), UINT64_C(0xf8de855ec9772a04),
+        UINT64_C(0xb08923f4f2bb6cd4)};
+    BnQWeight weight = {blocks, BN_GGUF_TENSOR_Q6_K, rows, cols, 1};
+    BnThreadPool *pool = bn_tp_create(3);
+    assert(pool);
+    for (int threaded = 0; threaded < 2; threaded++) {
+        for (int api = 0; api < 3; api++) {
+            for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                for (int i = 0; i < tokens * rows + 2; i++) output[i] = NAN;
+                BnKQuantMatmulCtx ctx = {output + 1, &weight, q, d, bsums,
+                                         counts[c], cols, NULL, NULL};
+                BnTPTask task = {bn_quant_q6k_avx2_tiled_matmul_range, &ctx, rows};
+                if (api == 2) {
+                    float *outs[] = {output + 1};
+                    const BnQWeight *weights[] = {&weight};
+                    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+                        outs, weights, NULL, 1, counts[c], q, d, bsums,
+                        NULL, NULL, threaded ? pool : NULL) == 0);
+                } else if (api) {
+                    assert(bn_quant_format_cpu_prefill_uses_tiled(weight.type, counts[c]));
+                    assert(bn_quant_matmul_prefill_prepared(output + 1, &weight, NULL,
+                        x, counts[c], scratch, threaded ? pool : NULL) == 0);
+                } else {
+                    bn_tp_dispatch(threaded ? pool : NULL, &task, 1);
+                }
+                uint64_t hash = UINT64_C(14695981039346656037);
+                for (int i = 0; i < counts[c] * rows; i++) {
+                    uint32_t bits;
+                    memcpy(&bits, output + 1 + i, sizeof(bits));
+                    hash = (hash ^ bits) * UINT64_C(1099511628211);
+                }
+                assert(hash == expected[c]);
+                assert(isnan(output[0]));
+                for (int i = counts[c] * rows + 1; i < tokens * rows + 2; i++)
+                    assert(isnan(output[i]));
+            }
+        }
+    }
+    float baseline[7 * rows];
+    for (int count = 1; count <= 7; count += 6) {
+        assert(!bn_quant_format_cpu_prefill_uses_tiled(weight.type, count));
+        bn_quant_matmul_prepared(baseline, &weight, NULL, x, count, scratch, pool);
+        assert(bn_quant_matmul_prefill_prepared(output, &weight, NULL,
+            x, count, scratch, pool) == 0);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+        float *outs[] = {output};
+        const BnQWeight *weights[] = {&weight};
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            outs, weights, NULL, 1, count, q, d, bsums,
+            x, scratch, pool) == 0);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+        assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+            outs, weights, NULL, 1, count, q, d, bsums,
+            NULL, NULL, pool) == -1);
+        assert(memcmp(output, baseline, (size_t)count * rows * sizeof(float)) == 0);
+    }
+    bn_tp_free(pool);
+    printf("PASSED\n");
+#endif
+}
+
+/* Independent CPU_REPACK graph hashes, pinned AVX512 build.
+ * Regenerate only with reference_cpu_q4k_repack.cpp, never this runtime.
+ * Partial panels intentionally follow the reference's GEMV tail contract. */
+static void test_q4k_prepared_reference_panels(void) {
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+    printf("test_q4k_prepared_reference_panels... ");
+    for (int layout = 0; layout < 2; layout++) {
+        const int rows = layout ? 128 : 136;
+        enum { nb = 3, cols = nb * BN_QK_K, tokens = 33 };
+        BnBlockQ4K blocks[rows * nb];
+        float input[tokens * cols], output[tokens * rows + 2];
+        int8_t scratch[cols];
+        for (int b = 0; b < rows * nb; b++) {
+            blocks[b].d = bn_fp32_to_fp16(0.002f * (b % 19 + 1));
+            blocks[b].dmin = bn_fp32_to_fp16(0.001f * (b % 13 + 1));
+            for (int i = 0; i < 12; i++) blocks[b].scales[i] = (uint8_t)(b * 17 + i * 23);
+            for (int i = 0; i < 128; i++) blocks[b].qs[i] = (uint8_t)(b * 31 + i * 37);
+        }
+        for (int i = 0; i < tokens * cols; i++) input[i] = sinf((float)i * 0.13f);
+        BnQWeight w = {blocks, BN_GGUF_TENSOR_Q4_K, rows, cols, 1.0f};
+        SHArena *arena = sh_arena_create(2 * 1024 * 1024);
+        BnPreparedWeight prepared = {0};
+        assert(arena && bn_quant_prepare_qweight(&prepared, &w, arena) == 0);
+        assert(prepared.kind == BN_PREPARED_WEIGHT_Q4_K_SCALES && prepared.aux);
+        const int counts[] = {33, 1, 2, 3, 4, 5, 6, 7, 8, 9, 17};
+        const uint64_t expected[2][11] = {{
+            UINT64_C(0xf4a48c90ea1948c9), UINT64_C(0x8812fb1a4529472c),
+            UINT64_C(0x2df0f07df959697c), UINT64_C(0xfec4efd168dd7194),
+            UINT64_C(0xa2dbc1c70181cc71), UINT64_C(0xe2773b9cc7b3f4fc),
+            UINT64_C(0x324715fe0067d798), UINT64_C(0xe334d42370086745),
+            UINT64_C(0xe8ea677b77ca9d99), UINT64_C(0xb3c00cff70ddc3fc),
+            UINT64_C(0xefcc5b90c6041802)
+        }, {
+            UINT64_C(0x2520067c11b785e0), UINT64_C(0x564ae558db7c765b), UINT64_C(0x2ef629e3ccfbb141), UINT64_C(0x70c9bfd27038894e), UINT64_C(0xc0d525d7b73c4898), UINT64_C(0x8fd0637649820eed), UINT64_C(0x2e386a0a2c2ace93), UINT64_C(0xf2bda8c8436cddc9), UINT64_C(0x4ef7840dfec3be9f), UINT64_C(0x0a1dd2db76f9ebce), UINT64_C(0x513c774a10a9f082)
+        }};
+        float batch_first[rows];
+        BnThreadPool *pool = bn_tp_create(3);
+        assert(pool);
+        for (int threaded = 0; threaded < 2; threaded++) {
+            for (int api = 0; api < 2; api++) {
+                for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                    for (int i = 0; i < tokens * rows + 2; i++) output[i] = NAN;
+                    if (api)
+                        assert(bn_quant_matmul_prefill_prepared(output + 1, &w, &prepared,
+                            input, counts[c], scratch, threaded ? pool : NULL) == 0);
+                    else
+                        bn_quant_matmul_prepared(output + 1, &w, &prepared, input,
+                            counts[c], scratch, threaded ? pool : NULL);
+                    uint64_t hash = UINT64_C(14695981039346656037);
+                    for (int i = 0; i < counts[c] * rows; i++) {
+                        uint32_t bits; memcpy(&bits, output + 1 + i, sizeof(bits));
+                        hash = (hash ^ bits) * UINT64_C(1099511628211);
+                    }
+                    if (hash != expected[layout][c])
+                        fprintf(stderr, "Q4_K reference panel count=%d threaded=%d hash=%016llx expected=%016llx\n",
+                            counts[c], threaded, (unsigned long long)hash,
+                            (unsigned long long)expected[layout][c]);
+                    assert(hash == expected[layout][c]);
+                    if (counts[c] == 33)
+                        memcpy(batch_first, output + 1, sizeof(batch_first));
+                    if (counts[c] == 1)
+                        assert(memcmp(batch_first, output + 1, sizeof(batch_first)) != 0);
+                    assert(isnan(output[0]));
+                    for (int i = counts[c] * rows + 1; i < tokens * rows + 2; i++)
+                        assert(isnan(output[i]));
+                }
+            }
+        }
+        bn_tp_free(pool);
+        sh_arena_free(arena);
+    }
+    printf("PASSED\n");
+#endif
+}
+
 static void test_q5k_batch_gemv_order(void) {
 #ifdef __AVX2__
     printf("test_q5k_batch_gemv_order... ");
     enum { rows = 137, nb = 3, cols = nb * BN_QK_K, tokens = 33 };
     BnBlockQ5K blocks[rows * nb];
-    float x[cols], d[tokens * nb], ref[tokens * rows], got[tokens * rows];
-    int8_t q[tokens * cols];
+    float X[tokens * cols], x[cols], d[tokens * nb], ref[tokens * rows], got[tokens * rows];
+    int8_t q[tokens * cols], scratch[cols];
     int16_t bs[tokens * nb * 16];
+    (void)X;
+    (void)scratch;
     for (int b = 0; b < rows * nb; b++) {
         blocks[b].d = bn_fp32_to_fp16(0.002f * (b % 19 + 1));
         blocks[b].dmin = bn_fp32_to_fp16(0.001f * (b % 13 + 1));
@@ -4296,7 +5081,7 @@ static void test_q5k_batch_gemv_order(void) {
     }
     BnQWeight w = {blocks, BN_GGUF_TENSOR_Q5_K, rows, cols, 1.0f};
     for (int t = 0; t < tokens; t++) {
-        for (int i = 0; i < cols; i++) x[i] = sinf((float)(i + t * cols) * 0.13f);
+        for (int i = 0; i < cols; i++) X[t * cols + i] = x[i] = sinf((float)(i + t * cols) * 0.13f);
         bn_quant_x_to_q8k(x, q + t * cols, d + t * nb, bs + t * nb * 16, cols);
         BnKQuantSdotCtx one = {ref + t * rows, &w, q + t * cols,
                                d + t * nb, bs + t * nb * 16, NULL};
@@ -4313,6 +5098,41 @@ static void test_q5k_batch_gemv_order(void) {
             bn_tp_dispatch(threaded ? pool : NULL, &task, 1);
             assert(memcmp(got, ref, (size_t)counts[i] * rows * sizeof(float)) == 0);
             for (int j = counts[i] * rows; j < tokens * rows; j++) assert(isnan(got[j]));
+        }
+    }
+    /* Independent pinned GGML AVX2/AVX512 CPU graph values; see reference_cpu_q5k_tiled.c.
+     * Includes odd token/row tails and threaded row partitioning. */
+    const int tiled_counts[] = {8, 9, 17, 33};
+    const uint64_t hashes[] = {UINT64_C(0xd27e28ddca30fd90),
+        UINT64_C(0xce366a1a252cbcde), UINT64_C(0x327a5597e0fa97df),
+        UINT64_C(0x70681b51dd7592e2)};
+    for (int threaded = 0; threaded < 2; threaded++) {
+        for (int api = 0; api < 3; api++) {
+            for (unsigned i = 0; i < sizeof(tiled_counts)/sizeof(tiled_counts[0]); i++) {
+                for (int j = 0; j < tokens * rows; j++) got[j] = NAN;
+                BnKQuantMatmulCtx c = {got, &w, q, d, bs, tiled_counts[i], cols, NULL, NULL};
+                BnTPTask task = {bn_quant_q5k_avx2_tiled_matmul_range, &c, rows};
+                if (api == 2) {
+                    float *outs[] = {got};
+                    const BnQWeight *weights[] = {&w};
+                    assert(bn_quant_matmul_prefill_prepared_kquant_input_multi(
+                        outs, weights, NULL, 1, tiled_counts[i], q, d, bs,
+                        NULL, NULL, threaded ? pool : NULL) == 0);
+                } else if (api) {
+                    assert(bn_quant_format_cpu_prefill_uses_tiled(w.type, tiled_counts[i]));
+                    assert(bn_quant_matmul_prefill_prepared(got, &w, NULL, X,
+                        tiled_counts[i], scratch, threaded ? pool : NULL) == 0);
+                } else {
+                    bn_tp_dispatch(threaded ? pool : NULL, &task, 1);
+                }
+                uint64_t hash = UINT64_C(14695981039346656037);
+                for (int j = 0; j < tiled_counts[i]*rows; j++) {
+                    uint32_t bits; memcpy(&bits, got+j, sizeof(bits));
+                    hash = (hash ^ bits) * UINT64_C(1099511628211);
+                }
+                assert(hash == hashes[i]);
+                for (int j = tiled_counts[i]*rows; j < tokens*rows; j++) assert(isnan(got[j]));
+            }
         }
     }
     bn_tp_free(pool);
@@ -4625,7 +5445,15 @@ static const float q4_packed_reference[24] = {
 }
 
 int main(void) {
+    test_neon_dot4_i8();
     printf("=== Quant Integration Tests ===\n");
+    test_reference_prefill_prequant_contract();
+    test_reference_prefill_api_contract();
+    test_reference_prefill_multi();
+    test_iq_tiled_reference();
+    test_q3k_tiled_reference();
+    test_q6k_tiled_reference();
+    test_q4k_prepared_reference_panels();
     test_q5k_batch_gemv_order();
     test_q5k_public_gemv_matmul_order();
     test_q4k_avx2_batch_matches_single();
@@ -4646,6 +5474,7 @@ int main(void) {
     test_matvec_threaded();
     test_matmul_correctness();
     test_q4_matmul_correctness();
+    test_q8_neon_float_tiles();
     test_q8_matmul_correctness();
     test_q5k_matmul_correctness();
     test_q5k_x8_prepared_correctness();

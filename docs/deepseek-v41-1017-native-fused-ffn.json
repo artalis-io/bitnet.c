@@ -1,0 +1,232 @@
+{
+  "status": "Qualified native fused EXL3 expert component; full inference and parity goal remains active",
+  "implementation": {
+    "source_commit": "bd1f519172406a9560bd5c90e61000691bb69a07",
+    "format": "EXL3 MUL1_3, K3 codebook2",
+    "arithmetic": "Source fused up/gate/SiLU/down with F16 intermediate boundaries and route weight folded into final Hadamard scale; weighted F32 assignment slots followed by source ordered reduction.",
+    "variants": [
+      "M16 N256",
+      "M16 N128",
+      "M32 N128",
+      "M64 N128"
+    ],
+    "capacity": [
+      64,
+      128,
+      256
+    ],
+    "resident_window_max_experts": 32,
+    "width_requirement": "Pin full-tier source group width across residency windows; changing width changes rounding. Width8 versus16 differs in38/44 basic source frames.",
+    "ownership": "Immutable borrowed expert handles; request-private scratch and barriers; existing GPU cache reserves before upload and keeps leases until both requests finish. No GPU handles added to model weights.",
+    "execution": "Cooperative launch ensures co-residency for group barriers; by-value bounded pointer table; validation precedes launch. Execution callback performs no allocation, copy, or host synchronization."
+  },
+  "references": {
+    "frames": 78,
+    "profiles": 1338,
+    "actual_weights": "Two actual expert triples, layer0 expert0 and layer39 expert383, D5120 H2304; other weights synthetic. Real router metadata included separately.",
+    "policy": "Independent unchanged original normal/cooperative kernels captured before candidate runs; original weighted slots and ordered final outputs preserved.",
+    "manifest_sha256": {
+      "reference.json": "f932c817f7ffa6ec65a182147e7f960bfc689ef1f09fced9cb250bad1e705288",
+      "extra-reference.json": "6d9bd4f6d12413570be46ae27bafd8932f2a3248483c9e5e95e9740af5a33a6b",
+      "probe-reference.json": "8ae836946298a44db717eb517b1193967dfb5a603f245a4fcd0ca7854d2bdb14"
+    },
+    "artifacts": "/tmp/bitnet-goal-native-fused"
+  },
+  "race_fix": {
+    "finding": "Shared warp transpose scratch could be reused before every lane completed its reads.",
+    "upstream_reproduction": "Unchanged original kernel reports the same hazard in racecheck-original.log.",
+    "native_fix": "Post-read __syncwarp in had_hf_r_128_d_inner. Floating point arithmetic unchanged; original goldens unchanged.",
+    "final_result": "Focused10-fixture racecheck: zero hazards, errors and warnings; all source byte comparisons exact.",
+    "prior_results": "Preserved in before-warp-reuse-fix; superseded by final qualification."
+  },
+  "qualification": {
+    "checks": {
+      "probe-build": 0,
+      "asan-probe-build": 0,
+      "asan-cpu-build": 0,
+      "asan-cpu": 0,
+      "asan-unit-build": 0,
+      "asan-unit": 0,
+      "native": 0,
+      "native-window1": 0,
+      "native-window5": 0,
+      "native-window16": 0,
+      "asan-native": 0,
+      "asan-window1": 0,
+      "memcheck-unit": 0,
+      "memcheck": 0,
+      "memcheck-window1": 0,
+      "initcheck": 0,
+      "racecheck": 0,
+      "nsys-full": 0,
+      "nsys-full-export": 0,
+      "nsys-bounded": 0,
+      "nsys-bounded-export": 0
+    },
+    "records": {
+      "native": {
+        "profiles": 1338,
+        "launches": 5496,
+        "compared_bytes": 5244235776,
+        "max_payload": 26631168,
+        "max_staging_one_projection": 4438528,
+        "hits": 3552,
+        "misses": 1702,
+        "evictions": 928,
+        "mismatches": 0
+      },
+      "native-window1": {
+        "profiles": 1338,
+        "launches": 21016,
+        "compared_bytes": 5244235776,
+        "max_payload": 13315584,
+        "max_staging_one_projection": 4438528,
+        "hits": 0,
+        "misses": 5254,
+        "evictions": 5176,
+        "mismatches": 0
+      },
+      "native-window5": {
+        "profiles": 3,
+        "launches": 96,
+        "compared_bytes": 2752512,
+        "max_payload": 384000,
+        "max_staging_one_projection": 25600,
+        "hits": 0,
+        "misses": 120,
+        "evictions": 115,
+        "mismatches": 0
+      },
+      "native-window16": {
+        "profiles": 1,
+        "launches": 16,
+        "compared_bytes": 14680064,
+        "max_payload": 1228800,
+        "max_staging_one_projection": 25600,
+        "hits": 0,
+        "misses": 63,
+        "evictions": 47,
+        "mismatches": 0
+      },
+      "asan-native": {
+        "profiles": 1338,
+        "launches": 5496,
+        "compared_bytes": 5244235776,
+        "max_payload": 26631168,
+        "max_staging_one_projection": 4438528,
+        "hits": 3552,
+        "misses": 1702,
+        "evictions": 928,
+        "mismatches": 0
+      },
+      "asan-window1": {
+        "profiles": 3,
+        "launches": 480,
+        "compared_bytes": 2752512,
+        "max_payload": 76800,
+        "max_staging_one_projection": 25600,
+        "hits": 0,
+        "misses": 120,
+        "evictions": 119,
+        "mismatches": 0
+      },
+      "memcheck": {
+        "profiles": 1338,
+        "launches": 5496,
+        "compared_bytes": 5244235776,
+        "max_payload": 26631168,
+        "max_staging_one_projection": 4438528,
+        "hits": 3552,
+        "misses": 1702,
+        "evictions": 928,
+        "mismatches": 0
+      },
+      "memcheck-window1": {
+        "profiles": 1,
+        "launches": 252,
+        "compared_bytes": 14680064,
+        "max_payload": 76800,
+        "max_staging_one_projection": 25600,
+        "hits": 0,
+        "misses": 63,
+        "evictions": 62,
+        "mismatches": 0
+      },
+      "nsys-full": {
+        "profiles": 3,
+        "launches": 24,
+        "compared_bytes": 2752512,
+        "max_payload": 2457600,
+        "max_staging_one_projection": 25600,
+        "hits": 0,
+        "misses": 120,
+        "evictions": 88,
+        "mismatches": 0
+      },
+      "nsys-bounded": {
+        "profiles": 3,
+        "launches": 96,
+        "compared_bytes": 2752512,
+        "max_payload": 384000,
+        "max_staging_one_projection": 25600,
+        "hits": 0,
+        "misses": 120,
+        "evictions": 115,
+        "mismatches": 0
+      }
+    },
+    "build": {
+      "clean_build": true,
+      "zero_warnings": true,
+      "standard": true,
+      "cuda_suite_and_diagnostics": true,
+      "preserved": {
+        "libllama_token_trace.so": "2834c16803464d14d264541bbc64a9f86aebfb60f2bcd5a72d1da8491bc6269a",
+        "llama_layer_probe": "4332e3c261d7c56ba482a2b54e406f6ce9dbaf88a6b3fca16484d7cf9ca4b492",
+        "llama_layer_probe_avx2": "2aaaa7a0c5265f8a0ebbc9f9612cd73d438e6b649fcbaac148e99e680460ac7f",
+        "llama_layer_probe_avx512": "e43785e2546abd897ceb05d407096fdf094cd736829538f79e487d4f9839112d"
+      }
+    },
+    "synthetic_unit_fixtures": 102,
+    "focused_initcheck_racecheck_fixtures": 10,
+    "frozen_source_files": 727,
+    "source_manifest_sha256": "7e7ad05cf309253551705c728841e1ef62161051ca378cf3f436dba0ed7d365c",
+    "profile": {
+      "full": {
+        "kernel_calls": 32,
+        "request_streams": 2,
+        "blocks_per_call": 184,
+        "threads_per_block": 512,
+        "runtime_api_calls": {
+          "cudaLaunchCooperativeKernel_v9000": 32,
+          "cudaSetDevice_v3020": 32
+        },
+        "kernel_duration_sum_ns": 3765774,
+        "allocations_transfers_frees_host_synchronization_in_capture": 0,
+        "scope": "Warmed resident execution only; setup, cache window changes, readback and driver synchronization are outside capture. Durations are diagnostic, not a full MoE or vLLM comparison."
+      },
+      "bounded": {
+        "kernel_calls": 32,
+        "request_streams": 2,
+        "blocks_per_call": 40,
+        "threads_per_block": 512,
+        "runtime_api_calls": {
+          "cudaLaunchCooperativeKernel_v9000": 32,
+          "cudaSetDevice_v3020": 32
+        },
+        "kernel_duration_sum_ns": 1808552,
+        "allocations_transfers_frees_host_synchronization_in_capture": 0,
+        "scope": "Warmed resident execution only; setup, cache window changes, readback and driver synchronization are outside capture. Durations are diagnostic, not a full MoE or vLLM comparison."
+      }
+    }
+  },
+  "limits": [
+    "Native full-model forward, generation and CLI admission remain absent.",
+    "The source small-batch <=8 specialized decode profile is not ported by this component.",
+    "Production model-aware RAM/VRAM async IO, complete fused/folded/shared FFN composition, attention and Engram execution remain future work.",
+    "Cache-window probe synchronizes explicitly between windows; it proves ownership and correctness, not asynchronous offload throughput.",
+    "Pointer table currently supports at most32 resident experts per launch; fully resident384-expert fast path remains future performance work.",
+    "Maximum staging-one-projection reports payload size, not total physical host peak.",
+    "No full-model or matched vLLM performance claim."
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "cases": [
+    {
+      "case": 0,
+      "tokens": 3,
+      "streams": 4,
+      "dim": 3,
+      "iterations": 20,
+      "pre_eps": 1e-06,
+      "sinkhorn_eps": 1e-06,
+      "post_mult": 2.0,
+      "sha256": "062b4dd2cc4e9f7680294f3bd57a7ad6107af09ab673fe758858f6b74735c186",
+      "double_max_abs": 8.506101067951022e-08
+    },
+    {
+      "case": 1,
+      "tokens": 1,
+      "streams": 1,
+      "dim": 1,
+      "iterations": 1,
+      "pre_eps": 1e-06,
+      "sinkhorn_eps": 1e-06,
+      "post_mult": 2.0,
+      "sha256": "6d671ffbbba8873c01c2631cbc635b303bcbbf06bcd68127df36d8249ff85bde",
+      "double_max_abs": 4.63236835557268e-08
+    },
+    {
+      "case": 2,
+      "tokens": 2,
+      "streams": 2,
+      "dim": 17,
+      "iterations": 3,
+      "pre_eps": 1e-06,
+      "sinkhorn_eps": 1e-06,
+      "post_mult": 2.0,
+      "sha256": "d9683a766cdbf66a178cdacbd75bb08a15f40f73f2296fa2e7b6669044eb7a7d",
+      "double_max_abs": 5.7578164458504943e-08
+    },
+    {
+      "case": 3,
+      "tokens": 17,
+      "streams": 4,
+      "dim": 4096,
+      "iterations": 20,
+      "pre_eps": 1e-06,
+      "sinkhorn_eps": 1e-06,
+      "post_mult": 2.0,
+      "sha256": "8b01169c8a9528a981a62366f0b3e14c20e2d263f825fe422b1b2404bfc9afa2",
+      "double_max_abs": 2.7338957730993485e-07
+    },
+    {
+      "case": 4,
+      "tokens": 3,
+      "streams": 8,
+      "dim": 31,
+      "iterations": 20,
+      "pre_eps": 1e-06,
+      "sinkhorn_eps": 1e-06,
+      "post_mult": 2.0,
+      "sha256": "870dff6885e400b1ad85cd5156e4bcec3e0e7551cb202f56fd849f7a99ae408b",
+      "double_max_abs": 9.437365644515694e-08
+    },
+    {
+      "case": 5,
+      "tokens": 2,
+      "streams": 16,
+      "dim": 3,
+      "iterations": 128,
+      "pre_eps": 1e-06,
+      "sinkhorn_eps": 1e-06,
+      "post_mult": 2.0,
+      "sha256": "b737ff9c749fb224e7c5499e54513e2d26153aa29d7abcdf9c73382ad9721943",
+      "double_max_abs": 9.559614810861206e-08
+    },
+    {
+      "case": 6,
+      "tokens": 5,
+      "streams": 4,
+      "dim": 5120,
+      "iterations": 20,
+      "pre_eps": 1e-06,
+      "sinkhorn_eps": 1e-06,
+      "post_mult": 2.0,
+      "sha256": "18b08ac4237f7effbb7b1d89430d27329b56f9f8f70e63fa703f08848e2ce5bb",
+      "double_max_abs": 1.198713004413321e-07
+    }
+  ],
+  "source": "/tmp/bitnet-goal-vllm-env/lib/python3.12/site-packages/vllm/model_executor/kernels/mhc/torch.py",
+  "source_sha256": "3697085aa6f0070e165c145f9c337ca3fe0623623c8265d29e50c43467e49985",
+  "fixture_header_sha256": "e6c2b32389e48bddeb3c7d743ce5276efd0f34243de1d76cf203048e89ff9ee5",
+  "scope": "Original CPU F32 torch mHC helper semantics, lifted BF16 residuals; projection supplied separately, no model/BF16 output bit claim."
+}
