@@ -1,0 +1,469 @@
+{
+  "schema": 1,
+  "status": "qualified_declared_cuda_allocator_graph_and_native_serving_profiles",
+  "full_goal_complete": false,
+  "release_ready": false,
+  "evidence_root": "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix",
+  "base_commit": "361256d5b1371f946d183ea3345573d32976ce74",
+  "qualified_binaries": {
+    "qualified-bitnet": {
+      "path": "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/qualified-bitnet",
+      "sha256": "7287cefa3fe161943bea41b2bee28e08e4433ff419a08af8a3304c83b95c4db0"
+    },
+    "asan-product": {
+      "path": "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/asan-product",
+      "sha256": "780765fff4d4070d5a75a966ff59f633f85a9b5c35d3e152a9c6ae2b256e42e3"
+    }
+  },
+  "production_and_test_files": {
+    "include/gpu_cuda.h": "655d9e19cb95b9f6fd7bf3dc09399c4585f793a0a69d65b5da4f0b23e9894653",
+    "src/gpu_cuda.cu": "c5507d3aa203bb52ee14962ede0c81fdad85c3a96e0efe04d2bb34d30d7220ce",
+    "src/gpu_cuda_exl3.cuh": "580ffe84d378af0673e3dd22809e5e63a73849955affa2cc47033348c200a2ab",
+    "test/cuda_exl3_ffn_checks.h": "4c82bfe3dbdfbabb5e452278167d45a82e3fe46682f2d4a027caf575ab162089",
+    "test/test_cuda_backend.c": "e23d7c547a56ea426d23af7549fe3976723f8f30a44940aa3b36ffa8efa9eb6b"
+  },
+  "changes": {
+    "expert_allocation": "Backend-owned dedicated CUDA stream-ordered pool on supported devices; allocation publication is synchronized before nonblocking consumers. Unsupported devices retain legacy allocation. No global default pool policy changes.",
+    "reclamation": "Fence consumers, free asynchronously, and drain reclamation; ownership remains in backend state. Public read-only pool statistics include used/reserved bytes and high-water marks.",
+    "graph_scratch": "Reserve all routed K-quant gate/down quantization scratch before graph construction, including deinterleaved Q5_K and affine Q5_1 down projections. Reject unreserved construction-time growth before freeing captured storage; rebuild after callback-induced storage growth.",
+    "numerical_operator_changes": false
+  },
+  "motivation": {
+    "previous_failure": "/tmp/bitnet-goal-moe-long-serving/gpu64000-allocation-failure-analysis.json",
+    "previous_large_cache_run": "Failed after29outputs per request; independent preceding58heads matched. CUDA API trace confirmed cudaMalloc allocation failure before cache capacity was reached.",
+    "allocator_probe": "Legacy4438528-byte projections occupied6MiB each in the isolated probe; the stream-ordered probe packed them near payload size. Probe evidence is separate from whole-model memory qualification."
+  },
+  "validation": {
+    "clean_cuda_mkl_build_zero_warnings": true,
+    "standard_tests": true,
+    "fresh_host_asan_ubsan": true,
+    "full_cuda_suite": true,
+    "full_cuda_memcheck_errors": 0,
+    "independent_full_vocabulary_heads": 2332,
+    "head_counts": {
+      "main_normal_asan": 1084,
+      "dynamic_serving": 60,
+      "capacity_normal_asan": 280,
+      "physical_memory_controls": 396,
+      "resident_profile_normal_asan": 512
+    },
+    "main_controls": [
+      {
+        "name": "product-normal-native-gpu64000",
+        "full_heads": 128,
+        "exact": true
+      },
+      {
+        "name": "product-asan-native-gpu64000",
+        "full_heads": 128,
+        "exact": true
+      },
+      {
+        "name": "product-normal-native",
+        "full_heads": 128,
+        "exact": true
+      },
+      {
+        "name": "product-normal-flash",
+        "full_heads": 142,
+        "exact": true
+      },
+      {
+        "name": "product-normal-glm",
+        "full_heads": 132,
+        "exact": true
+      },
+      {
+        "name": "product-asan-native",
+        "full_heads": 128,
+        "exact": true
+      },
+      {
+        "name": "product-asan-flash",
+        "full_heads": 142,
+        "exact": true
+      },
+      {
+        "name": "product-asan-glm",
+        "full_heads": 132,
+        "exact": true
+      },
+      {
+        "name": "dynamic-mixed8-normal-dense-qualified-policy",
+        "full_heads": 12,
+        "exact": true
+      },
+      {
+        "name": "dynamic-mixed8-asan-dense-qualified-policy",
+        "full_heads": 12,
+        "exact": true
+      }
+    ],
+    "dynamic_serving": "Real arrivals during execution, live/queued cancellation, concurrent histories and same-client-ID reuse in normal/ASAN controls.",
+    "capacity": {
+      "source_unique_decode_keys": 5128,
+      "cache_slots": 5039,
+      "normal_full_heads": 140,
+      "asan_full_heads": 140,
+      "direct_eviction_counter_reported": false
+    }
+  },
+  "physical_memory": {
+    "scope": "Sampled process/device memory and RSS are separate from managed serving payload accounting. Sampled peaks are lower bounds; observed sampling gaps and retained-idle windows are recorded.",
+    "runs": [
+      {
+        "workload": "two1026-token code/multilingual histories,32outputs,repeat in reversed order",
+        "gpu_cache_mib": 8192,
+        "full_heads": 128,
+        "managed_memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204717515688,
+          "shared_device_upper": 26220545472,
+          "reserved_host": 204761644696,
+          "reserved_device": 29746365942,
+          "peak_reserved_host": 204761644696,
+          "peak_reserved_device": 29746365942,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "physical": {
+          "sampled_peaks_are_lower_bounds": true,
+          "sampled_process_gpu_max_bytes": 31207718912,
+          "sampled_device_allocated_max_bytes": 31217811456,
+          "device_system_reserved_bytes": 668467200,
+          "sampled_rss_max_bytes": 162828951552,
+          "os_process_rss_high_water_bytes": 162819309568,
+          "sample_count": 6354,
+          "nominal_interval_ms": 20,
+          "max_sampling_gap_ms": 35.068743,
+          "p95_sampling_gap_ms": 20.12155,
+          "idle_sample_count": 75,
+          "idle_process_gpu_min_bytes": 31207718912,
+          "idle_process_gpu_max_bytes": 31207718912,
+          "idle_rss_min_bytes": 162828951552,
+          "idle_rss_max_bytes": 162828951552
+        }
+      },
+      {
+        "workload": "same two-history workload",
+        "gpu_cache_mib": 64000,
+        "full_heads": 128,
+        "managed_memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204717515688,
+          "shared_device_upper": 84739474880,
+          "reserved_host": 204761644696,
+          "reserved_device": 88265295350,
+          "peak_reserved_host": 204761644696,
+          "peak_reserved_device": 88265295350,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "physical": {
+          "sampled_peaks_are_lower_bounds": true,
+          "sampled_process_gpu_max_bytes": 82009128960,
+          "sampled_device_allocated_max_bytes": 82019221504,
+          "device_system_reserved_bytes": 668467200,
+          "sampled_rss_max_bytes": 162845945856,
+          "os_process_rss_high_water_bytes": 162842738688,
+          "sample_count": 4683,
+          "nominal_interval_ms": 20,
+          "max_sampling_gap_ms": 39.591465,
+          "p95_sampling_gap_ms": 20.122853,
+          "idle_sample_count": 75,
+          "idle_process_gpu_min_bytes": 82009128960,
+          "idle_process_gpu_max_bytes": 82009128960,
+          "idle_rss_min_bytes": 162845810688,
+          "idle_rss_max_bytes": 162845810688
+        }
+      },
+      {
+        "workload": "code/multilingual32outputs,math/records6outputs,then code/multilingual32outputs again",
+        "gpu_cache_mib": 64000,
+        "full_heads": 140,
+        "managed_memory": {
+          "host_limit": 209715200000,
+          "device_limit": 90177536000,
+          "shared_host_upper": 204717515688,
+          "shared_device_upper": 84739474880,
+          "reserved_host": 204761644696,
+          "reserved_device": 88265295350,
+          "peak_reserved_host": 204761644696,
+          "peak_reserved_device": 88265295350,
+          "busy": 0,
+          "idle_retained": 1
+        },
+        "physical": {
+          "sampled_peaks_are_lower_bounds": true,
+          "sampled_process_gpu_max_bytes": 89693093888,
+          "sampled_device_allocated_max_bytes": 89703186432,
+          "device_system_reserved_bytes": 668467200,
+          "sampled_rss_max_bytes": 182331056128,
+          "os_process_rss_high_water_bytes": 182318317568,
+          "sample_count": 12963,
+          "nominal_interval_ms": 20,
+          "max_sampling_gap_ms": 51.858965,
+          "p95_sampling_gap_ms": 20.117195,
+          "idle_sample_count": 74,
+          "idle_process_gpu_min_bytes": 89693093888,
+          "idle_process_gpu_max_bytes": 89693093888,
+          "idle_rss_min_bytes": 182331027456,
+          "idle_rss_max_bytes": 182331027456
+        }
+      }
+    ]
+  },
+  "native_sustained_serving": {
+    "scope": "DeepSeek declared EXL3 INT4/F16 Engram adapter; two independent1026-token code/multilingual histories,32outputs each,2live; not unseen-prompt or all-model qualification.",
+    "plan": {
+      "family": "native",
+      "outputs": 32,
+      "live": 2,
+      "warmup_requests": 4,
+      "measured_requests": 128,
+      "arrival_pair_interval_seconds": 8.0,
+      "offered_requests_per_second": 0.25,
+      "excluded_pilot_sha256": "e7b7f357e61e8d01e8e007e5e987ad75082f757236717d5f9a69783284c7a125",
+      "targets": {
+        "p99_client_ttft_ms": 6500,
+        "p99_client_itl_ms": 60,
+        "minimum_completed_requests_per_second": 0.2475,
+        "max_arrival_lateness_ms": 50,
+        "rejected": 0,
+        "failed": 0
+      },
+      "scope": "DeepSeek declared EXL3 INT4/F16 Engram adapter; two independent1026-token code/multilingual histories,32outputs each,2live; not unseen-prompt or all-model qualification.",
+      "ram_cache_mib": 195060,
+      "gpu_cache_mib": 64000,
+      "host_budget_mib": 200000,
+      "device_budget_mib": 86000,
+      "maxseq": 1280,
+      "prefill_tokens": 2048,
+      "trace": false,
+      "observer_sampler": false,
+      "percentile": "nearest rank",
+      "selection": "Targets frozen from separate8-request excluded pilot before this128-request open-loop run; no target changes permitted after execution.",
+      "precision_profile": "Explicit Diffbot INT4 BF16 lookup to EXL3 F16 Engram adapter; not original Diffbot full-runtime equivalence.",
+      "release_ready": false,
+      "full_goal_complete": false
+    },
+    "result": {
+      "excluded_pilot": false,
+      "sustained_slo_passed": true,
+      "gates": {
+        "p99_client_ttft": true,
+        "p99_client_itl": true,
+        "throughput": true,
+        "arrival_lateness": true,
+        "rejected": true,
+        "failed": true,
+        "all_requests_exact": true,
+        "managed_payload_bounds": true
+      },
+      "requests": 132,
+      "measured_requests": 128,
+      "plan_sha256": "dbf37f90cbe35b1e658a131bbb6da025b92e2b37776837e23ded65af1f9ba8e1",
+      "startup_to_ready_ms": 18758.622564,
+      "warmup_ms": 74948.717403,
+      "measured_seconds": 510.054446422,
+      "completed_requests_per_second": 0.25095360093008107,
+      "p99_client_ttft_ms": 4883.239181,
+      "p99_client_itl_ms": 39.128807,
+      "max_arrival_lateness_ms": 11.661665,
+      "token_text_position_exact": true,
+      "memory": {
+        "host_limit": 209715200000,
+        "device_limit": 90177536000,
+        "shared_host_upper": 204717515688,
+        "shared_device_upper": 84739474880,
+        "reserved_host": 204761644696,
+        "reserved_device": 88265295350,
+        "peak_reserved_host": 204761644696,
+        "peak_reserved_device": 88265295350,
+        "busy": 0,
+        "idle_retained": 1
+      },
+      "batch": {
+        "completed": 132,
+        "steps": 2112,
+        "group_calls": 2112,
+        "single_forwards": 0,
+        "shared_layer_steps": 84480,
+        "fallback_layer_steps": 0,
+        "shared_expert_borrows": 1753488,
+        "busy_retries": 0,
+        "created": 2,
+        "reused": 130,
+        "retained_device_payload": 3525820470,
+        "peak_device_payload": 3525820470,
+        "peak_live": 2
+      },
+      "max_rss_bytes": 162837770240,
+      "input_blocks": 35301896,
+      "physical_gpu_peak_claim": false,
+      "unseen_prompt_slo_claim": false
+    },
+    "transport": "Local stdio; no network stack, tensor traces or observer sampler during timing.",
+    "unseen_prompt_qualification": false
+  },
+  "logical_cache_capacity_comparison": {
+    "scope": "Same rebuilt binary and histories, different8192/64000MiB GPU cache capacities. Reporting counters only; not a matched-memory allocator speedup or new CUPTI reconciliation.",
+    "normal": {
+      "mode": "normal",
+      "cache_budget_mib_comparison": {
+        "8192": {
+          "metrics": {
+            "upload_bytes": 593542156800,
+            "ram_miss_bytes": 161557980672,
+            "source_read_bytes": 161557980672
+          },
+          "decode": {
+            "coordinated_layer_steps": 2480,
+            "lease_cohorts": 2480,
+            "private_kernel_submissions": 4960,
+            "reused_expert_bindings": 920
+          },
+          "batch": {
+            "completed": 4,
+            "steps": 64,
+            "group_calls": 64,
+            "single_forwards": 0,
+            "shared_layer_steps": 2560,
+            "fallback_layer_steps": 0,
+            "shared_expert_borrows": 53136,
+            "busy_retries": 0,
+            "created": 2,
+            "reused": 2,
+            "retained_device_payload": 3525820470,
+            "peak_device_payload": 3525820470,
+            "peak_live": 2
+          },
+          "managed_memory": {
+            "host_limit": 209715200000,
+            "device_limit": 90177536000,
+            "shared_host_upper": 204717515688,
+            "shared_device_upper": 26220545472,
+            "reserved_host": 204761644696,
+            "reserved_device": 29746365942,
+            "peak_reserved_host": 204761644696,
+            "peak_reserved_device": 29746365942,
+            "busy": 0,
+            "idle_retained": 1
+          },
+          "result_sha256": "8edd93814bb199e4da87858d2326b48f24998ca3f266b3b3c3c16f1dea6a2571"
+        },
+        "64000": {
+          "metrics": {
+            "upload_bytes": 323315695104,
+            "ram_miss_bytes": 161557980672,
+            "source_read_bytes": 161557980672
+          },
+          "decode": {
+            "coordinated_layer_steps": 2480,
+            "lease_cohorts": 2480,
+            "private_kernel_submissions": 4960,
+            "reused_expert_bindings": 920
+          },
+          "batch": {
+            "completed": 4,
+            "steps": 64,
+            "group_calls": 64,
+            "single_forwards": 0,
+            "shared_layer_steps": 2560,
+            "fallback_layer_steps": 0,
+            "shared_expert_borrows": 53136,
+            "busy_retries": 0,
+            "created": 2,
+            "reused": 2,
+            "retained_device_payload": 3525820470,
+            "peak_device_payload": 3525820470,
+            "peak_live": 2
+          },
+          "managed_memory": {
+            "host_limit": 209715200000,
+            "device_limit": 90177536000,
+            "shared_host_upper": 204717515688,
+            "shared_device_upper": 84739474880,
+            "reserved_host": 204761644696,
+            "reserved_device": 88265295350,
+            "peak_reserved_host": 204761644696,
+            "peak_reserved_device": 88265295350,
+            "busy": 0,
+            "idle_retained": 1
+          },
+          "result_sha256": "61a203267ea57bb0c1c9feb34bf98bd68c7371e395cb024e73813d54490c0912"
+        }
+      },
+      "reported_upload_bytes_saved": 270226461696,
+      "reported_upload_reduction_fraction": 0.4552776219854178
+    },
+    "asan_reported_bytes_identical": true,
+    "actual_new_cupti_transfer_reconciled": false
+  },
+  "resident_requalification": {
+    "status": "failed_independent_original_token_prerequisite",
+    "current_product_full_heads_against_preserved_profile": 512,
+    "old_references_changed": false,
+    "current_timings_accepted": false,
+    "original_default_timing_attempt": "Original process completed its batches but generated tokens differed from preserved original profile; paired run stopped.",
+    "diagnostic": "A second original process had the same64-step scheduling geometry, but eight of129 normalization-weight kernel selections differed; one reduction changed from4096 to8192 elements. Original token streams also differed between processes.",
+    "cause_fully_resolved": false,
+    "next_action": "Test the preserved qualified-original cache with unchanged token/head gates; establish repeatable original numerical policy before accepting fresh paired95%prefill/105%decode results."
+  },
+  "integrity": {
+    "status": "passed_with_acknowledged_historical_log_loss",
+    "verified_manifest_entries": 739377,
+    "primary_all_futures_inspected": true,
+    "primary_error_list_sha256": "cd2de43dfc3944183be395df0965e9fd70ab0779ebafd69d2b517759376199ff",
+    "resolved_absolute_compiler_ELF_aliases": 85,
+    "read_only_permission_retries": 14,
+    "acknowledged_historical_non_numerical_exception": {
+      "path": "/tmp/bitnet-goal-resource-admission/baseline.log",
+      "expected": "2e88f84a97a3e6d960403f8805feddbcc6df6c102e5bd4c98ddb1f60a3c5c81b",
+      "observed": "e9d279084c4276815cf6ee0fdb9db8becea5ef9e9906a824d630b7bfdd24c908",
+      "changed": true
+    },
+    "original_numerical_golds_changed": false,
+    "new_checkpoint_snapshot_files": 10,
+    "new_checkpoint_snapshot_bytes": 311041976131,
+    "gpu_jobs_terminal": true,
+    "gpu_idle_verified": true,
+    "native_sustained_slo_passed": true,
+    "resident_parity_qualified": false,
+    "full_goal_complete": false,
+    "release_ready": false
+  },
+  "harness_correction": {
+    "reason": "Dense dynamic control accidentally paired static packed policy/oracle. Restored the byte-identical original dynamic helper and policy used by prior qualification; archived and rebuilt binaries then matched all12dynamic heads. Failed attempts remain preserved.",
+    "disclosure": "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/dense-policy-mismatch-disclosure.json",
+    "reference_values_changed": false
+  },
+  "remaining": [
+    "Resolve original resident numerical-profile drift and pass fresh paired vLLM gates.",
+    "Qualify broader native histories and Flash/GLM sustained serving; improve GLM long-prefill decode gaps with independently captured smaller chunks.",
+    "Collect admitted-cache actual transfer/stall evidence under matched budgets.",
+    "Extend qualified AVX2/AVX512/ARM NEON and Metal coverage."
+  ],
+  "evidence_sha256": {
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/qualification-exit.json": "5bc232b82de377a5655a39a2af9d7ae0fc868de5b9df957e18905cb914606c88",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/cuda-memcheck-exit.json": "4648eb40ae0ea04f0996e02c1255bf515a1e060acdab8fc0f05b1d3e1350b78f",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/product-results.json": "b494616b35004a477a97cdc438850b99e04d2bc6a204e5bea7c1201438d7ca53",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/compat-results.json": "81eff57a55d9560113b4400cb19ff9555b906165eb7549fc3d9d77e8eb64ee0a",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/stage-resume-exit.json": "0ab9f97137e393ac5a96d3cb2d3f8408964c49a8a0a4704bcdf9e8416f1de04e",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/saturation-controller-exit.json": "5bc232b82de377a5655a39a2af9d7ae0fc868de5b9df957e18905cb914606c88",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/saturated-resource-controller-exit.json": "5bc232b82de377a5655a39a2af9d7ae0fc868de5b9df957e18905cb914606c88",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/native-sustained-controller-exit.json": "5acab81aa83e545e5b01948284f99ac095ef051cdfdfeeae3c17bbe5150a66c5",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/sustained-plan-native-cache64000.json": "dbf37f90cbe35b1e658a131bbb6da025b92e2b37776837e23ded65af1f9ba8e1",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/sustained-native-cache64000/result.json": "ecd122d4dbc8657ffee051b119b2cab558fc010f8b6db51ae67dd04c2d88f776",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/terminal-audit-result.json": "c29ce87443fbb0ff20ca059f4a750275fc8763f56d6da027b2547c16dbd1f960",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/terminal-corrected-manifest.json": "f78c9667c6ad225aa433f6f8aee6ddaf7364a6b411739e465a5fe2b24439fcd1",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/current-glm-flash-complete-shard-snapshot.json": "50fde14743a7d58203d019014dc23ccea1957a978e9664ff9b4b0965e9b5edb2",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/dense-policy-mismatch-disclosure.json": "ef58db723095418f9420d8e96d58a5dea9909034c5d3c102fc2709e7752622b6",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/external-harness-resume-amendment.json": "0d5c2b68e37d8d4df2d3a7469742bac860b143272b341497fe4a4a8d99210b3c",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/resident-parity-recheck/product-default-profile-verification.json": "6c198063a4e673f6ae91979f7b81345d36bebf912a6469f286a1209b47b40785",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/resident-parity-recheck/fresh-original-token-mismatch.json": "9c1f6f206c37d840c84b793b72cbc549c9730c2b7a2f937b0c1265cbe32ff523",
+    "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/resident-parity-recheck/original-profile-diagnostic-comparison.json": "882d9680955f871674b79e15ac7f029cc71163af99ca7dcfe75dcd67aa8ad87f"
+  }
+}

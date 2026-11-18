@@ -113,9 +113,28 @@ static BnCudaBuffer *allocate_weight(BnCudaCtx *ctx,size_t bytes,int format,
     BnCudaBuffer *w=(BnCudaBuffer*)calloc(1,sizeof(*w));if(!w)return NULL;
     w->size=bytes;w->type=format;w->cols=k;w->rows=n;
     w->trellis_owner=ctx;w->trellis_marker=marker;
-    cudaError_t error=cudaMalloc(&w->data,bytes);
+    cudaError_t error=cudaSuccess;
+    if(ctx->trellis_pool_supported) {
+        if(!ctx->trellis_pool) {
+            cudaMemPoolProps props={};
+            props.allocType=cudaMemAllocationTypePinned;
+            props.location.type=cudaMemLocationTypeDevice;
+            props.location.id=ctx->device;
+            error=cudaMemPoolCreate(&ctx->trellis_pool,&props);
+        }
+        if(error==cudaSuccess) {
+            error=cudaMallocFromPoolAsync(&w->data,bytes,ctx->trellis_pool,0);
+            if(error==cudaSuccess) {
+                w->trellis_async=1;
+                /* Pinned uploads and resident consumers use nonblocking
+                 * streams. Publish the allocation before either can use it. */
+                error=cudaStreamSynchronize(0);
+            }
+        }
+    } else error=cudaMalloc(&w->data,bytes);
     if(error!=cudaSuccess) {
-        free(w);if(error==cudaErrorMemoryAllocation)(void)cudaGetLastError();return NULL;
+        if(w->data)cuda_trellis_buffer_free(w);else free(w);
+        if(error==cudaErrorMemoryAllocation)(void)cudaGetLastError();return NULL;
     }
     return w;
 }
@@ -127,7 +146,7 @@ static void *create_weight(void *ctx_ptr,const void *bundle,size_t bytes,
     cudaError_t error=cudaMemcpy(w->data,bundle,bytes,cudaMemcpyHostToDevice);
     /* Pageable H2D publication must complete before nonblocking consumers. */
     if(error==cudaSuccess)error=cudaStreamSynchronize(0);
-    if(error!=cudaSuccess){cudaFree(w->data);free(w);return NULL;}
+    if(error!=cudaSuccess){cuda_trellis_buffer_free(w);return NULL;}
     return w;
 }
 
@@ -218,7 +237,7 @@ static int upload_batch(void *context,void *state,BnGPUTrellisUploadItem *items,
         if(error==cudaSuccess)error=done;
     }
     if(error!=cudaSuccess) {
-        for(int p=0;p<count;p++)if(created[p]){cudaFree(w[p]->data);free(w[p]);}
+        for(int p=0;p<count;p++)if(created[p])cuda_trellis_buffer_free(w[p]);
         return -1;
     }
     for(int p=0;p<count;p++)items[p].buffer=w[p];

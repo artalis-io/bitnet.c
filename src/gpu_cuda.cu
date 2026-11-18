@@ -34,6 +34,7 @@ typedef struct BnCudaBuffer {
     const void *native_router_owner;
     const void *trellis_owner;
     uint32_t trellis_marker;
+    int trellis_async;
     void *mmq_data;
     size_t mmq_size;
     void *f16_data;
@@ -293,6 +294,8 @@ typedef struct {
     size_t routed_ordered_quant_graph_bytes;
     int device;
     int compute_capability;
+    int trellis_pool_supported;
+    cudaMemPool_t trellis_pool;
     int multiprocessors;
     int qsa_attention_ready;
     int attention_reference_max_blocks;
@@ -19718,6 +19721,10 @@ static int cuda_ensure_q8_1(BnCudaCtx *ctx, int cols) {
     size_t n_blocks = ((size_t)cols + 31u) / 32u;
     size_t bytes = n_blocks * sizeof(BnCudaBlockQ8_1);
     if (bytes <= ctx->d_q8_1_bytes) return 0;
+    if (ctx->exec_graph_def && !ctx->exec_graph) {
+        fprintf(stderr, "[bn:gpu:cuda] unreserved q8_1 graph scratch growth\n");
+        return -1;
+    }
     if (ctx->d_q8_1) cudaFree(ctx->d_q8_1);
     ctx->exec_storage_generation++;
     ctx->d_q8_1 = NULL;
@@ -19777,6 +19784,12 @@ static int cuda_ensure_q8_k(BnCudaCtx *ctx, int cols, int n_tokens) {
                       (size_t)n_tokens;
     size_t bytes = n_blocks * sizeof(BnBlockQ8K);
     if (bytes <= ctx->d_q8_k_bytes) return 0;
+    /* Earlier nodes may already reference this allocation. Graph preflight
+     * must reserve the complete operation list before any node is captured. */
+    if (ctx->exec_graph_def && !ctx->exec_graph) {
+        fprintf(stderr, "[bn:gpu:cuda] unreserved q8_k graph scratch growth\n");
+        return -1;
+    }
     if (ctx->d_q8_k) cudaFree(ctx->d_q8_k);
     ctx->exec_storage_generation++;
     ctx->d_q8_k = NULL;
@@ -21004,6 +21017,23 @@ int bn_gpu_cuda_trim_weight_pool(BnGPUBackend *gpu) {
     return cuda_weight_pool_trim(ctx) == cudaSuccess ? 0 : -1;
 }
 
+int bn_gpu_cuda_trellis_pool_stats(const BnGPUBackend *gpu,
+                                  BnCudaTrellisPoolStats *stats) {
+    if (!gpu || gpu->kind != BN_GPU_BACKEND_CUDA || !gpu->ctx || !stats) return -1;
+    BnCudaCtx *ctx = (BnCudaCtx *)gpu->ctx;
+    if (cuda_ctx_set_device(ctx)) return -1;
+    BnCudaTrellisPoolStats out = {};
+    out.supported = ctx->trellis_pool_supported;
+    out.enabled = ctx->trellis_pool != NULL;
+    if (ctx->trellis_pool &&
+        (cudaMemPoolGetAttribute(ctx->trellis_pool, cudaMemPoolAttrUsedMemCurrent, &out.used_bytes) != cudaSuccess ||
+         cudaMemPoolGetAttribute(ctx->trellis_pool, cudaMemPoolAttrReservedMemCurrent, &out.reserved_bytes) != cudaSuccess ||
+         cudaMemPoolGetAttribute(ctx->trellis_pool, cudaMemPoolAttrUsedMemHigh, &out.peak_used_bytes) != cudaSuccess ||
+         cudaMemPoolGetAttribute(ctx->trellis_pool, cudaMemPoolAttrReservedMemHigh, &out.peak_reserved_bytes) != cudaSuccess)) return -1;
+    *stats = out;
+    return 0;
+}
+
 static int cuda_buffer_create_f16_cache(BnCudaCtx *ctx,
                                         BnCudaBuffer *buf,
                                         int aux_cache_mode) {
@@ -21430,6 +21460,19 @@ static __global__ void decode_bf16_weight_kernel(
 
 static void cuda_buffer_destroy(void *vctx, void *buffer);
 
+static void cuda_trellis_buffer_free(BnCudaBuffer *buf) {
+    if (buf->trellis_async) {
+        /* cudaFree does not fence async allocations. Preserve the old destroy
+         * guarantee for independent consumer streams, then drain reclamation. */
+        (void)cudaDeviceSynchronize();
+        (void)cudaFreeAsync(buf->data, 0);
+        (void)cudaStreamSynchronize(0);
+    } else {
+        (void)cudaFree(buf->data);
+    }
+    free(buf);
+}
+
 static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
                                      int type, int rows, int cols,
                                      int create_aux_cache) {
@@ -21714,8 +21757,7 @@ static void cuda_buffer_destroy(void *vctx, void *buffer) {
     }
     if (buf->trellis_owner) {
         if (buf->trellis_owner != ctx) return;
-        cudaFree(buf->data);
-        free(buf);
+        cuda_trellis_buffer_free(buf);
         return;
     }
     cuda_weight_release(ctx, buf->mmq_data, buf->mmq_size);
@@ -34482,9 +34524,17 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         if (elems > reserve_q8_1_cols)
                             reserve_q8_1_cols = elems;
                     } else if (bn_backend_quant_moe_routed_op_uses_asymmetric_kquant(
-                                   rop->type)) {
-                        if (rop->cols > reserve_q8_1_cols)
-                            reserve_q8_1_cols = rop->cols;
+                                   rop->type) ||
+                               bn_backend_quant_uses_deinterleaved_kquant(rop->type)) {
+                        /* Down projections may prepare all selected experts
+                         * in this same storage, including affine block types. */
+                        int elems = mid_elems > rop->cols ? mid_elems : rop->cols;
+                        if (elems > reserve_q8_1_cols)
+                            reserve_q8_1_cols = elems;
+                        if (((rop->flags & BN_GPU_OP_FLAG_REFERENCE_BLOCK_ACCUMULATION) ||
+                             bn_backend_quant_moe_routed_op_uses_asymmetric_kquant(rop->type)) &&
+                            rop->cols > reserve_q8_k_cols)
+                            reserve_q8_k_cols = rop->cols;
                         if (bn_backend_quant_moe_down_uses_graph_kquant(
                                 down_type)) {
                             if (hidden > reserve_q8_k_cols)
@@ -39108,6 +39158,11 @@ BnGPUBackend *bn_gpu_cuda_create_with_policy(
         return NULL;
     }
     ctx->compute_capability = major * 100 + minor * 10;
+    if (cudaDeviceGetAttribute(&ctx->trellis_pool_supported,
+            cudaDevAttrMemoryPoolsSupported, device) != cudaSuccess) {
+        ctx->trellis_pool_supported = 0;
+        (void)cudaGetLastError();
+    }
     /* SM120 reference decode and head256 prefill layouts have two
      * resident blocks per SM. Large head512 prefill uses half this budget.
      * Keep the device launch metadata in backend state. */
@@ -39586,6 +39641,7 @@ void bn_gpu_cuda_destroy(BnGPUBackend *gpu) {
         if (ctx->prefill_stream_exit_event)
             cudaEventDestroy(ctx->prefill_stream_exit_event);
         if (ctx->stream) cudaStreamDestroy(ctx->stream);
+        if (ctx->trellis_pool) cudaMemPoolDestroy(ctx->trellis_pool);
     }
     free(ctx);
     bn_gpu_backend_release_runtime_policy(gpu);

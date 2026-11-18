@@ -25,6 +25,14 @@ typedef struct {
 int bn_gpu_cuda_weight_pool_stats(const BnGPUBackend *gpu,
                                   BnCudaWeightPoolStats *stats);
 int bn_gpu_cuda_trim_weight_pool(BnGPUBackend *gpu);
+/* Backend-owned EXL3 allocation pool; bytes include driver reservation and idle
+ * storage. Query does not synchronize. Unsupported devices use legacy storage. */
+typedef struct {
+    int supported, enabled;
+    uint64_t used_bytes, reserved_bytes, peak_used_bytes, peak_reserved_bytes;
+} BnCudaTrellisPoolStats;
+int bn_gpu_cuda_trellis_pool_stats(const BnGPUBackend *gpu,
+                                  BnCudaTrellisPoolStats *stats);
 /* Diagnostic packed [K,N] readback of a completed native F16 row layout.
  * Invalid handle/owner/capacity rejects before copy. Not an inference path. */
 int bn_gpu_cuda_read_f16_rows(const BnGPUBackend *gpu, void *weight,

@@ -31,6 +31,10 @@ static void run_exl3_ffn_reference(BnGPUBackend *gpu) {
     assert(gpu->trellis_buffer_create&&gpu->trellis_buffer_write);
     BnCudaWeightPoolStats pool_before,pool_after;
     assert(!bn_gpu_cuda_weight_pool_stats(gpu,&pool_before));
+    BnCudaTrellisPoolStats trellis_before,trellis_active,trellis_after;
+    assert(!bn_gpu_cuda_trellis_pool_stats(gpu,&trellis_before));
+    assert(bn_gpu_cuda_trellis_pool_stats(NULL,&trellis_active)==-1);
+    assert(bn_gpu_cuda_trellis_pool_stats(gpu,NULL)==-1);
     Exl3SharedWeights *shared=calloc(1,sizeof(*shared));assert(shared);shared->gpu=gpu;
     for(int role=0;role<3;role++) {
         size_t bytes=RAW+((size_t)ks[role]+ns[role])*2;
@@ -60,6 +64,12 @@ static void run_exl3_ffn_reference(BnGPUBackend *gpu) {
         assert(!gpu->trellis_buffer_write(gpu->ctx,weight,bundle,bytes,
             BN_QUANT_FORMAT_EXL3_MUL1_3,ks[role],ns[role],UINT32_C(0x83dcd12d)));
         free(bundle);
+    }
+    assert(!bn_gpu_cuda_trellis_pool_stats(gpu,&trellis_active));
+    if(trellis_active.supported) {
+        assert(trellis_active.enabled);
+        assert(trellis_active.used_bytes>=trellis_before.used_bytes+3*(RAW+(DIM+HIDDEN)*2));
+        assert(trellis_active.reserved_bytes>=trellis_active.used_bytes);
     }
     /* Exercise the same frozen FFN outputs after triplet creation and refill.
      * Upload completion must publish weights to independent consumer streams. */
@@ -255,6 +265,10 @@ static void run_exl3_ffn_reference(BnGPUBackend *gpu) {
         gpu->resident_request_destroy(r);free(out);free(guard);free(x);
     }
     bn_backend_model_free(owner);
+    assert(!bn_gpu_cuda_trellis_pool_stats(gpu,&trellis_after));
+    assert(trellis_after.used_bytes==trellis_before.used_bytes);
+    if(trellis_after.enabled&&!trellis_after.used_bytes)
+        assert(!trellis_after.reserved_bytes);
     assert(!bn_gpu_cuda_weight_pool_stats(gpu,&pool_after));
     assert(pool_after.idle_bytes==pool_before.idle_bytes && pool_after.idle_entries==pool_before.idle_entries);
     puts("CUDA EXL3 expert FFN original references + model-owned shared weights PASSED");

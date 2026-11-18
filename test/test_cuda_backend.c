@@ -1299,6 +1299,26 @@ static void run_routed_graph_case(BnGPUBackend **backends, BnGPUBackend *owner,
                 for(int j=0;j<small_dim;j++)assert(small_output[j]==0.0f);
             }
             assert(output[0]==12345.0f && output[r->dim+1]==12345.0f);
+            if (mode && repeat==2 &&
+                (down_type==BN_GGUF_TENSOR_Q6_K||down_type==BN_GGUF_TENSOR_Q5_1)) {
+                /* Grow shared quantization scratch outside the graph, then
+                 * replay the same small/large routed graph and arithmetic
+                 * flags. Captured pointers must be rebuilt before reuse. */
+                int nt=2*k,rows=r->experts*r->dim;
+                float *callback_x=calloc((size_t)nt*r->hidden,sizeof(float));
+                float *callback_y=malloc((size_t)nt*rows*sizeof(float));
+                assert(callback_x&&callback_y);
+                uint64_t large_hash=cuda_test_float_bits_hash(output+1,r->dim);
+                uint64_t small_hash_before=cuda_test_float_bits_hash(small_output,small_dim);
+                assert(!gpu->matmul(gpu->ctx,callback_y,d,callback_x,rows,r->hidden,nt,down_type));
+                for(size_t j=0;j<(size_t)nt*rows;j++)assert(callback_y[j]==0.0f);
+                assert(!gpu->execute(gpu->ctx,ops,13,ops[10].buf_out,output+1,r->dim));
+                assert(!gpu->read_activation(gpu->ctx,BN_GPU_VALUE_XB,small_output,sizeof(small_output),0));
+                assert(cuda_test_float_bits_hash(output+1,r->dim)==large_hash);
+                assert(cuda_test_float_bits_hash(small_output,small_dim)==small_hash_before);
+                assert(output[0]==12345.0f&&output[r->dim+1]==12345.0f);
+                free(callback_x);free(callback_y);
+            }
         }
         for(int j=0;j<r->dim;j++)output[j+1]=12345.0f;
         uint32_t hidden=ops[10].p[0];ops[10].p[0]=0;

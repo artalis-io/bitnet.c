@@ -18,11 +18,17 @@
         "docs/gguf-product-batch.json",
         "docs/external-stdio-serving.json",
         "docs/vllm-default-resident-performance.json",
-        "docs/vllm-default-reproducibility.json"
+        "docs/vllm-default-reproducibility.json",
+        "docs/cuda-trellis-allocation-pool.json"
       ],
       "managed_memory_evidence": "docs/dense-cuda-serving-memory.json",
-      "resident_vllm_timing_qualified_for_declared_workload": true,
-      "production_release_ready": false
+      "resident_vllm_timing_qualified_for_declared_workload": false,
+      "production_release_ready": false,
+      "prior_resident_vllm_timing_qualification": {
+        "report": "docs/vllm-default-resident-performance.json",
+        "scope": "Prior reported binary and numerical profile; fresh requalification for rebuilt binary failed the independent original token prerequisite."
+      },
+      "current_resident_requalification_evidence": "docs/cuda-trellis-allocation-pool.json"
     },
     {
       "model": "Qwen3.8 Flash Next",
@@ -36,7 +42,8 @@
       "correctness_evidence": [
         "docs/gguf-product-batch.json",
         "docs/external-stdio-serving.json",
-        "docs/cuda-joint-expert-kernels.json"
+        "docs/cuda-joint-expert-kernels.json",
+        "docs/cuda-trellis-allocation-pool.json"
       ],
       "managed_memory_evidence": "docs/cuda-serving-memory.json",
       "resident_vllm_timing_qualified_for_declared_workload": false,
@@ -54,7 +61,8 @@
       "correctness_evidence": [
         "docs/gguf-product-batch.json",
         "docs/external-stdio-serving.json",
-        "docs/cuda-joint-expert-kernels.json"
+        "docs/cuda-joint-expert-kernels.json",
+        "docs/cuda-trellis-allocation-pool.json"
       ],
       "managed_memory_evidence": "docs/cuda-serving-memory.json",
       "resident_vllm_timing_qualified_for_declared_workload": false,
@@ -73,7 +81,8 @@
         "docs/native-product-batch.json",
         "docs/external-stdio-serving.json",
         "docs/native-shared-expert-groups.json",
-        "docs/native-joint-fused-prefill.json"
+        "docs/native-joint-fused-prefill.json",
+        "docs/cuda-trellis-allocation-pool.json"
       ],
       "managed_memory_evidence": "docs/native-cuda-serving-memory.json",
       "resident_vllm_timing_qualified_for_declared_workload": false,
@@ -88,7 +97,19 @@
       "filesystem_cold_evidence": "docs/native-filesystem-cold-page-policies.json",
       "sustained_offload_serving_evidence": "docs/native-offload-sustained-serving.json",
       "shared_decode_lease_evidence": "docs/native-shared-decode-leases.json",
-      "shared_decode_transfer_peak_evidence": "docs/native-decode-transfer-peaks.json"
+      "shared_decode_transfer_peak_evidence": "docs/native-decode-transfer-peaks.json",
+      "current_allocator_memory_and_sustained_serving_evidence": "docs/cuda-trellis-allocation-pool.json",
+      "current_sustained_profile": {
+        "measured_requests": 128,
+        "outputs_each": 32,
+        "prompt_tokens_each": 1026,
+        "live": 2,
+        "gpu_cache_mib": 64000,
+        "completed_requests_per_second": 0.25095360093008107,
+        "p99_ttft_ms": 4883.239181,
+        "p99_itl_ms": 39.128807,
+        "unseen_prompt_qualification": false
+      }
     }
   ],
   "entries": [
@@ -437,9 +458,9 @@
     "Legacy models and WebGPU/WASM paths are retained through their existing shared paths; no removal is authorized by this table."
   ],
   "next_delivery": [
-    "Qualify current native plus Flash Next/GLM sustained serving with explicit startup/working-set accounting; extend longer/unseen native histories and remaining resident parity/CPU/Metal coverage.",
-    "Qualify diverse cold/warm offloaded working sets, misses/transferred bytes/exposed stalls and setup/physical memory peaks.",
-    "Broaden matched resident prefill/decode and sustained-serving workloads.",
-    "Extend independent whole-model CPU AVX2/AVX512/NEON then Metal coverage."
+    "Resolve original vLLM numerical-profile drift and pass fresh paired resident gates: at least 95% of vLLM prefill throughput and decode latency no more than 105% of vLLM.",
+    "Extend native unseen/longer working sets and Flash/GLM sustained serving; independently qualify smaller GLM prefill chunks.",
+    "Measure admitted-cache transfers/exposed stalls under matched budgets.",
+    "Extend qualified AVX2/AVX512/ARM NEON coverage, then Metal."
   ]
 }
