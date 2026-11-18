@@ -19,16 +19,18 @@
         "docs/external-stdio-serving.json",
         "docs/vllm-default-resident-performance.json",
         "docs/vllm-default-reproducibility.json",
-        "docs/cuda-trellis-allocation-pool.json"
+        "docs/cuda-trellis-allocation-pool.json",
+        "docs/vllm-fixed-profile-resident-performance.json"
       ],
       "managed_memory_evidence": "docs/dense-cuda-serving-memory.json",
-      "resident_vllm_timing_qualified_for_declared_workload": false,
+      "resident_vllm_timing_qualified_for_declared_workload": true,
       "production_release_ready": false,
       "prior_resident_vllm_timing_qualification": {
         "report": "docs/vllm-default-resident-performance.json",
         "scope": "Prior reported binary and numerical profile; fresh requalification for rebuilt binary failed the independent original token prerequisite."
       },
-      "current_resident_requalification_evidence": "docs/cuda-trellis-allocation-pool.json"
+      "current_resident_requalification_evidence": "docs/vllm-fixed-profile-resident-performance.json",
+      "resident_vllm_timing_scope": "Only the fixed independently observed original profile C, resident4x129prompt/64output/context8192 workload in docs/vllm-fixed-profile-resident-performance.json. Universal default-autotune equivalence remains unqualified."
     },
     {
       "model": "Qwen3.8 Flash Next",

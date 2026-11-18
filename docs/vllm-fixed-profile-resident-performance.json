@@ -1,0 +1,297 @@
+{
+  "status": "qualified_declared_fixed_original_profile_resident_workload",
+  "plan_sha256": "eb79d7d061c3667797827582828e10401a44a644076cf6ec15067cce0f5717fe",
+  "source_commit": "1ed077260240d89a49bb06f78d6b8ef399ffa193",
+  "qualified_binary": {
+    "path": "/tmp/bitnet-goal-moe-long-serving/allocator-fix/graph-scratch-fix/q81-scratch-fix/qualified-bitnet",
+    "sha256": "7287cefa3fe161943bea41b2bee28e08e4433ff419a08af8a3304c83b95c4db0"
+  },
+  "scope": "Fully resident Qwen3.8 27B fixed previously observed original profile C. Rebuild only the copied AOT artifact, pin original normalization cubins by recorded weight/source/config/binary identity, restore all hooks after warmup. Not universal default cold-autotune equivalence, sustained serving, or offloaded parity.",
+  "source_cache": "/tmp/bitnet-goal-default-repro/reference-init-ledger/vllm-cache",
+  "aot_artifact": "c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43",
+  "pairs": [
+    {
+      "indices": [
+        0,
+        1
+      ],
+      "prefill_throughput_ratio": 2.082674894450313,
+      "decode_latency_ratio": 1.0259698567726239,
+      "prefill_pass": true,
+      "decode_pass": true
+    },
+    {
+      "indices": [
+        2,
+        3
+      ],
+      "prefill_throughput_ratio": 2.0898263782448883,
+      "decode_latency_ratio": 1.027492371879878,
+      "prefill_pass": true,
+      "decode_pass": true
+    },
+    {
+      "indices": [
+        4,
+        5
+      ],
+      "prefill_throughput_ratio": 2.0913796534685476,
+      "decode_latency_ratio": 1.025438465764529,
+      "prefill_pass": true,
+      "decode_pass": true
+    }
+  ],
+  "prefill_ratio_geomean": 2.0879568650005167,
+  "decode_ratio_geomean": 1.0262998624565896,
+  "current_product_full_head_controls": 768,
+  "original_and_product_timed_tokens_equal": true,
+  "fixed_profile_original_full_heads_per_process": 1536,
+  "original_full_heads_universally_repeatable": false,
+  "profile": "previously-observed-original-C",
+  "initial_diagnostic_timings_excluded": true,
+  "timing_observers": false,
+  "clock_scope": "Unlocked; fixed alternating pair order reduces order bias but does not remove clock/thermal variation.",
+  "new_original_uncached_autotuning_qualified": false,
+  "full_goal_complete": false,
+  "release_ready": false,
+  "schema": 1,
+  "evidence_root": "/tmp/bitnet-goal-resident-fixed-profile",
+  "qualification_kind": "Explicit fixed previously observed original numerical profile; no universal default-autotune equivalence claim.",
+  "original": {
+    "image": "sha256:745feb916ee816f5409fd58386114be4f22fbede7f9c0e0a7b8c4fe8dac0fb29",
+    "vllm": "v0.1.dev21830+g8244d1c44",
+    "torch": "2.14",
+    "cuda": "13.4",
+    "cudagraph": "FULL_AND_PIECEWISE",
+    "async_scheduling": true,
+    "normalization_weights": 129,
+    "live_instances": 119,
+    "source_of_choices": "/tmp/bitnet-goal-default-repro/reference-init-ledger/norm-launches.jsonl",
+    "selection": "Independent old initialization ledger, without product logits or fitting.",
+    "hooks": "Original cached cubins selected by weight/source/config/binary identity during initialization; all run hooks removed after warmup and before timing.",
+    "aot_cache": "Invalidate only the copied serialized model artifact before each fresh process; keep original sources and compiled cubins. Original shared-cache artifacts fail conflicting-instance guard.",
+    "adapter": "Previously declared offline GGUF metadata class-name mapping only."
+  },
+  "workload": {
+    "status": "predeclared_before_new_measurements",
+    "scope": "Fully resident Qwen3.8 27B fixed previously observed original profile C. Rebuild only the copied AOT artifact, pin original normalization cubins by recorded weight/source/config/binary identity, restore all hooks after warmup. Not universal default cold-autotune equivalence, sustained serving, or offloaded parity.",
+    "checkpoint": "/data/models/gguf/qwen3_8/27b/q4_k_xl/Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "checkpoint_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+    "concurrency": 4,
+    "prompt_tokens_each": 129,
+    "output_tokens_each": 64,
+    "context": 8192,
+    "prefill_chunk": 129,
+    "mixed_budget": 46,
+    "precision": "BF16 with GGUF UD-Q4_K_XL storage",
+    "prefix_cache": false,
+    "process_order": [
+      "original",
+      "product",
+      "product",
+      "original",
+      "original",
+      "product"
+    ],
+    "pairs": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ]
+    ],
+    "warmup_batches_per_process": 1,
+    "timed_batches_per_process": 3,
+    "prefill_min_ratio": 0.95,
+    "decode_max_ratio": 1.05,
+    "clocks": "Unlocked; fixed alternating pair order reduces order bias but does not remove clock/thermal variation.",
+    "controls": "Current normal and ASAN each384 exact full-vocabulary heads against preserved original profile C long96. Every fresh original process also verifies1536 post-timing heads against unchanged old original gold.",
+    "timing_observers": false,
+    "release_ready": false,
+    "full_goal_complete": false,
+    "aggregation": "Report every pair and geometric means; require all three pairs to satisfy both unchanged gates.",
+    "source_cache": "/tmp/bitnet-goal-default-repro/reference-init-ledger/vllm-cache",
+    "aot_artifact": "c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43",
+    "source_commit": "1ed077260240d89a49bb06f78d6b8ef399ffa193",
+    "correctness_control": "/tmp/bitnet-goal-resident-fixed-profile/init-ledger-product-verification.json",
+    "correctness_control_heads": 768,
+    "attempt": 1,
+    "run_directory_prefix": "paired-",
+    "original_diagnostic": "/tmp/bitnet-goal-resident-fixed-profile/diagnostic-08/verification.json",
+    "excluded_diagnostic_timings": true,
+    "profile": "previously-observed-original-C",
+    "aot_copy_invalidation": true
+  },
+  "timing_processes": [
+    {
+      "index": 0,
+      "kind": "original",
+      "prefill_ms": 1307.456072,
+      "decode_ms": 35.714600035714284
+    },
+    {
+      "index": 1,
+      "kind": "product",
+      "prefill_ms": 627.777324,
+      "decode_ms": 36.64210308333333,
+      "timed_batches": 3,
+      "warmup_batches": 1,
+      "tokens_exact": true,
+      "timing_observers": false
+    },
+    {
+      "index": 2,
+      "kind": "product",
+      "prefill_ms": 631.439418,
+      "decode_ms": 36.87489095238095,
+      "timed_batches": 3,
+      "warmup_batches": 1,
+      "tokens_exact": true,
+      "timing_observers": false
+    },
+    {
+      "index": 3,
+      "kind": "original",
+      "prefill_ms": 1319.598752,
+      "decode_ms": 35.888238162698414
+    },
+    {
+      "index": 4,
+      "kind": "original",
+      "prefill_ms": 1316.51402,
+      "decode_ms": 35.82106378571429
+    },
+    {
+      "index": 5,
+      "kind": "product",
+      "prefill_ms": 629.495471,
+      "decode_ms": 36.73229669047619,
+      "timed_batches": 3,
+      "warmup_batches": 1,
+      "tokens_exact": true,
+      "timing_observers": false
+    }
+  ],
+  "correctness": {
+    "product_current_normal_heads": 384,
+    "product_current_asan_heads": 384,
+    "fresh_original_timed_processes": 3,
+    "fresh_original_heads": 4608,
+    "excluded_initial_diagnostic_heads": 1536,
+    "old_numerical_golds_changed": false,
+    "sanitizer_findings": 0,
+    "full_vocabulary": 248320,
+    "all_old_head_bytes_exact": true
+  },
+  "reproduction": {
+    "helper": "test/reference_qwen38_fixed_norm_profile.py",
+    "metadata": "test/bf16_cuda_fixed_norm_profile.json",
+    "product_policy": "bench/policies/qwen38-cuda-init-observed.json",
+    "installation": "Copy helper as /evidence/sitecustomize.py and metadata as /evidence/profile.json. Put /evidence first in PYTHONPATH before spawning workers. See sealed run-original-paired.py for pinned mounts and copied-AOT invalidation.",
+    "producer": "test/reference_qwen38_default_repro.py",
+    "producer_amendment": "Immediately after warm=batch('warmup'), call llm.apply_model(__import__('sitecustomize').stop) and save its129-weight/restored proof before timed batches. Exact executed producer is sealed in evidence_root/reference.py.",
+    "product": "Current unchanged qualified-bitnet, --cuda-batch --profile dense-bf16 --serve-stdio,4live,129prefill,516batchbudget,46mixedbudget,8192maxseq; declared policy and checkpoint.",
+    "timing": "Local client-delivery inclusive clocks, one warmup and three timed batches per process. Post-timing logits readback and graph-replay counter excluded. No GPU sampler or tracing in timing."
+  },
+  "integrity": {
+    "source_cache_files": 43557,
+    "source_cache_before_after_errors": 0,
+    "frozen_inputs_before_after": true,
+    "seal": {
+      "status": "passed",
+      "files": 482573,
+      "bytes": 44530121053,
+      "all_futures_inspected": true,
+      "root_readonly": true,
+      "hash_workers": 4
+    },
+    "all_futures_inspected": true,
+    "artifact_seal_scope": "Terminal benchmark, diagnostic and baseline-test artifacts before publication; post-publication test/proof metadata is separate."
+  },
+  "validation": {
+    "make_test": true,
+    "production_C_or_CUDA_changed": false,
+    "helper_identical_to_executed_bytes": true,
+    "metadata_identical_to_independently_recorded_choices": true,
+    "post_publication_make_test": true,
+    "compiler_warnings": 0
+  },
+  "limitations": [
+    "One declared resident checkpoint, numerical profile, prompt set, context and concurrency. Other families, offloaded parity and sustained serving are separate gates.",
+    "Default cache-only original token reproducibility failed and remains unqualified. All prior failures and golds are preserved.",
+    "Clocks are unlocked; fixed pair order reduces but does not remove thermal or clock variation.",
+    "Full four-family production release and CPU/Metal qualification remain incomplete."
+  ],
+  "evidence_sha256": {
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-plan.json": "eb79d7d061c3667797827582828e10401a44a644076cf6ec15067cce0f5717fe",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-report.json": "3b96777ec484956c53f359b73a56309698dd06e0a5d931e08cebc6f35805b2a4",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-timing-results.json": "1d0fb77dad61e747aadb34a179409a44dc6413c997e4fcbb08ec1e3f2754762c",
+    "/tmp/bitnet-goal-resident-fixed-profile/init-ledger-product-verification.json": "68db2eea7a5fef82ec7c72891e8e689a35a28b8ee5a7fe146642642f43740d2e",
+    "/tmp/bitnet-goal-resident-fixed-profile/diagnostic-08/verification.json": "91b47ba1346290ea6a3f77ef8d12c92cbaecd9c961d10486baefc23c20a0974f",
+    "/tmp/bitnet-goal-resident-fixed-profile/diagnostic-disclosure.json": "5861c3d7f2ac9f5dd915d38b88289e4a4ebc1a44044e533905abfedc70d09f83",
+    "/tmp/bitnet-goal-resident-fixed-profile/cache-audit-before.json": "ea82ea5166c02719c20150d59094d75025d2f6846d61c3e34d4106e11a724479",
+    "/tmp/bitnet-goal-resident-fixed-profile/cache-audit-after.json": "ea82ea5166c02719c20150d59094d75025d2f6846d61c3e34d4106e11a724479",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-frozen.json": "21ec258ef43715de0d5fa15d7a5c897d2e2573484b11320f5e9da216141b1a72",
+    "/tmp/bitnet-goal-resident-fixed-profile/preserved-cache-expected.json": "6f160f44aea4247f6592b04544b53b12eb23797fe8a486a6ff61b878d287b7cc",
+    "/tmp/bitnet-goal-resident-fixed-profile/artifact-manifest.json": "5716a0595046c062321ffca4ddffd251e04eedb1a9a18d373354a5720f42f651",
+    "/tmp/bitnet-goal-resident-fixed-profile/artifact-seal.json": "98dc7586841639050800dcfe44bca6a1189d8e14bdb45f7a7fb9ec8d4eaa48af",
+    "/tmp/bitnet-goal-resident-fixed-profile/baseline-test.log": "77697f754fd3f969f349753e51ab4acc4e7c7aa0ed34da9de242b25e2f422cf4",
+    "/tmp/bitnet-goal-resident-fixed-profile/baseline-test-exit.json": "d77134445a40406348537c4a6f58a9693df6126317311bbd7b7ec6f5c995e5dc",
+    "/tmp/bitnet-goal-resident-fixed-profile/reference.py": "ee8c2150884e3da4f594b42755ebe2d7079c4837738da968ba054257a5c73832",
+    "/tmp/bitnet-goal-resident-fixed-profile/run-original-paired.py": "83c5bc35beebe17d9131ed08935d22a98bc23375bd5a7a6b1bc708b1aea0ff2b",
+    "/tmp/bitnet-goal-resident-fixed-profile/run-product-paired.py": "ffeb1c0ecc920b342f44dbc38f14330cf4577bf538bff3b908eedf85a94663ec",
+    "/tmp/bitnet-goal-resident-fixed-profile/run-paired.py": "5842551cf0ae8527563934386d29c549f6aa2ea63b6be9965f9a0e2393f629bf",
+    "/tmp/bitnet-goal-resident-fixed-profile/verify-reference.py": "664c20ab5beeb61d669557e5be672a488c524202e052adc1ef353b0ffc486bd8",
+    "/tmp/bitnet-goal-resident-fixed-profile/run-product.py": "a7a922a4ff862d7654533b1950297faccacd8edf11285f10fd4f44b54930fe5f",
+    "/tmp/bitnet-goal-resident-fixed-profile/verify-products.py": "c00e796cb3eda77b0a521e3544e7dafdf79308318fbe901c1713d85eaaddff5f",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/verification.json": "91b47ba1346290ea6a3f77ef8d12c92cbaecd9c961d10486baefc23c20a0974f",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/verification.json": "91b47ba1346290ea6a3f77ef8d12c92cbaecd9c961d10486baefc23c20a0974f",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/verification.json": "91b47ba1346290ea6a3f77ef8d12c92cbaecd9c961d10486baefc23c20a0974f",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/command.json": "8e6298d0c2c94890eeea1533c7efa58cdea1198b05e94e55bd68299b3114dfe1",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/engine-request.json": "89b7852cf8f17b03a6ac14700dd46ced6543bff4e861c35a0551e638fc7aa05a",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/resolved-config.json": "4a62d017305bd5b85ab1a7549c694ade92a6e037d7f7365471591e55a597bc3a",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/model-inspection.json": "b4d41f0d1dbdf5c1d3e4314766813aa5ae2d1f6160d002820a1dce6d9cababb4",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/profile-lock-restored.json": "777c0adcb75d838cb322e2cc94567a403a34fca163b52c8f373aabeaba02cbc1",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/warmup.json": "92f5fc0bfa43f58a768ea364985bede14ea6060e1e2398ffa6764dbe738ee5a5",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/timing-runs.json": "f82d8b35361e535eef79407c0aac3fa50e40b91859b43f8bbace6745bfa4e73d",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-0-original/replay-counter.json": "b113504ad7d40a619416103b88241cd6d23d4c64ecbd72a85614f16e7f21d441",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/command.json": "d0dcdfedf326a8a7f8d81cb0b802c683a99f9a39fef2f7dbc44803f66af50a14",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/engine-request.json": "89b7852cf8f17b03a6ac14700dd46ced6543bff4e861c35a0551e638fc7aa05a",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/resolved-config.json": "4a62d017305bd5b85ab1a7549c694ade92a6e037d7f7365471591e55a597bc3a",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/model-inspection.json": "e353d257ac7edb8d9ea2a08a3945e3e1da20f1997d17dc50cbdae9166e098c63",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/profile-lock-restored.json": "777c0adcb75d838cb322e2cc94567a403a34fca163b52c8f373aabeaba02cbc1",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/warmup.json": "f91abd16c45f51d9098f87026ffaf8032f8dc8c30745abf9771d49b28b46999c",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/timing-runs.json": "9c42287b69060530bfaf18e1f9c86ddc4d7bd354b1ee20996d52d4db6948070c",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-3-original/replay-counter.json": "b113504ad7d40a619416103b88241cd6d23d4c64ecbd72a85614f16e7f21d441",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/command.json": "a140a2473bb897c363f0e48ee1434e3600ef2daf1a6af9066e3d737975e60367",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/engine-request.json": "89b7852cf8f17b03a6ac14700dd46ced6543bff4e861c35a0551e638fc7aa05a",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/resolved-config.json": "4a62d017305bd5b85ab1a7549c694ade92a6e037d7f7365471591e55a597bc3a",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/model-inspection.json": "2756332eba7ac8f6e66110bd04f45610357567702342d506531f77d15bb1ce21",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/profile-lock-restored.json": "777c0adcb75d838cb322e2cc94567a403a34fca163b52c8f373aabeaba02cbc1",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/warmup.json": "924c0209ae05265b129ff150d2e48d77ee74f317d8f76a9651422b0135c74999",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/timing-runs.json": "3fc422699c114bbd11c7174d6867dab2b334a2fb361c46b8333e4eb7b0fc5249",
+    "/tmp/bitnet-goal-resident-fixed-profile/paired-4-original/replay-counter.json": "b113504ad7d40a619416103b88241cd6d23d4c64ecbd72a85614f16e7f21d441",
+    "/tmp/bitnet-fixed-profile-post-publication-test.log": "20690a1f157d3211577759e2fffc0cd57cfd9e8c5f81bbaf93ee0ecdc525c9e2",
+    "/tmp/bitnet-fixed-profile-post-publication-test-exit.json": "d77134445a40406348537c4a6f58a9693df6126317311bbd7b7ec6f5c995e5dc",
+    "/tmp/bitnet-fixed-profile-compiler-outputs.json": "7570cccdcd1b7310a10be55a4625004b4326eff047318741994aa28f7c2c0057"
+  },
+  "published_helper_sha256": "a36501dc612274f048dea9bfe6a5ac78e2bc7430aa184820ff4e021228698005",
+  "published_metadata_sha256": "50d15a4467a7ee6a223bab26ce824990562617834a4a6f52ae8b8abb9e0a1a94",
+  "hardware": {
+    "gpu_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+    "total_memory": 101973491712,
+    "compute_capability": [
+      12,
+      0
+    ],
+    "multiprocessors": 188
+  }
+}

@@ -1,0 +1,1937 @@
+{
+  "model.layers.0.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/s4/cs47frnr65geezwn3ynrcigby6ogs4a7q7x3sobgckguuycqacnl.py",
+    "source": "fb8438296181b8c3fc06a4857fb7c590f51a7d6a6c2dd58e2a6e4ee4deb03862",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "1": "model.layers.0.input_layernorm.weight"
+    },
+    "cache_hash": "6VDWRHLCSL5GGS77OYNQPTXX7WZDP3PDJJ4VJHZPHA3TTPV5HTSA"
+  },
+  "model.layers.0.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.0.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.1.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.1.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.1.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.1.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.2.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.2.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.2.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.2.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.3.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.3.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.3.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.3.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.4.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.4.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.4.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.4.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.5.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.5.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.5.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.5.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.6.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.6.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.6.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.6.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.7.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.7.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.7.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.7.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.8.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.8.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.8.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.8.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.9.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.9.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.9.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.9.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.10.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.10.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.10.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.10.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.11.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.11.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.11.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.11.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.12.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.12.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.12.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.12.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.13.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.13.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.13.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.13.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.14.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.14.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.14.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.14.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.15.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.15.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.15.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.15.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.16.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.16.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.16.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.16.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.17.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.17.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.17.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.17.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.18.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.18.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.18.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.18.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.19.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.19.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.19.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.19.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.20.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.20.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.20.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.20.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.21.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.21.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.21.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.21.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.22.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.22.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.22.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.22.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.23.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.23.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.23.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.23.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.24.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.24.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.24.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.24.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.25.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.25.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.25.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.25.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.26.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.26.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.26.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.26.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.27.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.27.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.27.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.27.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.28.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_4",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/q2/cq27elurad6yhsghkfa7rw22ec5674nr7rpaugtexebbobi7ncgl.py",
+    "source": "c139ef2e7b78c9fa2647c50f21339ccc90164ce87dc7ae4c85dc859cb8bd925d",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.28.input_layernorm.weight"
+    },
+    "cache_hash": "L7NFSH5DV37U7F3LCSIIIQFITC7VIUGU4U2DMVCT7VMHHQT46MMA"
+  },
+  "model.layers.28.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.28.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.29.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.29.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.29.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.29.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.30.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.30.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.30.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.30.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.31.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.31.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.31.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.31.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.32.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.32.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.32.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.32.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.33.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.33.input_layernorm.weight"
+    },
+    "cache_hash": "F7CJ7PVSQKIMWRPREMPRLNS3LF6RV53ORDYHQUCIJKUCFB6ILIBQ"
+  },
+  "model.layers.33.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.33.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.34.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.34.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.34.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.34.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.35.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.35.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.35.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.35.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.36.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.36.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.36.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.36.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.37.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.37.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.37.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.37.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.38.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.38.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.38.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.38.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.39.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.39.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.39.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.39.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.40.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.40.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.40.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.40.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.41.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.41.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.41.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.41.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.42.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.42.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.42.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.42.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.43.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.43.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.43.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.43.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.44.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.44.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.44.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.44.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.45.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.45.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.45.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.45.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.46.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.46.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.46.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.46.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.47.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.47.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.47.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.47.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.48.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.48.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.48.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.48.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.49.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.49.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.49.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.49.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.50.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.50.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.50.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.50.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.51.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.51.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.51.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.51.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.52.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.52.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.52.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.52.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.53.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.53.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.53.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.53.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.54.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.54.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.54.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.54.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.55.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.55.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.55.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.55.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.56.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.56.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.56.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.56.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.57.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.57.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.57.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.57.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.58.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.58.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.58.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_2",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/nf/cnfguoin6snasv6hkksxf3l7w647elzaw46z4fqhbfgjrdlhvcqw.py",
+    "source": "432820d102658b5d147af1c670f04d1c513f45b9b5ae5a077ded3d0c803cb468",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 1024
+    },
+    "num_warps": 8,
+    "weights": {
+      "2": "model.layers.58.post_attention_layernorm.weight"
+    },
+    "cache_hash": "HSGBGDGBRGZ4CYIOU46B4NL34IA6EYEE6H6T7GPXCD2JRF3IXBUA"
+  },
+  "model.layers.59.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_4",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/q2/cq27elurad6yhsghkfa7rw22ec5674nr7rpaugtexebbobi7ncgl.py",
+    "source": "c139ef2e7b78c9fa2647c50f21339ccc90164ce87dc7ae4c85dc859cb8bd925d",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.59.input_layernorm.weight"
+    },
+    "cache_hash": "XSXHW3DKCNPKFBY5KVVQCXWQSIPT55VPZIRM5IUVJMUGGZXIVBBA"
+  },
+  "model.layers.59.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.59.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.60.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.60.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.60.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_2",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/nf/cnfguoin6snasv6hkksxf3l7w647elzaw46z4fqhbfgjrdlhvcqw.py",
+    "source": "432820d102658b5d147af1c670f04d1c513f45b9b5ae5a077ded3d0c803cb468",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 1024
+    },
+    "num_warps": 8,
+    "weights": {
+      "2": "model.layers.60.post_attention_layernorm.weight"
+    },
+    "cache_hash": "HSGBGDGBRGZ4CYIOU46B4NL34IA6EYEE6H6T7GPXCD2JRF3IXBUA"
+  },
+  "model.layers.61.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_4",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/q2/cq27elurad6yhsghkfa7rw22ec5674nr7rpaugtexebbobi7ncgl.py",
+    "source": "c139ef2e7b78c9fa2647c50f21339ccc90164ce87dc7ae4c85dc859cb8bd925d",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.61.input_layernorm.weight"
+    },
+    "cache_hash": "XSXHW3DKCNPKFBY5KVVQCXWQSIPT55VPZIRM5IUVJMUGGZXIVBBA"
+  },
+  "model.layers.61.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.61.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.62.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.62.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.62.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.62.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.layers.63.input_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/uc/cucpaqkqsgbighhuu4pzlqvwtlnhdgdjd6man7pavl5bjem3neiq.py",
+    "source": "b3e0ac27ad254d09eba4c1c3230c19e53634c795cf9617a70ada2dc8252b62e3",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 4096
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.layers.63.input_layernorm.weight"
+    },
+    "cache_hash": "KTBAP5JVFI62AFYUAYQ2XJ2LYUU5DRNVASYQYPXBOMH7KQ43UJJQ"
+  },
+  "model.layers.63.post_attention_layernorm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_1",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/us/cusmyapeadnrqn2aqrr5zdt6g77ay6phe5cfldb7nepbvwcwr7i4.py",
+    "source": "7c975d5a4098e8ba9bd23c7afe793ddb36121d022edf593b87ecfea46ba2295e",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "2": "model.layers.63.post_attention_layernorm.weight"
+    },
+    "cache_hash": "AUJJINEKJ7DYJSJFITDOQBPC4IW7BGSXCIBINLLEV5QQWY2IJD7A"
+  },
+  "model.norm.weight": {
+    "call": 0,
+    "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+    "filename": "/root/.cache/vllm/torch_compile_cache/torch_aot_compile/c69c05f426fa470dac08bb6ab3947b3b2b002a35014e50c3c2bcfb5205bdbc43/inductor_cache/ey/ceyxbvqjndoywfbjgiprlmnopoj5iv2ffmgh3nnzoiryjphhxm7r.py",
+    "source": "6a4a6758afb18095cd25b377fa0e7172bb233637f92a19b64263cb8f1338b5a5",
+    "config": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192
+    },
+    "num_warps": 16,
+    "weights": {
+      "3": "model.norm.weight"
+    },
+    "cache_hash": "RXCHVUHAKE6IAOV4AKFZXWCDXNRWLFIYHWK6CAJDCH7XWXVAUVXQ"
+  }
+}
