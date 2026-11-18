@@ -64,11 +64,13 @@
         "docs/gguf-product-batch.json",
         "docs/external-stdio-serving.json",
         "docs/cuda-joint-expert-kernels.json",
-        "docs/cuda-trellis-allocation-pool.json"
+        "docs/cuda-trellis-allocation-pool.json",
+        "docs/glm-prefill-chunking.json"
       ],
       "managed_memory_evidence": "docs/cuda-serving-memory.json",
       "resident_vllm_timing_qualified_for_declared_workload": false,
-      "production_release_ready": false
+      "production_release_ready": false,
+      "chunk128_evidence_scope": "Numerically qualified128-token geometry only; diagnostic pilot rejects default promotion. No sustained-SLO or resident-vLLM timing qualification."
     },
     {
       "model": "DeepSeek V4.1 Flash1017",
