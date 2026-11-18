@@ -1,0 +1,415 @@
+{
+  "status": "checkpoint_partial_qualification_goal_paused",
+  "whole_model_heads": 744,
+  "lifecycle_heads": 10,
+  "controls": [
+    {
+      "directory": "/tmp/bitnet-goal-glm-expert-residency/product-normal-cache0",
+      "full_heads": 160,
+      "requests": 4,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 225931508,
+        "shared_device_upper": 9916407032,
+        "reserved_host": 510057940,
+        "reserved_device": 11977499240,
+        "peak_reserved_host": 510057940,
+        "peak_reserved_device": 12884901888,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 2,
+        "idle": 2,
+        "request_host": 142063216,
+        "request_host_peak": 142063216,
+        "request_device": 1030546104,
+        "variable_capacity": 0
+      },
+      "cohort_logical_cache_counters": {
+        "weight_upload_bytes": 3902127079424,
+        "hits": 0,
+        "misses": 0,
+        "hit_bytes": 0,
+        "fill_copy_bytes": 0,
+        "reserved_device_bytes": 0,
+        "miss_bytes": 0,
+        "evictions": 0,
+        "bypasses": 0
+      }
+    },
+    {
+      "directory": "/tmp/bitnet-goal-glm-expert-residency/product-normal-cache8192",
+      "full_heads": 160,
+      "requests": 4,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 226009828,
+        "shared_device_upper": 18506341624,
+        "reserved_host": 510136356,
+        "reserved_device": 20567433928,
+        "peak_reserved_host": 510136356,
+        "peak_reserved_device": 21474836480,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 2,
+        "idle": 2,
+        "request_host": 142063264,
+        "request_host_peak": 142063264,
+        "request_device": 1030546152,
+        "variable_capacity": 0
+      },
+      "cohort_logical_cache_counters": {
+        "weight_upload_bytes": 3757858553856,
+        "hits": 9336,
+        "misses": 245374,
+        "hit_bytes": 144268525568,
+        "fill_copy_bytes": 413270474752,
+        "reserved_device_bytes": 8589475840,
+        "miss_bytes": 3757858553856,
+        "evictions": 26461,
+        "bypasses": 177
+      }
+    },
+    {
+      "directory": "/tmp/bitnet-goal-glm-expert-residency/product-asan-cache8192",
+      "full_heads": 160,
+      "requests": 4,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 226009828,
+        "shared_device_upper": 18506341624,
+        "reserved_host": 510136356,
+        "reserved_device": 20567433928,
+        "peak_reserved_host": 510136356,
+        "peak_reserved_device": 21474836480,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 2,
+        "idle": 2,
+        "request_host": 142063264,
+        "request_host_peak": 142063264,
+        "request_device": 1030546152,
+        "variable_capacity": 0
+      },
+      "cohort_logical_cache_counters": {
+        "weight_upload_bytes": 3757858553856,
+        "hits": 9336,
+        "misses": 245374,
+        "hit_bytes": 144268525568,
+        "fill_copy_bytes": 413270474752,
+        "reserved_device_bytes": 8589475840,
+        "miss_bytes": 3757858553856,
+        "evictions": 26461,
+        "bypasses": 177
+      }
+    },
+    {
+      "directory": "/tmp/bitnet-goal-glm-expert-residency/product1024-normal-cache8192",
+      "full_heads": 132,
+      "requests": 4,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 226009828,
+        "shared_device_upper": 18506341624,
+        "reserved_host": 510150692,
+        "reserved_device": 24416311240,
+        "peak_reserved_host": 510150692,
+        "peak_reserved_device": 24416311240,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 2,
+        "idle": 2,
+        "request_host": 142070432,
+        "request_host_peak": 142070432,
+        "request_device": 2954984808,
+        "variable_capacity": 0
+      },
+      "cohort_logical_cache_counters": {
+        "weight_upload_bytes": 1189770297344,
+        "hits": 1787,
+        "misses": 77681,
+        "hit_bytes": 28357165056,
+        "fill_copy_bytes": 571752579072,
+        "reserved_device_bytes": 8589475840,
+        "miss_bytes": 1189770297344,
+        "evictions": 36803,
+        "bypasses": 85
+      }
+    },
+    {
+      "directory": "/tmp/bitnet-goal-glm-expert-residency/product1024-asan-cache8192",
+      "full_heads": 132,
+      "requests": 4,
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 226009828,
+        "shared_device_upper": 18506341624,
+        "reserved_host": 510150692,
+        "reserved_device": 24416311240,
+        "peak_reserved_host": 510150692,
+        "peak_reserved_device": 24416311240,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 2,
+        "idle": 2,
+        "request_host": 142070432,
+        "request_host_peak": 142070432,
+        "request_device": 2954984808,
+        "variable_capacity": 0
+      },
+      "cohort_logical_cache_counters": {
+        "weight_upload_bytes": 1189770297344,
+        "hits": 1787,
+        "misses": 77681,
+        "hit_bytes": 28357165056,
+        "fill_copy_bytes": 571752579072,
+        "reserved_device_bytes": 8589475840,
+        "miss_bytes": 1189770297344,
+        "evictions": 36803,
+        "bypasses": 85
+      }
+    }
+  ],
+  "lifecycle": [
+    {
+      "mode": "normal",
+      "cached": false,
+      "exact_heads": 2,
+      "passed": true
+    },
+    {
+      "mode": "normal",
+      "cached": true,
+      "exact_heads": 2,
+      "passed": true
+    },
+    {
+      "mode": "asan",
+      "cached": false,
+      "exact_heads": 2,
+      "passed": true
+    },
+    {
+      "mode": "asan",
+      "cached": true,
+      "exact_heads": 2,
+      "passed": true
+    },
+    {
+      "mode": "memcheck",
+      "cached": true,
+      "exact_heads": 2,
+      "passed": true
+    }
+  ],
+  "cache_geometry": {
+    "experts": 288,
+    "top_k": 8,
+    "moe_layers": 42,
+    "dense_layers": 3
+  },
+  "quant_pairs": [
+    "Q4_K/Q5_K",
+    "Q4_K/Q6_K",
+    "Q5_K/Q6_K"
+  ],
+  "passed": [
+    "clean zero-warning CUDA/MKL build",
+    "standard unit suite, zero warnings",
+    "full CUDA backend regression, zero warnings",
+    "CUDA expert-cache memcheck:0 errors",
+    "GLM cached lifecycle memcheck:0 errors",
+    "158 host C objects instrumented with ASAN/UBSan; host units passed",
+    "GLM chunk128 normal cached/uncached and ASAN cached controls",
+    "GLM chunk1024 normal/ASAN cached controls",
+    "normal/ASAN cached/uncached failure injection and exact recovery"
+  ],
+  "limits": [
+    "No actual CUPTI transfer/stall or physical peak claim",
+    "Current rebuilt binary resident fixed-profile parity not yet remeasured",
+    "Other-family sustained SLO qualification pending",
+    "CPU and Metal whole-model qualification pending",
+    "All-family serving series terminated on dense normal reference mismatch; Flash/native were not run in that series."
+  ],
+  "full_goal_complete": false,
+  "release_ready": false,
+  "schema": 1,
+  "prior_commit": "58d15348b9f6cd7c48bd2470e55a6c7714b83fdc",
+  "scope": "Bounded CUDA GLM expert residency with backend-owned cache and request-local bindings; this checkpoint does not establish four-family release readiness.",
+  "usage": "Use --cuda-batch MODEL --profile glm-recurrent --gpu-cache-mb 8192 with the existing declared GLM numerical/provider profile. Zero retains uncached behavior.",
+  "binaries": {
+    "candidate-bitnet": {
+      "path": "/tmp/bitnet-goal-glm-expert-residency/candidate-bitnet",
+      "sha256": "58efa06d28a949951e35a58d6300f5417ad845dacc55923735a1fa0596dd80a5"
+    },
+    "asan-product": {
+      "path": "/tmp/bitnet-goal-glm-expert-residency/asan-product",
+      "sha256": "0e45beba7f1de6c8983b18596339d0ec1d03dceea94f959174881955b8f152dd"
+    }
+  },
+  "dynamic_serving": {
+    "normal": {
+      "full_heads": 8,
+      "requests": 5,
+      "exact": true,
+      "mode": "normal",
+      "kind": "glm",
+      "batch": {
+        "completed": 3,
+        "steps": 5,
+        "packed_calls": 0,
+        "fallback_rows": 2,
+        "released": 4,
+        "peak_live": 2
+      },
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 225428964,
+        "shared_device_upper": 18506341624,
+        "reserved_host": 509536036,
+        "reserved_device": 19834625840,
+        "peak_reserved_host": 509536036,
+        "peak_reserved_device": 21474836480,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 2,
+        "idle": 2,
+        "request_host": 142053536,
+        "request_host_peak": 142053536,
+        "request_device": 664142108,
+        "variable_capacity": 0
+      },
+      "real_arrivals_during_first_execution": true,
+      "queued_and_live_cancel": true,
+      "same_client_id_reused": true,
+      "mapped_libraries": [
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20",
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20"
+      ]
+    },
+    "asan": {
+      "full_heads": 8,
+      "requests": 5,
+      "exact": true,
+      "mode": "asan",
+      "kind": "glm",
+      "batch": {
+        "completed": 3,
+        "steps": 5,
+        "packed_calls": 0,
+        "fallback_rows": 2,
+        "released": 4,
+        "peak_live": 2
+      },
+      "memory": {
+        "host_limit": 17179869184,
+        "device_limit": 91153642292,
+        "shared_host_upper": 225428964,
+        "shared_device_upper": 18506341624,
+        "reserved_host": 509536036,
+        "reserved_device": 19834625840,
+        "peak_reserved_host": 509536036,
+        "peak_reserved_device": 21474836480,
+        "busy": 0,
+        "idle_retained": 1,
+        "slots": 2,
+        "idle": 2,
+        "request_host": 142053536,
+        "request_host_peak": 142053536,
+        "request_device": 664142108,
+        "variable_capacity": 0
+      },
+      "real_arrivals_during_first_execution": true,
+      "queued_and_live_cancel": true,
+      "same_client_id_reused": true,
+      "mapped_libraries": [
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublas.so.13.10.0.20",
+        "/usr/local/cuda-13.5/targets/x86_64-linux/lib/libcublasLt.so.13.10.0.20"
+      ]
+    }
+  },
+  "total_exact_glm_heads": 770,
+  "dense_unresolved_failure": {
+    "status": "failed_reference_check_cause_unresolved",
+    "workload": "Dense Qwen dynamic arrivals, mixed-token-budget8, queued/live cancellation and reuse",
+    "product_exit": 0,
+    "verification_exit": 1,
+    "first_failed_generation": 2,
+    "expected_first_five": [
+      23359,
+      271,
+      12,
+      1510,
+      1193
+    ],
+    "observed_first_five": [
+      18065,
+      271,
+      12,
+      1510,
+      3431
+    ],
+    "prompt_ids_exact": true,
+    "reference": "test/bf16_cuda_packed_traced_reference.json stream1",
+    "captures": "/tmp/bitnet-goal-glm-expert-residency/dynamic-postfix-normal-dense",
+    "scope": "Generated IDs differ despite exact prompt IDs. Whether this is introduced by this patch or a pre-existing numerical/profile/cohort issue has not been established. Oracle bytes are unchanged. Do not claim this workload qualified."
+  },
+  "dynamic_series": [
+    {
+      "kind": "glm",
+      "mode": "normal",
+      "exit": 0
+    },
+    {
+      "kind": "glm",
+      "mode": "asan",
+      "exit": 0
+    },
+    {
+      "kind": "dense",
+      "mode": "normal",
+      "exit": 1
+    }
+  ],
+  "remaining": [
+    "Resolve the dense dynamic-serving mismatch without weakening references",
+    "Finish normal/ASAN Flash and DeepSeek current-binary serving controls; series stopped before them",
+    "Requalify current-binary resident fixed-profile vLLM parity",
+    "Measure actual admitted-cache CUPTI transfers, exposed stalls and physical memory peaks",
+    "Qualify remaining sustained serving SLOs and diverse cold/warm working sets",
+    "Qualify CPU AVX2/AVX512/ARM NEON and Metal whole-model profiles"
+  ],
+  "evidence_root": "/tmp/bitnet-goal-glm-expert-residency",
+  "evidence_scope": "Referenced /tmp captures and logs are local evidence; this JSON publishes summaries, not portable copies of all raw captures.",
+  "configuration": {
+    "device_uuid": "GPU-5a215cb3-57b0-0a6e-d511-e90bb05c0e05",
+    "hardware": "RTX PRO 6000 Max-Q, SM120, 96GB",
+    "cache_test_budget_bytes": 8589934592,
+    "prefill_geometries": [
+      128,
+      1024
+    ],
+    "max_sequence_length": 2304,
+    "live_requests": 2,
+    "generated_tokens_per_completed_long_control": 32,
+    "ram_cache_mb": 128,
+    "threads": 1,
+    "provider_preload": "/usr/local/cuda/lib64/libcublas.so.13:/usr/local/cuda/lib64/libcublasLt.so.13",
+    "provider_profile": "CUDA13.5 libcublas/libcublasLt13.10.0.20; mapped providers checked in whole-model and dynamic GLM controls"
+  },
+  "prior_qualification": {
+    "resident_qwen27_fixed_profile": "docs/vllm-fixed-profile-resident-performance.json",
+    "scope": "Published results apply to their recorded earlier binary/profile. This checkpoint does not requalify current-binary parity or all-family release readiness."
+  },
+  "precommit_validation": {
+    "command": "make -j4 test",
+    "exit": 0,
+    "warnings": 0,
+    "log": "/tmp/bitnet-goal-glm-expert-residency/precommit-standard-tests.log"
+  }
+}

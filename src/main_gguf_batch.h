@@ -210,7 +210,7 @@ static int gguf_batch_run(const GGUFBatchOptions *options) {
     GB_REQUIRE(!native_cli_mul((size_t)options->gpu_mb,1048576,&gpu_cache),"GPU cache bound");
     if(b.dense)GB_REQUIRE(!bn_backend_layout_prepare_bf16_with_limits(bn_model_backend(&b.model),b.gpu,&b.model.config,&b.model.weights,options->budget,BN_BACKEND_BF16_MATH_MKL_VML_HA,b.model_device_budget,b.model_host_budget),"dense resident model formats");
     else if(expected==BN_MODEL_BF16_LAYOUT_FLASH_HC)GB_REQUIRE(!bn_backend_layout_prepare_bf16_flash_model_with_cache(bn_model_backend(&b.model),b.gpu,&b.model.config,&b.model.weights,b.model_device_budget,b.model_host_budget,gpu_cache),"Flash model formats");
-    else GB_REQUIRE(!bn_model_prepare_bf16_topology(&b.model,b.gpu,b.model_device_budget,b.model_host_budget),"GLM recurrent model formats");
+    else GB_REQUIRE(!bn_model_prepare_bf16_topology_with_cache(&b.model,b.gpu,b.model_device_budget,b.model_host_budget,gpu_cache),"GLM recurrent model, cache and payload budgets");
     if(b.dense) {
         GB_REQUIRE(!gguf_memory_coordinator(&b),"dense coordinator payload quote/budget");
         b.coordinator=bn_backend_session_create();GB_REQUIRE(b.coordinator,"coordinator");

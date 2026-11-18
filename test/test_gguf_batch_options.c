@@ -13,7 +13,7 @@ static void options(void) {
         {"b","--cuda-batch","m","--profile","unknown","--batch-prompts","x"},
         {"b","--cuda-batch","m","--profile","dense-bf16","--batch-prompts","x","--batch-live","17"},
         {"b","--cuda-batch","m","--profile","dense-bf16","--batch-prompts","x","--batch-token-budget","8193"},
-        {"b","--cuda-batch","m","--profile","glm-recurrent","--batch-prompts","x","--gpu-cache-mb","1"},
+        {"b","--cuda-batch","m","--profile","dense-bf16","--batch-prompts","x","--gpu-cache-mb","1"},
         {"b","--cuda-batch","m","--profile","glm-recurrent","--batch-prompts","x","--policy","p"},
         {"b","--cuda-batch","m","--profile","flash-bf16","--batch-prompts","x","--kv-budget-mb","1"},
         {"b","--cuda-batch","m","--profile","dense-bf16","--batch-prompts","x","--request-device-mb","0"},
@@ -31,6 +31,8 @@ static void options(void) {
     assert(!gguf_batch_parse(11,memory,&o)&&o.serving_host_mb==700&&o.serving_device_mb==14000);
     memory[4]="dense-bf16";assert(!gguf_batch_parse(11,memory,&o)&&o.serving_host_mb==700&&o.serving_device_mb==14000);before=o;
     memory[4]="glm-recurrent";memory[8]="0";assert(gguf_batch_parse(11,memory,&o)==-1&&!memcmp(&before,&o,sizeof(o)));
+    char *cache[]={"b","--cuda-batch","m","--profile","glm-recurrent","--batch-prompts","x","--gpu-cache-mb","32"};
+    assert(!gguf_batch_parse(9,cache,&o)&&o.gpu_mb==32);
     FILE *f=tmpfile();assert(f);gguf_batch_usage(f,"bitnet");assert(ftell(f)>0&&!fclose(f));
 }
 static void policy(void) {

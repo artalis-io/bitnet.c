@@ -85,6 +85,19 @@ static int bf16_shared_banks(BnGPUBackend *g,const BF16SharedSource *source,
     }
     info->shared_layers++;return 0;
 }
+static int bf16_shared_cache_delta(BnGPUBackend *g,void *request,
+    const BnGPUExpertCacheStats *before,BnTransformerBF16SharedInfo *info) {
+    BnGPUExpertCacheStats after;
+    if(g->expert_cache_stats(request,&after)||after.hits<before->hits||after.misses<before->misses||
+       after.hit_bytes<before->hit_bytes||after.miss_bytes<before->miss_bytes||after.evictions<before->evictions||
+       after.bypasses<before->bypasses||after.fill_copy_bytes<before->fill_copy_bytes)return -1;
+    info->cache_hits+=after.hits-before->hits;info->cache_misses+=after.misses-before->misses;
+    info->cache_hit_bytes+=after.hit_bytes-before->hit_bytes;info->cache_miss_bytes+=after.miss_bytes-before->miss_bytes;
+    info->cache_evictions+=after.evictions-before->evictions;info->cache_bypasses+=after.bypasses-before->bypasses;
+    info->cache_fill_copy_bytes+=after.fill_copy_bytes-before->fill_copy_bytes;
+    if(after.reserved_device_bytes>info->cache_reserved_device_bytes)info->cache_reserved_device_bytes=after.reserved_device_bytes;
+    return 0;
+}
 static int bf16_shared_glm_read(void *source,int expert,const BnGPUMoEBankLease *lease,void *dst) {
     (void)lease;return bf16_moe_source_copy(source,expert,dst);
 }
@@ -99,10 +112,23 @@ static int bf16_shared_moe(BF16GLMRequest **requests,BnTransformerBF16MoEWork **
     for(int i=0;i<count;i++) {
         BnTransformerBF16MoEWork *s=work[i];const BnTransformerBF16MoEPlan *p=&s->active;
         if(!s->pending||s->failed||s->next_expert||p->weights!=weights||p->source!=first->source||
-            p->bank_capacity!=first->bank_capacity)return -1;
+            p->bank_capacity!=first->bank_capacity||p->cache_enabled!=first->cache_enabled||
+            (p->cache_enabled&&p->cache_layer!=first->cache_layer))return -1;
         c[i].request=requests[i]->request;c[i].source=&s->active;c[i].offsets=s->offsets;c[i].prefill=p->prefill;
         c[i].plan=(BnGPUMoEBankConsumerPlan){.total_tokens=p->n_tokens,.x=p->gathered,
             .gate=p->gate,.up=p->up,.out=p->down,.prepared_input=s->generation,.clamped=1,.clamp_limit=weights->clamp_limit};
+    }
+    if(first->cache_enabled) {
+        BnGPUExpertCacheGroupRow rows[16];
+        for(int i=0;i<count;i++)rows[i]=(BnGPUExpertCacheGroupRow){c[i].request,c[i].offsets,work[i]->active.n_tokens,c[i].prefill};
+        int status=-1;
+        for(int retry=0;retry<8;retry++) {
+            status=g->expert_cache_begin_group(requests[0]->request,first->cache_layer,rows,count,&work[0]->cache_ticket);
+            if(status!=BN_GPU_MOE_BANK_BUSY)break;
+            if(bf16_shared_consumers_fence(g,c,count,info))return -1;
+        }
+        if(status)return -1;
+        source.cache_hits=work[0]->cache_ticket.hits;source.cache_generation=work[0]->cache_ticket.generation;
     }
     if(bf16_shared_banks(g,&source,c,count,info))return -1;
     for(int i=0;i<count;i++) {
@@ -133,6 +159,9 @@ int bn_transformer_bf16_glm_forward_group_session(BnModel *model,
         return status;
     }
     BnGPUBackend *g=requests[0]->gpu;BnGPUMoEBankStats before[16];
+    BnGPUExpertCacheStats cache_before[16];int cached=requests[0]->weights->expert_cache!=NULL;
+    if(cached&&(!g->expert_cache_begin_group||!g->expert_cache_end||!g->expert_cache_stats))return -1;
+    if(cached)for(int i=0;i<count;i++)if(g->expert_cache_stats(requests[i]->request,cache_before+i))return -1;
     if(!g->moe_bank_submit_group||!g->moe_bank_stats)return -1;
     for(int i=0;i<count;i++)if(g->moe_bank_stats(requests[i]->request,before+i))return -1;
     for(int i=0;i<count;i++)if(requests[i]->context_tokens!=rows[i].tokens)
@@ -150,6 +179,7 @@ int bn_transformer_bf16_glm_forward_group_session(BnModel *model,
         if(layer<3)continue;
         if(bf16_shared_moe(requests,work,count,&info))goto failed;
         for(int i=0;i<count;i++)if(bf16_glm_layer_submit(requests[i],0))goto failed;
+        if(cached&&g->expert_cache_end(requests[0]->request,&work[0]->cache_ticket))goto failed;
     }
     for(int i=0;i<count;i++)if(bf16_glm_head_submit(requests[i]))goto failed;
     for(int i=0;i<count;i++)if(g->resident_read(requests[i]->request,requests[i]->logits,requests[i]->host_logits))goto failed;
@@ -171,6 +201,7 @@ int bn_transformer_bf16_glm_forward_group_session(BnModel *model,
         size_t bytes=after.shared_upload_bytes_avoided-before[i].shared_upload_bytes_avoided;
         info.shared_upload_bytes_avoided=bytes>SIZE_MAX-info.shared_upload_bytes_avoided?SIZE_MAX:info.shared_upload_bytes_avoided+bytes;
     }
+    if(cached)for(int i=0;i<count;i++)if(bf16_shared_cache_delta(g,requests[i]->request,cache_before+i,&info))goto failed;
     /* No fallible operation remains: publish the cohort together. */
     for(int i=0;i<count;i++) {
         BF16GLMRequest *r=requests[i];BnSession *session=rows[i].session;
@@ -182,6 +213,7 @@ int bn_transformer_bf16_glm_forward_group_session(BnModel *model,
     if(out)*out=info;
     return 0;
 failed:
+    if(cached)for(int i=0;i<count;i++)(void)g->expert_cache_cancel(requests[i]->request);
     for(int i=0;i<count;i++)requests[i]->failed=1;
     return -1;
 }
@@ -326,21 +358,7 @@ int bn_transformer_bf16_flash_forward_group_session(BnModel *model,
         size_t bytes=after.shared_upload_bytes_avoided-before[i].shared_upload_bytes_avoided;
         info.shared_upload_bytes_avoided=bytes>SIZE_MAX-info.shared_upload_bytes_avoided?SIZE_MAX:info.shared_upload_bytes_avoided+bytes;
     }
-    if(cached)for(int i=0;i<count;i++) {
-        BnGPUExpertCacheStats after;const BnGPUExpertCacheStats *before_cache=cache_before+i;
-        if(g->expert_cache_stats(requests[i]->request,&after)||after.hits<before_cache->hits||
-           after.misses<before_cache->misses||after.hit_bytes<before_cache->hit_bytes||
-           after.miss_bytes<before_cache->miss_bytes||after.evictions<before_cache->evictions||
-           after.bypasses<before_cache->bypasses||
-           after.fill_copy_bytes<before_cache->fill_copy_bytes)goto failed;
-        info.cache_hits+=after.hits-before_cache->hits;info.cache_misses+=after.misses-before_cache->misses;
-        info.cache_hit_bytes+=after.hit_bytes-before_cache->hit_bytes;
-        info.cache_miss_bytes+=after.miss_bytes-before_cache->miss_bytes;
-        info.cache_evictions+=after.evictions-before_cache->evictions;
-        info.cache_bypasses+=after.bypasses-before_cache->bypasses;
-        info.cache_fill_copy_bytes+=after.fill_copy_bytes-before_cache->fill_copy_bytes;
-        if(after.reserved_device_bytes>info.cache_reserved_device_bytes)info.cache_reserved_device_bytes=after.reserved_device_bytes;
-    }
+    if(cached)for(int i=0;i<count;i++)if(bf16_shared_cache_delta(g,requests[i]->request,cache_before+i,&info))goto failed;
     for(int i=0;i<count;i++) {
         BF16PLERequest *r=requests[i];BF16FlashRequest *f=r->flash;BnSession *s=rows[i].session;
         bf16_flash_commit(r);

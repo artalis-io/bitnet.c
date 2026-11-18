@@ -125,6 +125,9 @@ const BnTrellisSource *bn_model_trellis_expert_source(const BnModel *model,
  * shared expert source/cache storage and per-request resources. */
 int bn_model_prepare_bf16_topology(BnModel *model, BnGPUBackend *gpu,
                                   size_t device_budget, size_t host_budget);
+/* Additional model-owned GPU cache payload, separate from these budgets. */
+int bn_model_prepare_bf16_topology_with_cache(BnModel *model,BnGPUBackend *gpu,
+    size_t device_budget,size_t host_budget,size_t cache_budget);
 void bn_model_free(BnModel *m);
 void bn_model_embed_token(const BnModel *m, float *out, int token);
 int bn_model_uses_moe(const BnModel *model);

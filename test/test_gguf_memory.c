@@ -48,10 +48,14 @@ int bn_transformer_bf16_resize_idle_kv(const BnModel *m,BnSession *s,int capacit
     ((FakeSession *)s)->capacity=capacity;return 0;
 }
 int bn_transformer_bf16_position(const BnBackendSession *s){return ((const FakeSession *)s)->healthy?((const FakeSession *)s)->session.pos:-1;}
-const BnBackendBF16GLMModel *bn_backend_layout_bf16_glm_model(const BnBackendModel *m){(void)m;return NULL;}
-const BnBackendBF16FlashIOModel *bn_backend_layout_bf16_flash_model(const BnBackendModel *m){(void)m;return NULL;}
-int bn_transformer_bf16_glm_memory_plan(const BnModel *m,int n,int c,BnTransformerBF16RequestMemory *out){(void)m;(void)n;(void)c;(void)out;assert(0);return -1;}
-int bn_transformer_bf16_flash_memory_plan(const BnModel *m,BnGPUBackend *g,int n,int c,BnTransformerBF16RequestMemory *out){(void)m;(void)g;(void)n;(void)c;(void)out;assert(0);return -1;}
+static const BnBackendBF16GLMModel *fake_glm;
+static const BnBackendBF16FlashIOModel *fake_flash;
+static const BnBackendBF16FlashFFNModel *fake_ffn;
+const BnBackendBF16GLMModel *bn_backend_layout_bf16_glm_model(const BnBackendModel *m){(void)m;return fake_glm;}
+const BnBackendBF16FlashIOModel *bn_backend_layout_bf16_flash_model(const BnBackendModel *m){(void)m;return fake_flash;}
+const BnBackendBF16FlashFFNModel *bn_backend_layout_bf16_flash_ffn_model(const BnBackendModel *m){(void)m;return fake_ffn;}
+int bn_transformer_bf16_glm_memory_plan(const BnModel *m,int n,int c,BnTransformerBF16RequestMemory *out){assert(m&&fake_glm&&n==4&&c==256&&out);*out=(BnTransformerBF16RequestMemory){100,32,32};return 0;}
+int bn_transformer_bf16_flash_memory_plan(const BnModel *m,BnGPUBackend *g,int n,int c,BnTransformerBF16RequestMemory *out){assert(m&&g&&fake_flash&&n==4&&c==256&&out);*out=(BnTransformerBF16RequestMemory){100,32,32};return 0;}
 int bn_transformer_bf16_glm_prepare_context(const BnModel *m,BnSession *s,int n,int c,size_t d,size_t h){(void)m;(void)s;(void)n;(void)c;(void)d;(void)h;assert(0);return -1;}
 int bn_transformer_bf16_flash_prepare_context(const BnModel *m,BnGPUBackend *g,BnBackendSession *s,int n,int c,size_t d,size_t h){(void)m;(void)g;(void)s;(void)n;(void)c;(void)d;(void)h;assert(0);return -1;}
 int bn_transformer_bf16_glm_info(const BnBackendSession *s,BnTransformerBF16GLMRequestInfo *out){(void)s;(void)out;assert(0);return -1;}
@@ -68,6 +72,25 @@ static void setup(GGUFBatch *b,BnGPUBackend *g,size_t device,int live,size_t kv)
 }
 static void finish(GGUFBatch *b) {
     gguf_memory_free(b);assert(!b->failed&&b->memory.used.device_bytes==100&&b->memory.used.host_bytes==0&&!b->kv_reserved);
+}
+static void shared_cache_metadata(void) {
+    BnBackendBF16GLMModel glm={.bytes=64,.expert_cache_host_bytes=4096};
+    BnBackendBF16FlashIOModel flash={.model_bytes=64};
+    BnBackendBF16FlashFFNModel ffn={.expert_cache_host_bytes=4096};
+    BnGPUBackend g={0};
+    for(int family=0;family<2;family++) {
+        GGUFBatch b={0};b.gpu=&g;b.chunk=4;b.frontend_host=10;
+        b.model.config.seq_len=256;b.model.config.vocab_size=8;b.options.serve=1;
+        b.options.device_mb=b.options.host_mb=1;b.options.gpu_mb=1;
+        fake_glm=family?NULL:&glm;fake_flash=family?&flash:NULL;fake_ffn=family?&ffn:NULL;
+        BnGenerateBatchMemory upper={1u<<20,2u<<20};
+        assert(!bn_generate_batch_memory_init(&b.memory,(BnGenerateBatchMemory){8u<<20,4u<<20},
+            (BnGenerateBatchMemoryQuote){upper,upper}));
+        assert(!gguf_memory_ready(&b));
+        assert(b.memory.shared.host_bytes==4106&&b.memory.used.host_bytes==4106);
+        assert(b.memory.shared.device_bytes==(1u<<20)+64&&b.memory.used.device_bytes==(1u<<20)+64);
+    }
+    fake_glm=NULL;fake_flash=NULL;fake_ffn=NULL;
 }
 int main(void) {
     BnGPUBackend g={0};g.resident_resize_discard=resize_capability;GGUFBatch b;BnSession *a,*c,*out;
@@ -95,6 +118,7 @@ int main(void) {
     setup(&b,&g,2000,2,320);assert(!gguf_memory_acquire(&b,9,&a)&&!gguf_memory_acquire(&b,9,&c)&&!gguf_memory_release(&b,a,0));
     before_frees=frees;assert(gguf_memory_acquire(&b,17,&out)==1&&!out&&frees==before_frees&&b.kv_reserved==320);finish(&b);
     assert(creates==frees);
+    shared_cache_metadata();
     (void)native_cli_parse;(void)native_cli_usage;(void)gguf_batch_parse;(void)gguf_batch_usage;
     (void)gguf_memory_frontend;(void)gguf_memory_init;(void)gguf_memory_coordinator;(void)gguf_memory_ready;(void)gguf_memory_report;
     puts("GGUF managed pool: active-pressure atomicity, charged idle reuse, growth overlap, tight-budget eviction and failed prepare/restart/resize cleanup PASSED");

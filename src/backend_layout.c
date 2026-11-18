@@ -1596,7 +1596,7 @@ int bn_backend_layout_prepare_bf16_flash_model_with_cache(BnBackendModel *backen
         !bn_backend_layout_bf16_math_available(BN_BACKEND_BF16_MATH_MKL_VML_HA) ||
         host_budget < (size_t)c->dim * c->hyper_connection_count * sizeof(float))
         return -1;
-    if (cache_budget && (!gpu->expert_cache_create || !gpu->expert_cache_destroy ||
+    if (cache_budget && (!gpu->expert_cache_create || !gpu->expert_cache_memory || !gpu->expert_cache_destroy ||
         !gpu->expert_cache_bind || !gpu->expert_cache_begin || !gpu->expert_cache_end ||
         !gpu->expert_cache_cancel || !gpu->expert_cache_stats)) return -1;
     BnBackendModel *staged = bn_backend_model_create();
@@ -1619,6 +1619,10 @@ int bn_backend_layout_prepare_bf16_flash_model_with_cache(BnBackendModel *backen
         BnGPUExpertCacheConfig cache={48,512,c->dim,c->moe_intermediate_size,gate,down,cache_budget};
         r->flash_ffn.expert_cache=gpu->expert_cache_create(gpu->ctx,&cache);
         if (!r->flash_ffn.expert_cache) goto done;
+        BnGPUExpertCacheMemory memory;
+        if(gpu->expert_cache_memory(r->flash_ffn.expert_cache,&memory)||
+           memory.host_bytes>host_budget||memory.device_bytes>cache_budget)goto done;
+        r->flash_ffn.expert_cache_host_bytes=memory.host_bytes;
     }
     r->flash_complete = 1;
     bn_backend_model_bind_gpu(staged, gpu);
@@ -2382,6 +2386,7 @@ typedef struct {
 } BackendGLMResources;
 static void backend_glm_release(void *ptr) {
     BackendGLMResources *r=ptr;if(!r)return;
+    if(r->model.expert_cache)r->model.gpu->expert_cache_destroy(r->model.expert_cache);
     if(r->layers)for(int i=0;i<r->model.n_layers;++i){BnBackendBF16GLMLayer *l=&r->layers[i];
         bn_backend_layout_bf16_moe_free(&l->moe);
         bn_backend_layout_bf16_dense_ffn_free(&l->dense);
@@ -2414,15 +2419,44 @@ static const void *backend_glm_global(BnGGUFFile *f,int index,int type,int nd,
     BnModelLayerAnatomy global={0};global.tensor[BN_MODEL_TENSOR_ATTN_Q]=index;
     return backend_anatomy_source(f,&global,BN_MODEL_TENSOR_ATTN_Q,type,nd,dim,rows,1,bytes);
 }
+static int backend_glm_cache_init(BackendGLMResources *r,size_t budget,size_t host_budget) {
+    int count=0;
+    for(int l=0;l<r->model.n_layers;l++)count+=r->anatomy.layers[l].uses_moe!=0;
+    if(!count)return -1;
+    int *types=calloc((size_t)count*2,sizeof(*types));if(!types)return -1;
+    BnGPUExpertCacheConfig cfg={.n_layers=count,.gate_types=types,.down_types=types+count,.device_budget_bytes=budget};
+    int index=0;
+    for(int l=0;l<r->model.n_layers;l++)if(r->anatomy.layers[l].uses_moe) {
+        BnBackendBF16GLMLayer *layer=&r->layers[l];const BnBackendBF16MoEWeights *w=&layer->moe;
+        if(!index){cfg.n_experts=w->n_experts;cfg.dim=w->dim;cfg.hidden_dim=w->hidden_dim;}
+        if(w->n_experts!=cfg.n_experts||w->dim!=cfg.dim||w->hidden_dim!=cfg.hidden_dim){free(types);return -1;}
+        types[index]=w->gate_type;types[count+index]=w->down_type;layer->expert_cache_layer=index++;
+    }
+    r->model.expert_cache=r->model.gpu->expert_cache_create(r->model.gpu->ctx,&cfg);
+    free(types);
+    if(!r->model.expert_cache)return -1;
+    BnGPUExpertCacheMemory memory;
+    if(r->model.gpu->expert_cache_memory(r->model.expert_cache,&memory)||
+       memory.host_bytes>host_budget||memory.device_bytes>budget)return -1;
+    r->model.expert_cache_layers=count;r->model.expert_cache_host_bytes=memory.host_bytes;return 0;
+}
 int bn_backend_layout_prepare_bf16_glm_model(BnBackendModel *backend,BnGPUBackend *gpu,
     BnGGUFFile *file,const BnModelAnatomy *a,const BnMoEExpertMap *maps,size_t n_maps,
     size_t gpu_budget,size_t host_budget) {
+    return bn_backend_layout_prepare_bf16_glm_model_with_cache(backend,gpu,file,a,maps,n_maps,gpu_budget,host_budget,0);
+}
+int bn_backend_layout_prepare_bf16_glm_model_with_cache(BnBackendModel *backend,BnGPUBackend *gpu,
+    BnGGUFFile *file,const BnModelAnatomy *a,const BnMoEExpertMap *maps,size_t n_maps,
+    size_t gpu_budget,size_t host_budget,size_t cache_budget) {
     if(!backend||!a||a->n_layers<1||a->n_layers>BN_MODEL_ANATOMY_MAX_LAYERS||a->dim!=4096||
        a->vocab_size<1||a->mhc_streams!=4||!file||!file->tensors||
        (file->n_shards&&(!file->shard_raws||!file->shard_raw_sizes||!file->shard_data_offsets))||
        !bn_gpu_backend_can_create_quant_only_buffer(gpu)||!bn_gpu_backend_can_destroy_buffer(gpu)||
        !bn_gpu_backend_can_bf16_decode(gpu)||bn_backend_model_gpu_for_cpu_operations(backend)||
        bn_backend_model_gpu_resources(backend,&backend_glm_owner))return -1;
+    if(cache_budget&&(!gpu->expert_cache_create||!gpu->expert_cache_destroy||!gpu->expert_cache_bind||
+       !gpu->expert_cache_memory||!gpu->expert_cache_begin||!gpu->expert_cache_begin_group||!gpu->expert_cache_end||
+       !gpu->expert_cache_cancel||!gpu->expert_cache_stats))return -1;
     for(int i=0;i<a->n_layers;++i){const BnModelLayerAnatomy *l=&a->layers[i];
         if((l->kind!=BN_MODEL_ANATOMY_KDA&&l->kind!=BN_MODEL_ANATOMY_INDEXED_MLA)||
            (l->uses_moe!=0&&l->uses_moe!=1)||(l->uses_moe&&(!maps||n_maps<(size_t)a->n_layers)))return -1;
@@ -2447,6 +2481,7 @@ int bn_backend_layout_prepare_bf16_glm_model(BnBackendModel *backend,BnGPUBacken
     void *temporary=bn_gpu_backend_create_quant_only_buffer(gpu,norm,norm_bytes,BN_GGUF_TENSOR_F32,1,a->dim);if(!temporary)goto fail;
     r->model.output_norm=bn_gpu_backend_buffer_create_bf16_decoded(gpu,temporary);bn_gpu_backend_destroy_buffer(gpu,temporary);if(!r->model.output_norm)goto fail;
     for(int i=0;i<a->n_layers;++i){BnBackendBF16GLMLayer *l=&r->layers[i];const BnModelLayerAnatomy *shape=&r->anatomy.layers[i];
+        l->expert_cache_layer=-1;
         if(shape->kind==BN_MODEL_ANATOMY_KDA){
             if(bn_backend_layout_bf16_kda_init(&l->kda,gpu,file,&r->anatomy,i,gpu_budget-r->model.bytes,host_budget)||
                backend_glm_account(r,l->kda.bytes,l->kda.bytes,l->kda.host_staging_bytes,gpu_budget))goto fail;
@@ -2469,6 +2504,7 @@ int bn_backend_layout_prepare_bf16_glm_model(BnBackendModel *backend,BnGPUBacken
                backend_glm_account(r,l->dense.bytes,l->dense.bytes,l->dense.host_staging_bytes,gpu_budget))goto fail;
         }
     }
+    if(cache_budget&&backend_glm_cache_init(r,cache_budget,host_budget))goto fail;
     if(bn_backend_model_attach_gpu_resources(backend,&backend_glm_owner,r,backend_glm_release))goto fail;
     bn_backend_model_bind_gpu(backend,gpu);return 0;
 fail:

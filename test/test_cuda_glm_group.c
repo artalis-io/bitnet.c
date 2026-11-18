@@ -68,11 +68,13 @@ static void unpublished(BnSession **sessions,int failed) {
     }
 }
 int main(int argc,char **argv) {
-    assert(argc==5);BnGGUFFile *file=bn_gguf_open_file(argv[1]);assert(file);BnModel model={0};
+    assert(argc==5||argc==6);if(argc==6)assert(!strcmp(argv[5],"--cache"));
+    BnGGUFFile *file=bn_gguf_open_file(argv[1]);assert(file);BnModel model={0};
     assert(!bn_model_load_topology(&model,file,64));BnGPUBackend *g=bn_gpu_cuda_create();assert(g&&g->moe_bank_submit_group);
-    assert(!bn_model_prepare_bf16_topology(&model,g,(size_t)12<<30,256u<<20));
+    assert(!bn_model_prepare_bf16_topology_with_cache(&model,g,(size_t)12<<30,256u<<20,argc==6?((size_t)4<<30):0));
     assert(!bn_model_set_moe_shard_files(&model,file->owned_maps,file->n_shards));
     const BnBackendBF16GLMModel *weights=bn_backend_layout_bf16_glm_model(bn_model_backend(&model));
+    assert((weights->expert_cache!=NULL)==(argc==6));
     size_t gate_bytes=0,down_bytes=0;
     for(int l=3;l<45;l++) {
         if(weights->layers[l].moe.gate_bytes>gate_bytes)gate_bytes=weights->layers[l].moe.gate_bytes;

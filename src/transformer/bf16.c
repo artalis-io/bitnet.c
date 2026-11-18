@@ -2757,7 +2757,7 @@ int bn_transformer_bf16_dense_kda_block(void *request,
 
 static int bf16_moe_validate(void*request,const BnTransformerBF16MoEPlan*p) {
     if(!request||!p||!p->weights||!p->source||!p->host_state||p->layer<0||
-       p->n_tokens<1||(p->prefill!=0&&p->prefill!=1)||p->bank_capacity<1||p->bank_capacity>64)return -1;
+       p->n_tokens<1||(p->prefill!=0&&p->prefill!=1)||(p->cache_enabled!=0&&p->cache_enabled!=1)||p->bank_capacity<1||p->bank_capacity>64)return -1;
     const BnBackendBF16MoEWeights*w=p->weights;const BnMoEExpertMap*m=w->source_map;
     BnGPUBackend*g=w->gpu;size_t n=(size_t)p->n_tokens;
     if(!g||!m||!w->router||!w->bias||p->layer!=w->layer||!w->gate_bytes||!w->down_bytes||
@@ -2772,6 +2772,8 @@ static int bf16_moe_validate(void*request,const BnTransformerBF16MoEPlan*p) {
        !g->moe_bank_prepare_input||!g->moe_bank_acquire||!g->moe_bank_submit||!g->moe_bank_cancel||
        !g->resident_read||!g->resident_zero||(!bn_moe_io_has_mmap(p->source)&&!bn_moe_io_has_pread(p->source))||
        bf16_dense_ffn_validate(&w->shared,request,p->n_tokens,p->x,p->shared_gate_up,p->shared_activated,p->shared_out))return -1;
+    if(p->cache_enabled&&(p->cache_layer<0||!g->expert_cache_begin||!g->expert_cache_end||
+       !g->expert_cache_cancel||!g->expert_cache_stats))return -1;
     BnGPUResidentView v[]={p->x,p->cast,p->logits,p->route_weights,p->indices,p->metadata,p->cursors,
         p->slots,p->inverse,p->gathered,p->gate,p->up,p->down,p->weighted,p->routed,
         p->shared_gate_up,p->shared_activated,p->shared_out,p->out};
@@ -2790,6 +2792,7 @@ int bn_transformer_bf16_moe_begin(void*request,const BnTransformerBF16MoEPlan*p,
     if(!s||s->pending||s->failed||bf16_moe_validate(request,p))return -1;
     const BnBackendBF16MoEWeights*w=p->weights;BnGPUBackend*g=w->gpu;int nt=p->n_tokens;
     s->active=*p;s->pending=1;s->next_expert=0;s->bank=0;s->generation=0;
+    s->cache_started=0;s->cache_ticket=(BnGPUExpertCacheLayer){0};
     BnGPUBF16F32LinearResidentPlan router={.n_tokens=nt,.rows=288,.cols=w->dim,
         .weight=w->router,.x=p->x,.cast=p->cast,.out=p->logits};
     BnGPUBiasedSigmoidF32ResidentPlan top={.n_tokens=nt,.n_experts=288,.k=8,.route_scale=w->route_scale,
@@ -2826,6 +2829,12 @@ static int bf16_moe_source_copy(const BnTransformerBF16MoEPlan*p,int expert,void
 int bn_transformer_bf16_moe_submit(void*request,BnTransformerBF16MoEWork*s) {
     if(!s||!s->pending||s->failed||s->active.x.request!=request)return -1;
     const BnTransformerBF16MoEPlan*p=&s->active;const BnBackendBF16MoEWeights*w=p->weights;BnGPUBackend*g=w->gpu;
+    if(p->cache_enabled&&!s->cache_started&&s->next_expert<288) {
+        int status=g->expert_cache_begin(request,p->cache_layer,p->prefill,s->offsets,p->n_tokens,&s->cache_ticket);
+        if(status==BN_GPU_MOE_BANK_BUSY)return status;
+        if(status)goto fail;
+        s->cache_started=1;
+    }
     while(s->next_expert<288){int e=s->next_expert;while(e<288&&s->offsets[e]==s->offsets[e+1])++e;
         if(e==288){s->next_expert=e;break;}
         BnGPUMoEBankLease lease={0};int status=g->moe_bank_acquire(request,s->bank%2,w->gate_type,w->down_type,&lease);
@@ -2836,7 +2845,8 @@ int bn_transformer_bf16_moe_submit(void*request,BnTransformerBF16MoEWork*s) {
         BnGPUMoEBankItem items[64];int count=0;
         while(e<288&&count<p->bank_capacity){int rows=s->offsets[e+1]-s->offsets[e];
             if(rows){items[count]=(BnGPUMoEBankItem){e,s->offsets[e],rows};
-                if(bf16_moe_source_copy(p,e,(unsigned char*)lease.data+(size_t)count*lease.expert_bytes)){
+                if(!(s->cache_started&&((s->cache_ticket.hits[e/64]>>(e%64))&1))&&
+                   bf16_moe_source_copy(p,e,(unsigned char*)lease.data+(size_t)count*lease.expert_bytes)){
                     g->moe_bank_cancel(request,&lease);goto fail;}++count;}++e;}
         BnGPUMoEBankResidentPlan bank={.lease=lease,.total_tokens=p->n_tokens,.n_experts=count,.experts=items,
             .x=p->gathered,.gate=p->gate,.up=p->up,.out=p->down,.prepared_input=s->generation,
@@ -2848,8 +2858,10 @@ int bn_transformer_bf16_moe_submit(void*request,BnTransformerBF16MoEWork*s) {
         .weights=p->route_weights,.weighted=p->weighted,.out=p->routed,.status=bn_gpu_resident_view_slice(p->metadata,292,1)};
     BnGPUAddBF16ResidentPlan add={.count=(size_t)p->n_tokens*w->dim,.x=p->routed,.y=p->shared_out,.out=p->out};
     if(g->moe_reduce_bf16_resident(g->ctx,request,&red)||g->add_bf16_resident(g->ctx,request,&add))goto fail;
-    s->pending=0;return 0;
+    if(s->cache_started&&g->expert_cache_end(request,&s->cache_ticket))goto fail;
+    s->cache_started=0;s->pending=0;return 0;
 fail:
+    if(s->cache_started){(void)g->expert_cache_cancel(request);s->cache_started=0;}
     s->failed=1;return -1;
 }
 
@@ -3432,7 +3444,7 @@ static int bf16_glm_clear(BF16GLMRequest *r) {
     }
     return g->resident_zero(r->request,r->status)||g->resident_synchronize(r->request)?-1:0;
 }
-typedef struct {size_t gate,down,slot_count,bank_bytes,input_bytes,group_bytes,meta;} BF16GLMStoragePlan;
+typedef struct {size_t gate,down,slot_count,bank_bytes,input_bytes,group_bytes,meta,cache_bytes;} BF16GLMStoragePlan;
 static int bf16_glm_admit(const BnBackendModel *model,const BnMoEIO *source,
     int max_tokens,int capacity,size_t device_budget,size_t host_budget,
     BF16GLMRequest *r,BF16GLMStoragePlan *out) {
@@ -3479,6 +3491,9 @@ static int bf16_glm_admit(const BnBackendModel *model,const BnMoEIO *source,
        ||!g->mla_fp8_attention_resident
        ||!g->mla_fp8_cache_append_resident
        ||!(g->resident_plain_rmsnorm_reductions&(1u<<BN_GPU_RMSNORM_REDUCTION_VECTOR8_4096)))return -1;
+    if(w->expert_cache&&(!g->expert_cache_bind||!g->expert_cache_begin||!g->expert_cache_begin_group||
+       !g->expert_cache_end||!g->expert_cache_cancel||!g->expert_cache_stats))return -1;
+    int cache_layers=0;
     size_t gate=0,down=0;
     for(int l=0;l<45;++l){const BnBackendBF16GLMLayer *p=&w->layers[l];int mla=l%4==3;
         if(p->attention_mhc.gpu!=g||p->ffn_mhc.gpu!=g||(mla?(p->mla.gpu!=g||p->indexer.gpu!=g):p->kda.gpu!=g)||
@@ -3491,9 +3506,11 @@ static int bf16_glm_admit(const BnBackendModel *model,const BnMoEIO *source,
            (l<3?(p->dense.dim!=4096||p->dense.hidden_dim!=12288):
                 (p->moe.dim!=4096||p->moe.hidden_dim!=2048||p->moe.n_experts!=288||p->moe.k!=8||
                  p->moe.shared.dim!=4096||p->moe.shared.hidden_dim!=2048)))return -1;
+        if(w->expert_cache&&(l<3?p->expert_cache_layer!=-1:p->expert_cache_layer!=cache_layers++))return -1;
         if(p->moe.gate_bytes>gate)gate=p->moe.gate_bytes;
         if(p->moe.down_bytes>down)down=p->moe.down_bytes;
     }
+    if(w->expert_cache&&cache_layers!=w->expert_cache_layers)return -1;
     memset(r,0,sizeof(*r));
     r->model=model;r->weights=w;r->source=source;r->gpu=g;r->max_tokens=max_tokens;r->capacity=capacity;
     r->latent_blocks=(capacity+63)/64;r->index_blocks=((capacity+3)/4+63)/64;
@@ -3501,15 +3518,16 @@ static int bf16_glm_admit(const BnBackendModel *model,const BnMoEIO *source,
     size_t n=(size_t)max_tokens,meta=6*sizeof(BnGPUMoEBankItem),bank_bytes=122683392u;
     size_t input_bytes=n*(4096/32)*36*9,group_bytes=n*8*(2048/32)*36+meta;
     size_t scratch=g->linear_bf16_workspace_size(g->ctx);
+    size_t cache_bytes=w->expert_cache?6*sizeof(void*):0; /* Two banks, three raw pointers each. */
     if(!scratch||bf16_glm_add(&r->device_bytes,n*16384/32,36)||bf16_glm_add(&r->device_bytes,1,scratch)||
-       bf16_glm_add(&r->device_bytes,1,bank_bytes+input_bytes+group_bytes+4))return -1;
+       bf16_glm_add(&r->device_bytes,1,bank_bytes+input_bytes+group_bytes+cache_bytes+4))return -1;
     r->host_bytes=sizeof(*r);
     size_t slot_count=(size_t)(r->latent_blocks>max_tokens?r->latent_blocks:max_tokens);
     if(slot_count<(n+3)/4+1)slot_count=(n+3)/4+1;
     if(bf16_glm_add(&r->host_bytes,slot_count,4)||bf16_glm_add(&r->host_bytes,2,gate)||
-       bf16_glm_add(&r->host_bytes,1,down)||bf16_glm_add(&r->host_bytes,1,bank_bytes+meta)||
+       bf16_glm_add(&r->host_bytes,1,down)||bf16_glm_add(&r->host_bytes,1,bank_bytes+meta+cache_bytes)||
        r->device_bytes>device_budget||r->host_bytes>host_budget)return -1;
-    *out=(BF16GLMStoragePlan){gate,down,slot_count,bank_bytes,input_bytes,group_bytes,meta};return 0;
+    *out=(BF16GLMStoragePlan){gate,down,slot_count,bank_bytes,input_bytes,group_bytes,meta,cache_bytes};return 0;
 }
 int bn_transformer_bf16_glm_memory_plan(const BnModel *model,int max_tokens,
     int capacity,BnTransformerBF16RequestMemory *out) {
@@ -3541,6 +3559,7 @@ int bn_transformer_bf16_glm_prepare(BnBackendSession *session,const BnBackendMod
     if(g->linear_bf16_reserve(g->ctx,r->request,n*16384)||g->embedding_bf16_reserve(g->ctx,r->request)||
        g->moe_bank_reserve(g->ctx,r->request,&bank)||g->moe_bank_input_reserve(g->ctx,r->request,max_tokens,input_bytes)||
        g->moe_bank_grouped_reserve(g->ctx,r->request,max_tokens,meta,group_bytes))goto fail_device;
+    if(r->weights->expert_cache&&g->expert_cache_bind(r->request,r->weights->expert_cache,p.cache_bytes,p.cache_bytes))goto fail_device;
     for(int j=0;j<r->latent_blocks;++j)r->slots[j]=j;
     if(g->resident_write(r->request,r->latent_table,r->slots))goto fail_device;
     if(g->resident_write(r->request,r->index_table,r->slots)||bf16_glm_clear(r))goto fail_device;
@@ -3576,7 +3595,8 @@ static BnTransformerBF16MoEPlan bf16_glm_moe_plan(BF16GLMRequest *r,BnGPUResiden
     size_t n=(size_t)r->nt,sizes[]={n*4096,n*288,n*8,n*8,293,288,n*8,n*8,n*8*4096,n*8*2048,n*8*2048,n*8*4096,n*8*4096,n*4096,n*4096,n*2048,n*4096,n*4096};
     BnGPUResidentView v[18];for(int j=0;j<18;++j)v[j]=bf16_glm_take(r->banks[r->layer&1].moe[j],sizes[j]);
     return (BnTransformerBF16MoEPlan){.weights=&r->weights->layers[r->layer].moe,.source=r->source,.host_state=&r->host,
-        .layer=r->layer,.n_tokens=r->nt,.prefill=r->prefill,.bank_capacity=3,.x=input,.cast=v[0],.logits=v[1],.route_weights=v[2],
+        .layer=r->layer,.n_tokens=r->nt,.prefill=r->prefill,.bank_capacity=3,
+        .cache_enabled=r->weights->expert_cache!=NULL,.cache_layer=r->weights->layers[r->layer].expert_cache_layer,.x=input,.cast=v[0],.logits=v[1],.route_weights=v[2],
         .indices=v[3],.metadata=v[4],.cursors=v[5],.slots=v[6],.inverse=v[7],.gathered=v[8],.gate=v[9],.up=v[10],.down=v[11],
         .weighted=v[12],.routed=v[13],.shared_gate_up=v[14],.shared_activated=v[15],.shared_out=v[16],.out=v[17]};
 }
@@ -3675,7 +3695,8 @@ int bn_transformer_bf16_glm_info(const BnBackendSession *session,BnTransformerBF
     BF16GLMRequest *r=bf16_glm_request(session);if(!r||!out)return -1;
     *out=(BnTransformerBF16GLMRequestInfo){.max_tokens=r->max_tokens,.capacity=r->capacity,.position=r->position,.parity=r->parity,
         .active=r->active,.failed=r->failed,.layer=r->layer,.head_queued=r->head&&r->want_logits,.device_bytes=r->device_bytes,.host_bytes=r->host_bytes,
-        .request=r->request,.logits=r->logits,.source=r->host.stats};return 0;
+        .request=r->request,.logits=r->logits,.source=r->host.stats};
+    return r->weights->expert_cache?r->gpu->expert_cache_stats(r->request,&out->cache):0;
 }
 
 static int bf16_glm_context_current(const BF16GLMRequest *r) {

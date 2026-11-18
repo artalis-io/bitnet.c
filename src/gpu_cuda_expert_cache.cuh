@@ -62,7 +62,7 @@ static void expert_cache_destroy(void *ptr) {
 static void *expert_cache_create(void *ctx_ptr,const BnGPUExpertCacheConfig *cfg) {
     BnCudaCtx *ctx=(BnCudaCtx*)ctx_ptr;
     if(!ctx||!cfg||ctx->compute_capability!=1200||cfg->n_layers<=0||cfg->n_layers>64||
-       cfg->n_experts!=512||!cfg->gate_types||!cfg->down_types||!cfg->device_budget_bytes||
+       cfg->n_experts<1||cfg->n_experts>512||!cfg->gate_types||!cfg->down_types||!cfg->device_budget_bytes||
        cfg->dim<=0||cfg->dim%256||cfg->hidden_dim<=0||cfg->hidden_dim%32)return NULL;
     size_t sizes[64],sum=0,gb,db;
     for(int l=0;l<cfg->n_layers;l++) {
@@ -71,9 +71,9 @@ static void *expert_cache_create(void *ctx_ptr,const BnGPUExpertCacheConfig *cfg
         sum+=sizes[l];
     }
     ExpertCache *c=(ExpertCache*)calloc(1,sizeof(*c));if(!c)return NULL;
-    c->owner=ctx;c->device=ctx->device;c->layers=cfg->n_layers;c->experts=512;
+    c->owner=ctx;c->device=ctx->device;c->layers=cfg->n_layers;c->experts=cfg->n_experts;
     c->dim=cfg->dim;c->hidden=cfg->hidden_dim;
-    size_t n=cfg->device_budget_bytes/sum;if(n>512)n=512;
+    size_t n=cfg->device_budget_bytes/sum;if(n>(size_t)c->experts)n=(size_t)c->experts;
     size_t left=cfg->device_budget_bytes-n*sum;
     for(int l=0;l<c->layers;l++) {
         int pool=0;while(pool<c->pools&&c->pool[pool].bytes!=sizes[l])pool++;
@@ -83,7 +83,7 @@ static void *expert_cache_create(void *ctx_ptr,const BnGPUExpertCacheConfig *cfg
         }
         c->layer_pool[l]=pool;c->gate_type[l]=cfg->gate_types[l];c->down_type[l]=cfg->down_types[l];
         c->pool[pool].count+=(int)n;
-        if(n<512&&left>=sizes[l]){c->pool[pool].count++;left-=sizes[l];}
+        if(n<(size_t)c->experts&&left>=sizes[l]){c->pool[pool].count++;left-=sizes[l];}
     }
     for(int p=0;p<c->pools;p++) {
         ExpertCachePool *pool=&c->pool[p];pool->first=c->entries;
@@ -91,9 +91,9 @@ static void *expert_cache_create(void *ctx_ptr,const BnGPUExpertCacheConfig *cfg
         c->entries+=pool->count;c->reserved+=pool->bytes*(size_t)pool->count;
     }
     c->entry=(ExpertCacheEntry*)calloc((size_t)(c->entries?c->entries:1),sizeof(*c->entry));
-    c->lookup=(int*)malloc((size_t)c->layers*512*sizeof(int));
+    c->lookup=(int*)malloc((size_t)c->layers*c->experts*sizeof(int));
     if(!c->entry||!c->lookup)goto fail;
-    for(int i=0;i<c->layers*512;i++)c->lookup[i]=-1;
+    for(int i=0;i<c->layers*c->experts;i++)c->lookup[i]=-1;
     if(cudaSetDevice(c->device)!=cudaSuccess)goto fail;
     for(int p=0;p<c->pools;p++) {
         ExpertCachePool *pool=&c->pool[p];
@@ -108,10 +108,16 @@ static void *expert_cache_create(void *ctx_ptr,const BnGPUExpertCacheConfig *cfg
 fail:
     expert_cache_destroy(c);(void)cudaGetLastError();return NULL;
 }
+static int expert_cache_memory(void *ptr,BnGPUExpertCacheMemory *out) {
+    ExpertCache *c=(ExpertCache*)ptr;if(!c||!out)return -1;
+    size_t entries=(size_t)(c->entries?c->entries:1);
+    *out=BnGPUExpertCacheMemory{sizeof(*c)+entries*sizeof(*c->entry)+
+        (size_t)c->layers*c->experts*sizeof(*c->lookup),c->reserved};return 0;
+}
 static int expert_cache_bind(void *ptr,void *cache,size_t host_budget,size_t device_budget) {
     ResidentRequest *r=(ResidentRequest*)ptr;ExpertCache *c=(ExpertCache*)cache;
     BankState *b=r?(BankState*)r->moe_banks:NULL;
-    if(!b||!c||b->config.n_experts!=512||b->config.k!=10||c->failed||c->owner!=r->backend_owner||c->device!=r->device||b->cache||
+    if(!b||!c||b->config.n_experts!=c->experts||b->config.k<1||b->config.k>32||b->config.k>c->experts||c->failed||c->owner!=r->backend_owner||c->device!=r->device||b->cache||
        !b->grouped_down||b->config.dim!=c->dim||b->config.hidden_dim!=c->hidden)return -1;
     size_t bytes=(size_t)b->config.experts_per_slot*sizeof(unsigned char*);
     if(bytes*b->config.slots>host_budget||bytes*b->config.slots>device_budget||set_device(r))return -1;
@@ -186,9 +192,9 @@ static int expert_cache_ready(ExpertCache *c,int layer) {
 static int expert_cache_begin(void *ptr,int layer,int prefill,const int *offsets,int nt,BnGPUExpertCacheLayer *out) {
     ResidentRequest *r=(ResidentRequest*)ptr;BankState *b=r?(BankState*)r->moe_banks:NULL;
     ExpertCache *c=b?b->cache:NULL;
-    if(!c||b->config.n_experts!=512||b->config.k!=10||c->failed||!out||!offsets||layer<0||layer>=c->layers||b->cache_open||b->cache_group_owner||
-       (prefill!=0&&prefill!=1)||nt<=0||nt>b->grouped_capacity||nt>INT_MAX/10||offsets[0]||offsets[512]!=nt*10||set_device(r))return -1;
-    for(int e=0;e<512;e++)if(offsets[e]<0||offsets[e+1]<offsets[e]||offsets[e+1]-offsets[e]>nt)return -1;
+    if(!c||b->config.n_experts!=c->experts||b->config.k<1||b->config.k>32||b->config.k>c->experts||c->failed||!out||!offsets||layer<0||layer>=c->layers||b->cache_open||b->cache_group_owner||
+       (prefill!=0&&prefill!=1)||nt<=0||nt>b->grouped_capacity||nt>INT_MAX/b->config.k||offsets[0]||offsets[c->experts]!=nt*b->config.k||set_device(r))return -1;
+    for(int e=0;e<c->experts;e++)if(offsets[e]<0||offsets[e+1]<offsets[e]||offsets[e+1]-offsets[e]>nt)return -1;
     ExpertCacheLayerState *state=&c->layer[layer];
     if(state->open)return BN_GPU_MOE_BANK_BUSY;
     int ready=expert_cache_ready(c,layer);if(ready<0)return -1;if(!ready)return BN_GPU_MOE_BANK_BUSY;
@@ -196,8 +202,8 @@ static int expert_cache_begin(void *ptr,int layer,int prefill,const int *offsets
     BnGPUExpertCacheLayer ticket={};ticket.request=r;ticket.layer=layer;ticket.generation=++c->epoch;
     state->owner=r;state->epoch=ticket.generation;state->open=1;
     size_t bytes=c->pool[c->layer_pool[layer]].bytes;
-    for(int e=0;e<512;e++) {
-        int slot=offsets[e+1]>offsets[e]?c->lookup[layer*512+e]:-1;
+    for(int e=0;e<c->experts;e++) {
+        int slot=offsets[e+1]>offsets[e]?c->lookup[layer*c->experts+e]:-1;
         b->cache_entries[e]=-1;b->cache_seen[e]=offsets[e+1]==offsets[e];
         if(offsets[e+1]==offsets[e])continue;
         if(slot>=0&&c->entry[slot].valid) {
@@ -205,7 +211,7 @@ static int expert_cache_begin(void *ptr,int layer,int prefill,const int *offsets
             b->cache_stats.hits++;b->cache_stats.hit_bytes+=bytes;
         } else {b->cache_stats.misses++;b->cache_stats.miss_bytes+=bytes;}
     }
-    memcpy(b->cache_offsets,offsets,513*sizeof(int));
+    memcpy(b->cache_offsets,offsets,((size_t)c->experts+1)*sizeof(int));
     b->cache_layer=ticket;b->cache_open=1;b->cache_prefill=prefill;b->cache_nt=nt;*out=ticket;return 0;
 }
 #include "gpu_cuda_expert_cache_group.cuh"
@@ -226,11 +232,11 @@ static int expert_cache_admit(BankState *b,int expert) {
             break;
         }
         if(slot<0){b->cache_stats.bypasses++;return -1;}
-        ExpertCacheEntry *old=&c->entry[slot];c->lookup[old->layer*512+old->expert]=-1;
+        ExpertCacheEntry *old=&c->entry[slot];c->lookup[old->layer*c->experts+old->expert]=-1;
         expert_cache_unlink(c,slot);b->cache_stats.evictions++;
     }
     ExpertCacheEntry *e=&c->entry[slot];e->layer=layer;e->expert=expert;e->valid=0;
-    e->pin=e->created=b->cache_layer.generation;c->lookup[layer*512+expert]=slot;
+    e->pin=e->created=b->cache_layer.generation;c->lookup[layer*c->experts+expert]=slot;
     expert_cache_touch(c,slot);b->cache_entries[expert]=slot;return slot;
 }
 static unsigned char *expert_cache_data(ExpertCache *c,int slot) {
@@ -241,7 +247,7 @@ static int expert_cache_close(ResidentRequest *r,BankState *b,int cancel) {
     if(!b->cache_open)return cancel?0:-1;
     ExpertCacheLayerState *s=&c->layer[b->cache_layer.layer];
     if(!s->open||s->owner!=r||s->epoch!=b->cache_layer.generation)return -1;
-    if(!cancel)for(int e=0;e<512;e++)if(!b->cache_seen[e])return -1;
+    if(!cancel)for(int e=0;e<c->experts;e++)if(!b->cache_seen[e])return -1;
     if(cudaSetDevice(r->device)!=cudaSuccess||cudaEventRecord(s->completed,r->stream)!=cudaSuccess)c->failed=1;
     s->pending=!c->failed;s->open=0;s->owner=NULL;b->cache_open=0;
     for(unsigned i=0;i<b->config.slots;i++)if(b->slots[i].state==1)b->slots[i].state=0;

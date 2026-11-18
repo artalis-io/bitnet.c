@@ -599,13 +599,15 @@ typedef struct {
     const BnMoEIO *source;
     BnMoEState *host_state;
     int layer,n_tokens,prefill,bank_capacity;
+    int cache_enabled,cache_layer;
     BnGPUResidentView x,cast,logits,route_weights,indices;
     BnGPUResidentView metadata,cursors,slots,inverse,gathered;
     BnGPUResidentView gate,up,down,weighted,routed;
     BnGPUResidentView shared_gate_up,shared_activated,shared_out,out;
 } BnTransformerBF16MoEPlan;
 typedef struct {
-    int pending,failed,next_expert;
+    int pending,failed,next_expert,cache_started;
+    BnGPUExpertCacheLayer cache_ticket;
     unsigned bank;
     uint64_t generation;
     int32_t offsets[520];
@@ -857,6 +859,7 @@ typedef struct {
     void *request;
     BnGPUResidentView logits;
     BnMoEStats source;
+    BnGPUExpertCacheStats cache;
 } BnTransformerBF16GLMRequestInfo;
 int bn_transformer_bf16_glm_prepare(BnBackendSession *session,
     const BnBackendModel *model,const BnMoEIO *source,int max_tokens,int capacity,

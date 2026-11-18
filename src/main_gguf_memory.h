@@ -100,11 +100,13 @@ static int gguf_memory_ready(GGUFBatch *b) {
     else {
         const BnBackendBF16GLMModel *glm=bn_backend_layout_bf16_glm_model(bn_model_backend(&b->model));
         const BnBackendBF16FlashIOModel *flash=bn_backend_layout_bf16_flash_model(bn_model_backend(&b->model));
+        const BnBackendBF16FlashFFNModel *ffn=bn_backend_layout_bf16_flash_ffn_model(bn_model_backend(&b->model));
         retained=(BnGenerateBatchMemory){b->frontend_host,glm?glm->bytes:flash?flash->model_bytes:0};
-        size_t ram,gpu_cache;
+        size_t ram,gpu_cache,cache_host=glm?glm->expert_cache_host_bytes:ffn?ffn->expert_cache_host_bytes:0;
         if(!retained.device_bytes||native_cli_mul((size_t)b->options.ram_mb,1048576,&ram)||
            native_cli_mul((size_t)b->options.gpu_mb,1048576,&gpu_cache)||
-           native_cli_add(&retained.host_bytes,ram)||native_cli_add(&retained.device_bytes,gpu_cache))return -1;
+           native_cli_add(&retained.host_bytes,ram)||native_cli_add(&retained.host_bytes,cache_host)||
+           native_cli_add(&retained.device_bytes,gpu_cache))return -1;
     }
     int capacity=gguf_memory_capacity(b,b->options.serve?1:b->jobs[0].n+b->options.tokens-1);
     if(bn_generate_batch_memory_shared_commit_as(&b->memory,retained)||capacity<1||

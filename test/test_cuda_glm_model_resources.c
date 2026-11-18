@@ -22,11 +22,13 @@ int main(int argc,char**argv) {
     const BnBackendBF16GLMModel*m=bn_backend_layout_bf16_glm_model(b);assert(m&&m->gpu==g&&bn_backend_model_gpu(b)==g);
     assert(m->anatomy!=a&&m->n_layers==45&&m->dim==4096&&m->vocab_size==154880);
     assert(m->embedding.raw&&m->output.raw&&m->embedding.raw!=m->output.raw&&m->output_norm);
+    assert(!m->expert_cache&&!m->expert_cache_layers&&!m->expert_cache_host_bytes);
     assert(m->embedding.type==BN_GGUF_TENSOR_Q8_0&&m->output.type==BN_GGUF_TENSOR_Q8_0&&!m->embedding.decoded&&!m->output.decoded);
     /* Independent payload constants from the separately qualified actual
      * component bindings. Routed expert source bytes are excluded. */
     size_t expected=2*((size_t)154880*4096/32*34)+4096*2;int nk=0,na=0,nm=0,nd=0;
     for(int i=0;i<45;++i){const BnBackendBF16GLMLayer*l=&m->layers[i];
+        assert(l->expert_cache_layer==-1);
         assert(l->attention_mhc.gpu==g&&l->ffn_mhc.gpu==g&&l->attention_mhc.bytes==1581164&&l->ffn_mhc.bytes==1581164);
         expected+=2*1581164;
         if(a->layers[i].kind==BN_MODEL_ANATOMY_KDA){nk++;assert(l->kda.gpu==g&&l->kda.layer==i&&l->kda.bytes==146653952&&!l->mla.gpu&&!l->indexer.gpu);expected+=146653952;}
@@ -45,5 +47,16 @@ int main(int argc,char**argv) {
     assert(bn_backend_layout_prepare_bf16_glm_model(b,g,f,a,maps,45,expected-1,host)==-1);
     assert(!bn_backend_layout_bf16_glm_model(b)&&!bn_backend_model_gpu_for_cpu_operations(b));
     puts("GLM aggregate one-byte-short budget rollback PASSED");
+    assert(!bn_backend_layout_prepare_bf16_glm_model_with_cache(b,g,f,a,maps,45,budget,host,32u<<20));
+    m=bn_backend_layout_bf16_glm_model(b);assert(m&&m->expert_cache&&m->expert_cache_layers==42);
+    BnGPUExpertCacheMemory cache_memory;
+    assert(!g->expert_cache_memory(m->expert_cache,&cache_memory));
+    assert(cache_memory.host_bytes==m->expert_cache_host_bytes&&cache_memory.device_bytes<=32u<<20);
+    assert(m->bytes==expected&&m->expert_cache_host_bytes&&m->expert_cache_host_bytes<=host);
+    int cache_layer=0;
+    for(int i=0;i<45;i++)assert(m->layers[i].expert_cache_layer==(a->layers[i].uses_moe?cache_layer++:-1));
+    assert(cache_layer==42);bn_backend_model_release_gpu(b);
+    assert(!bn_backend_layout_bf16_glm_model(b));
+    puts("GLM model-owned cache: compact42MoE mapping, separate payloads and release PASSED");
     free(maps);free(a);bn_backend_model_free(b);bn_gpu_cuda_destroy(g);bn_gguf_free(f);return 0;
 }

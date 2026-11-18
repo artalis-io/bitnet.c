@@ -41,7 +41,7 @@ static int gguf_batch_parse(int argc,char **argv,GGUFBatchOptions *out) {
     if(!o.budget){o.budget=o.prefill*o.live;if(dense&&o.budget>8192)o.budget=8192;}
     if(o.budget<o.live||(dense&&o.budget>8192)||(o.mixed_budget&&(o.mixed_budget<o.live||o.mixed_budget>o.budget)))return -1;
     if(!dense&&(o.policy||(o.seen&(1u<<9))))return -1;
-    if(!flash&&o.gpu_mb)return -1;
+    if(!flash&&!glm&&o.gpu_mb)return -1;
     *out=o;return 0;
 }
 static void gguf_batch_usage(FILE *out,const char *name) {

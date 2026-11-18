@@ -12,47 +12,55 @@
 typedef struct {
     BnBackendSession *session;
     void *request;
-    int nt;
+    int nt,n_experts,k,hidden;
     BnGPUMoEBankResidentPlan bank;
     BnGPUMoEBankInputPlan input;
 } Request;
 static BnGPUResidentView alloc(BnGPUBackend *g,void *r,int type,size_t n) {
     BnGPUResidentView v;assert(!g->resident_alloc(r,type,n,&v));return v;
 }
-static void init(Request *r,BnGPUBackend *g,int nt,void *cache) {
-    memset(r,0,sizeof(*r));r->nt=nt;r->session=bn_backend_session_create();assert(r->session);
+static void init_geometry(Request *r,BnGPUBackend *g,int nt,void *cache,int n_experts,int k,int hidden) {
+    memset(r,0,sizeof(*r));r->nt=nt;r->n_experts=n_experts?n_experts:512;r->k=k?k:10;r->hidden=hidden;r->session=bn_backend_session_create();assert(r->session);
     r->request=bn_gpu_backend_resident_request(g,r->session);assert(r->request);
-    BnGPUMoEBankConfig c={2,8,256,32,319488,319488,0,0};
+    size_t budget=(size_t)319488*hidden/32;
+    BnGPUMoEBankConfig c={2,8,256,hidden,budget,budget,n_experts,k};
     assert(!g->moe_bank_reserve(g->ctx,r->request,&c));
     assert(!g->moe_bank_input_reserve(g->ctx,r->request,nt,(size_t)nt*256*22));
-    assert(!g->moe_bank_grouped_reserve(g->ctx,r->request,nt,192,(size_t)nt*10*36+192));
+    assert(!g->moe_bank_grouped_reserve(g->ctx,r->request,nt,192,(size_t)nt*r->k*(hidden/32)*36+192));
     assert(!g->linear_a8_bf16_reserve(g->ctx,r->request,(size_t)nt*256));
     if(cache)assert(!g->expert_cache_bind(r->request,cache,128,128));
     r->input.n_tokens=nt;r->input.x=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*256);
-    r->input.slots=alloc(g,r->request,BN_GGUF_TENSOR_I32,(size_t)nt*10);
+    r->input.slots=alloc(g,r->request,BN_GGUF_TENSOR_I32,(size_t)nt*r->k);
     r->input.status=alloc(g,r->request,BN_GGUF_TENSOR_I32,1);
-    uint16_t *x=malloc((size_t)nt*256*2);int32_t *slots=malloc((size_t)nt*10*4);assert(x&&slots);
+    uint16_t *x=malloc((size_t)nt*256*2);int32_t *slots=malloc((size_t)nt*r->k*4);assert(x&&slots);
     for(int t=0;t<nt;t++)for(int j=0;j<256;j++)x[t*256+j]=(uint16_t)(0x3f80+t%7);
-    for(int j=0;j<10;j++)for(int t=0;t<nt;t++)slots[j*nt+t]=t*10+j;
+    for(int j=0;j<r->k;j++)for(int t=0;t<nt;t++)slots[j*nt+t]=t*r->k+j;
     int32_t zero=0;
     assert(!g->resident_write(r->request,r->input.x,x));
     assert(!g->resident_write(r->request,r->input.slots,slots));
     assert(!g->resident_write(r->request,r->input.status,&zero));free(x);free(slots);
     r->bank.total_tokens=nt;r->bank.grouped=1;
-    r->bank.x=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*10*256);
-    r->bank.gate=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*10*32);
-    r->bank.up=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*10*32);
-    r->bank.out=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*10*256);
+    r->bank.x=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*r->k*256);
+    r->bank.gate=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*r->k*hidden);
+    r->bank.up=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*r->k*hidden);
+    r->bank.out=alloc(g,r->request,BN_GGUF_TENSOR_BF16,(size_t)nt*r->k*256);
 }
-static void offsets(int *out,int base,int nt) {
-    out[0]=0;for(int i=0;i<512;i++)out[i+1]=out[i]+(i>=base&&i<base+10?nt:0);
+static void init(Request *r,BnGPUBackend *g,int nt,void *cache) {
+    init_geometry(r,g,nt,cache,0,0,32);
 }
+
+static void offsets_geometry(int *out,int base,int nt,int experts,int k) {
+    assert(base>=0&&base+k<=experts);
+    out[0]=0;for(int i=0;i<experts;i++)out[i+1]=out[i]+(i>=base&&i<base+k?nt:0);
+}
+static void offsets(int *out,int base,int nt) {offsets_geometry(out,base,nt,512,10);}
 static BnGPUExpertCacheLayer begin(Request *r,BnGPUBackend *g,int layer,int prefill,int base,int hits) {
-    int off[513];offsets(off,base,r->nt);BnGPUExpertCacheLayer ticket;int status;
+    int *off=malloc(((size_t)r->n_experts+1)*sizeof(*off));assert(off);
+    offsets_geometry(off,base,r->nt,r->n_experts,r->k);BnGPUExpertCacheLayer ticket;int status;
     while((status=g->expert_cache_begin(r->request,layer,prefill,off,r->nt,&ticket))==BN_GPU_MOE_BANK_BUSY) { thrd_yield(); }
     assert(!status);
     int count=0;for(int i=0;i<512;i++)count+=(int)((ticket.hits[i/64]>>(i%64))&1);
-    assert(count==hits);return ticket;
+    free(off);assert(count==hits);return ticket;
 }
 static void fill(void *dst,size_t bytes,int type,int expert) {
     const BnQuantFormatOps *f=bn_quant_format_ops(type);assert(f&&bytes%f->bytes_per_block==0);
@@ -64,11 +72,11 @@ static void fill(void *dst,size_t bytes,int type,int expert) {
 }
 static void execute(Request *r,BnGPUBackend *g,int gt,int dt,int base,const BnGPUExpertCacheLayer *ticket) {
     assert(!g->moe_bank_prepare_input(g->ctx,r->request,&r->input,&r->bank.prepared_input));
-    for(int j=0;j<10;) {
+    for(int j=0;j<r->k;) {
         BnGPUMoEBankLease lease;int status;
         while((status=g->moe_bank_acquire(r->request,(unsigned)(j/8)%2,gt,dt,&lease))==BN_GPU_MOE_BANK_BUSY) { thrd_yield(); }
     assert(!status);
-        int count=10-j;if(count>8)count=8;
+        int count=r->k-j;if(count>8)count=8;
         memset(lease.data,0,lease.expert_bytes*(size_t)count); /* Hits must ignore this poison. */
         BnGPUMoEBankItem items[8];
         for(int i=0;i<count;i++) {
@@ -92,7 +100,7 @@ static void run(Request *r,Request *control,BnGPUBackend *g,int gt,int dt,int la
     assert(g->expert_cache_end(r->request,&bad)==-1);
     execute(r,g,gt,dt,base,&ticket);assert(!g->expert_cache_end(r->request,&ticket));
     assert(g->expert_cache_end(r->request,&ticket)==-1);
-    size_t bytes=(size_t)r->nt*10*256*2;uint16_t *actual=malloc(bytes),*expected=malloc(bytes);assert(actual&&expected);
+    size_t bytes=(size_t)r->nt*r->k*256*2;uint16_t *actual=malloc(bytes),*expected=malloc(bytes);assert(actual&&expected);
     assert(!g->resident_read(r->request,r->bank.out,actual)&&!g->resident_read(control->request,control->bank.out,expected));
     for(size_t i=0;i<bytes/2;i++)assert((actual[i]&0x7f80)!=0x7f80);
     assert(!memcmp(actual,expected,bytes));
@@ -102,7 +110,7 @@ static void run(Request *r,Request *control,BnGPUBackend *g,int gt,int dt,int la
     assert(memcmp(actual,actual+(size_t)r->nt*256,(size_t)r->nt*256*2));
     free(actual);free(expected);
     assert(!g->expert_cache_stats(r->request,&after)&&!g->moe_bank_stats(r->request,&b1));
-    assert(after.hits-before.hits==(size_t)hits&&after.misses-before.misses==(size_t)(10-hits));
+    assert(after.hits-before.hits==(size_t)hits&&after.misses-before.misses==(size_t)(r->k-hits));
     assert(b1.upload_bytes-b0.upload_bytes==after.miss_bytes-before.miss_bytes);
     assert(after.resident_bytes<=after.reserved_device_bytes);
 }
@@ -137,6 +145,33 @@ static void cases(BnGPUBackend *g,int gt,int dt,int nt) {
     bn_backend_session_free(abandoned.session); /* Open-layer teardown must release the model lease. */
     run(&r,&control,g,gt,dt,0,0,5,10);
     bn_backend_session_free(peer.session);bn_backend_session_free(r.session);bn_backend_session_free(control.session);
+    g->expert_cache_destroy(cache);
+}
+static void geometry_cases(BnGPUBackend *g,int gt,int dt,int nt) {
+    Request control,r,peer;init_geometry(&control,g,nt,NULL,288,8,256);
+    BnGPUMoEBankLease lease;assert(!g->moe_bank_acquire(control.request,0,gt,dt,&lease));
+    size_t bytes=lease.expert_bytes;assert(!g->moe_bank_cancel(control.request,&lease));
+    int gate[]={gt,gt},down[]={dt,dt};BnGPUExpertCacheConfig cfg={2,288,256,256,gate,down,8*bytes};
+    void *cache=g->expert_cache_create(g->ctx,&cfg);assert(cache);
+    BnGPUExpertCacheMemory memory,after;assert(!g->expert_cache_memory(cache,&memory));
+    assert(memory.host_bytes>=2*288*sizeof(int)&&memory.device_bytes==8*bytes);
+    init_geometry(&r,g,nt,cache,288,8,256);init_geometry(&peer,g,nt,cache,288,8,256);
+    run(&r,&control,g,gt,dt,0,0,280,0); /* Includes the last expert287. */
+    run(&r,&control,g,gt,dt,0,0,280,8);
+    run(&peer,&control,g,gt,dt,0,1,280,8); /* Prefill borrows retained decode weights. */
+    run(&peer,&control,g,gt,dt,1,0,0,0);
+    run(&r,&control,g,gt,dt,0,1,280,0); /* Prefill miss must not replace decode entries. */
+    run(&peer,&control,g,gt,dt,1,0,0,8);
+    int off[289];offsets_geometry(off,280,nt,288,8);off[288]--;
+    BnGPUExpertCacheLayer ticket,sentinel;memset(&ticket,0x5a,sizeof(ticket));sentinel=ticket;
+    assert(g->expert_cache_begin(r.request,0,0,off,nt,&ticket)==-1&&!memcmp(&ticket,&sentinel,sizeof(ticket)));
+    offsets_geometry(off,280,nt,288,8);
+    assert(g->expert_cache_begin(r.request,0,0,off,INT32_MAX,&ticket)==-1);
+    Request incompatible;init_geometry(&incompatible,g,nt,NULL,512,8,256);
+    assert(g->expert_cache_bind(incompatible.request,cache,128,128)==-1);
+    bn_backend_session_free(incompatible.session);
+    bn_backend_session_free(peer.session);bn_backend_session_free(r.session);bn_backend_session_free(control.session);
+    assert(!g->expert_cache_memory(cache,&after)&&!memcmp(&memory,&after,sizeof(memory)));
     g->expert_cache_destroy(cache);
 }
 typedef struct {
@@ -206,10 +241,14 @@ int main(void) {
     int down[3]={BN_GGUF_TENSOR_Q5_1,BN_GGUF_TENSOR_Q8_0,BN_GGUF_TENSOR_Q8_0};
     BnGPUExpertCacheConfig cfg={3,512,256,32,gate,down,27262976},bad;
 #define REJECT(change) do {bad=cfg;change;assert(!g->expert_cache_create(g->ctx,&bad));}while(0)
-    REJECT(bad.n_layers=65);REJECT(bad.n_layers=0);REJECT(bad.n_experts=511);REJECT(bad.dim=255);
+    REJECT(bad.n_layers=65);REJECT(bad.n_layers=0);REJECT(bad.n_experts=0);REJECT(bad.n_experts=513);REJECT(bad.dim=255);
     REJECT(bad.hidden_dim=33);REJECT(bad.gate_types=NULL);REJECT(bad.device_budget_bytes=0);
 #undef REJECT
     void *cache=g->expert_cache_create(g->ctx,&cfg);assert(cache);
+    BnGPUExpertCacheMemory memory,sentinel_memory;memset(&memory,0x5a,sizeof(memory));sentinel_memory=memory;
+    assert(g->expert_cache_memory&&g->expert_cache_memory(NULL,&memory)==-1&&!memcmp(&memory,&sentinel_memory,sizeof(memory)));
+    assert(g->expert_cache_memory(cache,NULL)==-1);
+    assert(!g->expert_cache_memory(cache,&memory)&&memory.host_bytes&&memory.device_bytes==27262976);
     Request r;init(&r,g,1,cache);BnGPUExpertCacheStats stats;
     assert(!g->expert_cache_stats(r.request,&stats)&&stats.reserved_device_bytes==27262976);
     int off[513];offsets(off,0,1);off[512]--;
@@ -226,5 +265,9 @@ int main(void) {
     cache_group_checks(g);
     preload_cases(g);
     for(int i=0;i<3;i++)for(int matrix=0;matrix<2;matrix++)cases(g,gate[i],down[i],matrix?65:1);
+    for(int gt=0;gt<2;gt++)for(int dt=0;dt<2;dt++)
+        cache_group_geometry(g,gt?BN_GGUF_TENSOR_Q5_K:BN_GGUF_TENSOR_Q4_K,dt?BN_GGUF_TENSOR_Q6_K:BN_GGUF_TENSOR_Q5_K);
+    for(int gt=0;gt<2;gt++)for(int dt=0;dt<2;dt++)for(int matrix=0;matrix<2;matrix++)
+        geometry_cases(g,gt?BN_GGUF_TENSOR_Q5_K:BN_GGUF_TENSOR_Q4_K,dt?BN_GGUF_TENSOR_Q6_K:BN_GGUF_TENSOR_Q5_K,matrix?65:1);
     bn_gpu_cuda_destroy(g);puts("CUDA compact expert cache PASSED: formats, matrix/vector, hit/miss/evict, pins, stale leases and teardown");return 0;
 }

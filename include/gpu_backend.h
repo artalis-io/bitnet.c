@@ -1887,13 +1887,16 @@ typedef struct {
 /* Model-owned raw expert residency. Config arrays are borrowed only during
  * creation. Pools use exact format payload classes, never decoded weights.
  * Caller serializes cache operations; model/cache outlive borrowing requests.
- * The current CUDA cache profile remains 512 experts with top-10 banks;
- * generalized bank geometry alone does not enable another cache profile. */
+ * CUDA accepts 1..512 experts and bound banks with top-k 1..32. Grouped
+ * participants must have the same expert count/top-k. The backend model must
+ * separately qualify its cache binding, layer mapping and payload budgets. */
 typedef struct {
     int n_layers, n_experts, dim, hidden_dim;
     const int *gate_types, *down_types;
     size_t device_budget_bytes;
 } BnGPUExpertCacheConfig;
+/* Owned cache payload only; driver/allocator overhead is separate. */
+typedef struct {size_t host_bytes,device_bytes;} BnGPUExpertCacheMemory;
 typedef struct {
     void *request;
     uint64_t generation, hits[8];
@@ -2420,6 +2423,7 @@ struct BnGPUBackend {
                                     size_t host_budget_bytes, size_t device_budget_bytes);
     void *(*expert_cache_create)(void *ctx, const BnGPUExpertCacheConfig *config);
     void (*expert_cache_destroy)(void *cache);
+    int (*expert_cache_memory)(void *cache, BnGPUExpertCacheMemory *out);
     int (*expert_cache_preload)(void *cache, size_t host_budget_bytes,
         BnGPUExpertCacheRead read, void *source, BnGPUExpertCachePreloadInfo *out);
     /* Bind before execution, reserving two pointer tables per bank (one host,

@@ -39325,6 +39325,7 @@ BnGPUBackend *bn_gpu_cuda_create_with_policy(
             gpu->moe_bank_grouped_reserve = bn_cuda_moe_resident::bank_grouped_reserve;
             gpu->expert_cache_create = bn_cuda_moe_resident::expert_cache_create;
             gpu->expert_cache_destroy = bn_cuda_moe_resident::expert_cache_destroy;
+            gpu->expert_cache_memory = bn_cuda_moe_resident::expert_cache_memory;
             gpu->expert_cache_preload = bn_cuda_moe_resident::expert_cache_preload;
             gpu->expert_cache_bind = bn_cuda_moe_resident::expert_cache_bind;
             gpu->expert_cache_begin = bn_cuda_moe_resident::expert_cache_begin;

@@ -2,13 +2,15 @@
 #define BN_TEST_CUDA_EXPERT_CACHE_GROUP_CHECKS_H
 static void cache_group_round(BnGPUBackend *g,Request *r,Request *control,int gt,int dt,
     int layer,const int *bases,const int *prefill,int expected_hits,int teardown) {
-    int off[2][513],ids[20],count=0;BnGPUExpertCacheGroupRow rows[2];
+    int *off[2],ids[20],count=0;BnGPUExpertCacheGroupRow rows[2];
     for(int i=0;i<2;i++) {
-        execute(control+i,g,gt,dt,bases[i],NULL);offsets(off[i],bases[i],r[i].nt);
+        assert(r[i].n_experts==r[0].n_experts&&r[i].k==r[0].k);
+        off[i]=malloc(((size_t)r[i].n_experts+1)*sizeof(*off[i]));assert(off[i]);
+        execute(control+i,g,gt,dt,bases[i],NULL);offsets_geometry(off[i],bases[i],r[i].nt,r[i].n_experts,r[i].k);
         rows[i]=(BnGPUExpertCacheGroupRow){r[i].request,off[i],r[i].nt,prefill[i]};
         assert(!g->moe_bank_prepare_input(g->ctx,r[i].request,&r[i].input,&r[i].bank.prepared_input));
     }
-    for(int e=0;e<512;e++)if(off[0][e+1]>off[0][e]||off[1][e+1]>off[1][e])ids[count++]=e;
+    for(int e=0;e<r[0].n_experts;e++)if(off[0][e+1]>off[0][e]||off[1][e+1]>off[1][e])ids[count++]=e;
     BnGPUExpertCacheLayer ticket;int status;
     do {status=g->expert_cache_begin_group(r[0].request,layer,rows,2,&ticket);if(status==BN_GPU_MOE_BANK_BUSY)thrd_yield();}while(status==BN_GPU_MOE_BANK_BUSY);
     assert(!status);int hits=0;for(int e=0;e<512;e++)hits+=(int)((ticket.hits[e/64]>>(e%64))&1);
@@ -49,7 +51,7 @@ static void cache_group_round(BnGPUBackend *g,Request *r,Request *control,int gt
     if(teardown) {int i=teardown-1;bn_backend_session_free(r[i].session);r[i].session=NULL;}
     else assert(!g->expert_cache_end(r[0].request,&ticket));
     for(int i=0;i<2;i++)if(r[i].session) {
-        size_t bytes=(size_t)r[i].nt*10*256*2;uint16_t *actual=malloc(bytes),*expected=malloc(bytes);assert(actual&&expected);
+        size_t bytes=(size_t)r[i].nt*r[i].k*256*2;uint16_t *actual=malloc(bytes),*expected=malloc(bytes);assert(actual&&expected);
         assert(!g->resident_read(r[i].request,r[i].bank.out,actual)&&!g->resident_read(control[i].request,control[i].bank.out,expected));
         assert(!memcmp(actual,expected,bytes));free(actual);free(expected);
     }
@@ -59,6 +61,23 @@ static void cache_group_round(BnGPUBackend *g,Request *r,Request *control,int gt
         assert(after.joint_kernel_launches>before.joint_kernel_launches);
         BnGPUExpertCacheStats stats;assert(!g->expert_cache_stats(r[0].request,&stats));assert(stats.resident_bytes<=stats.reserved_device_bytes);
     }
+    free(off[0]);free(off[1]);
+}
+static void cache_group_geometry(BnGPUBackend *g,int gt,int dt) {
+    Request r[2],control[2];int nt[]={65,1};
+    for(int i=0;i<2;i++)init_geometry(control+i,g,nt[i],NULL,288,8,256);
+    BnGPUMoEBankLease lease;assert(!g->moe_bank_acquire(control[0].request,0,gt,dt,&lease));
+    size_t bytes=lease.expert_bytes;assert(!g->moe_bank_cancel(control[0].request,&lease));
+    int gate[]={gt,gt},down[]={dt,dt};BnGPUExpertCacheConfig cfg={2,288,256,256,gate,down,16*bytes};
+    void *cache=g->expert_cache_create(g->ctx,&cfg);assert(cache);
+    for(int i=0;i<2;i++)init_geometry(r+i,g,nt[i],cache,288,8,256);
+    int bases[]={280,276},decode[]={0,0},borrow[]={1,1};
+    cache_group_round(g,r,control,gt,dt,0,bases,decode,0,0);
+    cache_group_round(g,r,control,gt,dt,0,bases,borrow,12,0);
+    int other[]={0,4};cache_group_round(g,r,control,gt,dt,1,other,decode,0,0);
+    cache_group_round(g,r,control,gt,dt,0,bases,borrow,4,0);
+    for(int i=0;i<2;i++){bn_backend_session_free(r[i].session);bn_backend_session_free(control[i].session);}
+    g->expert_cache_destroy(cache);
 }
 static void cache_group_cases(BnGPUBackend *g,int gt,int dt,int matrix,int capacity) {
     Request control[2],r[2];int nt[]={matrix?65:1,matrix?1:65};

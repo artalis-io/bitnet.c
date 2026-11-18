@@ -244,7 +244,8 @@ void bn_backend_layout_bf16_mla_free(BnBackendBF16MLAWeights *weights);
 /* Immutable main-model GLM resources. The container owns the anatomy copy,
  * layer array, expert-map descriptors and GPU layouts. Expert source storage
  * (including any repacked data) remains borrowed from the CPU model and must
- * outlive resources/requests. There is no request state or expert cache here. */
+ * outlive resources/requests. An optional raw expert cache is backend-owned;
+ * all borrowing requests must be released before these resources. */
 typedef struct {
     BnBackendBF16KDAWeights kda;
     BnBackendBF16MLAWeights mla;
@@ -253,6 +254,7 @@ typedef struct {
     BnBackendBF16DenseFFNWeights dense;
     BnBackendBF16MoEWeights moe;
     BnMoEExpertMap expert_map;
+    int expert_cache_layer; /* Compact MoE index, or -1 without a cache. */
 } BnBackendBF16GLMLayer;
 typedef struct {
     BnGPUBackend *gpu;
@@ -261,6 +263,9 @@ typedef struct {
     const BnBackendBF16GLMLayer *layers;
     BnGPUBF16LinearWeight embedding,output;
     void *output_norm; /* BF16 gamma decoded from checkpoint F32. */
+    void *expert_cache; /* Separate bounded raw payload; no request state. */
+    int expert_cache_layers;
+    size_t expert_cache_host_bytes;
     size_t bytes,peak_bytes,host_staging_bytes;
 } BnBackendBF16GLMModel;
 /* Prepare every main layer and separate Q8 vocabulary tables privately, then
@@ -276,6 +281,12 @@ int bn_backend_layout_prepare_bf16_glm_model(BnBackendModel *backend,
     BnGPUBackend *gpu,struct BnGGUFFile *file,const struct BnModelAnatomy *anatomy,
     const BnMoEExpertMap *expert_maps,size_t n_expert_maps,
     size_t gpu_budget_bytes,size_t host_staging_budget_bytes);
+/* Cache device budget is separate from weights/requests. The host staging
+ * budget also bounds persistent cache metadata, exposed in the model. */
+int bn_backend_layout_prepare_bf16_glm_model_with_cache(BnBackendModel *backend,
+    BnGPUBackend *gpu,struct BnGGUFFile *file,const struct BnModelAnatomy *anatomy,
+    const BnMoEExpertMap *expert_maps,size_t n_expert_maps,
+    size_t gpu_budget_bytes,size_t host_staging_budget_bytes,size_t cache_budget_bytes);
 const BnBackendBF16GLMModel *bn_backend_layout_bf16_glm_model(const BnBackendModel *backend);
 
 /* Backend-owned immutable HC layouts; zero-initialize before init. The GPU
@@ -427,6 +438,7 @@ typedef struct {
     size_t bytes, peak_bytes;
     size_t model_bytes, model_peak_bytes;
     void *expert_cache; /* Optional model-owned raw residency; separate budget. */
+    size_t expert_cache_host_bytes;
 } BnBackendBF16FlashFFNModel;
 /* Extend the SAME HC+PLE+GDN+QSA container transactionally. The GPU budget is
  * aggregate preparation tensor payload, including transient F32 router upload;

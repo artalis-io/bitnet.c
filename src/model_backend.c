@@ -104,13 +104,17 @@ void bn_model_backend_free(BnModel *model) {
 
 int bn_model_prepare_bf16_topology(BnModel *model, BnGPUBackend *gpu,
                                   size_t device_budget, size_t host_budget) {
+    return bn_model_prepare_bf16_topology_with_cache(model,gpu,device_budget,host_budget,0);
+}
+int bn_model_prepare_bf16_topology_with_cache(BnModel *model,BnGPUBackend *gpu,
+    size_t device_budget,size_t host_budget,size_t cache_budget) {
     const BnModelAnatomy *a = bn_model_anatomy(model);
     size_t count = 0;
     const BnMoEExpertMap *maps = bn_model_topology_experts(model, &count);
     BnGGUFFile *file = bn_model_topology_file(model);
     if (!a || !file || !maps || !gpu) return -1;
-    return bn_backend_layout_prepare_bf16_glm_model(bn_model_backend(model),
-        gpu, file, a, maps, count, device_budget, host_budget);
+    return bn_backend_layout_prepare_bf16_glm_model_with_cache(bn_model_backend(model),
+        gpu, file, a, maps, count, device_budget, host_budget,cache_budget);
 }
 
 int bn_model_prepare_native_core(BnModel *model, BnGPUBackend *gpu,
